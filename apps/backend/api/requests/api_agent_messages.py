@@ -22,6 +22,11 @@ router = APIRouter(prefix="/v1/agent", tags=["Agent Messages"])
 logger = logging.getLogger(__name__)
 
 
+# NOTE: LinkedIn lookup is now handled by the orchestrator via the linkedin_lookup tool.
+# The LLM decides when to use it based on @linkedin mentions in the message.
+# See agents/editing/tools/integration_tools.py for the implementation.
+
+
 def _summarize_deck_diff(diff: dict) -> str:
     """Create a condensed summary of a deck diff for logging (without full HTML)."""
     if not diff or not isinstance(diff, dict):
@@ -1182,6 +1187,22 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
             ctx = {k: context.get(k) for k in keys if context.get(k) is not None}
             if ctx:
                 llm_message += "\n\n[CONTEXT] " + ", ".join([f"{k}={v}" for k, v in ctx.items()])
+
+            # Include selected LinkedIn profile if user clicked on one
+            selected_profile = context.get("selected_linkedin_profile")
+            if selected_profile and isinstance(selected_profile, dict):
+                profile_parts = [f"Name: {selected_profile.get('name', 'Unknown')}"]
+                if selected_profile.get('title'):
+                    profile_parts.append(f"Title: {selected_profile['title']}")
+                if selected_profile.get('company'):
+                    profile_parts.append(f"Company: {selected_profile['company']}")
+                if selected_profile.get('linkedin_url'):
+                    profile_parts.append(f"LinkedIn: {selected_profile['linkedin_url']}")
+                if selected_profile.get('photo_url'):
+                    profile_parts.append(f"Photo: {selected_profile['photo_url']}")
+
+                llm_message += f"\n\n[SELECTED_LINKEDIN_PROFILE] User selected this profile from search results:\n" + "\n".join(profile_parts)
+                llm_message += "\n\n⚠️ DO NOT call linkedin_lookup - use this profile data directly! Pass the Name, Title, Company, and Photo URL to create_slide/edit_slide."
     except Exception:
         pass
 
@@ -1218,6 +1239,9 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                 'mimeType': att.get('mimeType') or att.get('type') or 'application/octet-stream',
                 'url': att.get('url') or att.get('publicUrl')
             })
+
+    # LinkedIn lookup is now handled by the orchestrator via the linkedin_lookup tool
+    # The LLM decides when to use it based on @linkedin mentions in the message
 
     result = await run_in_threadpool(
         thread_pool,

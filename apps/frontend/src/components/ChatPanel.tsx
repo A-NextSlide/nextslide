@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { cn } from '@/lib/utils';
 import { Sparkles, XCircle, Plus, Image as ImageIcon, ChevronUp, ChevronDown, ChevronRight, Loader2, FileText, Table, Presentation, File, History } from 'lucide-react';
 import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import ChatMessage, { ChatMessageProps, FeedbackType } from './ChatMessage';
@@ -55,6 +56,10 @@ import { sendChatToApi } from '@/components/chat/utils/messageUtils';
 import { captureTinySlideScreenshot, shouldCaptureScreenshotForEdit } from '@/utils/slideScreenshot';
 // SlideSnapshotThumbnail is now rendered inside ChatMessage component
 
+// Integration mentions
+import { useIntegrationMentions } from '@/hooks/useIntegrationMentions';
+import { IntegrationMentionPopover, IntegrationMentionBubble } from '@/components/chat';
+
 // Re-export types for consumers of this file
 export type { ExtendedChatMessageProps, ChatPanelProps };
 
@@ -85,6 +90,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 }) => {
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<{ label: string; prompt: string }[]>([]);
+
+  // Integration @ mentions hook
+  const {
+    mentionState,
+    selectedMentions,
+    handleTextChange: handleMentionTextChange,
+    handleKeyDown: handleMentionKeyDown,
+    selectMention,
+    closeMentionPopover,
+    removeMention,
+    clearMentions,
+    extractMentionsFromText,
+  } = useIntegrationMentions();
 
   // Integration command palette state - disabled until integrations are set up
   // const [showIntegrationPalette, setShowIntegrationPalette] = useState(false);
@@ -173,6 +191,96 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const hasOldMessages = oldMessages.length > 0;
   const [hoveredElementId, setHoveredElementId] = useState<string | null>(null);
   const [outlineSlideTarget, setOutlineSlideTarget] = useState<number | 'all'>('all');
+
+  // Selected LinkedIn profile for follow-up context
+  const [selectedLinkedInProfile, setSelectedLinkedInProfile] = useState<{
+    id: string;
+    name: string;
+    title?: string;
+    company?: string;
+    linkedin_url?: string;
+    photo_url?: string;
+  } | null>(null);
+
+  // Ref to store selected profile for continuation (avoids race condition with state)
+  const selectedProfileForContinuationRef = useRef<any>(null);
+
+  // Ref to track the original request that triggered LinkedIn lookup (for multi-person sequential handling)
+  const originalLinkedInRequestRef = useRef<string | null>(null);
+
+  // Handler for selecting a LinkedIn profile from search results
+  // Auto-continues with the task instead of asking user what to do next
+  const handleSelectLinkedInProfile = useCallback((profile: any) => {
+    const newProfile = {
+      id: profile.id || profile.name,
+      name: profile.name,
+      title: profile.title,
+      company: profile.company,
+      linkedin_url: profile.linkedin_url,
+      photo_url: profile.photo_url,
+    };
+
+    // Store in ref immediately (no race condition)
+    selectedProfileForContinuationRef.current = newProfile;
+    setSelectedLinkedInProfile(newProfile);
+
+    // Build continuation message
+    // If we have an original request with more @linkedin mentions, include it
+    const profileDesc = `${newProfile.name}${newProfile.company ? ` from ${newProfile.company}` : ''}`;
+    const originalRequest = originalLinkedInRequestRef.current;
+
+    // Check if original request has more @linkedin mentions that weren't for this person
+    let continuationMsg = `Use the selected profile (${profileDesc}) for the slide`;
+    if (originalRequest) {
+      // Count @linkedin mentions in original request
+      const linkedinMentions = (originalRequest.match(/@linkedin/gi) || []).length;
+      if (linkedinMentions > 1) {
+        // Include original request so agent knows about remaining people
+        continuationMsg = `I selected ${profileDesc}. Continue with the original request: "${originalRequest}"`;
+      }
+    }
+
+    setInput(continuationMsg);
+  }, []);
+
+  // Handler for skipping LinkedIn profile selection
+  const handleSkipLinkedInSelection = useCallback(() => {
+    selectedProfileForContinuationRef.current = null;
+    setSelectedLinkedInProfile(null);
+
+    // If we have an original request with more @linkedin mentions, include it so we continue with remaining people
+    const originalRequest = originalLinkedInRequestRef.current;
+    let skipMsg = 'Skip the profile lookup and continue without adding profile info';
+
+    if (originalRequest) {
+      const linkedinMentions = (originalRequest.match(/@linkedin/gi) || []).length;
+      if (linkedinMentions > 1) {
+        skipMsg = `Skip this profile. Continue with the original request: "${originalRequest}"`;
+      }
+    }
+
+    setInput(skipMsg);
+  }, []);
+
+  // Ref to hold sendMessage function for continuation trigger
+  const sendMessageRef = useRef<(() => void) | null>(null);
+
+  // Effect to auto-send when input changes from profile selection/skip
+  useEffect(() => {
+    // Only auto-send for our specific continuation messages
+    // Include new messages for multi-person handling ("I selected...", "Skip this profile...")
+    if (
+      input.startsWith('Use the selected profile') ||
+      input.startsWith('Skip the profile lookup') ||
+      input.startsWith('I selected ') ||
+      input.startsWith('Skip this profile')
+    ) {
+      // Trigger send after a microtask to ensure state is settled
+      setTimeout(() => {
+        sendMessageRef.current?.();
+      }, 50);
+    }
+  }, [input]);
 
   // Get deck data for slide dropdown in outline mode
   const deckData = useDeckStore(state => state.deckData);
@@ -1807,7 +1915,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         const client = new AgentChatClient({
           onEvent: (evt) => {
             if (!evt || !evt.type) return;
-            // Debug: log ALL events to trace missing events
             // Handle streaming tokens
             if (evt.type === 'assistant.message.delta') {
               const rawDelta = (evt as any).data?.delta || '';
@@ -1858,6 +1965,65 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 setMessages(prev => prev.filter(m => m.id !== planId));
                 planMsgIdRef.current = null;
                 planCreatedAtRef.current = null;
+              }
+              return;
+            }
+            // LinkedIn profile search results
+            if (evt.type === 'assistant.linkedin_profiles') {
+              const { query, profiles: rawProfiles, isLoading, note, error } = (evt as any).data || {};
+              const profiles = rawProfiles || [];
+              console.log('[LinkedIn] Event received:', { query, profileCount: profiles.length, isLoading, profiles, note, error });
+              console.log('[LinkedIn] Profiles data:', JSON.stringify(profiles, null, 2));
+              const linkedinMsgId = `linkedin-${Date.now()}`;
+
+              if (isLoading) {
+                // Show loading state
+                setMessages(prev => [...prev, {
+                  id: linkedinMsgId,
+                  type: 'ai',
+                  message: `Searching LinkedIn for "${query}"...`,
+                  timestamp: new Date(),
+                  feedback: null,
+                  metadata: {
+                    type: 'linkedin_profiles',
+                    query,
+                    profiles: [],
+                    isLoading: true
+                  }
+                }]);
+              } else {
+                // Update or add results - find existing loading message and update it
+                setMessages(prev => {
+                  const loadingMsgIndex = prev.findIndex(m =>
+                    m.metadata?.type === 'linkedin_profiles' &&
+                    m.metadata?.query === query &&
+                    m.metadata?.isLoading === true
+                  );
+
+                  const resultMsg = {
+                    id: loadingMsgIndex >= 0 ? prev[loadingMsgIndex].id : linkedinMsgId,
+                    type: 'ai' as const,
+                    message: profiles.length > 0
+                      ? `Found ${profiles.length} profile${profiles.length === 1 ? '' : 's'} for "${query}"`
+                      : `No profiles found for "${query}"`,
+                    timestamp: new Date(),
+                    feedback: null,
+                    metadata: {
+                      type: 'linkedin_profiles',
+                      query,
+                      profiles,
+                      isLoading: false
+                    }
+                  };
+
+                  if (loadingMsgIndex >= 0) {
+                    // Replace loading message with results
+                    return prev.map((m, i) => i === loadingMsgIndex ? resultMsg : m);
+                  } else {
+                    // Add new message
+                    return [...prev, resultMsg];
+                  }
+                });
               }
               return;
             }
@@ -2916,6 +3082,47 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               }
               return;
             }
+            // LinkedIn profile search results (secondary client)
+            if (evt.type === 'assistant.linkedin_profiles') {
+              const { query, profiles: rawProfiles, isLoading } = (evt as any).data || {};
+              const profiles = rawProfiles || [];
+              console.log('[LinkedIn-Secondary] Event received:', { query, profileCount: profiles.length, isLoading, profiles });
+              const linkedinMsgId = `linkedin-${Date.now()}`;
+
+              if (isLoading) {
+                setMessages(prev => [...prev, {
+                  id: linkedinMsgId,
+                  type: 'ai',
+                  message: `Searching LinkedIn for "${query}"...`,
+                  timestamp: new Date(),
+                  feedback: null,
+                  metadata: { type: 'linkedin_profiles', query, profiles: [], isLoading: true }
+                }]);
+              } else {
+                setMessages(prev => {
+                  const loadingMsgIndex = prev.findIndex(m =>
+                    m.metadata?.type === 'linkedin_profiles' &&
+                    m.metadata?.query === query &&
+                    m.metadata?.isLoading === true
+                  );
+                  const resultMsg = {
+                    id: loadingMsgIndex >= 0 ? prev[loadingMsgIndex].id : linkedinMsgId,
+                    type: 'ai' as const,
+                    message: profiles.length > 0
+                      ? `Found ${profiles.length} profile${profiles.length === 1 ? '' : 's'} for "${query}"`
+                      : `No profiles found for "${query}"`,
+                    timestamp: new Date(),
+                    feedback: null,
+                    metadata: { type: 'linkedin_profiles', query, profiles, isLoading: false }
+                  };
+                  if (loadingMsgIndex >= 0) {
+                    return prev.map((m, i) => i === loadingMsgIndex ? resultMsg : m);
+                  }
+                  return [...prev, resultMsg];
+                });
+              }
+              return;
+            }
             if ((evt as any).type === 'agent.plan.update') {
               const steps: string[] = (evt as any).data?.plan?.map((s: any) => s.title) || [];
               animatePlanMessage(steps);
@@ -3947,6 +4154,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const sendMessage = async () => {
     if (!input.trim()) return;
 
+    // Track original request for multi-person LinkedIn handling
+    // Store the input if it contains @linkedin mentions (for sequential person lookup)
+    if (input.toLowerCase().includes('@linkedin')) {
+      originalLinkedInRequestRef.current = input;
+    }
+
     // Create timestamp now for consistency
     const timestamp = new Date();
     const userMessageId = `user-${Date.now()}`;
@@ -3967,6 +4180,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       file: (a as any).file // Keep file reference for base64 conversion
     }));
 
+    // Snapshot selected mentions before clearing
+    const currentMentions = [...selectedMentions];
+
     // Create the user message object
     const userMessage: ExtendedChatMessageProps = {
       id: userMessageId,
@@ -3978,21 +4194,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         selectionsPreview: previewSelections,
         attachmentNames: previewAttachments,
         attachments: fullAttachments,
-        // TODO: Re-enable when integrations are set up
-        // Include selected integration if user explicitly chose one via "/"
-        // integration: selectedIntegration ? {
-        //   id: selectedIntegration.id,
-        //   action: selectedIntegration.action,
-        //   explicit: true // Mark that user explicitly selected this
-        // } : undefined
+        // Include integration mentions if any
+        integrationMentions: currentMentions.length > 0
+          ? currentMentions.map(m => ({ id: m.id, name: m.name }))
+          : undefined
       }
     };
 
-    // TODO: Re-enable when integrations are set up
-    // Clear integration selection after sending
-    // if (selectedIntegration) {
-    //   setSelectedIntegration(null);
-    // }
+    // Clear integration mentions after sending
+    if (currentMentions.length > 0) {
+      clearMentions();
+    }
 
     // Handle outline mode with conversational agent
     if (outlineMode && useOutlineAgent && onOutlineAgentToolCall) {
@@ -4009,7 +4221,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         metadata: {
           selectionsPreview: previewSelections,
           attachmentNames: previewAttachments,
-          attachments: fullAttachments
+          attachments: fullAttachments,
+          integrationMentions: currentMentions.length > 0
+            ? currentMentions.map(m => ({ id: m.id, name: m.name }))
+            : undefined
         }
       }]);
 
@@ -4758,8 +4973,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             slide_id: slideId || undefined,
             current_slide_index: currentSlideIndex,
             deck_data: deckData,
+            // Include selected LinkedIn profile for follow-up context
+            // Use ref value first (for continuation) then fall back to state
+            selected_linkedin_profile: selectedProfileForContinuationRef.current || selectedLinkedInProfile || undefined,
           },
         });
+        // Clear the continuation ref after sending to avoid stale data
+        selectedProfileForContinuationRef.current = null;
       } else {
         // Fallback to legacy chat endpoint
         data = await sendChatToApi(
@@ -4860,32 +5080,27 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   };
 
+  // Keep ref updated so continuation trigger can call sendMessage
+  sendMessageRef.current = sendMessage;
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // TODO: Re-enable when integrations are set up
-    // Show integration palette when "/" is typed at start or after space
-    // if (e.key === '/') {
-    //   const target = e.target as HTMLTextAreaElement;
-    //   const pos = target.selectionStart || 0;
-    //   const text = target.value;
-    //
-    //   // Show palette if "/" is at start or after whitespace
-    //   if (pos === 0 || /\s/.test(text[pos - 1] || '')) {
-    //     e.preventDefault();
-    //     setShowIntegrationPalette(true);
-    //     return;
-    //   }
-    // }
-    //
-    // // Close palette on Escape
-    // if (e.key === 'Escape' && showIntegrationPalette) {
-    //   setShowIntegrationPalette(false);
-    //   return;
-    // }
+    // Handle integration @ mention keyboard navigation
+    if (handleMentionKeyDown(e)) {
+      return; // Event was handled by mention system
+    }
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
+  };
+
+  // Handle input change with mention detection
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    const cursorPosition = e.target.selectionStart || newValue.length;
+    setInput(newValue);
+    handleMentionTextChange(newValue, cursorPosition, setInput);
   };
 
   const handleSuggestedPrompt = (prompt: string) => {
@@ -5129,6 +5344,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     {...msg}
                     onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
                     editAppliedData={editAppliedData ? { ...editAppliedData, slideNumber } : undefined}
+                    onSelectLinkedInProfile={handleSelectLinkedInProfile}
+                    onSkipLinkedInSelection={handleSkipLinkedInSelection}
+                    selectedLinkedInProfileId={selectedLinkedInProfile?.id}
                   />
                 </div>
               );
@@ -5269,6 +5487,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   inlineBelow={inline}
                   onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
                   editAppliedData={editAppliedData ? { ...editAppliedData, slideNumber } : undefined}
+                  onSelectLinkedInProfile={handleSelectLinkedInProfile}
+                  onSkipLinkedInSelection={handleSkipLinkedInSelection}
+                  selectedLinkedInProfileId={selectedLinkedInProfile?.id}
                 />
               );
             })}
@@ -5456,16 +5677,41 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   </div>
                 )}
                 */}
-                <div className="flex items-center mt-4 min-w-0">
+                {/* Integration Mention Popover */}
+                <IntegrationMentionPopover
+                  state={mentionState}
+                  onSelect={(integration) => selectMention(integration, input, setInput)}
+                  onClose={closeMentionPopover}
+                />
+
+                {/* Selected Integration Mentions */}
+                {selectedMentions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {selectedMentions.map((mention) => (
+                      <IntegrationMentionBubble
+                        key={mention.id}
+                        id={mention.id}
+                        name={mention.name}
+                        variant="input"
+                        size="sm"
+                        onRemove={() => removeMention(mention.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                <div className={cn("flex items-center min-w-0", selectedMentions.length > 0 ? "mt-2" : "mt-4")}>
                   <div className="w-px mr-2 h-8" style={{ backgroundColor: COLORS.SUGGESTION_PINK }}></div>
                   <Textarea
                     ref={inputRef}
                     value={input}
-                    onChange={e => setInput(e.target.value)}
+                    onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
                     placeholder={(outlineMode && useOutlineAgent)
                         ? "Refine your slides..."
-                        : "Design, edit, or enhance your deck..."}
+                        : selectedMentions.length > 0
+                          ? `Ask about ${selectedMentions.map(m => m.name).join(', ')}...`
+                          : "Design, edit, or enhance your deck..."}
                     className="bg-transparent border-none flex-grow text-foreground text-sm placeholder:text-muted-foreground placeholder:text-sm focus-visible:ring-0 focus-visible:ring-offset-0 pl-0 resize-none overflow-hidden"
                     data-tour="chat-input"
                   />

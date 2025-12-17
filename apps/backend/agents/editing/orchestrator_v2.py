@@ -260,6 +260,16 @@ RULES:
 4. You can and SHOULD call multiple tools in one response when needed
 5. Always provide a conversational response with your tool calls
 
+VISUAL CONTEXT (screenshot attachment):
+- A screenshot of the current slide is automatically attached when a slide/component is selected
+- USE THIS to understand what the slide currently looks like before making changes
+- Especially important for:
+  * Fixing issues - see what's actually wrong
+  * Major redesigns - understand current layout/design before changing
+  * Visual edits - colors, spacing, sizing, positioning
+  * Element-specific changes - locate the exact element to modify
+- The screenshot shows the REAL rendered state, not just the code
+
 IMAGE REPLACEMENT (search_images):
 - For "replace images", "fix images", "new images", "find a different image" → call search_images
 - DON'T call view_component first - you can see the slide from the screenshot attachment
@@ -367,6 +377,36 @@ TOOL SELECTION:
 - view_component: Inspect a component BEFORE complex edits
 - search_images: Find and REPLACE images with different ones from the web
 - edit_image_with_ai: MODIFY an existing image with AI (color changes, effects, background removal)
+- linkedin_lookup: Look up professional profiles on LinkedIn (use for @linkedin mentions or people lookup)
+
+@ MENTIONS (INTEGRATION TRIGGERS):
+When user includes @integration mentions in their message, use the corresponding tool:
+- @linkedin [Name] → Call linkedin_lookup with the person's name AND company if mentioned anywhere
+- ALWAYS extract company from context - look for company names mentioned ANYWHERE in the message
+- If message mentions a company (e.g., "Caper", "Disney", "Tesla"), pass it as company parameter
+- Example: "@linkedin Bob Iger" → linkedin_lookup(name="Bob Iger", company="Disney") // Disney inferred from context
+- Example: "@linkedin Ahmed at Anthropic" → linkedin_lookup(name="Ahmed", company="Anthropic")
+- CRITICAL: Company helps find the RIGHT person - without it you may get wrong profiles!
+
+MULTIPLE PEOPLE - Call linkedin_lookup ONCE PER PERSON:
+- "create team slide with @linkedin Ahmed and @linkedin Jason" → Call linkedin_lookup TWICE (once for Ahmed, once for Jason)
+- DO NOT try to combine multiple names in one lookup
+- Each lookup will return the best matching profile automatically
+
+⚠️ SELECTED PROFILE - DO NOT SEARCH AGAIN (CRITICAL):
+- FIRST CHECK: Does the message contain [SELECTED_LINKEDIN_PROFILE]?
+- If YES: The user ALREADY selected a profile from search results
+  → DO NOT call linkedin_lookup - you already have the profile data!
+  → Extract Name, Title, Company, Photo URL from the [SELECTED_LINKEDIN_PROFILE] block
+  → Use this data directly in your create_slide/edit_slide instruction
+  → Example: "Create slide with profile: Name=Ahmed Beshry, Title=Co-founder, Company=Caper, Photo=https://..."
+- If NO: Then you can call linkedin_lookup to search for profiles
+
+PROFILE SELECTION FLOW:
+1. User mentions @linkedin → call linkedin_lookup
+2. Profiles are shown to user → WAIT for user to Select or Skip
+3. User clicks Select → You receive message with [SELECTED_LINKEDIN_PROFILE] → USE THIS DATA, don't search again
+4. User clicks Skip → Continue without profile data
 
 NOTE: Visual context (screenshot) is automatically provided when relevant.
 """
@@ -703,6 +743,40 @@ AVAILABLE TOOLS:
    - ⚠️ IMPORTANT: Only edits ONE image per call. Use image_index to target specific images.
    - Example: {"instruction": "change the blue colors to green", "image_index": 0}
    - Example: {"instruction": "make it look more vibrant", "image_index": 1}
+
+17. linkedin_lookup ⭐ FOR LINKEDIN/PEOPLE LOOKUP
+   - Look up professional profiles using LinkedIn data
+   - ✅ USE WHEN: User mentions @linkedin, asks about a person's professional info, or needs presenter/speaker details
+   - ✅ USE FOR: "@linkedin John Smith", "find info on Bob Iger", "who is the CEO of Disney"
+   - AUTO-SELECTS the best matching profile when there's a clear match (high confidence)
+   - For multiple people: Call linkedin_lookup SEPARATELY for each person
+   - Returns profile cards with name, title, company, photo, and LinkedIn URL
+   - Args: { "name": str, "company": optional str, "title": optional str }
+   - name: Person's name to search for (REQUIRED)
+   - company: Company name to narrow search (HIGHLY RECOMMENDED - improves match accuracy)
+   - title: Job title to narrow search (optional)
+   - Example: {"name": "Bob Iger", "company": "Disney"}
+   - Example: {"name": "Ahmed Beshry", "company": "Caper"}
+   - Example: {"name": "Satya Nadella", "company": "Microsoft", "title": "CEO"}
+
+   ⚠️ IMPORTANT: If [SELECTED_LINKEDIN_PROFILE] is in the message, DON'T call linkedin_lookup - use that data directly!
+
+18. edit_all_slides ⭐ FOR CROSS-SLIDE EDITS
+   - Apply the SAME edit to ALL slides in the deck at once
+   - ⚠️ ONLY use when user EXPLICITLY mentions cross-slide scope:
+     * "all slides", "every slide", "across the deck", "on all pages"
+     * "make everything...", "change all...", "update the whole deck"
+   - ❌ DO NOT use for single-slide edits (use edit_slide or custom_component_str_replace instead)
+   - ✅ USE FOR:
+     * "Make all text larger across all slides"
+     * "Change the font on every slide"
+     * "Update the footer on all slides"
+     * "Make all titles blue across the deck"
+     * "Increase font size on all slides"
+   - Args: { "instruction": str }
+   - Example: {"instruction": "Make all titles 20% larger"}
+   - Example: {"instruction": "Change all body text to use Inter font"}
+   - Example: {"instruction": "Add a page number in the bottom right of every slide"}
 """
 
 
@@ -855,8 +929,13 @@ Respond with the tool_calls to execute."""
         except Exception:
             pass
 
-    def _execute_tool_calls(tool_calls: List[ToolCall]) -> tuple[DeckDiff, List[str], List[Dict[str, Any]]]:
-        """Execute tool calls and collect any attached observations."""
+    def _execute_tool_calls(tool_calls: List[ToolCall]) -> tuple[DeckDiff, List[str], List[Dict[str, Any]], bool]:
+        """Execute tool calls and collect any attached observations.
+
+        Returns:
+            tuple: (deck_diff, summaries, observations, needs_user_confirmation)
+            - needs_user_confirmation: True if we paused for user to select from multiple options
+        """
         dd = DeckDiff(DeckDiffBase())
         summaries: List[str] = []
         observations: List[Dict[str, Any]] = []
@@ -865,9 +944,37 @@ Respond with the tool_calls to execute."""
         # Key: component_id, Value: latest props dict (especially 'render' for CustomComponent)
         accumulated_props: Dict[str, Dict[str, Any]] = {}
 
+        # Track integration data from lookup tools to inject into subsequent slide creation
+        # Generic structure: { "integration_name": { "type": "profiles|files|items", "data": [...], "source": "..." } }
+        # Examples: linkedin -> profiles, figma -> designs, salesforce -> contacts, hubspot -> deals
+        integration_context: Dict[str, Dict[str, Any]] = {}
+
+        # SEQUENTIAL LINKEDIN HANDLING: Only allow ONE linkedin_lookup per pass
+        # This ensures we handle multiple people one at a time (user selects first person, then we show second)
+        linkedin_lookup_executed = False
+
         for tool_call in tool_calls or []:
             tool_name = tool_call.tool_name
             tool_args = tool_call.tool_args
+
+            # CRITICAL: Only allow linkedin_lookup if @linkedin is explicitly in the message
+            # This prevents the LLM from calling LinkedIn lookup without user intent
+            if tool_name == "linkedin_lookup":
+                # Check if @linkedin is in the original user message (clean_message is available via closure)
+                if "@linkedin" not in (clean_message or "").lower():
+                    logger.warning(f"[ORCHESTRATOR] ⛔ BLOCKING linkedin_lookup - @linkedin not in message: '{clean_message[:100]}...'")
+                    # Skip this tool call entirely
+                    continue
+
+                # SEQUENTIAL: Only allow ONE linkedin_lookup per pass
+                # If we've already executed one, skip additional ones
+                if linkedin_lookup_executed:
+                    person_name = tool_args.get("name", "unknown")
+                    logger.info(f"[ORCHESTRATOR] ⏭️ DEFERRING linkedin_lookup for '{person_name}' - one lookup already executed this pass")
+                    continue
+
+                # Mark that we're executing a linkedin lookup
+                linkedin_lookup_executed = True
 
             # Emit tool start
             if event_cb:
@@ -877,6 +984,75 @@ Respond with the tool_calls to execute."""
                     pass
 
             logger.info(f"[ORCHESTRATOR] 🔧 Executing tool: {tool_name} with args: {list(tool_args.keys())}")
+
+            # INTEGRATION CONFIRMATION: If this is a lookup tool and there are more tools after it,
+            # we should pause and wait for user to select a profile before continuing
+            # Check if we need to pause for user confirmation
+            remaining_tools = tool_calls[tool_calls.index(tool_call) + 1:] if tool_call in tool_calls else []
+            needs_confirmation = (
+                tool_name in ("linkedin_lookup", "salesforce_lookup", "hubspot_lookup") and
+                len(remaining_tools) > 0  # There are more tools to execute after this
+            )
+
+            # Inject integration context into slide creation/editing tools
+            # This allows data from linkedin_lookup, figma_import, salesforce_search, etc. to be used in slides
+            if integration_context and tool_name in ("create_slide", "edit_slide", "custom_component_rewrite"):
+                instruction = tool_args.get("instruction", "")
+                if instruction:
+                    context_blocks = []
+
+                    for integration_name, ctx in integration_context.items():
+                        data_type = ctx.get("type", "items")
+                        items = ctx.get("data", [])
+
+                        if not items:
+                            continue
+
+                        # Format data based on integration type
+                        item_lines = []
+                        for item in items:
+                            if data_type == "profiles":
+                                # People/profile data (LinkedIn, Salesforce contacts, etc.)
+                                parts = [item.get("name", "Unknown")]
+                                if item.get("title"):
+                                    parts.append(f"Title: {item['title']}")
+                                if item.get("company"):
+                                    parts.append(f"Company: {item['company']}")
+                                if item.get("photo_url"):
+                                    parts.append(f"Photo URL: {item['photo_url']}")
+                                if item.get("linkedin_url"):
+                                    parts.append(f"LinkedIn: {item['linkedin_url']}")
+                                if item.get("email"):
+                                    parts.append(f"Email: {item['email']}")
+                                item_lines.append(" | ".join(parts))
+
+                            elif data_type == "files" or data_type == "designs":
+                                # File/design data (Figma, Google Drive, etc.)
+                                parts = [item.get("name", item.get("title", "Untitled"))]
+                                if item.get("url"):
+                                    parts.append(f"URL: {item['url']}")
+                                if item.get("thumbnail_url"):
+                                    parts.append(f"Thumbnail: {item['thumbnail_url']}")
+                                if item.get("preview_url"):
+                                    parts.append(f"Preview: {item['preview_url']}")
+                                item_lines.append(" | ".join(parts))
+
+                            else:
+                                # Generic items - just dump key fields
+                                parts = []
+                                for key in ["name", "title", "url", "photo_url", "image_url", "thumbnail_url"]:
+                                    if item.get(key):
+                                        parts.append(f"{key}: {item[key]}")
+                                if parts:
+                                    item_lines.append(" | ".join(parts))
+
+                        if item_lines:
+                            header = f"[{integration_name.upper()} DATA - USE THESE DETAILS AND URLs IN THE SLIDE]:"
+                            context_blocks.append(header + "\n" + "\n".join(item_lines))
+                            logger.info(f"[ORCHESTRATOR] 💉 Injected {len(items)} {data_type} from {integration_name} into {tool_name} instruction")
+
+                    if context_blocks:
+                        tool_args["instruction"] = instruction + "\n\n" + "\n\n".join(context_blocks)
 
             # CRITICAL FIX: For tools that modify CustomComponent HTML, use accumulated HTML from previous ops
             # This prevents each operation from reading stale original HTML
@@ -915,13 +1091,52 @@ Respond with the tool_calls to execute."""
                     current_slide=effective_slide,
                     registry=registry,
                     attachments=attachments,
+                    event_cb=event_cb,
                 )
 
-                # Collect read-only observation payloads (e.g., view_component)
+                # Collect read-only observation payloads (e.g., view_component, integration lookups)
                 try:
                     obs = getattr(tool_diff, "observation", None)
                     if isinstance(obs, dict) and obs:
                         observations.append({"tool": tool_name, "data": obs})
+
+                        # Generic integration context collection
+                        # Integration tools should return observations with "integration" key
+                        # Format: { "integration": "linkedin|figma|salesforce|...", "type": "profiles|files|items", "data": [...] }
+                        integration_name = obs.get("integration")
+                        if integration_name:
+                            integration_context[integration_name] = {
+                                "type": obs.get("type", "items"),
+                                "data": obs.get("data", []),
+                                "source": obs.get("source", "unknown"),
+                                "query": obs.get("query", "")
+                            }
+                            logger.info(f"[ORCHESTRATOR] 📋 Collected {len(obs.get('data', []))} {obs.get('type', 'item')}(s) from {integration_name} for context injection")
+
+                        # Legacy support: handle linkedin_profiles directly (will migrate to generic format)
+                        elif "linkedin_profiles" in obs:
+                            integration_context["linkedin"] = {
+                                "type": "profiles",
+                                "data": obs.get("linkedin_profiles", []),
+                                "source": obs.get("source", "unknown"),
+                                "query": obs.get("query", "")
+                            }
+                            logger.info(f"[ORCHESTRATOR] 📋 Collected {len(obs.get('linkedin_profiles', []))} LinkedIn profile(s) for context injection")
+
+                        # PAUSE FOR USER CONFIRMATION: Wait for user to select/skip IF we have good matches
+                        # If no_confident_match is True, don't pause - let agent respond in chat
+                        if needs_confirmation:
+                            profile_count = len(obs.get("data", []) or obs.get("linkedin_profiles", []))
+                            no_confident_match = obs.get("no_confident_match", False)
+
+                            if profile_count > 0 and not no_confident_match:
+                                logger.info(f"[ORCHESTRATOR] ⏸️ PAUSING: Found {profile_count} profile(s), waiting for user to Select or Skip")
+                                # Return early with just the lookup results - don't execute remaining tools
+                                return dd, summaries, observations, True  # True = needs_user_confirmation
+                            elif no_confident_match:
+                                logger.info(f"[ORCHESTRATOR] No confident match found, agent will respond in chat")
+                            else:
+                                logger.info(f"[ORCHESTRATOR] No profiles found, continuing without profile data")
                 except Exception:
                     pass
 
@@ -989,10 +1204,24 @@ Respond with the tool_calls to execute."""
                         pass
                 continue
 
-        return dd, summaries, observations
+        return dd, summaries, observations, False  # False = no user confirmation needed
 
     # Pass 1: execute initial tool calls
-    deck_diff, edit_summaries, observations = _execute_tool_calls(response.tool_calls)
+    deck_diff, edit_summaries, observations, needs_user_confirmation = _execute_tool_calls(response.tool_calls)
+
+    # PAUSE FOR USER SELECTION: If we found multiple profiles and need user to pick one
+    # Don't emit a message - just return silently and let frontend handle the UX
+    # Frontend will show profile cards with Select buttons and a Skip option
+    if needs_user_confirmation:
+        logger.info(f"[ORCHESTRATOR] ⏸️ Pausing silently - waiting for user to select a profile (or skip)")
+        # Return with a special flag so frontend knows to wait for selection
+        # NO message emitted - the profile cards ARE the response
+        return {
+            "deck_diff": deck_diff,
+            "edit_summary": "\n".join(edit_summaries),
+            "message": "",  # Empty message - profile cards speak for themselves
+            "awaiting_selection": True  # Flag for frontend to know we're waiting
+        }
 
     # Pass 2 (lightweight): if the agent only "looked" (e.g., view_component) and made no changes,
     # immediately feed the observation back in and ask for actionable tool calls.
@@ -1070,7 +1299,7 @@ Respond with the tool_calls to execute."""
 
             if followup.tool_calls:
                 logger.info(f"[ORCHESTRATOR] 🔄 Executing {len(followup.tool_calls)} follow-up tool calls")
-                dd2, summaries2, _obs2 = _execute_tool_calls(followup.tool_calls)
+                dd2, summaries2, _obs2, _needs_confirm = _execute_tool_calls(followup.tool_calls)
                 deck_diff = deck_diff.merge(dd2)
                 edit_summaries.extend(summaries2)
                 logger.info(f"[ORCHESTRATOR] 🔄 Follow-up complete: {len(summaries2)} summaries, empty_diff={_is_empty_deckdiff(deck_diff)}")

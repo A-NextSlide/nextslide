@@ -4,7 +4,7 @@ Tool executor - routes tool calls to implementations.
 Simple mapping: tool_name → function
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 import logging
 
 from models.deck import DeckDiff, DeckDiffBase
@@ -20,6 +20,7 @@ def execute_tool(
     current_slide: Dict,
     registry: ComponentRegistry = None,
     attachments: List[Dict] = None,
+    event_cb: Callable = None,
 ) -> DeckDiff:
     """
     Execute a tool by name.
@@ -31,6 +32,7 @@ def execute_tool(
         current_slide: Currently selected slide
         registry: Component registry
         attachments: User-uploaded files
+        event_cb: Optional callback for streaming events (for tools like linkedin_lookup)
 
     Returns:
         DeckDiff with changes to apply
@@ -48,6 +50,7 @@ def execute_tool(
         component_prop_update,
         view_component,
         apply_theme_to_custom_components,
+        edit_all_slides,
     )
     from agents.editing.tools.component_tools import (
         edit_component,
@@ -60,6 +63,7 @@ def execute_tool(
         replace_image_from_search,
         edit_image_with_ai,
     )
+    from agents.editing.tools.integration_tools import linkedin_lookup
 
     # Tool map
     TOOLS = {
@@ -68,6 +72,7 @@ def execute_tool(
         "delete_slide": delete_slide,
         "duplicate_slide": duplicate_slide,
         "reorder_slides": reorder_slides,
+        "edit_all_slides": edit_all_slides,
         "edit_component": edit_component,
         "create_component": create_component,
         "delete_component": delete_component,
@@ -80,7 +85,11 @@ def execute_tool(
         "search_images": search_images,
         "replace_image": replace_image_from_search,
         "edit_image_with_ai": edit_image_with_ai,
+        "linkedin_lookup": linkedin_lookup,
     }
+
+    # Tools that need event_cb for streaming
+    STREAMING_TOOLS = {"linkedin_lookup"}
 
     if tool_name not in TOOLS:
         logger.error(f"Unknown tool: {tool_name}")
@@ -88,11 +97,21 @@ def execute_tool(
 
     tool_fn = TOOLS[tool_name]
 
-    # Execute tool
-    return tool_fn(
-        args=tool_args,
-        deck_data=deck_data,
-        current_slide=current_slide,
-        registry=registry,
-        attachments=attachments,
-    )
+    # Execute tool - pass event_cb for streaming tools
+    if tool_name in STREAMING_TOOLS:
+        return tool_fn(
+            args=tool_args,
+            deck_data=deck_data,
+            current_slide=current_slide,
+            registry=registry,
+            attachments=attachments,
+            event_cb=event_cb,
+        )
+    else:
+        return tool_fn(
+            args=tool_args,
+            deck_data=deck_data,
+            current_slide=current_slide,
+            registry=registry,
+            attachments=attachments,
+        )

@@ -66,6 +66,7 @@ class PersonInfo:
     city: Optional[str] = None
     state: Optional[str] = None
     country: Optional[str] = None
+    photo_url: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -75,6 +76,7 @@ class PersonInfo:
             "email": self.email,
             "phone": self.phone,
             "linkedin_url": self.linkedin_url,
+            "photo_url": self.photo_url,
             "location": {
                 "city": self.city,
                 "state": self.state,
@@ -249,6 +251,99 @@ class ApolloService:
     # People Methods (Paid Plan)
     # ==================
 
+    def search_linkedin_profiles(
+        self,
+        name: Optional[str] = None,
+        company: Optional[str] = None,
+        title: Optional[str] = None,
+        location: Optional[str] = None,
+        linkedin_url: Optional[str] = None,
+        page: int = 1,
+        per_page: int = 10
+    ) -> List[PersonInfo]:
+        """
+        Search for LinkedIn profiles via Apollo's People Search API.
+
+        This is the primary method for LinkedIn integration - searches Apollo's
+        database of 275M+ professional profiles.
+
+        Args:
+            name: Person's name to search (first, last, or full)
+            company: Company name to filter by
+            title: Job title to filter by
+            location: Location to filter by (city, state, country)
+            linkedin_url: Direct LinkedIn URL lookup
+            page: Page number
+            per_page: Results per page (max 100)
+
+        Returns:
+            List of matching PersonInfo objects with LinkedIn URLs
+        """
+        if not self.is_configured():
+            raise ValueError("Apollo API key not configured")
+
+        # If we have a LinkedIn URL, try direct enrichment first
+        if linkedin_url:
+            person = self.enrich_person(linkedin_url=linkedin_url)
+            return [person] if person else []
+
+        params = {
+            "page": page,
+            "per_page": min(per_page, 100)
+        }
+
+        # Build search query - use q_keywords for better exact matching
+        # Apollo's person_names and fuzzy matching returns garbage results
+        search_parts = []
+        if name:
+            search_parts.append(name)
+        if company:
+            search_parts.append(company)
+        if title:
+            search_parts.append(title)
+        if location:
+            search_parts.append(location)
+
+        if search_parts:
+            params["q_keywords"] = " ".join(search_parts)
+
+        try:
+            # Use the new api_search endpoint (old endpoint is deprecated)
+            data = self._request("POST", "mixed_people/api_search", params)
+            people = data.get("people", [])
+
+            results = []
+            for p in people:
+                # Handle obfuscated names (basic tier shows partial names)
+                first_name = p.get("first_name", "")
+                last_name = p.get("last_name") or p.get("last_name_obfuscated", "")
+                full_name = p.get("name") or f"{first_name} {last_name}".strip()
+
+                # Skip if we only have obfuscated/empty name
+                if not full_name or full_name == "Unknown":
+                    full_name = f"{first_name} {last_name}".strip() or "Unknown"
+
+                results.append(PersonInfo(
+                    name=full_name,
+                    title=p.get("title"),
+                    company=p.get("organization", {}).get("name"),
+                    email=p.get("email"),
+                    phone=p.get("phone_numbers", [{}])[0].get("number") if p.get("phone_numbers") else None,
+                    linkedin_url=p.get("linkedin_url"),
+                    city=p.get("city"),
+                    state=p.get("state"),
+                    country=p.get("country"),
+                    photo_url=p.get("photo_url")
+                ))
+
+            return results
+        except PermissionError:
+            logger.warning("People search requires paid Apollo plan")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to search LinkedIn profiles: {e}")
+            return []
+
     def search_people(
         self,
         company_domains: Optional[List[str]] = None,
@@ -288,12 +383,18 @@ class ApolloService:
             params["person_seniorities"] = seniority
 
         try:
-            data = self._request("POST", "mixed_people/search", params)
+            # Use the new api_search endpoint (old endpoint is deprecated)
+            data = self._request("POST", "mixed_people/api_search", params)
             people = data.get("people", [])
 
-            return [
-                PersonInfo(
-                    name=p.get("name", ""),
+            results = []
+            for p in people:
+                first_name = p.get("first_name", "")
+                last_name = p.get("last_name") or p.get("last_name_obfuscated", "")
+                full_name = p.get("name") or f"{first_name} {last_name}".strip() or "Unknown"
+
+                results.append(PersonInfo(
+                    name=full_name,
                     title=p.get("title"),
                     company=p.get("organization", {}).get("name"),
                     email=p.get("email"),
@@ -301,10 +402,11 @@ class ApolloService:
                     linkedin_url=p.get("linkedin_url"),
                     city=p.get("city"),
                     state=p.get("state"),
-                    country=p.get("country")
-                )
-                for p in people
-            ]
+                    country=p.get("country"),
+                    photo_url=p.get("photo_url")
+                ))
+
+            return results
         except PermissionError:
             logger.warning("People search requires paid Apollo plan")
             raise
@@ -358,16 +460,47 @@ class ApolloService:
             if not person:
                 return None
 
+            # Extract title - prefer current job from employment history, fallback to title field or headline
+            title = person.get("title")
+            company = person.get("organization", {}).get("name")
+
+            # If no title/company, try to get from employment history
+            employment_history = person.get("employment_history", [])
+            if employment_history:
+                # Find current job or most recent
+                current_job = None
+                for job in employment_history:
+                    if job.get("current"):
+                        current_job = job
+                        break
+                if not current_job:
+                    current_job = employment_history[0]  # Most recent
+
+                if not title:
+                    title = current_job.get("title")
+                if not company:
+                    company = current_job.get("organization_name")
+
+            # Fallback to headline if still no title
+            if not title and person.get("headline"):
+                # Headline format: "Title at Company | Other info"
+                headline = person.get("headline", "")
+                if " at " in headline:
+                    title = headline.split(" at ")[0].strip()
+                else:
+                    title = headline.split(" | ")[0].strip() if " | " in headline else headline
+
             return PersonInfo(
                 name=person.get("name", ""),
-                title=person.get("title"),
-                company=person.get("organization", {}).get("name"),
+                title=title,
+                company=company,
                 email=person.get("email"),
                 phone=person.get("phone_numbers", [{}])[0].get("number") if person.get("phone_numbers") else None,
                 linkedin_url=person.get("linkedin_url"),
                 city=person.get("city"),
                 state=person.get("state"),
-                country=person.get("country")
+                country=person.get("country"),
+                photo_url=person.get("photo_url")
             )
         except PermissionError:
             logger.warning("People enrichment requires paid Apollo plan")

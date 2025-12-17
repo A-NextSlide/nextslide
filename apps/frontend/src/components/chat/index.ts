@@ -21,3 +21,10 @@ export * from './hooks';
 export { default as ThinkingStatusDisplay } from './ThinkingStatusDisplay';
 export { default as InlineChatThemeEditor } from './InlineChatThemeEditor';
 export { default as InlineChatOutlinePreview } from './InlineChatOutlinePreview';
+
+// Integration Mentions
+export { IntegrationMentionPopover } from './IntegrationMentionPopover';
+export {
+  IntegrationMentionBubble,
+  renderTextWithMentions,
+} from './IntegrationMentionBubble';

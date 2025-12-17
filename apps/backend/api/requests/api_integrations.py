@@ -457,3 +457,252 @@ async def reconnect_integration(
             status_code=500,
             detail="Failed to create reconnection session"
         )
+
+
+# ==================
+# Enabled Integrations (for @ mentions)
+# ==================
+
+class EnabledIntegrationInfo(BaseModel):
+    """Information about an enabled integration for @ mentions"""
+    id: str
+    name: str
+    icon: str
+    description: str
+    capabilities: List[str]
+
+
+@router.get("/enabled")
+async def get_enabled_integrations(
+    auth: Dict = Depends(get_auth_header)
+) -> Dict[str, Any]:
+    """
+    Get all system-enabled integrations for @ mentions in chat.
+    Only returns integrations that are activated system-wide.
+    """
+    from services.integration_registry import get_integration_registry
+
+    registry = get_integration_registry()
+    enabled = await registry.get_enabled_integrations()
+
+    return {
+        "integrations": [
+            EnabledIntegrationInfo(
+                id=config.id,
+                name=config.name,
+                icon=config.icon,
+                description=config.description,
+                capabilities=config.capabilities
+            ).model_dump()
+            for config in enabled
+        ]
+    }
+
+
+# ==================
+# LinkedIn Search (via Apollo)
+# ==================
+
+class LinkedInSearchRequest(BaseModel):
+    """Request for LinkedIn profile search"""
+    query: Optional[str] = Field(None, description="Free-text search query")
+    name: Optional[str] = Field(None, description="Person's name")
+    company: Optional[str] = Field(None, description="Company name")
+    title: Optional[str] = Field(None, description="Job title")
+    location: Optional[str] = Field(None, description="Location")
+    linkedin_url: Optional[str] = Field(None, description="Direct LinkedIn URL")
+    page: int = Field(1, ge=1)
+    per_page: int = Field(10, ge=1, le=100)
+
+
+class LinkedInProfile(BaseModel):
+    """LinkedIn profile result"""
+    name: str
+    title: Optional[str] = None
+    company: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    location: Optional[str] = None
+
+
+@router.post("/linkedin/search")
+async def search_linkedin(
+    request: LinkedInSearchRequest,
+    auth: Dict = Depends(get_auth_header)
+) -> Dict[str, Any]:
+    """
+    Search LinkedIn profiles via Apollo's People Search API.
+    Uses system Apollo API key - no user OAuth required.
+    """
+    from services.integration_registry import get_integration_registry
+    from services.apollo_service import get_apollo_service
+
+    # Check if LinkedIn integration is enabled
+    registry = get_integration_registry()
+    if not await registry.is_enabled("linkedin"):
+        raise HTTPException(
+            status_code=403,
+            detail="LinkedIn integration is not enabled"
+        )
+
+    apollo = get_apollo_service()
+    if not apollo.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Apollo API not configured"
+        )
+
+    try:
+        # If query is provided, parse it for name/company
+        name = request.name
+        company = request.company
+        title = request.title
+
+        if request.query and not (name or company):
+            # Try to parse "Name at Company" format
+            query = request.query.strip()
+            if " at " in query.lower():
+                parts = query.lower().split(" at ", 1)
+                name = parts[0].strip().title()
+                company = parts[1].strip().title()
+            elif " @ " in query:
+                parts = query.split(" @ ", 1)
+                name = parts[0].strip()
+                company = parts[1].strip()
+            else:
+                name = query
+
+        results = apollo.search_linkedin_profiles(
+            name=name,
+            company=company,
+            title=title,
+            location=request.location,
+            linkedin_url=request.linkedin_url,
+            page=request.page,
+            per_page=request.per_page
+        )
+
+        return {
+            "profiles": [
+                LinkedInProfile(
+                    name=p.name,
+                    title=p.title,
+                    company=p.company,
+                    linkedin_url=p.linkedin_url,
+                    location=", ".join(filter(None, [p.city, p.state, p.country]))
+                ).model_dump()
+                for p in results
+            ],
+            "page": request.page,
+            "per_page": request.per_page
+        }
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=403,
+            detail="People search requires paid Apollo plan"
+        )
+    except Exception as e:
+        logger.error(f"LinkedIn search failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Search failed"
+        )
+
+
+# ==================
+# Admin Integration Settings
+# ==================
+
+class UpdateIntegrationSettingsRequest(BaseModel):
+    """Request to update integration settings"""
+    enabled: Optional[bool] = None
+    config: Optional[Dict[str, Any]] = None
+
+
+class IntegrationSettingsResponse(BaseModel):
+    """Integration settings response"""
+    id: str
+    name: str
+    description: str
+    icon: str
+    provider: str
+    requires_user_connection: bool
+    capabilities: List[str]
+    enabled: bool
+    config: Dict[str, Any]
+
+
+@router.get("/admin/all")
+async def list_all_integrations_admin(
+    auth: Dict = Depends(get_auth_header)
+) -> Dict[str, Any]:
+    """
+    List all integrations with their settings (admin).
+    Returns all registered integrations regardless of enabled status.
+    """
+    # TODO: Add proper admin role check here
+    # For now, any authenticated user can access
+    from services.integration_registry import get_integration_registry
+
+    registry = get_integration_registry()
+    all_integrations = registry.get_all_integrations()
+
+    results = []
+    for config in all_integrations:
+        settings = await registry.get_integration_settings(config.id)
+        results.append(IntegrationSettingsResponse(
+            id=config.id,
+            name=config.name,
+            description=config.description,
+            icon=config.icon,
+            provider=config.provider.value,
+            requires_user_connection=config.requires_user_connection,
+            capabilities=config.capabilities,
+            enabled=settings.get("enabled", config.default_enabled),
+            config=settings.get("config", {})
+        ).model_dump())
+
+    return {"integrations": results}
+
+
+@router.patch("/admin/{integration_id}")
+async def update_integration_settings(
+    integration_id: str,
+    request: UpdateIntegrationSettingsRequest,
+    auth: Dict = Depends(get_auth_header)
+) -> Dict[str, Any]:
+    """
+    Update settings for an integration (admin).
+    Can enable/disable and configure integrations.
+    """
+    # TODO: Add proper admin role check here
+    from services.integration_registry import get_integration_registry
+
+    registry = get_integration_registry()
+
+    if not registry.is_registered(integration_id):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Integration '{integration_id}' not found"
+        )
+
+    # Update enabled status
+    if request.enabled is not None:
+        success = await registry.set_enabled(integration_id, request.enabled)
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to update integration status"
+            )
+
+    # Update config
+    if request.config is not None:
+        success = await registry.update_integration_config(integration_id, request.config)
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to update integration config"
+            )
+
+    # Return updated settings
+    settings = await registry.get_integration_settings(integration_id)
+    return {"success": True, "settings": settings}

@@ -14,6 +14,8 @@ import ThinkingIndicator from '@/components/common/ThinkingIndicator';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { SlideSnapshotThumbnail } from '@/components/chat/blocks/SlideSnapshotThumbnail';
+import { IntegrationMentionBubble } from '@/components/chat';
+import { LinkedInSearchResults, type LinkedInProfile } from '@/components/chat/blocks';
 
 export type MessageType = 'ai' | 'user' | 'system';
 export type FeedbackType = 'positive' | 'negative' | null;
@@ -34,18 +36,61 @@ export interface ChatMessageProps {
     editSummary?: string;
     slideNumber?: number | null;
   };
+  /** Callback when user selects a LinkedIn profile from search results */
+  onSelectLinkedInProfile?: (profile: LinkedInProfile) => void;
+  /** Callback when user skips LinkedIn profile selection */
+  onSkipLinkedInSelection?: () => void;
+  /** Currently selected LinkedIn profile ID */
+  selectedLinkedInProfileId?: string;
 }
 
 
+// Known integration names for rendering mentions in messages
+const KNOWN_INTEGRATIONS: Record<string, string> = {
+  linkedin: 'LinkedIn',
+  salesforce: 'Salesforce',
+  hubspot: 'HubSpot',
+  gmail: 'Gmail',
+  notion: 'Notion',
+  slack: 'Slack',
+  'google-drive': 'Google Drive',
+  apollo: 'Apollo',
+};
+
 /**
- * Helper function to render text with **bold** markdown
+ * Helper function to render text with **bold** markdown and @integration mentions
  */
-const renderMarkdown = (text: string) => {
-  const parts = text.split(/(\*\*.*?\*\*)/g);
+const renderMarkdown = (text: string): React.ReactNode[] => {
+  // First, split by mentions and bold patterns
+  const mentionBoldRegex = /(@\w+|\*\*.*?\*\*)/g;
+  const parts = text.split(mentionBoldRegex);
+
   return parts.map((part, index) => {
+    // Handle bold markdown
     if (part.startsWith('**') && part.endsWith('**')) {
       return <strong key={index}>{part.slice(2, -2)}</strong>;
     }
+
+    // Handle integration mentions
+    if (part.startsWith('@')) {
+      const integrationId = part.slice(1).toLowerCase();
+      const integrationName = KNOWN_INTEGRATIONS[integrationId];
+
+      if (integrationName) {
+        return (
+          <IntegrationMentionBubble
+            key={index}
+            id={integrationId}
+            name={integrationName}
+            variant="message"
+            size="sm"
+          />
+        );
+      }
+      // Return as-is if not a known integration
+      return <span key={index}>{part}</span>;
+    }
+
     return <span key={index}>{part}</span>;
   });
 };
@@ -62,6 +107,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   metadata,
   inlineBelow,
   editAppliedData,
+  onSelectLinkedInProfile,
+  onSkipLinkedInSelection,
+  selectedLinkedInProfileId,
 }) => {
   const [feedback, setFeedback] = useState<FeedbackType>(null);
   const isToolRow = metadata?.type === 'agent_tool';
@@ -325,7 +373,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
           type === 'user'
             ? 'bg-transparent text-foreground border border-zinc-700/70 dark:border-[#929292]/80 max-w-[80%]'
             : type === 'system'
-            ? (metadata?.type === 'agent_plan' || metadata?.type === 'agent_tool' || metadata?.type === 'agent_selection' || metadata?.type === 'edit_applied' || metadata?.type === 'progress' || metadata?.type === 'generation_complete' || metadata?.stage === 'generation_complete')
+            ? (metadata?.type === 'agent_plan' || metadata?.type === 'agent_tool' || metadata?.type === 'agent_selection' || metadata?.type === 'edit_applied' || metadata?.type === 'progress' || metadata?.type === 'generation_complete' || metadata?.type === 'linkedin_profiles' || metadata?.stage === 'generation_complete')
               ? 'bg-transparent max-w-[80%]'
               : 'bg-muted max-w-[80%]'
             : isCompletionRow
@@ -402,6 +450,20 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                       isLoading={metadata.isLoading !== false}
                       showDuration={metadata.showDuration || 10000}
                       maxPreviewImages={10}
+                    />
+                  </div>
+                )}
+
+                {/* LinkedIn profile search results */}
+                {metadata?.type === 'linkedin_profiles' && (
+                  <div className="mt-2 -mx-1">
+                    <LinkedInSearchResults
+                      query={metadata.query || ''}
+                      profiles={metadata.profiles || []}
+                      isLoading={metadata.isLoading}
+                      selectedProfileId={selectedLinkedInProfileId}
+                      onSelectProfile={onSelectLinkedInProfile}
+                      onSkip={onSkipLinkedInSelection}
                     />
                   </div>
                 )}
@@ -531,6 +593,30 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                       Ready to edit
                     </span>
                   </div>
+                ) : metadata?.type === 'linkedin_profiles' ? (
+                  // LinkedIn profile search results (non-streaming)
+                  <div className="flex flex-col gap-2">
+                    <TypewriterText
+                      text={primaryMessage}
+                      delay={18}
+                      uppercase={false}
+                      fontSizePx={12}
+                      fontWeight={400}
+                      fontFamily="inherit"
+                      cursorColor={COLORS.SUGGESTION_PINK}
+                      renderMarkdown={true}
+                    />
+                    <div className="mt-2 -mx-1">
+                      <LinkedInSearchResults
+                        query={metadata.query || ''}
+                        profiles={metadata.profiles || []}
+                        isLoading={metadata.isLoading}
+                        selectedProfileId={selectedLinkedInProfileId}
+                        onSelectProfile={onSelectLinkedInProfile}
+                        onSkip={onSkipLinkedInSelection}
+                      />
+                    </div>
+                  </div>
                 ) : type === 'ai' ? (
                   <TypewriterText
                     text={primaryMessage}
@@ -610,6 +696,21 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Integration mentions on user messages */}
+          {type === 'user' && (metadata?.integrationMentions?.length ?? 0) > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {(metadata?.integrationMentions || []).map((mention: { id: string; name: string }) => (
+                <IntegrationMentionBubble
+                  key={`mention-${mention.id}`}
+                  id={mention.id}
+                  name={mention.name}
+                  variant="message"
+                  size="sm"
+                />
+              ))}
             </div>
           )}
 

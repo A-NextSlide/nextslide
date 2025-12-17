@@ -2720,9 +2720,15 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
             has_hover
         ])
 
-        # Require at least 1 interactivity feature (relaxed for debugging)
+        # Content-rich slides (substantial text) don't need interactivity
+        # This allows edit operations like "make text larger" to pass
+        if len(text_only) > 100:
+            logger.info(f"[CUSTOM_COMPONENT] Content-rich slide ({len(text_only)} chars) - PASSED without interactivity check")
+            return False
+
+        # Require interactivity only for low-content slides
         if interactivity_score < 1:
-            logger.warning(f"[CUSTOM_COMPONENT] Rejected: low interactivity score ({interactivity_score}/7)")
+            logger.warning(f"[CUSTOM_COMPONENT] Rejected: low interactivity score ({interactivity_score}/7) and low content ({len(text_only)} chars)")
             return True
         else:
             logger.info(f"[CUSTOM_COMPONENT] Interactivity score: {interactivity_score}/7 - PASSED")

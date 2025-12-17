@@ -275,27 +275,21 @@ function logScreenshotDebug(dataUrl: string, canvas: HTMLCanvasElement) {
 
 /**
  * Determines if a screenshot should be captured for an agent edit request.
- * Returns true for visual/layout-related requests where seeing the slide helps.
+ *
+ * ALWAYS captures when a slide/component is selected - the model decides
+ * whether to use the visual context for:
+ * - Fixing issues (needs to see what's wrong)
+ * - Major changes (needs to see current state)
+ * - Design/layout work (needs visual reference)
+ *
+ * The screenshot is small (~30-50KB JPEG) so the cost is minimal,
+ * but the benefit for visual understanding is huge.
  */
 export const shouldCaptureScreenshotForEdit = (
-  message: string,
+  _message: string,
   hasCustomComponentSelected: boolean
 ): boolean => {
-  if (!hasCustomComponentSelected) {
-    return false;
-  }
-
-  const lowerMessage = message.toLowerCase();
-
-  // Visual/layout keywords that benefit from seeing the slide
-  const visualKeywords = [
-    'fix', 'wrong', 'broken', 'looks', 'cropped', 'cut off', 'overlap',
-    'spacing', 'alignment', 'position', 'layout', 'size', 'too big', 'too small',
-    'adjust', 'move', 'center', 'align', 'resize', 'scale',
-    'visible', 'hidden', 'show', 'hide', 'missing', 'not showing',
-    'color', 'font', 'style', 'design', 'theme', 'logo', 'image',
-  ];
-
-  // Check if message contains any visual keywords
-  return visualKeywords.some(keyword => lowerMessage.includes(keyword));
+  // Always capture when there's a slide/component selected
+  // Let the model decide when it needs visual context
+  return hasCustomComponentSelected;
 };

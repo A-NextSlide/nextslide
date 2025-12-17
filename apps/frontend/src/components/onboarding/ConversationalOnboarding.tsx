@@ -6,9 +6,10 @@ import { Send, Sparkles, ArrowLeft, FileText, Upload, X, Link as LinkIcon, Image
 import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import { streamOutlineAgentChat, ChatMessage, AgentEvent, OutlineData, FileAttachment, generateSlideContent } from '@/services/outlineAgentService';
 import { fileToBase64, getFileCategory, formatFileSize, createImagePreview, revokeImagePreview } from '@/services/fileAnalysisService';
-import { ThinkingStatusDisplay, ThemeChatBlock, DropdownOutlineChatBlock } from '@/components/chat';
+import { ThinkingStatusDisplay, ThemeChatBlock, DropdownOutlineChatBlock, IntegrationMentionPopover, IntegrationMentionBubble } from '@/components/chat';
 import ThinkingIndicator from '@/components/common/ThinkingIndicator';
 import type { ThemeBlockData, OutlineBlockData, OutlineSlide, DropdownOutlineBlockData } from '@/components/chat';
+import { useIntegrationMentions } from '@/hooks/useIntegrationMentions';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { ThinkingStep, StatusPhase, STATUS_PHASES } from '@/types/agentEvents';
 import { ThemeEditorData, OutlinePreviewData, ThemeColorPalette } from '@/types/chatBlocks';
@@ -144,6 +145,17 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isAgentTyping, setIsAgentTyping] = useState(false);
+
+  // Integration @ mentions hook
+  const {
+    mentionState,
+    selectedMentions,
+    handleTextChange: handleMentionTextChange,
+    handleKeyDown: handleMentionKeyDown,
+    selectMention,
+    closeMentionPopover,
+    removeMention,
+  } = useIntegrationMentions();
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [collectedData, setCollectedData] = useState<CollectedData>({ slideCount });
@@ -1053,10 +1065,23 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
+    // Handle integration @ mention keyboard navigation
+    if (handleMentionKeyDown(e)) {
+      return; // Event was handled by mention system
+    }
+
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  // Handle input change with mention detection
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    const cursorPosition = e.target.selectionStart || newValue.length;
+    setInput(newValue);
+    handleMentionTextChange(newValue, cursorPosition, setInput);
   };
 
   // Auto-resize textarea
@@ -1815,12 +1840,41 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
               onDrop={handleDrop}
             >
               <div className="flex-1 relative">
+                {/* Integration Mention Popover */}
+                <IntegrationMentionPopover
+                  state={mentionState}
+                  onSelect={(integration) => selectMention(integration, input, setInput)}
+                  onClose={closeMentionPopover}
+                />
+
+                {/* Selected Integration Mentions */}
+                {selectedMentions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 px-4 pt-2">
+                    {selectedMentions.map((mention) => (
+                      <IntegrationMentionBubble
+                        key={mention.id}
+                        id={mention.id}
+                        name={mention.name}
+                        variant="input"
+                        size="sm"
+                        onRemove={() => removeMention(mention.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+
                 <textarea
                   ref={inputRef}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={handleInputChange}
                   onKeyDown={handleKeyPress}
-                  placeholder={isDraggingOver ? "Drop files here..." : (isAgentTyping ? "Type your next message..." : "Type your message or drag & drop files...")}
+                  placeholder={isDraggingOver
+                    ? "Drop files here..."
+                    : selectedMentions.length > 0
+                      ? `Ask about ${selectedMentions.map(m => m.name).join(', ')}...`
+                      : isAgentTyping
+                        ? "Type your next message..."
+                        : "Type your message or drag & drop files..."}
                   disabled={isProcessing}
                   className="w-full bg-transparent border-0 text-[#383636] dark:text-gray-200 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 pt-4 pb-4 pl-4 pr-2 resize-none text-base overflow-y-auto max-h-[400px] min-h-[60px] font-sans"
                   rows={1}

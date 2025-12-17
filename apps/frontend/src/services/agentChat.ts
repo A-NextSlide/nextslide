@@ -3,6 +3,7 @@ import { API_CONFIG } from '@/config/environment';
 export type AgentEvent =
   | { type: 'assistant.message.delta'; data: { delta: string; messageId?: string } }
   | { type: 'assistant.message.complete'; data: { messageId: string } }
+  | { type: 'assistant.linkedin_profiles'; data: { type: 'linkedin_profiles'; query: string; profiles: any[]; isLoading: boolean } }
   | { type: 'agent.plan.update'; data: { plan: Array<{ title: string }> } }
   | { type: 'agent.tool.start' | 'agent.tool.finish' | 'agent.tool.error'; data: { tool: string; status: 'start'|'finish'|'error'; detail?: any } }
   | { type: 'deck.edit.proposed'; data: { edit: { id: string; diff: any; summary?: string } } }

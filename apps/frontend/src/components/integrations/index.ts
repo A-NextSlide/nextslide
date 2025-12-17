@@ -8,3 +8,8 @@ export {
   IntegrationCommandPalette,
   useIntegrationCommand,
 } from './IntegrationCommandPalette';
+export {
+  IntegrationIcon,
+  getIntegrationColor,
+  hasIntegrationIcon,
+} from './IntegrationIcon';

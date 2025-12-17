@@ -13,6 +13,7 @@ import {
   Server,
   DollarSign,
   ExternalLink,
+  Plug,
 } from 'lucide-react';
 
 interface AdminLayoutV2Props {
@@ -21,11 +22,12 @@ interface AdminLayoutV2Props {
 
 const navItems = [
   { title: 'Overview', href: '/admin', icon: LayoutDashboard },
-  { title: 'Costs', href: '/admin/costs', icon: DollarSign },
   { title: 'Users', href: '/admin/users', icon: Users },
   { title: 'Decks', href: '/admin/decks', icon: FileStack },
+  { title: 'Integrations', href: '/admin/integrations', icon: Plug },
   { title: 'Brands', href: '/admin/brands', icon: Palette },
   { title: 'Services', href: '/admin/services', icon: Server },
+  { title: 'Costs', href: '/admin/costs', icon: DollarSign },
 ];
 
 const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {

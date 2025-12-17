@@ -46,6 +46,7 @@ import AdminBrands from './pages/admin/AdminBrands';
 import AdminServices from './pages/admin/AdminServices';
 import AdminCosts from './pages/admin/AdminCosts';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
+import AdminIntegrations from './pages/admin/AdminIntegrations';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
 import TemporaryPasswordGate from './components/TemporaryPasswordGate';
 import SmartGallery from './pages/SmartGallery';
@@ -340,8 +341,10 @@ const AppContent = () => {
           <DeckMonitor onChange={handleDeckDataChange} />
           <TemporaryPasswordGate enabled={false} password={import.meta.env.VITE_TEMP_GATE_PASSWORD || 'NextBeta'}>
             <Routes>
-              {/* Legacy alias: redirect settings/integrations to profile integrations */}
-              <Route path="/settings/integrations" element={<RouteRedirect to="/profile?tab=integrations" />} />
+              {/* Legacy alias: redirect settings/integrations to admin integrations page */}
+              <Route path="/settings/integrations" element={<RouteRedirect to="/admin/integrations" />} />
+              {/* Redirect old /integrations to admin */}
+              <Route path="/integrations" element={<RouteRedirect to="/admin/integrations" />} />
               <Route path="/" element={<Landing />} />
               <Route
                 path="/app"
@@ -495,6 +498,14 @@ const AppContent = () => {
                 element={
                   <AdminProtectedRoute>
                     <AdminDecks />
+                  </AdminProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/integrations"
+                element={
+                  <AdminProtectedRoute>
+                    <AdminIntegrations />
                   </AdminProtectedRoute>
                 }
               />

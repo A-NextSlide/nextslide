@@ -236,3 +236,128 @@ export function getConnectedIntegrations(
 ): IntegrationInfo[] {
   return integrations.filter((i) => i.connected);
 }
+
+
+// ==================
+// Enabled Integrations (for @ mentions)
+// ==================
+
+export interface EnabledIntegration {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  capabilities: string[];
+}
+
+/**
+ * Get system-enabled integrations for @ mentions
+ */
+export async function getEnabledIntegrations(): Promise<EnabledIntegration[]> {
+  const response = await apiClient.get<{ integrations: EnabledIntegration[] }>(
+    '/api/integrations/enabled'
+  );
+
+  if (!response.ok) {
+    throw new Error(response.error || 'Failed to fetch enabled integrations');
+  }
+
+  return response.data?.integrations || [];
+}
+
+
+// ==================
+// LinkedIn Search
+// ==================
+
+export interface LinkedInSearchParams {
+  query?: string;
+  name?: string;
+  company?: string;
+  title?: string;
+  location?: string;
+  linkedin_url?: string;
+  page?: number;
+  per_page?: number;
+}
+
+export interface LinkedInProfile {
+  name: string;
+  title?: string;
+  company?: string;
+  linkedin_url?: string;
+  location?: string;
+}
+
+export interface LinkedInSearchResponse {
+  profiles: LinkedInProfile[];
+  page: number;
+  per_page: number;
+}
+
+/**
+ * Search LinkedIn profiles via Apollo
+ */
+export async function searchLinkedIn(
+  params: LinkedInSearchParams
+): Promise<LinkedInSearchResponse> {
+  const response = await apiClient.post<LinkedInSearchResponse>(
+    '/api/integrations/linkedin/search',
+    params
+  );
+
+  if (!response.ok) {
+    throw new Error(response.error || 'LinkedIn search failed');
+  }
+
+  return response.data!;
+}
+
+
+// ==================
+// Admin Integration Settings
+// ==================
+
+export interface IntegrationSettings {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  provider: string;
+  requires_user_connection: boolean;
+  capabilities: string[];
+  enabled: boolean;
+  config: Record<string, unknown>;
+}
+
+/**
+ * Get all integrations with admin settings
+ */
+export async function getAllIntegrationsAdmin(): Promise<IntegrationSettings[]> {
+  const response = await apiClient.get<{ integrations: IntegrationSettings[] }>(
+    '/api/integrations/admin/all'
+  );
+
+  if (!response.ok) {
+    throw new Error(response.error || 'Failed to fetch integrations');
+  }
+
+  return response.data?.integrations || [];
+}
+
+/**
+ * Update integration settings (admin)
+ */
+export async function updateIntegrationSettings(
+  integrationId: string,
+  settings: { enabled?: boolean; config?: Record<string, unknown> }
+): Promise<void> {
+  const response = await apiClient.patch(
+    `/api/integrations/admin/${integrationId}`,
+    settings
+  );
+
+  if (!response.ok) {
+    throw new Error(response.error || 'Failed to update integration');
+  }
+}
