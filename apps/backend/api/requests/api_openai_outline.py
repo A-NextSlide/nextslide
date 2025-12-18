@@ -575,10 +575,10 @@ Be smart about context - distinguish common words from brand references:
 Return ONLY valid JSON: {{"brand": "Brand Name", "domain": "brand.com"}} or {{"brand": null, "domain": null}}"""
 
         from agents.config import BRAND_DETECTION_MODEL
-        client = get_client(BRAND_DETECTION_MODEL)
+        client, actual_model = get_client(BRAND_DETECTION_MODEL)
         response = invoke(
             client=client,
-            model=BRAND_DETECTION_MODEL,
+            model=actual_model,
             messages=[{"role": "user", "content": brand_prompt}],
             max_tokens=100,
             temperature=0

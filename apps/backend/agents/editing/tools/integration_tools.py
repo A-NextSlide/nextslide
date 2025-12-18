@@ -26,6 +26,7 @@ The orchestrator will automatically:
 This allows any integration to feed data into slide creation without hardcoding.
 """
 
+import os
 from typing import Dict, List, Optional, Any, Callable
 import logging
 import asyncio
@@ -34,6 +35,136 @@ from models.deck import DeckDiff, DeckDiffBase
 from models.registry import ComponentRegistry
 
 logger = logging.getLogger(__name__)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WEB SEARCH TOOL - Uses Perplexity for real-time data
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def web_search(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry: ComponentRegistry = None,
+    attachments: List[Dict] = None,
+    event_cb: Callable = None,
+) -> DeckDiff:
+    """
+    Search the web for current information, facts, and data using Perplexity.
+
+    Use this when user asks to:
+    - Improve/update/replace content with real data
+    - Add statistics, facts, or current information
+    - Research a topic for accurate content
+
+    Args:
+        args: Tool arguments
+            - query: Search query string
+        deck_data: Full deck object (unused)
+        current_slide: Currently selected slide (unused)
+        registry: Component registry (unused)
+        attachments: User-uploaded files (unused)
+        event_cb: Callback for streaming events (unused)
+
+    Returns:
+        DeckDiff with search results in observation for context injection
+    """
+    from agents.ai.clients import get_client
+
+    query = args.get("query", "")
+    if not query:
+        logger.warning("[WebSearch] No query provided")
+        diff = DeckDiff(DeckDiffBase())
+        diff.observation = {
+            "integration": "web_search",
+            "type": "research",
+            "data": [],
+            "query": query,
+            "error": "No query provided"
+        }
+        return diff
+
+    logger.info(f"[WebSearch] Searching for: {query}")
+
+    # Check if Perplexity API key is available
+    if not (os.getenv("PPLX_API_KEY") or os.getenv("PERPLEXITY_API_KEY")):
+        logger.warning("[WebSearch] Perplexity API key not set")
+        diff = DeckDiff(DeckDiffBase())
+        diff.observation = {
+            "integration": "web_search",
+            "type": "research",
+            "data": [],
+            "query": query,
+            "error": "Perplexity API key not configured"
+        }
+        return diff
+
+    try:
+        client, model = get_client("perplexity-sonar", wrap_with_instructor=False)
+
+        # Focused prompt for slide content improvement
+        system_prompt = """You are a research assistant helping improve presentation content.
+Provide accurate, current information with specific facts, numbers, and statistics.
+Focus on concrete data that can be directly used to update slide text.
+Keep responses concise and factual - just the key points and data."""
+
+        response = client.chat.completions.create(
+            model="sonar",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": query}
+            ],
+            max_tokens=5000,
+            extra_body={
+                "return_citations": True,
+                "search_recency_filter": "month"
+            }
+        )
+
+        content = response.choices[0].message.content
+
+        # Extract citations
+        citations = []
+        if hasattr(response, 'citations'):
+            for cit in response.citations:
+                if isinstance(cit, str):
+                    citations.append(cit)
+                elif isinstance(cit, dict):
+                    citations.append(cit.get('url', str(cit)))
+
+        logger.info(f"[WebSearch] Research completed: {len(content)} chars, {len(citations)} citations")
+
+        # Return as observation for context injection
+        diff = DeckDiff(DeckDiffBase())
+        diff.observation = {
+            "integration": "web_search",
+            "type": "research",
+            "data": [{
+                "content": content,
+                "citations": citations,
+                "query": query
+            }],
+            "query": query,
+            "source": "perplexity"
+        }
+        return diff
+
+    except Exception as e:
+        logger.error(f"[WebSearch] Research failed: {e}")
+        diff = DeckDiff(DeckDiffBase())
+        diff.observation = {
+            "integration": "web_search",
+            "type": "research",
+            "data": [],
+            "query": query,
+            "error": str(e)
+        }
+        return diff
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LINKEDIN LOOKUP TOOL
+# ═══════════════════════════════════════════════════════════════════════════════
 
 
 async def _search_profile_photos_fallback(name: str, company: Optional[str] = None) -> List[Dict[str, Any]]:

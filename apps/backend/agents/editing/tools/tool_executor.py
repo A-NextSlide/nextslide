@@ -21,6 +21,7 @@ def execute_tool(
     registry: ComponentRegistry = None,
     attachments: List[Dict] = None,
     event_cb: Callable = None,
+    chat_history: List[Dict] = None,
 ) -> DeckDiff:
     """
     Execute a tool by name.
@@ -33,6 +34,7 @@ def execute_tool(
         registry: Component registry
         attachments: User-uploaded files
         event_cb: Optional callback for streaming events (for tools like linkedin_lookup)
+        chat_history: Full chat history for context (user messages AND assistant responses)
 
     Returns:
         DeckDiff with changes to apply
@@ -63,7 +65,7 @@ def execute_tool(
         replace_image_from_search,
         edit_image_with_ai,
     )
-    from agents.editing.tools.integration_tools import linkedin_lookup
+    from agents.editing.tools.integration_tools import linkedin_lookup, web_search
 
     # Tool map
     TOOLS = {
@@ -86,10 +88,14 @@ def execute_tool(
         "replace_image": replace_image_from_search,
         "edit_image_with_ai": edit_image_with_ai,
         "linkedin_lookup": linkedin_lookup,
+        "web_search": web_search,
     }
 
     # Tools that need event_cb for streaming
     STREAMING_TOOLS = {"linkedin_lookup"}
+
+    # Tools that need chat_history for context-aware generation
+    CHAT_CONTEXT_TOOLS = {"create_slide", "edit_slide", "custom_component_rewrite"}
 
     if tool_name not in TOOLS:
         logger.error(f"Unknown tool: {tool_name}")
@@ -97,7 +103,7 @@ def execute_tool(
 
     tool_fn = TOOLS[tool_name]
 
-    # Execute tool - pass event_cb for streaming tools
+    # Execute tool - pass appropriate context based on tool type
     if tool_name in STREAMING_TOOLS:
         return tool_fn(
             args=tool_args,
@@ -106,6 +112,15 @@ def execute_tool(
             registry=registry,
             attachments=attachments,
             event_cb=event_cb,
+        )
+    elif tool_name in CHAT_CONTEXT_TOOLS:
+        return tool_fn(
+            args=tool_args,
+            deck_data=deck_data,
+            current_slide=current_slide,
+            registry=registry,
+            attachments=attachments,
+            chat_history=chat_history,
         )
     else:
         return tool_fn(

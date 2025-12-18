@@ -371,15 +371,18 @@ async def _smart_extract_relevant_sections(
     This is much more token-efficient than sending the entire document.
     ~15k chars ≈ 4k tokens, which is very reasonable.
     """
-    from agents.ai_clients import get_client
     from agents.config import CLAUDE_HAIKU
+    from agents.ai.clients import get_model_id
+    import anthropic
 
     # If text is already short, just return it
     if len(full_text) <= max_output_chars:
         return full_text
 
     try:
-        client = get_client(CLAUDE_HAIKU)
+        # Use async Anthropic client directly for async context
+        client = anthropic.AsyncAnthropic()
+        actual_model = get_model_id(CLAUDE_HAIKU)
 
         # Split into chunks for analysis (Haiku can handle ~100k tokens)
         # We'll send the full text and ask it to extract relevant parts
@@ -402,7 +405,7 @@ OUTPUT FORMAT:
 Return only the extracted relevant text, with section headers if present."""
 
         response = await client.messages.create(
-            model=CLAUDE_HAIKU,
+            model=actual_model,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}]
         )

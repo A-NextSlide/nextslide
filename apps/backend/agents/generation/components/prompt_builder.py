@@ -652,23 +652,43 @@ class SlidePromptBuilder:
 
         # Detect if user has provided specific content (more than just a title/topic)
         has_user_content = False
+        has_citations = False
         if context.slide_outline.content:
             content_words = context.slide_outline.content.strip().split()
             # If content has more than 10 words, likely user-provided specific content
             has_user_content = len(content_words) > 10
+            # Check if content contains citation markers [1], [2], etc.
+            import re
+            has_citations = bool(re.search(r'\[\d+\]', context.slide_outline.content))
 
         if has_user_content:
             sections.extend([
-                "\n** CRITICAL: USER HAS PROVIDED SPECIFIC CONTENT FOR THIS SLIDE!",
-                "- Use the EXACT content provided in the outline - DO NOT add research or additional information",
-                "- DO NOT expand, elaborate, or add extra details beyond what the user specified",
-                "- DO NOT add examples, statistics, or research unless explicitly in the provided content",
+                "\n** CRITICAL: THE OUTLINE CONTENT IS YOUR SOURCE OF TRUTH!",
+                "- The content field contains RESEARCHED, VERIFIED information - treat it as authoritative",
+                "- Use the EXACT facts, statistics, and data from the content - DO NOT make up or modify numbers",
+                "- DO NOT expand, elaborate, or add additional research beyond what's provided",
                 "- Your job is to DESIGN and LAYOUT the provided content beautifully, not to add to it",
-                "- You MUST include ALL text from the outline content verbatim on the slide",
+                "- You MUST include ALL key information from the outline content on the slide",
                 "- The title should be prominently displayed",
                 "- Split the content across TiptapTextBlocks for optimal layout and readability",
                 "- Focus on visual design, typography, and spacing - NOT on adding content"
             ])
+
+            # If content has citations, add special handling with consistent design
+            if has_citations:
+                sections.extend([
+                    "",
+                    "** CITATION FOOTER DESIGN (MANDATORY - consistent on every slide with citations):",
+                    "- Keep citation markers [1], [2] inline with the text as superscript",
+                    "- Add a citation footer in the BOTTOM-RIGHT corner of the slide",
+                    "- Footer style: position absolute, bottom 20px, right 30px",
+                    "- Font size: 9px, muted color (50-60% opacity)",
+                    "- Format: 'Sources: [1] domain.com · [2] domain.com'",
+                    "- Links must be clickable (target='_blank')",
+                    "- Show domain names only, not full URLs",
+                    "- Keep it compact - one line if possible",
+                    "- Citations indicate this is RESEARCHED content - do not modify the cited facts"
+                ])
         else:
             sections.extend([
                 "\n** CRITICAL: PRESENTATIONS MUST BE PUNCHY BUT SUBSTANTIVE!",

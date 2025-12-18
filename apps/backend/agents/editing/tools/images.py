@@ -77,7 +77,11 @@ def _extract_slide_context(current_slide: Dict, render_html: str = None) -> Dict
 
 
 def _is_query_vague(query: str) -> bool:
-    """Check if the query is too vague/generic."""
+    """Check if the query is too vague/generic. Logo queries are never vague."""
+    # Logo queries are specific brand names - never enhance them
+    if 'logo' in query.lower():
+        return False
+
     words = set(query.lower().split())
     vague_count = len(words & VAGUE_QUERY_TERMS)
     # If more than half the words are vague, or it's a single vague word
@@ -238,25 +242,27 @@ def search_images(
             logger.warning("[SEARCH_IMAGES] SERP API not available (no API key)")
             return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-        # Search for images with validation
+        # Search for images - same parameters as slide generation for consistency
+        # Get top 10 results ranked by Google, pick best (first valid) like ImagePicker shows
         async def do_search_with_validation():
             results = await serpapi.search_images(
                 query=query,
-                per_page=num_results * 3,  # Get extra in case some are invalid
-                orientation=orientation
+                per_page=10,  # Same as slide generation - top 10 Google-ranked results
+                size="large"  # Same as slide generation
             )
             photos = results.get("photos", [])
+            logger.info(f"[SEARCH_IMAGES] Got {len(photos)} results for '{query}'")
 
-            # Validate URLs and return first valid ones
+            # Filter valid URLs - pick in order (Google ranks best first)
             valid_photos = []
-            for photo in photos:
-                if len(valid_photos) >= num_results:
-                    break
-                url = photo.get("url") or photo.get("src", {}).get("large")
-                if url:
-                    # Quick validation - check if URL looks valid
-                    if url.startswith("http") and not any(x in url.lower() for x in ['placeholder', 'dummy', 'example.com']):
-                        valid_photos.append(photo)
+            for photo in photos[:10]:
+                url = photo.get("original") or photo.get("url") or photo.get("src", {}).get("original")
+                if url and url.startswith("http") and not url.startswith("data:"):
+                    if not any(x in url.lower() for x in ['placeholder', 'dummy', 'example.com']):
+                        valid_photos.append({"url": url, "alt": photo.get("alt", query)})
+                        if len(valid_photos) >= num_results:
+                            break
+            logger.info(f"[SEARCH_IMAGES] 🎯 Picking best from {len(valid_photos)} valid results")
             return valid_photos
 
         photos = loop.run_until_complete(do_search_with_validation())
@@ -264,10 +270,11 @@ def search_images(
         logger.info(f"[SEARCH_IMAGES] Found {len(photos)} valid images for '{query}'")
 
         # Get the best image URL and upload to Supabase
+        # Photos are already filtered and sorted by Google's ranking (best first)
         best_image_url = None
         best_image_alt = query
         for photo in photos:
-            url = photo.get("url") or photo.get("src", {}).get("large")
+            url = photo.get("url")
             if url:
                 # CRITICAL: Upload to Supabase first, like slide generation does
                 # This ensures images are in our bucket and won't break/expire
@@ -276,7 +283,7 @@ def search_images(
                 if success:
                     best_image_url = uploaded_url
                     best_image_alt = photo.get("alt", query)
-                    logger.info(f"[SEARCH_IMAGES] Using Supabase URL: {best_image_url[:60]}...")
+                    logger.info(f"[SEARCH_IMAGES] ✅ Best match uploaded: {best_image_url[:60]}...")
                     break
                 else:
                     # Try next image if upload failed

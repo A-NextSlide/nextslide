@@ -13,6 +13,7 @@ GEMINI_FLASH = "gemini-2.5-flash"
 GEMINI_FLASH_LITE = "gemini-2.5-flash-lite"
 GEMINI_PRO = "gemini-2.5-pro"
 GEMINI_3_PRO = "gemini-3-pro-preview"
+GEMINI_3_FLASH = "gemini-3-flash-preview"  # Available but not used yet
 GEMINI_IMAGE = "gemini-2.0-flash-exp"
 
 # Claude Models
@@ -97,7 +98,7 @@ VISUAL_ANALYZER_MODEL = MODEL_EASY
 OUTLINE_MODEL = MODEL_RESEARCH
 OUTLINE_PRESENTATION_MODEL = MODEL_EASY
 OUTLINE_RESEARCH_MODEL = MODEL_EASY
-OUTLINE_AGENT_MODEL = CLAUDE_SONNET  # Keep Sonnet for conversational outline
+OUTLINE_AGENT_MODEL = GEMINI_3_FLASH  # Fast Gemini model with function calling
 
 # Deck Editing
 ORCHESTRATOR_MODEL = MODEL_EASY  # Changed from Opus to Haiku

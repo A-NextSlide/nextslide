@@ -382,10 +382,12 @@ IMPORTANT:
 
             logger.info(f"[ThemeAgent] 🎬 Fetching videos from: {domain}")
 
-            # Set timeout for video fetching
+            # Set timeout for video fetching (longer for browser-based scraping)
             try:
-                async with asyncio.timeout(10):
-                    videos = await get_brand_videos(domain, max_videos)
+                async with asyncio.timeout(30):
+                    videos = await get_brand_videos(domain, max_videos, use_browser=True)
+                    if videos:
+                        logger.info(f"[ThemeAgent] 🎬 Found {len(videos)} videos from {domain}")
                     return videos
             except asyncio.TimeoutError:
                 logger.warning(f"[ThemeAgent] Video fetch timeout for {domain}")

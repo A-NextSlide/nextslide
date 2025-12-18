@@ -118,10 +118,15 @@ class FileDesignExtractor:
         intent = self._detect_intent(user_message)
         slide_style = self._detect_slide_style(user_message)
 
+        # Check if user requested specific pages
+        specific_pages = self._detect_page_requests(user_message)
+
         logger.info(f"[FileExtractor] Detected intent: {intent.value}, style: {slide_style.value}")
+        if specific_pages:
+            logger.info(f"[FileExtractor] User requested specific pages: {specific_pages}")
 
         # Convert file to images for vision analysis
-        images = await self._convert_to_images(file_content, filename, file_type)
+        images = await self._convert_to_images(file_content, filename, file_type, specific_pages=specific_pages)
 
         if not images:
             logger.warning(f"[FileExtractor] Could not convert {filename} to images")
@@ -263,11 +268,45 @@ class FileDesignExtractor:
         # Default to auto
         return SlideStyle.AUTO
 
+    def _detect_page_requests(self, message: str) -> List[int]:
+        """
+        Detect specific page requests from user message.
+
+        Supports:
+        - "page 5" or "pg 5"
+        - "pages 5-10" or "pages 5 to 10"
+        - "page 5, 7, 9" or "pages 5, 7, and 9"
+        - "slide 3" (treated as page)
+
+        Returns list of 1-indexed page numbers.
+        """
+        import re
+        pages = set()
+
+        # Pattern for page ranges: "pages 5-10", "pages 5 to 10"
+        range_pattern = r'(?:pages?|slides?|pg)\s*(\d+)\s*(?:-|to)\s*(\d+)'
+        for match in re.finditer(range_pattern, message.lower()):
+            start, end = int(match.group(1)), int(match.group(2))
+            pages.update(range(start, min(end + 1, start + 20)))  # Cap at 20 pages
+
+        # Pattern for single pages: "page 5", "pages 5, 7, 9"
+        single_pattern = r'(?:pages?|slides?|pg)\s*([\d,\s]+)'
+        for match in re.finditer(single_pattern, message.lower()):
+            nums = re.findall(r'\d+', match.group(1))
+            pages.update(int(n) for n in nums)
+
+        # Remove any that were already captured by range
+        result = sorted(list(pages))[:20]  # Cap at 20 pages
+        if result:
+            logger.info(f"[FileExtractor] Detected page requests: {result}")
+        return result
+
     async def _convert_to_images(
         self,
         file_content: str,
         filename: str,
-        file_type: str
+        file_type: str,
+        specific_pages: List[int] = None
     ) -> List[str]:
         """Convert file to base64 images for vision analysis"""
         images = []
@@ -279,7 +318,7 @@ class FileDesignExtractor:
             self.temp_dir = tempfile.mkdtemp(prefix="file_extract_")
 
             if file_type == "application/pdf" or filename.lower().endswith(".pdf"):
-                images = await self._pdf_to_images(raw_bytes)
+                images = await self._pdf_to_images(raw_bytes, specific_pages=specific_pages)
             elif "presentation" in file_type or filename.lower().endswith((".pptx", ".ppt")):
                 images = await self._pptx_to_images(raw_bytes)
             elif file_type.startswith("image/"):
@@ -299,18 +338,69 @@ class FileDesignExtractor:
 
         return images
 
-    async def _pdf_to_images(self, pdf_bytes: bytes) -> List[str]:
-        """Convert PDF pages to images"""
+    async def _pdf_to_images(self, pdf_bytes: bytes, specific_pages: List[int] = None) -> List[str]:
+        """
+        Convert PDF pages to images.
+
+        Strategy: First 5 + Last 5 pages (or specific pages if requested)
+        This gives good coverage of document content without processing all pages.
+
+        Args:
+            pdf_bytes: Raw PDF bytes
+            specific_pages: Optional list of specific page numbers (1-indexed) to extract
+        """
         images = []
+
+        # Get total page count first
+        try:
+            import pypdf
+            pdf_reader = pypdf.PdfReader(BytesIO(pdf_bytes))
+            total_pages = len(pdf_reader.pages)
+            logger.info(f"[FileExtractor] PDF has {total_pages} total pages")
+        except Exception as e:
+            logger.warning(f"[FileExtractor] Could not get page count: {e}")
+            total_pages = 100  # Fallback assumption
+
+        # Determine which pages to extract
+        # ALWAYS include page 1 (title) and last page for context
+        if specific_pages:
+            # User requested specific pages - but always include title + last
+            pages_set = set(specific_pages)
+            pages_set.add(1)  # Always include title page
+            pages_set.add(total_pages)  # Always include last page
+            pages_to_extract = sorted([p for p in pages_set if 1 <= p <= total_pages])
+            logger.info(f"[FileExtractor] Extracting specific pages + title/last: {pages_to_extract}")
+        elif total_pages <= 10:
+            # Small document - get all pages
+            pages_to_extract = list(range(1, total_pages + 1))
+        else:
+            # First 5 + Last 5 (always includes page 1 and last page)
+            first_pages = list(range(1, 6))  # Pages 1-5
+            last_pages = list(range(max(6, total_pages - 4), total_pages + 1))  # Last 5
+            pages_to_extract = first_pages + last_pages
+            logger.info(f"[FileExtractor] Extracting first 5 + last 5: {pages_to_extract}")
+
         try:
             from pdf2image import convert_from_bytes
-            pil_images = convert_from_bytes(pdf_bytes, first_page=1, last_page=10, dpi=150)
 
-            for img in pil_images:
-                buffered = BytesIO()
-                img.save(buffered, format="PNG")
-                img_b64 = base64.b64encode(buffered.getvalue()).decode()
-                images.append(img_b64)
+            # Extract each page individually for flexibility
+            for page_num in pages_to_extract:
+                try:
+                    pil_images = convert_from_bytes(
+                        pdf_bytes,
+                        first_page=page_num,
+                        last_page=page_num,
+                        dpi=150
+                    )
+                    if pil_images:
+                        buffered = BytesIO()
+                        pil_images[0].save(buffered, format="PNG")
+                        img_b64 = base64.b64encode(buffered.getvalue()).decode()
+                        images.append(img_b64)
+                except Exception as page_err:
+                    logger.warning(f"[FileExtractor] Could not extract page {page_num}: {page_err}")
+
+            logger.info(f"[FileExtractor] Extracted {len(images)} page images")
 
         except ImportError:
             logger.warning("[FileExtractor] pdf2image not installed, trying alternative")
@@ -320,16 +410,21 @@ class FileDesignExtractor:
                 with open(pdf_path, "wb") as f:
                     f.write(pdf_bytes)
 
-                output_prefix = os.path.join(self.temp_dir, "page")
-                subprocess.run(
-                    ["pdftoppm", "-png", "-r", "150", "-l", "10", pdf_path, output_prefix],
-                    capture_output=True, timeout=60
-                )
+                # Extract specific pages using pdftoppm
+                for page_num in pages_to_extract:
+                    output_prefix = os.path.join(self.temp_dir, f"page_{page_num}")
+                    subprocess.run(
+                        ["pdftoppm", "-png", "-r", "150", "-f", str(page_num), "-l", str(page_num), pdf_path, output_prefix],
+                        capture_output=True, timeout=30
+                    )
 
-                for img_path in sorted(Path(self.temp_dir).glob("page-*.png")):
-                    with open(img_path, "rb") as f:
-                        img_b64 = base64.b64encode(f.read()).decode()
-                        images.append(img_b64)
+                    # Find the generated file
+                    for img_path in Path(self.temp_dir).glob(f"page_{page_num}*.png"):
+                        with open(img_path, "rb") as f:
+                            img_b64 = base64.b64encode(f.read()).decode()
+                            images.append(img_b64)
+                        break
+
             except Exception as e:
                 logger.error(f"[FileExtractor] PDF conversion failed: {e}")
 
@@ -646,11 +741,12 @@ Return a JSON object:
         try:
             raw_bytes = base64.b64decode(file_content)
 
-            # Only extract from PPTX for now (PPTX has embedded images we can extract)
+            # Extract from PPTX
             if "presentation" in file_type or filename.lower().endswith((".pptx", ".ppt")):
                 extracted_urls = await self._extract_pptx_images(raw_bytes, filename)
-            # PDF image extraction is more complex, skip for now
-            # Images uploaded directly are already handled separately
+            # Extract from PDF
+            elif "pdf" in file_type or filename.lower().endswith(".pdf"):
+                extracted_urls = await self._extract_pdf_images(raw_bytes, filename)
 
         except Exception as e:
             logger.error(f"[FileExtractor] Image extraction failed: {e}")
@@ -721,6 +817,85 @@ Return a JSON object:
             logger.warning("[FileExtractor] python-pptx not installed, skipping image extraction")
         except Exception as e:
             logger.error(f"[FileExtractor] PPTX image extraction error: {e}")
+
+        return image_urls
+
+    async def _extract_pdf_images(self, pdf_bytes: bytes, filename: str) -> List[str]:
+        """Extract images from a PDF file and upload to storage."""
+        from services.image_storage_service import ImageStorageService
+
+        image_urls = []
+
+        try:
+            import fitz  # PyMuPDF
+
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            logger.info(f"[FileExtractor] Extracting images from PDF: {len(doc)} pages")
+
+            async with ImageStorageService() as storage:
+                img_counter = 0
+                max_images = 20  # Limit to prevent excessive uploads
+
+                for page_idx, page in enumerate(doc):
+                    if img_counter >= max_images:
+                        logger.info(f"[FileExtractor] Reached max image limit ({max_images})")
+                        break
+
+                    # Get images on this page
+                    image_list = page.get_images()
+
+                    for img_info in image_list:
+                        if img_counter >= max_images:
+                            break
+
+                        try:
+                            xref = img_info[0]  # Image reference number
+                            base_image = doc.extract_image(xref)
+
+                            if not base_image:
+                                continue
+
+                            image_bytes = base_image["image"]
+                            image_ext = base_image.get("ext", "png")
+
+                            # Skip very small images (likely icons/bullets)
+                            if len(image_bytes) < 5000:  # < 5KB
+                                continue
+
+                            # Determine content type
+                            content_type = f"image/{image_ext}"
+                            if image_ext == "jpg":
+                                content_type = "image/jpeg"
+
+                            # Convert to base64
+                            image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+
+                            # Upload to storage
+                            img_counter += 1
+                            upload_filename = f"extracted_page{page_idx + 1}_img{img_counter}.{image_ext}"
+                            result = await storage.upload_image_from_base64(
+                                image_b64,
+                                filename=upload_filename,
+                                content_type=content_type,
+                                folder="pdf-extracted"
+                            )
+
+                            if result and result.get('url'):
+                                url = result['url'].split('?')[0]  # Remove query params
+                                image_urls.append(url)
+                                logger.info(f"[FileExtractor] Uploaded PDF image {img_counter} from page {page_idx + 1}")
+
+                        except Exception as img_err:
+                            logger.warning(f"[FileExtractor] Failed to extract image from PDF: {img_err}")
+                            continue
+
+            doc.close()
+            logger.info(f"[FileExtractor] Extracted {len(image_urls)} images from PDF")
+
+        except ImportError:
+            logger.warning("[FileExtractor] PyMuPDF (fitz) not installed, skipping PDF image extraction")
+        except Exception as e:
+            logger.error(f"[FileExtractor] PDF image extraction error: {e}")
 
         return image_urls
 

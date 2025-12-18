@@ -179,7 +179,7 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
 async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> str:
     """
     Use AI to enhance a vague image query into a specific, photographable scene.
-    IMPORTANT: Preserves named entities (characters, people, brands) - only enhances generic concepts.
+    Uses the same high-quality prompting as the image picker for better results.
     Returns the original query if enhancement fails.
     """
     from agents.ai.clients import get_client, invoke
@@ -188,28 +188,59 @@ async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> s
     try:
         client, model_name = get_client(IMAGE_SEARCH_MODEL)
 
-        prompt = f"""Optimize this image search query for Google Images.
+        # Extract brand from context if present (try BRAND: first, then Topic:, then Deck:)
+        import re
+        brand_match = ""
+        if "BRAND:" in slide_context:
+            brand_search = re.search(r'BRAND:\s*([^\|]+)', slide_context)
+            if brand_search:
+                brand_match = brand_search.group(1).strip()
+        if not brand_match and "Topic:" in slide_context:
+            # Topic often contains the domain/company like "apple.com" or "Dyna Robotics"
+            topic_search = re.search(r'Topic:\s*([^\|]+)', slide_context)
+            if topic_search:
+                topic = topic_search.group(1).strip()
+                # Clean up domain format: "apple.com" -> "Apple"
+                if '.com' in topic or '.ai' in topic or '.io' in topic:
+                    brand_match = topic.split('.')[0].title()
+                else:
+                    brand_match = topic
+        if not brand_match and "Deck:" in slide_context:
+            deck_search = re.search(r'Deck:\s*([^\|]+)', slide_context)
+            if deck_search:
+                brand_match = deck_search.group(1).strip()
 
-ORIGINAL QUERY: {query}
-CONTEXT: {slide_context[:300] if slide_context else 'Presentation slide'}
+        if brand_match:
+            print(f"[POST_SEARCH] 🏷️ Extracted brand for query enhancement: '{brand_match}'")
 
-CRITICAL RULES:
-1. If the query contains a NAMED ENTITY (character name, person name, brand, place), KEEP THE NAME!
-   - "Krillin" → "Krillin Dragon Ball" (NOT "bald anime martial artist")
-   - "Goku fighting" → "Goku Dragon Ball fighting" (NOT "spiky hair anime fighter")
-   - "Elon Musk" → "Elon Musk portrait" (keep the name!)
-   - "Tesla car" → "Tesla Model S" (keep brand name!)
+        prompt = f"""Convert this image description into a SPECIFIC, PHOTOGRAPHABLE Google Images search query.
 
-2. ONLY for vague/generic concepts, transform into photographable scenes:
-   - "analytics" → "data analyst reviewing dashboard"
-   - "growth" → "business growth chart"
-   - "teamwork" → "business team meeting"
+DESCRIPTION: {query}
+CONTEXT: {slide_context[:500] if slide_context else 'Presentation slide'}
+{f"BRAND/COMPANY: {brand_match}" if brand_match else ""}
 
-3. Google Images CANNOT find descriptions of famous things - it needs the ACTUAL NAME!
-   - "bald anime martial artist in orange gi" = WRONG (can't find this)
-   - "Krillin Dragon Ball" = CORRECT (finds actual images)
+YOUR TASK: Create a search query for a REAL, TANGIBLE image - something you could actually photograph.
 
-Return ONLY the optimized query (2-5 words). If input has a specific name, KEEP IT."""
+RULES:
+1. Describe the ACTUAL SCENE: "warehouse robot moving boxes" NOT "automation"
+2. If a brand/company is mentioned, include it: "{brand_match} robot" or "{brand_match} warehouse"
+3. Remove aesthetic words: sleek, futuristic, dark, glossy, modern, cinematic, abstract, visualization
+4. Use concrete nouns: "robotic arm assembly line" NOT "manufacturing innovation"
+5. 3-6 words describing what you'd see in the photo
+
+GOOD EXAMPLES (specific, photographable):
+- "Tesla Optimus robot standing" (specific robot)
+- "Amazon warehouse robot moving packages" (brand + action)
+- "industrial robot arm welding car frame" (concrete scene)
+- "data center server racks with lights" (real equipment)
+- "warehouse worker with handheld scanner" (real person doing real action)
+
+BAD EXAMPLES (too abstract - NEVER use):
+- "innovation", "digital transformation", "AI visualization"
+- "sleek futuristic technology", "modern business success"
+- "neural network brain concept" (not real/photographable)
+
+Return ONLY the search query (3-6 words), nothing else:"""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -224,19 +255,31 @@ Return ONLY the optimized query (2-5 words). If input has a specific name, KEEP 
         )
 
         enhanced = str(response).strip().strip('"\'')
-        if enhanced:
+
+        # Safety check: if AI returned an error message or explanation, fall back to cleaned query
+        if enhanced and len(enhanced) < 60 and "cannot" not in enhanced.lower() and "I " not in enhanced:
             print(f"[POST_SEARCH] 🤖 AI optimized query: '{query}' -> '{enhanced}'")
             return enhanced
+        else:
+            # AI returned garbage, just clean up the original query
+            print(f"[POST_SEARCH] ⚠️ AI returned invalid response, using fallback")
     except Exception as e:
         print(f"[POST_SEARCH] ⚠️ AI enhancement failed: {e}")
 
-    return query
+    # Fallback: strip common aesthetic words and return
+    aesthetic_words = ['sleek', 'futuristic', 'dark', 'glossy', 'modern', 'cinematic', 'aesthetic', 'abstract', 'lights', 'lighting', 'studio', 'professional', 'elegant', 'minimalist']
+    cleaned = query.lower()
+    for word in aesthetic_words:
+        cleaned = cleaned.replace(word, '')
+    cleaned = ' '.join(cleaned.split())  # Remove extra spaces
+    print(f"[POST_SEARCH] 🔄 Fallback cleaned query: '{query}' -> '{cleaned}'")
+    return cleaned if cleaned else query
 
 
 async def _search_images_for_props(prop_queries: List[Tuple[str, str]], theme: Optional[Dict[str, Any]] = None, slide_context: str = "") -> Dict[str, str]:
     """
     Search SERP API for images using the same queries that would appear in the image picker.
-    Picks randomly from the first 10 results for each query.
+    Picks best match (first result) from search results, like ImagePicker shows.
 
     Features:
     - Filters template placeholders and limits queries to 2-5 words
@@ -251,7 +294,6 @@ async def _search_images_for_props(prop_queries: List[Tuple[str, str]], theme: O
     Returns:
         Dict mapping prop names to uploaded image URLs
     """
-    import random
     from services.serpapi_service import SerpAPIService
     from services.image_storage_service import ImageStorageService
 
@@ -290,21 +332,34 @@ async def _search_images_for_props(prop_queries: List[Tuple[str, str]], theme: O
 
     async with ImageStorageService() as storage:
 
-        async def search_and_pick_random(prop_name: str, query: str) -> Tuple[str, str, Optional[str]]:
-            """Search SERP API, pick randomly from first 10 results."""
+        async def search_and_pick_best(prop_name: str, query: str) -> Tuple[str, str, Optional[str]]:
+            """Search SERP API, pick best match (first result like ImagePicker shows)."""
             try:
-                # Use query directly - AI prompts should generate good photographable scene queries
-                print(f"[POST_SEARCH] 🔎 Searching: '{query}' (for prop: {prop_name})")
+                # IMPORTANT: Preserve original query for alt-text matching during injection
+                # The injection uses this to find <img alt="original query"> in HTML
+                original_query = query
+
+                # Skip AI enhancement for logos - they're specific brand names, not vague concepts
+                # Check both prop_name and query for "logo" (case-insensitive)
+                is_logo_query = 'logo' in prop_name.lower() or 'logo' in query.lower()
+
+                # Enhance query with AI using slide context for more specific searches
+                # e.g., "robotic neural network" + context about "Dyna.co" -> "Dyna.co robotics AI"
+                search_query = query
+                if slide_context and not is_logo_query:
+                    search_query = await _enhance_image_query_with_ai(query, slide_context)
+
+                print(f"[POST_SEARCH] 🔎 Searching: '{search_query}' (for prop: {prop_name})")
 
                 # Search for 10 images - same as image picker would see
                 result = await serpapi.search_images(
-                    query=query,
+                    query=search_query,
                     per_page=10,
                     size="large"
                 )
 
                 photos = result.get('photos', [])
-                print(f"[POST_SEARCH] 📷 Got {len(photos)} results for '{query}'")
+                print(f"[POST_SEARCH] 📷 Got {len(photos)} results for '{search_query}'")
 
                 # Filter valid URLs
                 valid_urls = []
@@ -314,12 +369,11 @@ async def _search_images_for_props(prop_queries: List[Tuple[str, str]], theme: O
                         valid_urls.append(url)
 
                 if not valid_urls:
-                    print(f"[POST_SEARCH] ⚠️ No valid images for: {query}")
-                    return (prop_name, query, None)
+                    print(f"[POST_SEARCH] ⚠️ No valid images for: {search_query}")
+                    return (prop_name, original_query, None)
 
-                # Shuffle and pick randomly
-                random.shuffle(valid_urls)
-                print(f"[POST_SEARCH] 🎲 Picking randomly from {len(valid_urls)} results")
+                # Pick in order (Google ranks best results first, like ImagePicker shows)
+                print(f"[POST_SEARCH] 🎯 Picking best from {len(valid_urls)} results")
 
                 # Try to upload until one succeeds
                 for url in valid_urls:
@@ -327,21 +381,22 @@ async def _search_images_for_props(prop_queries: List[Tuple[str, str]], theme: O
                         upload_result = await storage.upload_image_from_url(url)
                         if 'error' not in upload_result and upload_result.get('url'):
                             our_url = upload_result['url']
-                            print(f"[POST_SEARCH] ✅ {prop_name} ({query}) -> uploaded (random pick)")
-                            return (prop_name, query, our_url)
+                            print(f"[POST_SEARCH] ✅ {prop_name} ({search_query}) -> uploaded (best match)")
+                            # Return ORIGINAL query for alt-text matching, not enhanced search_query
+                            return (prop_name, original_query, our_url)
                     except Exception as e:
                         logger.debug(f"[POST_SEARCH] Upload failed: {e}")
                         continue
 
-                print(f"[POST_SEARCH] ⚠️ All uploads failed for: {query}")
-                return (prop_name, query, None)
+                print(f"[POST_SEARCH] ⚠️ All uploads failed for: {search_query}")
+                return (prop_name, original_query, None)
 
             except Exception as e:
                 print(f"[POST_SEARCH] ❌ Error for '{query}': {e}")
-                return (prop_name, query, None)
+                return (prop_name, original_query, None)
 
         # Run searches in parallel
-        tasks = [search_and_pick_random(prop, query) for prop, query in prop_queries[:8]]  # Max 8
+        tasks = [search_and_pick_best(prop, query) for prop, query in prop_queries[:8]]  # Max 8
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Build result dict
@@ -595,7 +650,7 @@ async def prefetch_images_for_content(
     async with ImageStorageService() as storage:
 
         async def search_and_upload(index: int, term: str) -> Tuple[int, str, Optional[str]]:
-            """Search SerpAPI, get 10 results, pick one at random."""
+            """Search SerpAPI, get 10 results, pick best match (first result)."""
             try:
                 # Log the exact query being sent
                 print(f"[PREFETCH] 🔎 Searching: '{term}'")
@@ -621,10 +676,8 @@ async def prefetch_images_for_content(
                     print(f"[PREFETCH] ⚠️ No valid images for: {term}")
                     return (index, term, None)
 
-                # Shuffle and try random images until one uploads successfully
-                import random
-                random.shuffle(valid_photos)
-                print(f"[PREFETCH] 🎲 Shuffled {len(valid_photos)} valid images, picking randomly")
+                # Pick in order (Google ranks best first, like ImagePicker shows)
+                print(f"[PREFETCH] 🎯 Picking best from {len(valid_photos)} results")
 
                 for url in valid_photos:
                     # Upload to our Supabase bucket
@@ -632,7 +685,7 @@ async def prefetch_images_for_content(
                         upload_result = await storage.upload_image_from_url(url)
                         if 'error' not in upload_result and upload_result.get('url'):
                             our_url = upload_result['url']
-                            print(f"[PREFETCH] ✅ image{index + 1} ({term}) -> uploaded (random pick)")
+                            print(f"[PREFETCH] ✅ image{index + 1} ({term}) -> uploaded (best match)")
                             return (index, term, our_url)
                     except Exception as e:
                         logger.debug(f"[PREFETCH] Upload failed: {e}")
@@ -1362,12 +1415,37 @@ class CustomComponentGenerator:
                 if image_props_from_html:
                     print(f"[CUSTOM_COMPONENT] 🔎 Searching SERP API with image picker queries: {[q for _, q in image_props_from_html]}")
                     # Search SERP API with those exact queries (same as image picker would use)
-                    # Pass slide context for AI query enhancement of vague terms
-                    slide_search_context = f"{slide_title}: {content[:300]}" if slide_title else content[:400]
+                    # Build rich context including BRAND NAME for AI query enhancement
+                    brand_name = ""
+                    if theme:
+                        brand_info = theme.get('brandInfo', {})
+                        brand_name = brand_info.get('name', '') or brand_info.get('domain', '')
+                        if not brand_name:
+                            # Try color_palette.metadata
+                            metadata = theme.get('color_palette', {}).get('metadata', {})
+                            brand_name = metadata.get('brand_name', '') or metadata.get('domain', '')
+
+                    presentation_context = slide_context.get('presentation_context', '') if slide_context else ''
+                    deck_title = slide_context.get('deck_title', '') if slide_context else ''
+
+                    # Build search context with brand prominently featured
+                    context_parts = []
+                    if brand_name:
+                        context_parts.append(f"BRAND: {brand_name}")
+                    if deck_title and deck_title != brand_name:
+                        context_parts.append(f"Deck: {deck_title}")
+                    if presentation_context:
+                        context_parts.append(f"Topic: {presentation_context[:150]}")
+                    context_parts.append(f"Slide: {slide_title}")
+                    context_parts.append(content[:200] if content else "")
+
+                    slide_search_context = " | ".join([p for p in context_parts if p])
+                    print(f"[CUSTOM_COMPONENT] 🏷️ Image search context: {slide_search_context[:100]}...")
+
                     prefetched_images = await _search_images_for_props(image_props_from_html, theme, slide_search_context)
                     if prefetched_images:
                         image_count = len([k for k in prefetched_images if not k.endswith('_query')])
-                        print(f"[CUSTOM_COMPONENT] ✅ SERP search found {image_count} images (random pick from top 10)")
+                        print(f"[CUSTOM_COMPONENT] ✅ SERP search found {image_count} images (best match from top 10)")
                     else:
                         print(f"[CUSTOM_COMPONENT] ⚠️ SERP search returned no images")
                         prefetched_images = {}
@@ -1683,6 +1761,28 @@ Font sizes: Title 48-56px, Body 14-16px
 CONTEXT: {' | '.join(design_context_parts)}
 """
 
+        # Build chat context section for user preferences and conversation history
+        chat_context_section = ""
+        chat_history = slide_context.get('chat_history')
+        if chat_history and len(chat_history) > 0:
+            # Format the last 8 messages for context (to avoid token overflow)
+            recent = chat_history[-8:] if len(chat_history) > 8 else chat_history
+            chat_lines = []
+            for msg in recent:
+                role = msg.get('role', 'user')
+                content_text = str(msg.get('content', ''))[:400]  # Truncate long messages
+                chat_lines.append(f"{role.upper()}: {content_text}")
+            if chat_lines:
+                chat_context_section = f"""
+CONVERSATION CONTEXT (understand user preferences and agreements):
+{chr(10).join(chat_lines)}
+
+IMPORTANT: Use this conversation to understand:
+- What style/design preferences the user expressed
+- What the user agreed to or confirmed
+- Any specific requirements mentioned in the discussion
+"""
+
         # Build design reference images section (e.g., PPT screenshots to match style)
         design_reference_section = ""
         if reference_images and len(reference_images) > 0:
@@ -1853,10 +1953,51 @@ Position: corner placement, 40-60px height, no overlap with content.
         # Add tone guidance only if no explicit style hint was provided
         tone_guidance = " Match the content tone." if not design_context_section else ""
 
+        # Check if content has citations - this indicates researched content
+        import re
+        has_citations = bool(re.search(r'\[\d+\]', content)) if content else False
+
+        # Extract sources section if present
+        sources_section = ""
+        if content and "Sources:" in content:
+            sources_match = re.search(r'Sources:\s*([\s\S]*?)(?:\n\n|$)', content)
+            if sources_match:
+                sources_section = sources_match.group(1).strip()
+
+        citation_guidance = ""
+        if has_citations:
+            citation_guidance = f"""
+
+**RESEARCHED CONTENT - SOURCE OF TRUTH:**
+- The content above contains VERIFIED, RESEARCHED information with citations [1], [2], etc.
+- DO NOT modify, invent, or change any facts, statistics, or numbers
+- Keep citation markers [1], [2] as superscript tags in the text: <sup>[1]</sup>
+- Your job is to DESIGN this content beautifully, not to add or change facts
+
+**MANDATORY CITATION FOOTER (consistent design on every slide with citations):**
+Add this EXACT footer structure in the bottom-right corner:
+```html
+<div style="position: absolute; bottom: 20px; right: 30px; max-width: 400px; text-align: right;">
+  <div style="font-size: 9px; color: rgba(255,255,255,0.5); line-height: 1.4;">
+    Sources:
+    <a href="URL1" target="_blank" style="color: rgba(255,255,255,0.6); text-decoration: none;">[1] domain1.com</a>
+    <span style="margin: 0 4px;">·</span>
+    <a href="URL2" target="_blank" style="color: rgba(255,255,255,0.6); text-decoration: none;">[2] domain2.com</a>
+  </div>
+</div>
+```
+- Position: ALWAYS bottom-right, absolute positioning
+- Font size: 9px, subtle/muted color (50-60% opacity)
+- Links: clickable, open in new tab, show domain name only
+- Format: "Sources: [1] domain.com · [2] domain.com · [3] domain.com"
+- Keep it compact - one line if possible, max 2 lines
+- Adjust text color opacity based on background (light bg = dark text, dark bg = light text)
+{f"Sources to include: {sources_section}" if sources_section else ""}"""
+
         return f"""{full_slide_instructions}SLIDE: "{slide_title}" (Slide {slide_index} of {total_slides})
-{design_reference_section}{design_context_section}{external_media_section}{video_section}{uploaded_media_section}{prefetched_images_section}{logo_section}
-CONTENT:
-{content}
+{design_reference_section}{design_context_section}{chat_context_section}{external_media_section}{video_section}{uploaded_media_section}{prefetched_images_section}{logo_section}
+CONTENT (Source of Truth - use these exact facts and data):
+{content}{citation_guidance}
 
 SIZE: {width}x{height}px
 
@@ -1941,8 +2082,12 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
         # Ensure prefetched_images is at least an empty dict
         prefetched_images = prefetched_images or {}
 
-        # Get only actual image URLs (not the _query hints)
-        image_urls = [v for k, v in prefetched_images.items() if not k.endswith('_query') and v.startswith('http')]
+        # Get only actual image URLs (not the _query hints and NOT logos)
+        # Logos should only be injected into logo-specific placeholders, not generic image placeholders
+        image_urls = [v for k, v in prefetched_images.items()
+                      if not k.endswith('_query')
+                      and v.startswith('http')
+                      and 'logo' not in k.lower()]
 
         if not image_urls:
             # Even without prefetched images, we should log any external URLs found

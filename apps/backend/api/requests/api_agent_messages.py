@@ -1231,14 +1231,92 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
         current_slide_for_agent = current_slide
 
     # Normalize attachments for passing to orchestrator
+    # Separate screenshot from other attachments
     normalized_attachments = []
+    slide_screenshot_data = None  # Will hold base64 screenshot if present
+
     for att in (attachments or []):
-        if isinstance(att, dict) and (att.get('url') or att.get('publicUrl')):
+        if not isinstance(att, dict):
+            continue
+
+        att_name = att.get('name') or att.get('fileName') or att.get('filename') or 'file'
+        att_url = att.get('url') or att.get('publicUrl') or ''
+
+        # Check if this is the auto-attached slide screenshot
+        if att_name == '_slide_context.jpg' or att_name.startswith('_slide_context'):
+            # Extract base64 data from data URL
+            if att_url.startswith('data:image'):
+                try:
+                    # Format: data:image/jpeg;base64,/9j/4AAQ...
+                    base64_part = att_url.split(',', 1)[1] if ',' in att_url else ''
+                    if base64_part:
+                        slide_screenshot_data = {
+                            'data': base64_part,
+                            'media_type': 'image/jpeg'
+                        }
+                        logger.info(f"[AgentChat] Extracted slide screenshot: {len(base64_part)} chars base64")
+                except Exception as e:
+                    logger.warning(f"[AgentChat] Failed to extract screenshot data: {e}")
+            # Don't add to normalized_attachments - we handle it separately
+            continue
+
+        # Regular attachment
+        if att_url:
             normalized_attachments.append({
-                'name': att.get('name') or att.get('fileName') or att.get('filename') or 'file',
+                'name': att_name,
                 'mimeType': att.get('mimeType') or att.get('type') or 'application/octet-stream',
-                'url': att.get('url') or att.get('publicUrl')
+                'url': att_url
             })
+
+    # Classify request to decide if we need the screenshot
+    # Complex requests that benefit from seeing the slide visually
+    def _needs_visual_context(msg: str) -> bool:
+        msg_lower = (msg or "").lower()
+
+        # Keywords indicating visual/complex edits
+        visual_keywords = [
+            "fix", "broken", "wrong", "issue", "problem", "bug",
+            "redesign", "redo", "rebuild", "restyle", "overhaul",
+            "layout", "spacing", "alignment", "position", "move",
+            "looks", "ugly", "better", "improve", "enhance",
+            "image", "photo", "picture", "logo", "icon",
+            "color", "colours", "style", "theme", "font",
+            "too big", "too small", "resize", "size",
+            "overlap", "cut off", "cropped", "hidden",
+            "doesn't look", "not showing", "can't see",
+        ]
+
+        # Simple requests that don't need visual context
+        simple_patterns = [
+            "change text", "replace text", "update text",
+            "change title to", "rename", "typo",
+            "add slide", "delete slide", "remove slide",
+            "duplicate", "copy slide",
+        ]
+
+        # Check if it's a simple request first
+        for pattern in simple_patterns:
+            if pattern in msg_lower:
+                return False
+
+        # Check if it needs visual context
+        for keyword in visual_keywords:
+            if keyword in msg_lower:
+                return True
+
+        # Default: include for safety on ambiguous requests
+        # But if message is very short (< 30 chars), probably simple
+        if len(msg_lower.strip()) < 30:
+            return False
+
+        return True
+
+    # Only include screenshot if request needs visual context
+    include_screenshot = slide_screenshot_data and _needs_visual_context(text)
+    if slide_screenshot_data and not include_screenshot:
+        logger.info(f"[AgentChat] Skipping screenshot - simple request detected")
+    elif include_screenshot:
+        logger.info(f"[AgentChat] Including screenshot - complex/visual request detected")
 
     # LinkedIn lookup is now handled by the orchestrator via the linkedin_lookup tool
     # The LLM decides when to use it based on @linkedin mentions in the message
@@ -1253,7 +1331,8 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
         chat_history=chat_history,
         run_uuid=str(uuid.uuid4()),
         event_cb=_event_cb,
-        attachments=normalized_attachments
+        attachments=normalized_attachments,
+        slide_screenshot=slide_screenshot_data if include_screenshot else None
     )
 
     # Convert orchestrator result to a proposed edit (or auto-apply if enabled)

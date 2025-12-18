@@ -52,6 +52,8 @@ MODELS = {
     "gemini-2.5-pro": ("gemini", "gemini-2.5-pro"),
     "gemini-3-pro": ("gemini", "gemini-3-pro-preview"),
     "gemini-3-pro-preview": ("gemini", "gemini-3-pro-preview"),
+    "gemini-3-flash": ("gemini", "gemini-3-flash-preview"),
+    "gemini-3-flash-preview": ("gemini", "gemini-3-flash-preview"),
 
     # OpenAI
     "gpt-4o-mini": ("openai", "gpt-4o-mini"),
@@ -81,6 +83,7 @@ MODEL_MAX_TOKENS = {
     "gemini-2.5-flash-lite": 65536,
     "gemini-2.5-pro": 8192,
     "gemini-3-pro-preview": 65536,
+    "gemini-3-flash-preview": 65536,
     "gpt-4o-mini": 16384,
     "gpt-4.1-2025-04-14": 32768,
 }

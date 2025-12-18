@@ -15,11 +15,18 @@ import asyncio
 import aiohttp
 import re
 import json
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse, parse_qs
 from bs4 import BeautifulSoup
 from dataclasses import dataclass, field
 from setup_logging_optimized import get_logger
+
+# Optional Playwright import for JS-rendered sites
+try:
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
 
 logger = get_logger(__name__)
 
@@ -81,6 +88,42 @@ class VideoScraperService:
         r'player\.vimeo\.com/video/(\d+)',
     ]
 
+    # Wistia patterns
+    WISTIA_PATTERNS = [
+        r'wistia\.(?:com|net)/(?:medias|embed)/([a-zA-Z0-9]+)',
+        r'fast\.wistia\.(?:com|net)/embed/(?:medias|iframe)/([a-zA-Z0-9]+)',
+        r'wistia_async_([a-zA-Z0-9]+)',
+        r'"hashedId"\s*:\s*"([a-zA-Z0-9]+)"',
+        r'wistia-player.*?media-id="([a-zA-Z0-9]+)"',
+    ]
+
+    # Loom patterns
+    LOOM_PATTERNS = [
+        r'loom\.com/share/([a-zA-Z0-9]+)',
+        r'loom\.com/embed/([a-zA-Z0-9]+)',
+    ]
+
+    # Mux patterns
+    MUX_PATTERNS = [
+        r'stream\.mux\.com/([a-zA-Z0-9]+)',
+        r'mux-player.*?playback-id="([a-zA-Z0-9]+)"',
+        r'"playbackId"\s*:\s*"([a-zA-Z0-9]+)"',
+    ]
+
+    # Cloudflare Stream patterns
+    CLOUDFLARE_STREAM_PATTERNS = [
+        r'cloudflarestream\.com/([a-zA-Z0-9]+)',
+        r'videodelivery\.net/([a-zA-Z0-9]+)',
+        r'iframe\.videodelivery\.net/([a-zA-Z0-9]+)',
+    ]
+
+    # Vidyard patterns
+    VIDYARD_PATTERNS = [
+        r'vidyard\.com/watch/([a-zA-Z0-9]+)',
+        r'play\.vidyard\.com/([a-zA-Z0-9]+)',
+        r'vidyard-player.*?uuid="([a-zA-Z0-9-]+)"',
+    ]
+
     VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.m4v', '.avi', '.mkv', '.ogv']
 
     def __init__(self):
@@ -111,7 +154,8 @@ class VideoScraperService:
         self,
         url: str,
         max_videos: int = 10,
-        include_embeds: bool = True
+        include_embeds: bool = True,
+        use_browser: bool = False
     ) -> VideoScraperResult:
         """
         Scrape a website for videos.
@@ -120,6 +164,7 @@ class VideoScraperService:
             url: Website URL to scrape
             max_videos: Maximum number of videos to return
             include_embeds: Whether to include YouTube/Vimeo embeds
+            use_browser: Whether to use a headless browser for JS-rendered sites
 
         Returns:
             VideoScraperResult with found videos
@@ -129,8 +174,16 @@ class VideoScraperService:
         try:
             logger.info(f"🎬 [VideoScraper] Scraping videos from: {url}")
 
-            # Fetch the webpage
+            # Fetch the webpage (with browser fallback for JS-rendered sites)
             html_content = await self._fetch_webpage(url)
+
+            # If we found no content or very little, try with browser
+            if use_browser and PLAYWRIGHT_AVAILABLE:
+                browser_html = await self._fetch_with_browser(url)
+                if browser_html and len(browser_html) > len(html_content or ''):
+                    html_content = browser_html
+                    logger.info(f"🎬 [VideoScraper] Using browser-rendered content for {url}")
+
             if not html_content:
                 result.error = "Failed to fetch webpage"
                 return result
@@ -171,6 +224,46 @@ class VideoScraperService:
                         seen_urls.add(video.url)
                         videos.append(video)
 
+            # Strategy 4b: Wistia videos
+            if include_embeds:
+                wistia_videos = await self._extract_wistia_videos(soup, html_content)
+                for video in wistia_videos:
+                    if video.url not in seen_urls and video.video_id:
+                        seen_urls.add(video.url)
+                        videos.append(video)
+
+            # Strategy 4c: Loom videos
+            if include_embeds:
+                loom_videos = await self._extract_loom_videos(soup, html_content)
+                for video in loom_videos:
+                    if video.url not in seen_urls and video.video_id:
+                        seen_urls.add(video.url)
+                        videos.append(video)
+
+            # Strategy 4d: Mux videos
+            if include_embeds:
+                mux_videos = await self._extract_mux_videos(soup, html_content)
+                for video in mux_videos:
+                    if video.url not in seen_urls and video.video_id:
+                        seen_urls.add(video.url)
+                        videos.append(video)
+
+            # Strategy 4e: Cloudflare Stream videos
+            if include_embeds:
+                cf_videos = await self._extract_cloudflare_videos(soup, html_content)
+                for video in cf_videos:
+                    if video.url not in seen_urls and video.video_id:
+                        seen_urls.add(video.url)
+                        videos.append(video)
+
+            # Strategy 4f: Vidyard videos
+            if include_embeds:
+                vidyard_videos = await self._extract_vidyard_videos(soup, html_content)
+                for video in vidyard_videos:
+                    if video.url not in seen_urls and video.video_id:
+                        seen_urls.add(video.url)
+                        videos.append(video)
+
             # Strategy 5: Direct video file links
             direct_videos = await self._extract_direct_video_links(soup, base_url, html_content)
             for video in direct_videos:
@@ -181,6 +274,13 @@ class VideoScraperService:
             # Strategy 6: JSON-LD structured data
             jsonld_videos = await self._extract_jsonld_videos(soup, base_url)
             for video in jsonld_videos:
+                if video.url not in seen_urls:
+                    seen_urls.add(video.url)
+                    videos.append(video)
+
+            # Strategy 7: Extract from inline scripts and Next.js data
+            script_videos = await self._extract_from_scripts(soup, html_content, base_url)
+            for video in script_videos:
                 if video.url not in seen_urls:
                     seen_urls.add(video.url)
                     videos.append(video)
@@ -212,6 +312,35 @@ class VideoScraperService:
                         return await response.text()
         except Exception as e:
             logger.debug(f"Failed to fetch {url}: {e}")
+        return None
+
+    async def _fetch_with_browser(self, url: str, wait_time: int = 3000) -> Optional[str]:
+        """Fetch webpage content using headless browser for JS-rendered sites."""
+        if not PLAYWRIGHT_AVAILABLE:
+            logger.debug("Playwright not available for browser-based fetching")
+            return None
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(
+                    user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                )
+                page = await context.new_page()
+
+                try:
+                    await page.goto(url, wait_until='networkidle', timeout=15000)
+                    # Wait additional time for any lazy-loaded content
+                    await page.wait_for_timeout(wait_time)
+                    html_content = await page.content()
+                    return html_content
+                except Exception as e:
+                    logger.debug(f"Browser fetch failed for {url}: {e}")
+                finally:
+                    await browser.close()
+        except Exception as e:
+            logger.debug(f"Playwright error for {url}: {e}")
+
         return None
 
     async def _extract_video_elements(self, soup: BeautifulSoup, base_url: str) -> List[VideoInfo]:
@@ -406,6 +535,247 @@ class VideoScraperService:
 
         return videos
 
+    async def _extract_wistia_videos(self, soup: BeautifulSoup, html_content: str) -> List[VideoInfo]:
+        """Extract Wistia videos from embeds, scripts, and custom elements."""
+        videos = []
+        found_ids: Set[str] = set()
+
+        # Search in iframes
+        for iframe in soup.find_all('iframe'):
+            src = iframe.get('src', '') or iframe.get('data-src', '')
+            for pattern in self.WISTIA_PATTERNS[:2]:  # URL-based patterns
+                match = re.search(pattern, src)
+                if match:
+                    video_id = match.group(1)
+                    if video_id not in found_ids:
+                        found_ids.add(video_id)
+                        videos.append(VideoInfo(
+                            url=f"https://fast.wistia.net/embed/iframe/{video_id}",
+                            source_type='wistia',
+                            video_id=video_id,
+                            embed_url=f"https://fast.wistia.net/embed/iframe/{video_id}",
+                            thumbnail=f"https://fast.wistia.net/embed/medias/{video_id}/swatch"
+                        ))
+
+        # Search for wistia-player custom elements
+        for player in soup.find_all(['wistia-player', 'div', 'span']):
+            media_id = player.get('media-id') or player.get('data-wistia-id')
+            if media_id and media_id not in found_ids:
+                found_ids.add(media_id)
+                videos.append(VideoInfo(
+                    url=f"https://fast.wistia.net/embed/iframe/{media_id}",
+                    source_type='wistia',
+                    video_id=media_id,
+                    embed_url=f"https://fast.wistia.net/embed/iframe/{media_id}",
+                    thumbnail=f"https://fast.wistia.net/embed/medias/{media_id}/swatch"
+                ))
+
+        # Search for wistia_async_ class pattern
+        for div in soup.find_all('div', class_=re.compile(r'wistia_async_')):
+            classes = div.get('class', [])
+            for cls in classes:
+                if cls.startswith('wistia_async_'):
+                    video_id = cls.replace('wistia_async_', '')
+                    if video_id and video_id not in found_ids:
+                        found_ids.add(video_id)
+                        videos.append(VideoInfo(
+                            url=f"https://fast.wistia.net/embed/iframe/{video_id}",
+                            source_type='wistia',
+                            video_id=video_id,
+                            embed_url=f"https://fast.wistia.net/embed/iframe/{video_id}",
+                            thumbnail=f"https://fast.wistia.net/embed/medias/{video_id}/swatch"
+                        ))
+
+        # Search in raw HTML for all patterns
+        for pattern in self.WISTIA_PATTERNS:
+            for match in re.finditer(pattern, html_content):
+                video_id = match.group(1)
+                if video_id not in found_ids and len(video_id) >= 8:
+                    found_ids.add(video_id)
+                    videos.append(VideoInfo(
+                        url=f"https://fast.wistia.net/embed/iframe/{video_id}",
+                        source_type='wistia',
+                        video_id=video_id,
+                        embed_url=f"https://fast.wistia.net/embed/iframe/{video_id}",
+                        thumbnail=f"https://fast.wistia.net/embed/medias/{video_id}/swatch"
+                    ))
+
+        return videos
+
+    async def _extract_loom_videos(self, soup: BeautifulSoup, html_content: str) -> List[VideoInfo]:
+        """Extract Loom videos from embeds and links."""
+        videos = []
+        found_ids: Set[str] = set()
+
+        # Search in iframes
+        for iframe in soup.find_all('iframe'):
+            src = iframe.get('src', '') or iframe.get('data-src', '')
+            for pattern in self.LOOM_PATTERNS:
+                match = re.search(pattern, src)
+                if match:
+                    video_id = match.group(1)
+                    if video_id not in found_ids:
+                        found_ids.add(video_id)
+                        videos.append(VideoInfo(
+                            url=f"https://www.loom.com/share/{video_id}",
+                            source_type='loom',
+                            video_id=video_id,
+                            embed_url=f"https://www.loom.com/embed/{video_id}"
+                        ))
+
+        # Search in links
+        for a_tag in soup.find_all('a', href=True):
+            href = a_tag.get('href', '')
+            for pattern in self.LOOM_PATTERNS:
+                match = re.search(pattern, href)
+                if match:
+                    video_id = match.group(1)
+                    if video_id not in found_ids:
+                        found_ids.add(video_id)
+                        title = a_tag.get_text(strip=True) or None
+                        videos.append(VideoInfo(
+                            url=f"https://www.loom.com/share/{video_id}",
+                            source_type='loom',
+                            video_id=video_id,
+                            title=title if title and len(title) > 3 else None,
+                            embed_url=f"https://www.loom.com/embed/{video_id}"
+                        ))
+
+        # Search in raw HTML
+        for pattern in self.LOOM_PATTERNS:
+            for match in re.finditer(pattern, html_content):
+                video_id = match.group(1)
+                if video_id not in found_ids:
+                    found_ids.add(video_id)
+                    videos.append(VideoInfo(
+                        url=f"https://www.loom.com/share/{video_id}",
+                        source_type='loom',
+                        video_id=video_id,
+                        embed_url=f"https://www.loom.com/embed/{video_id}"
+                    ))
+
+        return videos
+
+    async def _extract_mux_videos(self, soup: BeautifulSoup, html_content: str) -> List[VideoInfo]:
+        """Extract Mux videos from stream URLs and mux-player elements."""
+        videos = []
+        found_ids: Set[str] = set()
+
+        # Search for mux-player custom elements
+        for player in soup.find_all('mux-player'):
+            playback_id = player.get('playback-id') or player.get('data-playback-id')
+            if playback_id and playback_id not in found_ids:
+                found_ids.add(playback_id)
+                videos.append(VideoInfo(
+                    url=f"https://stream.mux.com/{playback_id}.m3u8",
+                    source_type='mux',
+                    video_id=playback_id,
+                    embed_url=f"https://stream.mux.com/{playback_id}.m3u8",
+                    thumbnail=f"https://image.mux.com/{playback_id}/thumbnail.jpg"
+                ))
+
+        # Search in raw HTML for all patterns
+        for pattern in self.MUX_PATTERNS:
+            for match in re.finditer(pattern, html_content):
+                playback_id = match.group(1)
+                if playback_id not in found_ids and len(playback_id) >= 8:
+                    found_ids.add(playback_id)
+                    videos.append(VideoInfo(
+                        url=f"https://stream.mux.com/{playback_id}.m3u8",
+                        source_type='mux',
+                        video_id=playback_id,
+                        embed_url=f"https://stream.mux.com/{playback_id}.m3u8",
+                        thumbnail=f"https://image.mux.com/{playback_id}/thumbnail.jpg"
+                    ))
+
+        return videos
+
+    async def _extract_cloudflare_videos(self, soup: BeautifulSoup, html_content: str) -> List[VideoInfo]:
+        """Extract Cloudflare Stream videos."""
+        videos = []
+        found_ids: Set[str] = set()
+
+        # Search in iframes
+        for iframe in soup.find_all('iframe'):
+            src = iframe.get('src', '') or iframe.get('data-src', '')
+            for pattern in self.CLOUDFLARE_STREAM_PATTERNS:
+                match = re.search(pattern, src)
+                if match:
+                    video_id = match.group(1)
+                    if video_id not in found_ids:
+                        found_ids.add(video_id)
+                        videos.append(VideoInfo(
+                            url=f"https://iframe.videodelivery.net/{video_id}",
+                            source_type='cloudflare',
+                            video_id=video_id,
+                            embed_url=f"https://iframe.videodelivery.net/{video_id}",
+                            thumbnail=f"https://videodelivery.net/{video_id}/thumbnails/thumbnail.jpg"
+                        ))
+
+        # Search in raw HTML
+        for pattern in self.CLOUDFLARE_STREAM_PATTERNS:
+            for match in re.finditer(pattern, html_content):
+                video_id = match.group(1)
+                if video_id not in found_ids and len(video_id) >= 8:
+                    found_ids.add(video_id)
+                    videos.append(VideoInfo(
+                        url=f"https://iframe.videodelivery.net/{video_id}",
+                        source_type='cloudflare',
+                        video_id=video_id,
+                        embed_url=f"https://iframe.videodelivery.net/{video_id}",
+                        thumbnail=f"https://videodelivery.net/{video_id}/thumbnails/thumbnail.jpg"
+                    ))
+
+        return videos
+
+    async def _extract_vidyard_videos(self, soup: BeautifulSoup, html_content: str) -> List[VideoInfo]:
+        """Extract Vidyard videos from embeds and links."""
+        videos = []
+        found_ids: Set[str] = set()
+
+        # Search in iframes
+        for iframe in soup.find_all('iframe'):
+            src = iframe.get('src', '') or iframe.get('data-src', '')
+            for pattern in self.VIDYARD_PATTERNS[:2]:
+                match = re.search(pattern, src)
+                if match:
+                    video_id = match.group(1)
+                    if video_id not in found_ids:
+                        found_ids.add(video_id)
+                        videos.append(VideoInfo(
+                            url=f"https://play.vidyard.com/{video_id}",
+                            source_type='vidyard',
+                            video_id=video_id,
+                            embed_url=f"https://play.vidyard.com/{video_id}"
+                        ))
+
+        # Search for vidyard-player elements
+        for player in soup.find_all(['vidyard-player', 'div']):
+            uuid = player.get('uuid') or player.get('data-uuid') or player.get('data-vidyard-uuid')
+            if uuid and uuid not in found_ids:
+                found_ids.add(uuid)
+                videos.append(VideoInfo(
+                    url=f"https://play.vidyard.com/{uuid}",
+                    source_type='vidyard',
+                    video_id=uuid,
+                    embed_url=f"https://play.vidyard.com/{uuid}"
+                ))
+
+        # Search in raw HTML
+        for pattern in self.VIDYARD_PATTERNS:
+            for match in re.finditer(pattern, html_content):
+                video_id = match.group(1)
+                if video_id not in found_ids:
+                    found_ids.add(video_id)
+                    videos.append(VideoInfo(
+                        url=f"https://play.vidyard.com/{video_id}",
+                        source_type='vidyard',
+                        video_id=video_id,
+                        embed_url=f"https://play.vidyard.com/{video_id}"
+                    ))
+
+        return videos
+
     async def _extract_direct_video_links(self, soup: BeautifulSoup, base_url: str, html_content: str) -> List[VideoInfo]:
         """Extract direct video file links."""
         videos = []
@@ -450,6 +820,177 @@ class VideoScraperService:
                 ))
 
         return videos
+
+    async def _extract_from_scripts(self, soup: BeautifulSoup, html_content: str, base_url: str) -> List[VideoInfo]:
+        """Extract video URLs from inline scripts, Next.js data, and JS bundles."""
+        videos = []
+        seen_urls: Set[str] = set()
+
+        # Look for Next.js __NEXT_DATA__ script
+        next_data_script = soup.find('script', id='__NEXT_DATA__')
+        if next_data_script and next_data_script.string:
+            try:
+                next_data = json.loads(next_data_script.string)
+                # Recursively search for video URLs in the data
+                video_urls = self._find_video_urls_in_json(next_data, base_url)
+                for url, source_type, video_id in video_urls:
+                    if url not in seen_urls:
+                        seen_urls.add(url)
+                        videos.append(VideoInfo(
+                            url=url,
+                            source_type=source_type,
+                            video_id=video_id
+                        ))
+            except json.JSONDecodeError:
+                pass
+
+        # Look for Nuxt.js __NUXT__ data
+        nuxt_patterns = [
+            r'window\.__NUXT__\s*=\s*(\{[\s\S]*?\});?\s*(?:</script>|$)',
+            r'__NUXT__\s*:\s*(\{[\s\S]*?\})\s*[,}]',
+        ]
+        for pattern in nuxt_patterns:
+            match = re.search(pattern, html_content)
+            if match:
+                try:
+                    # Try to parse as JSON (may not always work if it's JS)
+                    nuxt_data = json.loads(match.group(1))
+                    video_urls = self._find_video_urls_in_json(nuxt_data, base_url)
+                    for url, source_type, video_id in video_urls:
+                        if url not in seen_urls:
+                            seen_urls.add(url)
+                            videos.append(VideoInfo(
+                                url=url,
+                                source_type=source_type,
+                                video_id=video_id
+                            ))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        # Look for video URLs in all script tags
+        for script in soup.find_all('script'):
+            script_content = script.string or ''
+            if not script_content:
+                continue
+
+            # Look for JSON objects with video-related keys
+            json_patterns = [
+                r'\{[^{}]*"(?:video|videoUrl|videoSrc|mp4|webm|playbackId|hashedId|mediaId)"[^{}]*\}',
+                r'\{[^{}]*"(?:src|url)":\s*"[^"]*\.(?:mp4|webm|m4v)"[^{}]*\}',
+            ]
+            for pattern in json_patterns:
+                for match in re.finditer(pattern, script_content, re.IGNORECASE):
+                    try:
+                        obj = json.loads(match.group(0))
+                        video_urls = self._find_video_urls_in_json(obj, base_url)
+                        for url, source_type, video_id in video_urls:
+                            if url not in seen_urls:
+                                seen_urls.add(url)
+                                videos.append(VideoInfo(
+                                    url=url,
+                                    source_type=source_type,
+                                    video_id=video_id
+                                ))
+                    except json.JSONDecodeError:
+                        pass
+
+        # Look for HLS/DASH streaming URLs
+        streaming_patterns = [
+            r'(https?://[^\s\'"<>]+\.m3u8)',
+            r'(https?://[^\s\'"<>]+\.mpd)',
+        ]
+        for pattern in streaming_patterns:
+            for match in re.finditer(pattern, html_content):
+                url = match.group(1)
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    videos.append(VideoInfo(
+                        url=url,
+                        source_type='direct'
+                    ))
+
+        return videos
+
+    def _find_video_urls_in_json(self, data: Any, base_url: str) -> List[tuple]:
+        """Recursively find video URLs in JSON data. Returns list of (url, source_type, video_id) tuples."""
+        results = []
+
+        if isinstance(data, dict):
+            # Check for direct video URL keys
+            video_keys = ['video', 'videoUrl', 'videoSrc', 'video_url', 'src', 'url', 'mp4', 'webm', 'source']
+            for key in video_keys:
+                if key in data:
+                    value = data[key]
+                    if isinstance(value, str) and self._is_video_url(value):
+                        results.append((urljoin(base_url, value), 'direct', None))
+
+            # Check for platform-specific IDs
+            if 'playbackId' in data or 'playback_id' in data:
+                pid = data.get('playbackId') or data.get('playback_id')
+                if pid and isinstance(pid, str):
+                    results.append((
+                        f"https://stream.mux.com/{pid}.m3u8",
+                        'mux',
+                        pid
+                    ))
+
+            if 'hashedId' in data or 'hashed_id' in data:
+                hid = data.get('hashedId') or data.get('hashed_id')
+                if hid and isinstance(hid, str):
+                    results.append((
+                        f"https://fast.wistia.net/embed/iframe/{hid}",
+                        'wistia',
+                        hid
+                    ))
+
+            # Recurse into all values
+            for value in data.values():
+                results.extend(self._find_video_urls_in_json(value, base_url))
+
+        elif isinstance(data, list):
+            for item in data:
+                results.extend(self._find_video_urls_in_json(item, base_url))
+
+        elif isinstance(data, str):
+            # Check if this string is a video URL
+            if self._is_video_url(data):
+                results.append((urljoin(base_url, data), 'direct', None))
+            # Check for embedded platform URLs
+            for pattern in self.YOUTUBE_PATTERNS:
+                match = re.search(pattern, data)
+                if match:
+                    vid = match.group(1)
+                    results.append((f"https://www.youtube.com/watch?v={vid}", 'youtube', vid))
+            for pattern in self.VIMEO_PATTERNS:
+                match = re.search(pattern, data)
+                if match:
+                    vid = match.group(1)
+                    results.append((f"https://vimeo.com/{vid}", 'vimeo', vid))
+            for pattern in self.WISTIA_PATTERNS[:2]:
+                match = re.search(pattern, data)
+                if match:
+                    vid = match.group(1)
+                    results.append((f"https://fast.wistia.net/embed/iframe/{vid}", 'wistia', vid))
+            for pattern in self.MUX_PATTERNS[:1]:
+                match = re.search(pattern, data)
+                if match:
+                    vid = match.group(1)
+                    results.append((f"https://stream.mux.com/{vid}.m3u8", 'mux', vid))
+
+        return results
+
+    def _is_video_url(self, url: str) -> bool:
+        """Check if a URL looks like a video URL."""
+        if not isinstance(url, str):
+            return False
+        url_lower = url.lower()
+        # Check for video file extensions
+        if any(ext in url_lower for ext in self.VIDEO_EXTENSIONS):
+            return True
+        # Check for streaming URLs
+        if '.m3u8' in url_lower or '.mpd' in url_lower:
+            return True
+        return False
 
     async def _extract_jsonld_videos(self, soup: BeautifulSoup, base_url: str) -> List[VideoInfo]:
         """Extract videos from JSON-LD structured data."""
@@ -522,6 +1063,11 @@ class VideoScraperService:
             'direct': 30,  # Direct video files are most reliable
             'youtube': 25,  # YouTube is well-supported
             'vimeo': 25,  # Vimeo is well-supported
+            'wistia': 25,  # Wistia is well-supported for marketing
+            'loom': 24,  # Loom is common for demos
+            'mux': 24,  # Mux is modern video platform
+            'cloudflare': 24,  # Cloudflare Stream
+            'vidyard': 23,  # Vidyard for B2B
             'meta': 20,  # Meta tags indicate official video
             'jsonld': 20,  # Structured data is reliable
             'embed': 15,  # Generic embeds
@@ -553,7 +1099,8 @@ class VideoScraperService:
 async def scrape_website_videos(
     url: str,
     max_videos: int = 10,
-    include_embeds: bool = True
+    include_embeds: bool = True,
+    use_browser: bool = False
 ) -> VideoScraperResult:
     """
     Convenience function to scrape videos from a website.
@@ -562,33 +1109,35 @@ async def scrape_website_videos(
         url: Website URL to scrape
         max_videos: Maximum number of videos to return
         include_embeds: Whether to include YouTube/Vimeo embeds
+        use_browser: Whether to use headless browser for JS-rendered sites
 
     Returns:
         VideoScraperResult with found videos
     """
     async with VideoScraperService() as scraper:
-        return await scraper.scrape_videos(url, max_videos, include_embeds)
+        return await scraper.scrape_videos(url, max_videos, include_embeds, use_browser)
 
 
-async def get_brand_videos(domain: str, max_videos: int = 5) -> List[Dict[str, Any]]:
+async def get_brand_videos(domain: str, max_videos: int = 5, use_browser: bool = True) -> List[Dict[str, Any]]:
     """
     Get videos from a brand's website.
 
     Args:
         domain: Brand domain (e.g., 'dyna.co')
         max_videos: Maximum number of videos to return
+        use_browser: Whether to use headless browser (recommended for JS-rendered sites)
 
     Returns:
         List of video dictionaries
     """
     url = f"https://{domain}"
-    result = await scrape_website_videos(url, max_videos)
+    result = await scrape_website_videos(url, max_videos, use_browser=use_browser)
 
-    if result.success:
+    if result.success and result.videos:
         return [v.to_dict() for v in result.videos]
 
     # Try www subdomain as fallback
     url = f"https://www.{domain}"
-    result = await scrape_website_videos(url, max_videos)
+    result = await scrape_website_videos(url, max_videos, use_browser=use_browser)
 
     return [v.to_dict() for v in result.videos] if result.success else []

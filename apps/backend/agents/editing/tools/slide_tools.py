@@ -477,6 +477,7 @@ def edit_slide(
     current_slide: Dict,
     registry: ComponentRegistry = None,
     attachments: List[Dict] = None,
+    chat_history: List[Dict] = None,
 ) -> DeckDiff:
     """
     Edit a slide - AI decides what to change.
@@ -488,6 +489,7 @@ def edit_slide(
 
     Args:
         args: { "slide_id": str, "instruction": str }
+        chat_history: Full chat history for context (user messages AND assistant responses)
     """
     slide_id = args.get('slide_id') or _get_attr(current_slide, 'id')
     instruction = args.get('instruction', '')
@@ -558,6 +560,7 @@ def edit_slide(
                 current_slide=current_slide,
                 registry=registry,
                 attachments=attachments,
+                chat_history=chat_history,
             )
         # Otherwise: targeted edit attempt (Cursor-style) guided by AI to propose 1-3 exact replacements
         return _targeted_custom_component_edit(slide_id, custom_component, instruction, deck_data, attachments)
@@ -858,12 +861,14 @@ def custom_component_rewrite(
     current_slide: Dict,
     registry: ComponentRegistry = None,
     attachments: List[Dict] = None,
+    chat_history: List[Dict] = None,
 ) -> DeckDiff:
     """
     High-quality rewrite for a specific CustomComponent using CustomComponentGenerator prompts.
     Only use when user explicitly requests redesign/redo/etc., or as last resort fallback.
 
     Args: {"slide_id": str, "component_id": str, "instruction": str}
+    chat_history: Full chat history for context (user messages AND assistant responses)
     """
     slide_id = args.get("slide_id") or _get_attr(current_slide, "id")
     component_id = args.get("component_id")
@@ -933,6 +938,7 @@ def custom_component_rewrite(
             "is_full_slide": True,
             "presentation_context": (deck_data or {}).get("name") or "",
             "background_color": (colors.get("primary_background") if isinstance(colors, dict) else None),
+            "chat_history": chat_history,  # Pass full chat history for context
         }
         theme_for_gen = theme if isinstance(theme, dict) else {}
         # Include all attachment URLs in the prompt text so the model can infer intent without UI buttons.
@@ -941,12 +947,25 @@ def custom_component_rewrite(
             safe = [f"- {a.get('name','file')}: {a.get('url','')}" for a in attachments]
             attachment_context = "\n\nFILES (infer intent; if user says 'use this' and images exist, treat as primary reference and recreate):\n" + "\n".join(safe)
 
+        # Build chat context string
+        chat_context = ""
+        if chat_history:
+            recent = chat_history[-10:] if len(chat_history) > 10 else chat_history
+            chat_lines = []
+            for msg in recent:
+                role = msg.get('role', 'user')
+                content = str(msg.get('content', ''))[:500]
+                chat_lines.append(f"{role.upper()}: {content}")
+            if chat_lines:
+                chat_context = "\n\nCONVERSATION CONTEXT (use this to understand user preferences and agreements):\n" + "\n".join(chat_lines)
+                logger.info(f"[custom_component_rewrite] Including {len(recent)} chat messages as context")
+
         # Extract actual content from existing HTML - DO NOT pass user instructions as content
         actual_content = _extract_slide_content_for_redesign(current_slide, current_html)
 
         generated = _run_async(
             gen.generate(
-                content=f"""REDESIGN REQUEST: {instruction}{attachment_context}
+                content=f"""REDESIGN REQUEST: {instruction}{attachment_context}{chat_context}
 
 EXISTING SLIDE CONTENT TO REDESIGN:
 {actual_content}
@@ -954,6 +973,7 @@ EXISTING SLIDE CONTENT TO REDESIGN:
 IMPORTANT:
 - Fill the entire 1920x1080 canvas. Do not use max-width containers.
 - If reference images are provided, match their layout and style.
+- Use the conversation context above to understand what the user wants and any preferences they discussed.
 - DO NOT display the redesign request text in the slide. Use it only to guide your design approach.
 - The slide content should be based on the EXISTING SLIDE CONTENT above, not the redesign instructions.""",
                 theme=theme_for_gen,
@@ -1297,13 +1317,17 @@ def create_slide(
     current_slide: Dict,
     registry: ComponentRegistry = None,
     attachments: List[Dict] = None,
+    chat_history: List[Dict] = None,
 ) -> DeckDiff:
     """
-    Create a brand new slide with AI-generated content.
+    Create a brand new slide with AI-generated content using CustomComponentGenerator.
 
     Args:
         args: { "instruction": str, "insert_after": optional str }
+        chat_history: Full chat history for context (user messages AND assistant responses)
     """
+    from agents.generation.custom_component_generator import CustomComponentGenerator
+
     instruction = args.get('instruction', '')
     insert_after = args.get('insert_after')
 
@@ -1314,13 +1338,119 @@ def create_slide(
 
     logger.info(f"[create_slide] Creating new slide: {instruction[:50]}... (insert_after={insert_after})")
 
+    # Extract theme from deck
+    theme = (deck_data or {}).get("theme") or {}
+    colors = theme.get("color_palette") or theme.get("colors") or {}
+    bg_color = colors.get("primary_background", "#1e1e2e")
+
+    # Gather reference images from attachments
+    reference_images = _gather_reference_images("", attachments)
+
+    # Build chat context string for the generator
+    chat_context = ""
+    if chat_history:
+        # Format the last 10 messages for context
+        recent = chat_history[-10:] if len(chat_history) > 10 else chat_history
+        chat_lines = []
+        for msg in recent:
+            role = msg.get('role', 'user')
+            content = str(msg.get('content', ''))[:500]  # Truncate long messages
+            chat_lines.append(f"{role.upper()}: {content}")
+        if chat_lines:
+            chat_context = "\n\nCONVERSATION CONTEXT (use this to understand user preferences and agreements):\n" + "\n".join(chat_lines)
+            logger.info(f"[create_slide] Including {len(recent)} chat messages as context")
+
     # Build attachment context
     att_context = ""
     if attachments:
         att_list = [f"- {a.get('name', 'file')}: {a.get('url', '')}" for a in attachments]
-        att_context = f"\n\nUSER ATTACHMENTS (incorporate if relevant):\n" + "\n".join(att_list)
+        att_context = "\n\nUSER ATTACHMENTS (incorporate if relevant):\n" + "\n".join(att_list)
 
-    prompt = f"""{SLIDE_GENERATOR_PROMPT}
+    # Calculate slide index for context
+    slides = (deck_data or {}).get("slides") or []
+    slide_index = len(slides)  # New slide will be added at the end (or after insert_after)
+
+    # Build slide context for CustomComponentGenerator
+    slide_context = {
+        "title": instruction[:80] if instruction else "New Slide",
+        "slide_index": slide_index,
+        "total_slides": len(slides) + 1,
+        "slide_type": "content",
+        "is_full_slide": True,
+        "background_color": bg_color,
+        "presentation_context": (deck_data or {}).get("name") or "",
+        "slide_mode": "interactive",  # Default to interactive for new slides
+        "chat_history": chat_history,  # Pass full chat history for context
+    }
+
+    # Generate using CustomComponentGenerator for high-quality output
+    gen = CustomComponentGenerator()
+    try:
+        generated = _run_async(
+            gen.generate(
+                content=f"""CREATE NEW SLIDE: {instruction}{att_context}{chat_context}
+
+IMPORTANT:
+- Create a complete, beautiful slide that fills the entire 1920x1080 canvas.
+- Use the conversation context above to understand what the user wants.
+- If the user discussed specific preferences (colors, style, interactivity), apply them.
+- Make it visually stunning and professional.""",
+                theme=theme if isinstance(theme, dict) else {},
+                slide_context=slide_context,
+                component_purpose="visualize",
+                width=1920,
+                height=1080,
+                position={"x": 0, "y": 0},
+                reference_images=reference_images or None,
+            )
+        )
+
+        html = ((generated or {}).get("props") or {}).get("render") or ""
+        if not html:
+            raise ValueError("CustomComponentGenerator returned empty render")
+
+        logger.info(f"[create_slide] Generated CustomComponent with {len(html)} chars HTML")
+
+        # Build the slide with the generated CustomComponent
+        slide_id = str(uuid.uuid4())
+        slide_title = (instruction or "").strip()
+        if not slide_title:
+            slide_title = "New Slide"
+        if len(slide_title) > 80:
+            slide_title = slide_title[:77].rstrip() + "..."
+
+        # Create background component
+        background_comp = {
+            "id": str(uuid.uuid4()),
+            "type": "Background",
+            "props": {
+                "backgroundType": "solid",
+                "backgroundColor": bg_color.lstrip("#") if bg_color.startswith("#") else bg_color
+            }
+        }
+
+        # Create CustomComponent with the generated HTML
+        custom_comp = {
+            "id": str(uuid.uuid4()),
+            "type": "CustomComponent",
+            "props": {
+                "render": html,
+                "position": {"x": 0, "y": 0},
+                "width": 1920,
+                "height": 1080
+            }
+        }
+
+        slide = {
+            "id": slide_id,
+            "title": slide_title,
+            "components": [background_comp, custom_comp]
+        }
+
+    except Exception as e:
+        logger.warning(f"[create_slide] CustomComponentGenerator failed, falling back to basic generation: {e}")
+        # Fallback to the original simple approach
+        prompt = f"""{SLIDE_GENERATOR_PROMPT}
 {att_context}
 
 USER REQUEST: {instruction}
@@ -1332,39 +1462,36 @@ Generate a complete, beautiful slide. Include:
 
 Make it visually stunning and professional."""
 
-    client, model = _get_model_and_client("slide_generate")
+        client, model = _get_model_and_client("slide_generate")
 
-    response = _invoke_with_fallback(
-        client=client,
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        response_model=SlideContent,
-        max_tokens=32000,
-    )
+        response = _invoke_with_fallback(
+            client=client,
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_model=SlideContent,
+            max_tokens=32000,
+        )
 
-    # Build slide
-    slide_id = str(uuid.uuid4())
-    # Frontend expects slides to have a title; backend diffs without title require a full refetch.
-    # Use a reasonable default derived from the instruction.
-    slide_title = (instruction or "").strip()
-    if not slide_title:
-        slide_title = "New Slide"
-    # Keep titles short to avoid ugly thumbnails
-    if len(slide_title) > 80:
-        slide_title = slide_title[:77].rstrip() + "..."
-    slide = {
-        "id": slide_id,
-        "title": slide_title,
-        "components": []
-    }
+        slide_id = str(uuid.uuid4())
+        slide_title = (instruction or "").strip()
+        if not slide_title:
+            slide_title = "New Slide"
+        if len(slide_title) > 80:
+            slide_title = slide_title[:77].rstrip() + "..."
 
-    for component in response.components:
-        comp_dict = {
-            "id": str(uuid.uuid4()),
-            "type": component.type,
-            "props": component.props,
+        slide = {
+            "id": slide_id,
+            "title": slide_title,
+            "components": []
         }
-        slide["components"].append(comp_dict)
+
+        for component in response.components:
+            comp_dict = {
+                "id": str(uuid.uuid4()),
+                "type": component.type,
+                "props": component.props,
+            }
+            slide["components"].append(comp_dict)
 
     # Build diff
     deck_diff = DeckDiff(DeckDiffBase())

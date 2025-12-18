@@ -315,11 +315,10 @@ class ThemeDirector:
         
         # AI-powered brand detection - smart extraction of brand AND domain for Brandfetch
         try:
-            from anthropic import Anthropic
-            import os
             import json as json_module
+            from agents.config import BRAND_DETECTION_MODEL
+            from agents.ai.clients import get_client, invoke
 
-            client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
             brand_prompt = f"""Analyze this presentation request and extract brand information for fetching official brand assets.
 
 Text: "{title} {prompt}"
@@ -346,17 +345,17 @@ Examples:
 - "Stripe payment integration" → {{"brand": "Stripe", "domain": "stripe.com"}}
 - "McDonald's franchise model" → {{"brand": "McDonald's", "domain": "mcdonalds.com"}}"""
 
-            from agents.config import BRAND_DETECTION_MODEL
-            from agents.ai.clients import get_model_id
-            response = client.messages.create(
-                model=get_model_id(BRAND_DETECTION_MODEL),
+            client, model = get_client(BRAND_DETECTION_MODEL)
+            result_text = invoke(
+                client=client,
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are a brand detection expert. Return valid JSON only. Be smart about distinguishing common words from actual brand references."},
+                    {"role": "user", "content": brand_prompt}
+                ],
                 max_tokens=100,
-                temperature=0,
-                system="You are a brand detection expert. Return valid JSON only. Be smart about distinguishing common words from actual brand references.",
-                messages=[{"role": "user", "content": brand_prompt}]
+                temperature=0
             )
-
-            result_text = response.content[0].text.strip()
             # Clean markdown if present
             if result_text.startswith("```"):
                 result_text = result_text.split("```")[1]
@@ -462,10 +461,10 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
             try:
                 import json as json_module
                 from agents.config import BRAND_DETECTION_MODEL
-                client = get_client(BRAND_DETECTION_MODEL)
+                client, actual_model = get_client(BRAND_DETECTION_MODEL)
                 brand_response = invoke(
                     client=client,
-                    model=BRAND_DETECTION_MODEL,
+                    model=actual_model,
                     messages=[{"role": "user", "content": brand_detection_prompt}],
                     max_tokens=100,
                     temperature=0
@@ -2712,19 +2711,24 @@ Available fonts by category:
 Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer categories for best readability."""
 
             from agents.config import FONT_SELECTION_MODEL
-            from agents.ai.clients import get_model_id
-            import anthropic
-            # Use async client directly - get_client returns sync client which breaks await
-            client = anthropic.AsyncAnthropic()
-            actual_model = get_model_id(FONT_SELECTION_MODEL)
-            response = await client.messages.create(
-                model=actual_model,
-                max_tokens=50,
-                temperature=0.3,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            from agents.ai.clients import get_client, get_model_id
+            import asyncio
 
-            body_font = response.content[0].text.strip().strip('"\'')
+            # Use sync invoke in thread since it handles model routing properly
+            client, actual_model = get_client(FONT_SELECTION_MODEL)
+            from agents.ai.clients import invoke
+
+            def _sync_invoke():
+                return invoke(
+                    client=client,
+                    model=actual_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=50,
+                    temperature=0.3
+                )
+
+            body_font = await asyncio.to_thread(_sync_invoke)
+            body_font = body_font.strip().strip('"\'')
 
             # Validate the font exists
             all_fonts = RegistryFonts.get_all_fonts_list()

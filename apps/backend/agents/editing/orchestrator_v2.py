@@ -273,19 +273,20 @@ CONVERSATION CONTINUITY (RECENT CHAT):
 - If still unclear after checking history, ask a clarifying question instead of guessing wrong
 - Continue the conversation naturally - you're having an ongoing dialogue, not isolated requests
 
-VISUAL CONTEXT (screenshot attachment):
-- A screenshot of the current slide is automatically attached when a slide/component is selected
-- USE THIS to understand what the slide currently looks like before making changes
-- Especially important for:
-  * Fixing issues - see what's actually wrong
-  * Major redesigns - understand current layout/design before changing
-  * Visual edits - colors, spacing, sizing, positioning
-  * Element-specific changes - locate the exact element to modify
-- The screenshot shows the REAL rendered state, not just the code
+VISUAL CONTEXT (screenshot):
+- For complex/visual requests, a screenshot of the current slide is included as an image
+- USE THIS to see what the slide ACTUALLY looks like before making changes
+- You can SEE: colors, layout, spacing, text rendering, images, icons, positioning
+- Especially useful for:
+  * Fixing visual issues - see what's actually wrong
+  * Redesigns - understand current layout before changing
+  * Color/style edits - see current colors
+  * Layout adjustments - see element positions
+- The screenshot shows the REAL rendered state (not just code/data)
 
 IMAGE REPLACEMENT (search_images):
 - For "replace images", "fix images", "new images", "find a different image" → call search_images
-- DON'T call view_component first - you can see the slide from the screenshot attachment
+- DON'T call view_component first - you can see the slide from the screenshot (if included)
 - Call search_images ONCE per image you need to replace
 - Use image_index (0, 1, 2, ...) to target each image separately
 
@@ -356,19 +357,58 @@ DO NOT:
 - "Improve" or "clean up" things user didn't ask about
 - Rewrite the entire component for a single-element fix
 
+⚠️ CONTENT IMPROVEMENT FLOW (CRITICAL - FOLLOW THIS EXACTLY):
+
+When user asks to "improve", "update", "replace", or "fix" CONTENT (text, statistics, facts):
+1. FIRST: Call web_search to get real, current data
+2. THEN: Choose the right tool based on user intent:
+   - "update the stats" / "fix the numbers" → custom_component_str_replace (text edit only)
+   - "rewrite this slide with real data" / "redesign with accurate info" → edit_slide (full rewrite OK)
+3. DEFAULT to str_replace unless user explicitly wants a redesign
+
+Examples - TEXT EDIT (use str_replace):
+- "improve the statistics" → web_search → str_replace
+- "update the market data" → web_search → str_replace
+- "fix the numbers" → web_search → str_replace
+- "make the content more accurate" → web_search → str_replace
+
+Examples - FULL REWRITE OK (use edit_slide):
+- "rewrite this slide with real data" → web_search → edit_slide
+- "redesign this with accurate stats" → web_search → edit_slide
+- "rebuild the content section" → web_search → edit_slide
+
+⚠️ NEW SLIDE CREATION FLOW:
+
+When user asks to CREATE A NEW SLIDE with factual content:
+1. FIRST: Call web_search IF the topic needs current data (company info, statistics, market data, etc.)
+2. THEN: Call create_slide - the research data will automatically be injected
+
+Examples - NEEDS RESEARCH:
+- "Create a slide about Tesla's Q4 earnings" → web_search("Tesla Q4 2024 earnings revenue") → create_slide
+- "Add a slide about AI market trends" → web_search("AI market size growth 2024") → create_slide
+- "Make a slide about Apple's product lineup" → web_search("Apple current products 2024") → create_slide
+
+Examples - NO RESEARCH NEEDED (simple slides):
+- "Add a title slide" → create_slide directly
+- "Create an agenda slide" → create_slide directly
+- "Add a thank you slide" → create_slide directly
+- "Make a team intro slide" → create_slide directly (unless specific people need research)
+
 WHEN TO USE EACH TOOL:
 
 custom_component_str_replace (SURGICAL - PREFERRED for single changes):
 - ONE text change, ONE color, ONE URL, ONE image
 - Pass the EXACT instruction to fix just that element
 - Example: "Fix the logo" → instruction: "Replace the logo with [new logo URL]"
+- Example: "Update stats" → After web_search, instruction: "Replace 'XX%' with '42%'"
 
 edit_slide (FULL REWRITE - only when necessary):
 - User explicitly wants redesign/rebrand/overhaul
 - User wants to change the overall theme/style
 - User wants to add/remove MULTIPLE elements
 - Slide is empty and needs content
-- User says: "redesign", "redo", "rebuild", "from scratch"
+- User says: "redesign", "redo", "rebuild", "from scratch", "rewrite"
+- ✅ OK after web_search IF user wants full rewrite (e.g., "rewrite with real data")
 
 STAY ON THEME (CRITICAL):
 - ALWAYS check the 🎨 DECK THEME section in context for colors and typography
@@ -421,7 +461,7 @@ PROFILE SELECTION FLOW:
 3. User clicks Select → You receive message with [SELECTED_LINKEDIN_PROFILE] → USE THIS DATA, don't search again
 4. User clicks Skip → Continue without profile data
 
-NOTE: Visual context (screenshot) is automatically provided when relevant.
+NOTE: For complex/visual requests, a screenshot is included as vision content - USE IT to see the slide!
 """
 
 
@@ -669,6 +709,10 @@ AVAILABLE TOOLS:
    - Create a new slide
    - ✅ USE THIS for any "add slide", "create slide", "new slide" request
    - ALWAYS set insert_after to the current slide ID so the new slide appears right after it
+   - ⚠️ RESEARCH FIRST: If the slide needs factual content (statistics, company data, market info), call web_search BEFORE create_slide
+     * Example: "Create a slide about Apple's Q4 earnings" → web_search FIRST, then create_slide with the data
+     * Example: "Add a slide about market trends in AI" → web_search FIRST for current data
+     * Simple slides (intro, agenda, title, thank you) do NOT need research
    - Args: { "instruction": str, "insert_after": str (REQUIRED - use current slide ID) }
 
 4. delete_slide
@@ -774,6 +818,24 @@ AVAILABLE TOOLS:
 
    ⚠️ IMPORTANT: If [SELECTED_LINKEDIN_PROFILE] is in the message, DON'T call linkedin_lookup - use that data directly!
 
+19. web_search ⭐ FOR CONTENT IMPROVEMENT WITH REAL DATA
+   - Search the web for current information, facts, statistics, and data
+   - ✅ USE FOR CONTENT UPDATES - ALWAYS search before updating text with real data:
+     * "improve the statistics" → web_search("current [topic] statistics 2024")
+     * "update the market data" → web_search("[industry] market size revenue 2024")
+     * "replace with real numbers" → web_search("[specific topic] statistics facts")
+     * "make it more accurate" → web_search("[slide topic] current data")
+     * "add real facts" → web_search("[topic] key facts statistics")
+   - Returns researched content with citations from Perplexity
+   - AFTER web_search completes - choose based on user intent:
+     * Default: custom_component_str_replace (targeted text edit)
+     * If user says "rewrite"/"redesign"/"rebuild": edit_slide is OK
+   - Args: { "query": str }
+   - query: What to search for (be specific, include year for current data)
+   - Example: {"query": "AI market size revenue growth 2024"}
+   - Example: {"query": "Tesla quarterly earnings Q3 2024"}
+   - Example: {"query": "renewable energy adoption statistics Europe 2024"}
+
 18. edit_all_slides ⭐ FOR CROSS-SLIDE EDITS
    - Apply the SAME edit to ALL slides in the deck at once
    - ⚠️ ONLY use when user EXPLICITLY mentions cross-slide scope:
@@ -805,6 +867,7 @@ def orchestrate(
     attachments: List[Dict] = None,
     chat_history: List = None,
     event_cb: callable = None,
+    slide_screenshot: Dict = None,
 ) -> Dict:
     """
     Single-pass orchestration.
@@ -822,6 +885,7 @@ def orchestrate(
         attachments: User-uploaded files
         chat_history: Previous messages
         event_cb: Callback for streaming events
+        slide_screenshot: Optional dict with 'data' (base64) and 'media_type' for vision
 
     Returns:
         {"deck_diff": DeckDiff, "edit_summary": str}
@@ -877,6 +941,24 @@ Respond with the tool_calls to execute."""
 
     client, actual_model = get_client(model)
 
+    # Build user message - multimodal if screenshot provided
+    if slide_screenshot and slide_screenshot.get("data"):
+        # Include screenshot as vision content for the model to "see" the slide
+        user_content = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "data": slide_screenshot["data"],
+                    "media_type": slide_screenshot.get("media_type", "image/jpeg")
+                }
+            },
+            {"type": "text", "text": f"[CURRENT SLIDE SCREENSHOT - Use this to see what the slide looks like]\n\n{prompt}"}
+        ]
+        logger.info(f"[ORCHESTRATOR] 📸 Including slide screenshot as vision content")
+    else:
+        user_content = prompt
+
     # Single LLM call
     try:
         response = invoke(
@@ -884,7 +966,7 @@ Respond with the tool_calls to execute."""
             model=actual_model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": user_content}
             ],
             response_model=OrchestratorResponse,
             max_tokens=4096,
@@ -901,7 +983,7 @@ Respond with the tool_calls to execute."""
                 model=fallback_model,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": user_content}
                 ],
                 response_model=OrchestratorResponse,
                 max_tokens=4096,
@@ -1008,8 +1090,8 @@ Respond with the tool_calls to execute."""
             )
 
             # Inject integration context into slide creation/editing tools
-            # This allows data from linkedin_lookup, figma_import, salesforce_search, etc. to be used in slides
-            if integration_context and tool_name in ("create_slide", "edit_slide", "custom_component_rewrite"):
+            # This allows data from web_search, linkedin_lookup, figma_import, etc. to be used in slides
+            if integration_context and tool_name in ("create_slide", "edit_slide", "custom_component_rewrite", "custom_component_str_replace"):
                 instruction = tool_args.get("instruction", "")
                 if instruction:
                     context_blocks = []
@@ -1024,7 +1106,17 @@ Respond with the tool_calls to execute."""
                         # Format data based on integration type
                         item_lines = []
                         for item in items:
-                            if data_type == "profiles":
+                            if data_type == "research":
+                                # Research data from web_search (Perplexity)
+                                content = item.get("content", "")
+                                citations = item.get("citations", [])
+                                if content:
+                                    item_lines.append(f"Research findings:\n{content}")
+                                if citations:
+                                    item_lines.append(f"Sources: {', '.join(citations[:3])}")
+                                logger.info(f"[ORCHESTRATOR] 💉 Injecting web_search research ({len(content)} chars) into {tool_name}")
+
+                            elif data_type == "profiles":
                                 # People/profile data (LinkedIn, Salesforce contacts, etc.)
                                 parts = [item.get("name", "Unknown")]
                                 if item.get("title"):
@@ -1122,6 +1214,7 @@ Respond with the tool_calls to execute."""
                     registry=registry,
                     attachments=attachments,
                     event_cb=event_cb,
+                    chat_history=chat_history,  # Pass full chat for context-aware tools
                 )
 
                 # Collect read-only observation payloads (e.g., view_component, integration lookups)
@@ -1390,10 +1483,14 @@ def edit_deck(
     run_uuid: str = None,
     event_cb: callable = None,
     attachments: List[Dict] = None,
+    slide_screenshot: Dict = None,
 ) -> Dict:
     """
     Main entry point for deck editing.
     Signature matches the old orchestrator for drop-in replacement.
+
+    Args:
+        slide_screenshot: Optional dict with 'data' (base64) and 'media_type' for vision
     """
 
     # Convert to dict if needed (handle both old .dict() and new .model_dump())
@@ -1415,6 +1512,7 @@ def edit_deck(
         attachments=attachments,
         chat_history=chat_history,
         event_cb=event_cb,
+        slide_screenshot=slide_screenshot,
     )
 
     # Extract deck_diff_data for API compatibility

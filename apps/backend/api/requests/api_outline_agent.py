@@ -1,9 +1,8 @@
 """
 Outline Generation Agent - Conversational AI for creating presentation outlines.
 
-Uses Claude with tool calling to have natural conversations and generate outlines
-when ready. Model is configured via OUTLINE_AGENT_MODEL in agents/config.py.
-Model decides when to search via tool calling.
+Supports both Anthropic (Claude) and Google (Gemini) models with tool calling for web search.
+Model is configured via OUTLINE_AGENT_MODEL in agents/config.py.
 """
 import os
 import logging
@@ -22,6 +21,16 @@ from agents.config import OUTLINE_AGENT_MODEL
 from services.supabase_auth_service import get_auth_service
 from api.requests.api_auth import get_auth_header
 from setup_logging_optimized import get_logger
+
+# Import Gemini types for function calling
+try:
+    from google import genai
+    from google.genai import types as genai_types
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    genai = None
+    genai_types = None
 from services.file_design_extractor import (
     FileDesignExtractor, FileIntent, SlideStyle, FileAnalysis,
     design_to_theme_context, content_to_outline_context
@@ -64,6 +73,35 @@ Academic topics, scientific content, business data - always search to ensure acc
     }
 }
 
+# Gemini function declaration for web search
+def get_gemini_search_tool():
+    """Get Gemini-compatible function declaration for web search."""
+    if not GEMINI_AVAILABLE:
+        return None
+    return genai_types.Tool(
+        function_declarations=[
+            genai_types.FunctionDeclaration(
+                name="web_search",
+                description=SEARCH_TOOL["description"],
+                parameters=genai_types.Schema(
+                    type=genai_types.Type.OBJECT,
+                    properties={
+                        "query": genai_types.Schema(
+                            type=genai_types.Type.STRING,
+                            description="The search query"
+                        )
+                    },
+                    required=["query"]
+                )
+            )
+        ]
+    )
+
+
+def is_gemini_model(model: str) -> bool:
+    """Check if the model is a Gemini model."""
+    return model.startswith("gemini") if model else False
+
 
 async def research_with_perplexity(query: str) -> Dict[str, Any]:
     """
@@ -87,17 +125,22 @@ async def research_with_perplexity(query: str) -> Dict[str, Any]:
 Provide accurate, current information with specific facts, numbers, and statistics.
 Always cite your sources. Focus on what would be useful for presentation slides."""
 
-        response = client.chat.completions.create(
-            model="sonar",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query}
-            ],
-            max_tokens=3000,
-            extra_body={
-                "return_citations": True,
-                "search_recency_filter": "month"
-            }
+        # Run Perplexity call with timeout to prevent hanging
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.chat.completions.create,
+                model="sonar",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": query}
+                ],
+                max_tokens=3000,
+                extra_body={
+                    "return_citations": True,
+                    "search_recency_filter": "month"
+                }
+            ),
+            timeout=60.0  # 60 second timeout per search
         )
 
         content = response.choices[0].message.content
@@ -121,6 +164,14 @@ Always cite your sources. Focus on what would be useful for presentation slides.
             "query": query
         }
 
+    except asyncio.TimeoutError:
+        logger.error(f"[OutlineAgent] Perplexity search timed out (60s) for: {query[:50]}...")
+        return {
+            "success": False,
+            "content": None,
+            "citations": [],
+            "error": "Search timed out after 60 seconds"
+        }
     except Exception as e:
         logger.error(f"[OutlineAgent] Perplexity research failed: {e}")
         return {
@@ -921,15 +972,33 @@ YOUR RESPONSE should create slides using THIS EXACT DATA:
 }
 ```
 
-**MANDATORY RULE #1 - GENERATE OUTLINE IMMEDIATELY WHEN USER PROVIDES DETAILS**
+**MANDATORY RULE #1 - GATHER REQUIREMENTS BEFORE GENERATING**
 
-If the user's FIRST message contains ANY of the following, IMMEDIATELY output the `generate_outline` JSON:
-- A specific topic AND slide count (e.g., "4 slides about X")
-- Multiple slides described (e.g., "slide 1 about X, slide 2 about Y")
-- A company/brand name AND a presentation type (e.g., "pitch deck for Instacart")
-- Detailed content or structure (e.g., "comparison slide", "team slide with headshots")
-- Any indication they know what they want (specific slides, specific content)
-- **UPLOADED FILES** - If files are uploaded, generate outline from them immediately
+On the FIRST message, ALWAYS ask clarifying questions to understand what the user wants. DO NOT generate the outline immediately unless user explicitly says "just do it" or provides ALL of these:
+- Topic/subject
+- Slide count
+- Style preference (formal/casual)
+- Interactive preference (static vs animated)
+
+**REQUIRED QUESTIONS TO ASK (pick 2-3 most relevant):**
+
+1. **Formality/Style Level** - Ask which style fits their needs:
+   - "**Formal/Corporate**: Clean, professional, minimal animations - perfect for executives, investors, or formal settings"
+   - "**Professional**: Polished with subtle animations - great for business meetings and conferences"
+   - "**Casual/Engaging**: Modern with interactive elements - ideal for team presentations, education, or demos"
+   - "**Creative/Bold**: Eye-catching with rich animations - best for pitches, marketing, or standing out"
+
+2. **Interactivity** - Based on the topic, ask:
+   - "Do you want **static slides** (clean, exportable to PowerPoint) or **interactive elements** (quizzes, animated charts, click-to-reveal)?"
+
+3. **Audience** - Who will see this?
+
+4. **Slide Count** - How many slides?
+
+**EXCEPTION - Generate immediately ONLY if:**
+- User uploaded files → generate from file content
+- User says "quick", "fast", "just make it", "don't ask questions"
+- User provides ALL details: topic + count + style + interactivity preference
 
 **MANDATORY RULE #2 - THEME/COLOR CHANGES**
 
@@ -945,11 +1014,11 @@ YOU MUST OUTPUT THIS TYPE OF JSON (not just text):
 Without the JSON action, NOTHING will change. The JSON is HOW you make changes.
 
 **Your Approach:**
-1. **Generate outlines FAST** - If user provides topic + slide count OR detailed content, generate immediately
-2. **Only ask questions if truly needed** - Don't ask if user gave you enough to work with
-3. **Infer smartly** - Fill in reasonable defaults for missing details (audience, tone, etc.)
-4. **Stream your responses naturally** - Write naturally as if typing to the user in real-time
-5. **Suggest style and interactive elements** - When asking clarifying questions, offer creative options
+1. **Understand first, generate second** - Ask 2-3 key questions before generating to ensure you build exactly what they need
+2. **Style & interactivity are crucial** - Always clarify formality level and whether they want static or interactive slides
+3. **Be conversational** - Have a brief back-and-forth to understand their vision, don't just interrogate them
+4. **Infer smartly** - Once you have style + interactivity preferences, fill in other reasonable defaults
+5. **Generate confidently** - After gathering requirements, generate without asking more questions
 
 **💡 GUIDING USERS - STYLE & INTERACTIVE SUGGESTIONS:**
 
@@ -991,30 +1060,73 @@ If the topic is clearly company/business-related (pitch deck, company overview, 
 
 DON'T ask for website if it's obviously not company-related (e.g., "Pikachu evolution", "calculus tutorial", "history of Rome", "personal portfolio").
 
-**When to Ask Questions (ONLY if ALL of these are true):**
-- User gave ONLY a vague topic (e.g., "make a presentation about physics")
-- No slide count mentioned
-- No specific content or structure described
-- No company/brand context
+**When to Ask Questions (DEFAULT - do this first):**
+- ALWAYS on first message unless exception applies
+- Missing style/formality preference
+- Missing interactivity preference (static vs animated)
+- Missing audience information
+- Missing slide count
 
-**When to Generate Immediately (if ANY of these are true):**
-- User mentioned a slide count (e.g., "5 slides", "about 8 slides")
-- User described specific slides (e.g., "first slide about X, then Y")
-- User gave detailed content (e.g., "comparison chart", "team slide with CEO")
-- User mentioned a company/brand (e.g., "for Instacart", "Nike pitch deck")
-- User said "go", "yes", "create", "build", "generate", etc.
+**When to Generate Immediately (EXCEPTIONS only):**
+- User uploaded files → generate from their content immediately
+- User explicitly says "quick", "fast", "just make it", "skip questions"
+- User has ALREADY answered your questions in a previous message
+- User provided ALL of: topic + slide count + style + interactivity preference in one message
 
-**🔍 PROACTIVE RESEARCH - USE web_search AUTOMATICALLY:**
+**🔍 SMART RESEARCH - SEARCH ONLY WHEN NEEDED:**
 
-When you need FACTUAL CONTENT for the presentation, SEARCH FOR IT instead of making it up:
-- Company data, financials, market info → SEARCH
-- Academic/scientific topics → SEARCH for accurate facts
-- Course content, lectures → SEARCH for real material
-- Current events, statistics → SEARCH
+**WHEN TO SEARCH (complex/factual topics):**
+- Company financials, market data, investor presentations → SEARCH
+- Current events, recent statistics, breaking news → SEARCH
+- Specific academic research, scientific data → SEARCH
+- Real courses, lectures, specific people → SEARCH
 
-**DEFAULT TO SEARCHING**: If you're about to write content and you're not 100% certain of the facts,
-use web_search FIRST. Don't ask the user for data you can look up yourself.
-The user expects YOU to bring accurate information - that's what makes the tool helpful!
+**WHEN NOT TO SEARCH (use your knowledge):**
+- General educational content (history, science basics, concepts) → USE YOUR KNOWLEDGE
+- Pop culture, entertainment (Pikachu, Marvel, Disney) → USE YOUR KNOWLEDGE
+- Common how-to guides, tutorials → USE YOUR KNOWLEDGE
+- Creative/fictional content → USE YOUR KNOWLEDGE
+- Generic business topics without specific company data → USE YOUR KNOWLEDGE
+
+**RULE**: Only search when you need CURRENT, SPECIFIC, or VERIFIABLE data. For general knowledge topics, your training data is sufficient - just generate the outline directly.
+
+**🎯 RESEARCH → CONTENT FIELD (CRITICAL):**
+When you use web_search, the results MUST flow into each slide's `content` field:
+1. Search for relevant information BEFORE generating the outline
+2. Extract specific facts, numbers, statistics, and quotes from search results
+3. Put ALL this researched data into each slide's `content` field
+4. The `content` field is the SOURCE OF TRUTH - slide generator will use it
+5. Include numbered citations [1], [2] inline AND a Sources section at the end
+
+Example flow:
+- User asks for "Tesla investor presentation"
+- You search: "Tesla [CURRENT YEAR] revenue delivery numbers stock performance" (use today's year!)
+- Search returns facts with sources from techcrunch.com, reuters.com
+- Your slide content field includes:
+  ```
+  Tesla achieved record deliveries of 1.79 million vehicles in 2024 [1], generating $97 billion in revenue [2]. The company maintained its position as the world's largest EV manufacturer despite increasing competition from Chinese manufacturers.
+
+  Sources:
+  [1] techcrunch.com - https://techcrunch.com/2024/tesla-deliveries
+  [2] reuters.com - https://reuters.com/business/autos/tesla-revenue
+  ```
+
+The content field ensures the slide generator has accurate, researched data to work with instead of hallucinating facts.
+
+**🔬 MULTI-LAYER DEEP RESEARCH (FOR COMPLEX TOPICS ONLY):**
+For topics requiring REAL DATA (company analysis, market research, investor presentations), you can do follow-up searches:
+- If first search reveals interesting angles, companies, or data points → search deeper
+- If you find a statistic that needs context → search for that context
+- If a topic has multiple facets (competitors, market size, technology) → search each in parallel
+
+Example multi-layer flow (for "McDonald's CFO presentation"):
+1. Search "McDonald's [CURRENT YEAR] revenue earnings financials" → gets base financial data
+2. Follow-up searches: "McDonald's digital sales growth [CURRENT YEAR]", "McDonald's franchise model"
+3. Final search if needed: specific competitive comparisons or regional performance
+
+**CRITICAL: Always use the CURRENT YEAR (from today's date) in your searches, not 2024!**
+
+**IMPORTANT**: Multi-layer research is for complex factual topics. For simple presentations (educational, pop culture, general knowledge), just generate the outline directly - no searching needed.
 
 **CRITICAL: COMPLETION TRIGGERS**
 If the user says "build it", "create it", "I'm done", "looks good", "generate outline", "show buttons", "show me buttons", "go for it", "no go for it" (meaning "no changes, go ahead"), "continue", "I'm ready", "ready to create", "let's go", "make it", or indicates they are satisfied:
@@ -1119,11 +1231,30 @@ When you have enough context to generate an outline, output JSON in this EXACT f
     {
       "title": "Slide Title Here",
       "subtitle": "Optional subtitle",
-      "key_points": ["Short point 1", "Short point 2"]
+      "key_points": ["Short point 1", "Short point 2"],
+      "content": "Rich, detailed content with researched facts [1]. Include statistics like $97B revenue [2] and specific numbers. The slide generator uses this as SOURCE OF TRUTH.\n\nSources:\n[1] domain.com - https://domain.com/article\n[2] source.com - https://source.com/data"
     }
   ]
 }
 ```
+
+**CRITICAL: The `content` field is the SOURCE OF TRUTH for slide generation.**
+- Include ALL researched facts, statistics, and data in the content field
+- The slide generator will reference this content when creating the slide
+- Make content rich and detailed (2-4 paragraphs) - it's better to have too much than too little
+- The key_points are for the outline preview; the content is for actual slide generation
+
+**CITATION FORMAT (when you have research sources):**
+- Use numbered citations inline: "Tesla delivered 1.79M vehicles [1] with revenue of $97B [2]"
+- At the END of content, add a Sources section with clickable URLs:
+  ```
+  Sources:
+  [1] techcrunch.com - https://techcrunch.com/article...
+  [2] reuters.com - https://reuters.com/business...
+  ```
+- The slide generator will render these as small clickable links in the bottom-right corner
+- Keep domain names short (techcrunch.com not www.techcrunch.com/full/path)
+- This creates a consistent citation design across all slides
 
 **Style Examples:**
 - "modern tech keynote" - sleek, bold, startup feel
@@ -1312,9 +1443,18 @@ Based on my research, here's your pitch deck with REAL data:
   "action": "generate_outline",
   "slide_count": 6,
   "topic": "Anthropic Series D Financing",
+  "brandContext": "anthropic.com",
   "slides": [
-    {"title": "Anthropic: AI Safety Leadership", "key_points": ["Founded 2021", "Latest valuation from search results", "Claude AI platform"]},
-    {"title": "Previous Round Review", "key_points": ["Use ACTUAL data from search", "Real valuation numbers", "Actual investors"]},
+    {
+      "title": "Anthropic: AI Safety Leadership",
+      "key_points": ["Founded 2021", "$18B valuation", "Claude AI platform"],
+      "content": "Anthropic was founded in 2021 by former OpenAI researchers Dario and Daniela Amodei with a mission to build AI systems that are safe, beneficial, and understandable. The company has rapidly grown to an $18 billion valuation as of their latest funding round. Their flagship product, Claude, is a family of large language models known for being helpful, harmless, and honest. Anthropic has established itself as a leader in AI safety research, pioneering techniques like Constitutional AI and RLHF improvements."
+    },
+    {
+      "title": "Previous Round Review",
+      "key_points": ["Series C: $450M at $5B", "Led by Spark Capital", "Google invested $300M"],
+      "content": "In their Series C round, Anthropic raised $450 million at a $5 billion valuation, led by Spark Capital with participation from existing investors. Google made a strategic investment of $300 million, gaining cloud partnership rights. The round was significantly oversubscribed, reflecting strong investor confidence in Anthropic's approach to AI safety and commercial potential. This funding has been deployed toward expanding compute infrastructure and accelerating Claude's development."
+    },
     ...
   ]
 }
@@ -1333,7 +1473,8 @@ Assistant: ```json
     {
       "title": "The Business Case",
       "subtitle": "Why Now Is the Time",
-      "key_points": ["**$500B** market by 2030", "Costs down **70%** since 2010"]
+      "key_points": ["**$500B** market by 2030", "Costs down **70%** since 2010"],
+      "content": "The global renewable energy market is projected to reach $500 billion by 2030, driven by falling technology costs and increasing regulatory pressure. Solar panel costs have dropped 70% since 2010, while wind turbine efficiency has doubled. Corporate renewable energy procurement hit record levels in 2023, with tech giants like Google, Amazon, and Microsoft leading the charge. The IRA (Inflation Reduction Act) provides unprecedented tax incentives, making this the most favorable investment environment in history for clean energy projects."
     },
     ...
   ]
@@ -1349,17 +1490,19 @@ Assistant: ```json
   "topic": "The Future of Delivery Services",
   "detail_level": "standard",
   "tone": "professional",
+  "brandContext": "instacart.com",
   "slides": [
     {
       "title": "Grocery Delivery Revolution",
       "subtitle": "Technology Changing the Game",
-      "key_points": ["**30min** average delivery", "**85%** customer satisfaction"]
+      "key_points": ["**30min** average delivery", "**85%** customer satisfaction"],
+      "content": "The grocery delivery industry has undergone a massive transformation, with companies like Instacart leading the charge. Average delivery times have dropped to 30 minutes in major metro areas, while customer satisfaction rates have climbed to 85%. The shift to online grocery shopping accelerated during the pandemic and has remained strong, with 60% of consumers now ordering groceries online at least monthly. AI-powered routing, real-time inventory management, and gig economy labor have enabled this speed and reliability revolution."
     },
     ...
   ]
 }
 ```
-Great! I've created your presentation. Now let me apply the Instacart branding...
+Great! I've created your presentation with Instacart branding.
 ```json
 {
   "action": "update_theme",
@@ -1745,116 +1888,400 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
 
         # Call Anthropic API with tool support - model decides when to search
         async def call_model_with_tools(msgs, depth=0):
-            """Call Claude with optional tool use, handle search tool if called."""
-            if depth > 2:
-                logger.warning("[OutlineAgent] Max tool depth reached, returning")
-                yield ("text", "I found some information but couldn't process it fully. Let me summarize what I know.")
+            """Call Claude with optional tool use, handle search tool if called.
+
+            Supports multi-layer research:
+            - depth=0: Initial response, may trigger first round of searches
+            - depth=1: After first search results, may do follow-up deep dives
+            - depth=2: After follow-up searches, may do final refinements
+            - depth=3: Force synthesis (no more searches)
+            """
+            if depth >= 3:
+                logger.warning(f"[OutlineAgent] Max tool depth reached (depth={depth}), forcing synthesis")
+                # Send status event so frontend shows "compiling research" instead of last search query
+                yield f"data: {json.dumps({'type': 'status', 'status': 'compiling', 'message': 'Compiling research into outline...'})}\n\n"
+                yield ("text", "I've gathered extensive research. Let me synthesize everything into your outline.")
+
+                # Force a final call without tools to get the synthesis
+                logger.info("[OutlineAgent] Making final synthesis call (no tools)...")
+
+                # Build synthesis messages - msgs already ends with user (tool_results)
+                # We need to append our synthesis request to that user message, not add a new one
+                synthesis_msgs = []
+                for i, msg in enumerate(msgs):
+                    if i == len(msgs) - 1 and msg["role"] == "user":
+                        # Append synthesis instruction to the last user message (tool results)
+                        existing_content = msg["content"]
+                        if isinstance(existing_content, list):
+                            # Tool results are a list - add our text as another item
+                            new_content = existing_content + [{
+                                "type": "text",
+                                "text": """\n\n---\nYou have completed your research. Now create the presentation outline using ALL the research data above.
+
+Output ONLY a JSON code block with the generate_outline action in this EXACT format:
+
+```json
+{"action": "generate_outline", "slide_count": 10, "topic": "Presentation Topic", "brandContext": "company.com", "slides": [{"title": "Slide Title", "key_points": ["**$86B** Q4 revenue", "**35%** profit growth"], "content": "Detailed narrative with researched facts [1]. Include specific statistics and numbers [2].\\n\\nSources:\\n[1] source.com\\n[2] data.com"}]}
+```
+
+IMPORTANT FORMAT RULES:
+- "slides" array is at the TOP LEVEL (not nested under "outline")
+- "topic" field contains the presentation title
+- "slide_count" matches the number of slides
+- Each slide MUST have BOTH:
+  * "key_points": Array of 2-4 SHORT bullet points (5-10 words each) with **bold** numbers
+  * "content": Detailed narrative paragraph with [1] [2] citations and Sources section
+- Include 8-12 slides covering all the key topics researched
+- Put specific facts, numbers, and statistics from the research in BOTH key_points AND content"""
+                            }]
+                            synthesis_msgs.append({"role": "user", "content": new_content})
+                        else:
+                            # String content - append directly
+                            synthesis_msgs.append({"role": "user", "content": existing_content + "\n\n---\nNow create the presentation outline using ALL the research above. Output ONLY a JSON code block with generate_outline action. Use format: {\"action\": \"generate_outline\", \"slide_count\": N, \"topic\": \"Title\", \"slides\": [...]}"})
+                    else:
+                        synthesis_msgs.append(msg)
+
+                logger.info(f"[OutlineAgent] Synthesis messages: {len(synthesis_msgs)} messages, last role={synthesis_msgs[-1]['role'] if synthesis_msgs else 'EMPTY'}")
+
+                current_date = datetime.now().strftime("%B %d, %Y")
+                current_year = datetime.now().strftime("%Y")
+                synthesis_system = f"""Today's date is {current_date}. Current year: {current_year}. You are a presentation outline generator.
+
+The user has gathered research and now wants you to synthesize it into a presentation outline.
+Output ONLY a JSON code block with the generate_outline action. No other text.
+
+Required JSON format (slides at TOP LEVEL, not nested):
+{{"action": "generate_outline", "slide_count": N, "topic": "Title", "brandContext": "domain.com", "slides": [{{"title": "...", "key_points": ["**$X** metric", "**Y%** growth"], "content": "Detailed narrative with facts [1][2]...\\n\\nSources:\\n[1] url"}}]}}
+
+CRITICAL: Each slide MUST have BOTH key_points (short array for preview) AND content (detailed narrative for generation)."""
+
+                try:
+                    # Detect provider for synthesis call
+                    use_gemini_synthesis = is_gemini_model(model)
+
+                    if use_gemini_synthesis:
+                        # Gemini synthesis call - use simple dict format
+                        gemini_synthesis_contents = []
+                        for msg in synthesis_msgs:
+                            role = "user" if msg["role"] == "user" else "model"
+                            content = msg["content"]
+                            if isinstance(content, str):
+                                gemini_synthesis_contents.append({"role": role, "parts": [{"text": content}]})
+                            elif isinstance(content, list):
+                                text_parts = [{"text": item.get("text", "") if isinstance(item, dict) else str(item)} for item in content]
+                                if text_parts:
+                                    gemini_synthesis_contents.append({"role": role, "parts": text_parts})
+
+                        final_response = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                client.models.generate_content,
+                                model=model,
+                                contents=gemini_synthesis_contents,
+                                config=genai_types.GenerateContentConfig(
+                                    system_instruction=synthesis_system,
+                                    max_output_tokens=8192,
+                                    temperature=0.7
+                                )
+                            ),
+                            timeout=90.0
+                        )
+
+                        # Extract text from Gemini response
+                        synthesis_text = ""
+                        if final_response.candidates and len(final_response.candidates) > 0:
+                            candidate = final_response.candidates[0]
+                            if candidate.content and candidate.content.parts:
+                                for part in candidate.content.parts:
+                                    if hasattr(part, 'text') and part.text:
+                                        synthesis_text += part.text
+
+                        logger.info(f"[OutlineAgent] Gemini synthesis response: {len(synthesis_text)} chars")
+                        if synthesis_text:
+                            logger.info(f"[OutlineAgent] Synthesis preview: {synthesis_text[:500]}...")
+                            yield ("text", synthesis_text)
+                        else:
+                            logger.warning("[OutlineAgent] Gemini synthesis returned empty text")
+                    else:
+                        # Anthropic synthesis call
+                        final_response = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                client.messages.create,
+                                model=model,
+                                max_tokens=8192,
+                                system=synthesis_system,
+                                messages=synthesis_msgs,
+                                temperature=0.7
+                            ),
+                            timeout=90.0  # 90 second timeout for synthesis
+                        )
+                        logger.info(f"[OutlineAgent] Synthesis response: stop_reason={final_response.stop_reason}, blocks={len(final_response.content)}")
+                        for i, block in enumerate(final_response.content):
+                            logger.info(f"[OutlineAgent] Block {i}: type={type(block).__name__}, has_text={hasattr(block, 'text')}")
+                            if hasattr(block, 'text') and block.text:
+                                logger.info(f"[OutlineAgent] Final synthesis response: {len(block.text)} chars")
+                                logger.info(f"[OutlineAgent] Synthesis preview: {block.text[:500]}...")
+                                yield ("text", block.text)
+                            else:
+                                logger.warning(f"[OutlineAgent] Block {i} has no text or empty text")
+                except asyncio.TimeoutError:
+                    logger.error(f"[OutlineAgent] Final synthesis timed out (90s)")
+                    yield ("text", "I'm taking too long to synthesize. Please try with a simpler request.")
+                except Exception as e:
+                    logger.error(f"[OutlineAgent] Final synthesis failed: {e}")
                 return
 
             # Add current date to system prompt so model knows the year
             current_date = datetime.now().strftime("%B %d, %Y")
-            system_with_date = f"Today's date is {current_date}. Use this for any time-sensitive searches (e.g., 'latest funding round', 'recent news', '2025 data').\n\n{OUTLINE_AGENT_SYSTEM_PROMPT}"
+            current_year = datetime.now().strftime("%Y")
+            system_with_date = f"TODAY'S DATE: {current_date}. CURRENT YEAR: {current_year}. ALWAYS use {current_year} (not 2024) in your web searches for recent data, financials, or statistics.\n\n{OUTLINE_AGENT_SYSTEM_PROMPT}"
 
-            response = client.messages.create(
-                model=model,
-                max_tokens=8192,  # Increased to handle large outlines with research
-                system=system_with_date,
-                messages=msgs,
-                tools=[SEARCH_TOOL],
-                temperature=0.7
-            )
+            # Log before API call for debugging
+            logger.info(f"[OutlineAgent] 📡 Making API call at depth={depth} with {len(msgs)} messages...")
 
-            logger.info(f"[OutlineAgent] Response stop_reason: {response.stop_reason}")
+            # Detect provider based on model name
+            use_gemini = is_gemini_model(model)
+
+            # Run API call in thread pool with timeout to prevent hanging
+            try:
+                if use_gemini:
+                    # Gemini API call with function calling
+                    logger.info(f"[OutlineAgent] Using Gemini provider for model: {model}")
+
+                    # Convert messages to Gemini format - use simple dict format
+                    gemini_contents = []
+                    for msg in msgs:
+                        role = "user" if msg["role"] == "user" else "model"
+                        content = msg["content"]
+                        if isinstance(content, str):
+                            gemini_contents.append({"role": role, "parts": [{"text": content}]})
+                        elif isinstance(content, list):
+                            # Handle structured content (tool results)
+                            text_parts = []
+                            for item in content:
+                                if isinstance(item, dict):
+                                    if item.get("type") == "text":
+                                        text_parts.append({"text": item.get("text", "")})
+                                    elif item.get("type") == "tool_result":
+                                        text_parts.append({"text": f"[Search Result]: {item.get('content', '')}"})
+                                elif isinstance(item, str):
+                                    text_parts.append({"text": item})
+                            if text_parts:
+                                gemini_contents.append({"role": role, "parts": text_parts})
+
+                    response = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            client.models.generate_content,
+                            model=model,
+                            contents=gemini_contents,
+                            config=genai_types.GenerateContentConfig(
+                                system_instruction=system_with_date,
+                                max_output_tokens=8192,
+                                temperature=0.7,
+                                tools=[get_gemini_search_tool()]
+                            )
+                        ),
+                        timeout=120.0
+                    )
+                else:
+                    # Anthropic API call (existing code)
+                    response = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            client.messages.create,
+                            model=model,
+                            max_tokens=8192,
+                            system=system_with_date,
+                            messages=msgs,
+                            tools=[SEARCH_TOOL],
+                            temperature=0.7
+                        ),
+                        timeout=120.0  # 2 minute timeout
+                    )
+            except asyncio.TimeoutError:
+                logger.error(f"[OutlineAgent] API call timed out at depth={depth}")
+                yield ("text", "I'm taking too long to process. Let me give you what I have so far.")
+                return
+            except Exception as e:
+                logger.error(f"[OutlineAgent] API call failed at depth={depth}: {type(e).__name__}: {e}")
+                yield ("text", f"I encountered an issue while researching. Let me work with what I have so far.")
+                return
+
+            # Parse response based on provider
+            if use_gemini:
+                # Gemini response handling
+                stop_reason = "end_turn"
+                text_content = ""
+                function_calls = []
+
+                if response.candidates and len(response.candidates) > 0:
+                    candidate = response.candidates[0]
+                    if candidate.content and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'text') and part.text:
+                                text_content += part.text
+                            elif hasattr(part, 'function_call') and part.function_call:
+                                stop_reason = "tool_use"
+                                function_calls.append(part.function_call)
+
+                logger.info(f"[OutlineAgent] ✅ Gemini response received at depth={depth}, stop_reason={stop_reason}, function_calls={len(function_calls)}")
+            else:
+                # Anthropic response handling (existing)
+                stop_reason = response.stop_reason
+                logger.info(f"[OutlineAgent] ✅ API response received at depth={depth}, stop_reason={stop_reason}")
 
             # Handle max_tokens case - response was truncated
-            if response.stop_reason == "max_tokens":
+            if stop_reason == "max_tokens" or (use_gemini and response.candidates and response.candidates[0].finish_reason == "MAX_TOKENS"):
                 logger.warning("[OutlineAgent] Response hit max_tokens limit - output may be incomplete")
-                # Still yield what we have, but warn the user
-                for block in response.content:
-                    if hasattr(block, 'text') and block.text:
-                        yield ("text", block.text)
-                # Send error event to frontend
+                if use_gemini:
+                    if text_content:
+                        yield ("text", text_content)
+                else:
+                    for block in response.content:
+                        if hasattr(block, 'text') and block.text:
+                            yield ("text", block.text)
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Response was truncated. Try asking for fewer slides or less detail.'})}\n\n"
                 return
 
             # Check if model wants to use tools
-            if response.stop_reason == "tool_use":
+            if stop_reason == "tool_use":
                 # Collect ALL tool calls and their results
                 tool_results = []
 
                 # First, yield any text that came before the tool call
-                for block in response.content:
-                    if hasattr(block, 'text') and block.text:
-                        yield ("text", block.text)
+                if use_gemini:
+                    if text_content:
+                        yield ("text", text_content)
+                else:
+                    for block in response.content:
+                        if hasattr(block, 'text') and block.text:
+                            yield ("text", block.text)
 
-                # Process tool calls
-                for block in response.content:
-                    if block.type == "tool_use" and block.name == "web_search":
-                        query = block.input.get("query", "")
-                        logger.info(f"[OutlineAgent] Model requested search: {query}")
+                # Collect all search queries to run in parallel
+                search_tasks = []
+                brand_blocked = []
+                brand_search_keywords = ['brand color', 'brand colours', 'official color', 'hex code', 'logo', 'brand guideline', 'brand identity', 'color palette', 'official font', 'typography guide']
 
-                        # BLOCK brand/theme searches - ThemeDirector handles this via Brandfetch
-                        query_lower = query.lower()
-                        brand_search_keywords = ['brand color', 'brand colours', 'official color', 'hex code', 'logo', 'brand guideline', 'brand identity', 'color palette', 'official font', 'typography guide']
-                        is_brand_search = any(kw in query_lower for kw in brand_search_keywords)
+                if use_gemini:
+                    # Gemini function calls
+                    for i, fc in enumerate(function_calls):
+                        if fc.name == "web_search":
+                            query = fc.args.get("query", "") if hasattr(fc, 'args') else ""
+                            query_lower = query.lower()
+                            is_brand_search = any(kw in query_lower for kw in brand_search_keywords)
 
-                        if is_brand_search:
-                            logger.info(f"[OutlineAgent] 🚫 BLOCKED brand search: {query}")
-                            # Return guidance to use brandContext instead
-                            tool_result = "DO NOT search for brand colors, logos, or fonts. Instead, set brandContext in your generate_outline or update_theme JSON (e.g., 'brandContext': 'ualberta.ca') and the ThemeDirector will fetch official brand data from Brandfetch."
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": block.id,
-                                "content": tool_result
-                            })
-                            continue
+                            if is_brand_search:
+                                logger.info(f"[OutlineAgent] 🚫 BLOCKED brand search: {query}")
+                                brand_blocked.append({
+                                    "block_id": f"gemini_fc_{i}",
+                                    "content": "DO NOT search for brand colors, logos, or fonts. Instead, set brandContext in your generate_outline or update_theme JSON."
+                                })
+                            else:
+                                logger.info(f"[OutlineAgent] Model requested search: {query}")
+                                search_tasks.append({
+                                    "block_id": f"gemini_fc_{i}",
+                                    "query": query
+                                })
+                else:
+                    # Anthropic tool use blocks
+                    for block in response.content:
+                        if block.type == "tool_use" and block.name == "web_search":
+                            query = block.input.get("query", "")
+                            query_lower = query.lower()
+                            is_brand_search = any(kw in query_lower for kw in brand_search_keywords)
 
-                        # Tell frontend we're researching
-                        status_event = f"data: {json.dumps({'type': 'status', 'status': 'researching', 'query': query})}\n\n"
-                        logger.info(f"[OutlineAgent] Sending status event: researching - {query}")
+                            if is_brand_search:
+                                logger.info(f"[OutlineAgent] 🚫 BLOCKED brand search: {query}")
+                                brand_blocked.append({
+                                    "block_id": block.id,
+                                    "content": "DO NOT search for brand colors, logos, or fonts. Instead, set brandContext in your generate_outline or update_theme JSON (e.g., 'brandContext': 'ualberta.ca') and the ThemeDirector will fetch official brand data from Brandfetch."
+                                })
+                            else:
+                                logger.info(f"[OutlineAgent] Model requested search: {query}")
+                                search_tasks.append({
+                                    "block_id": block.id,
+                                    "query": query
+                                })
+
+                # Add blocked brand searches to results
+                for blocked in brand_blocked:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": blocked["block_id"],
+                        "content": blocked["content"]
+                    })
+
+                # Run all searches in PARALLEL
+                if search_tasks:
+                    # Emit individual status event for EACH query (line by line)
+                    queries = [t["query"] for t in search_tasks]
+                    logger.info(f"[OutlineAgent] 🚀 Running {len(search_tasks)} searches in PARALLEL: {queries}")
+
+                    for task in search_tasks:
+                        status_event = f"data: {json.dumps({'type': 'status', 'status': 'researching', 'query': task['query']})}\n\n"
                         yield status_event
 
-                        # Do the search
-                        research_result = await research_with_perplexity(query)
+                    # Execute all searches concurrently
+                    async def search_with_id(task):
+                        result = await research_with_perplexity(task["query"])
+                        return {"block_id": task["block_id"], "query": task["query"], "result": result}
 
-                        if research_result["success"]:
-                            tool_result = research_result["content"]
-                            logger.info(f"[OutlineAgent] Search success, returning {len(tool_result)} chars to model")
-                            research_event = f"data: {json.dumps({'type': 'research', 'content': research_result['content'][:500] + '...', 'citations': research_result['citations'][:5]})}\n\n"
-                            logger.info(f"[OutlineAgent] Sending research event")
+                    search_results = await asyncio.gather(*[search_with_id(t) for t in search_tasks])
+
+                    # Process all results
+                    for sr in search_results:
+                        if sr["result"]["success"]:
+                            tool_result = sr["result"]["content"]
+                            # Truncate research to prevent context overflow
+                            if len(tool_result) > 2500:
+                                tool_result = tool_result[:2500] + "\n\n[Truncated for brevity - use key facts above]"
+                            logger.info(f"[OutlineAgent] Search success for '{sr['query'][:50]}': {len(tool_result)} chars")
+                            research_event = f"data: {json.dumps({'type': 'research', 'content': sr['result']['content'][:500] + '...', 'citations': sr['result']['citations'][:5], 'query': sr['query']})}\n\n"
                             yield research_event
                         else:
-                            tool_result = f"Search failed: {research_result.get('error', 'Unknown error')}"
-                            logger.warning(f"[OutlineAgent] Search failed: {tool_result}")
-                            yield f"data: {json.dumps({'type': 'status', 'status': 'research_failed', 'message': research_result.get('error')})}\n\n"
+                            tool_result = f"Search failed: {sr['result'].get('error', 'Unknown error')}"
+                            logger.warning(f"[OutlineAgent] Search failed for '{sr['query']}': {tool_result}")
+                            yield f"data: {json.dumps({'type': 'status', 'status': 'research_failed', 'message': sr['result'].get('error'), 'query': sr['query']})}\n\n"
 
                         tool_results.append({
                             "type": "tool_result",
-                            "tool_use_id": block.id,
+                            "tool_use_id": sr["block_id"],
                             "content": tool_result
                         })
 
-                # Build proper message format for Anthropic
+                    logger.info(f"[OutlineAgent] ✅ All {len(search_tasks)} parallel searches completed")
+
+                # Build proper message format for next call
                 if tool_results:
-                    # Convert response.content to proper format
-                    assistant_content = []
-                    for block in response.content:
-                        if block.type == "text":
-                            assistant_content.append({"type": "text", "text": block.text})
-                        elif block.type == "tool_use":
-                            assistant_content.append({
-                                "type": "tool_use",
-                                "id": block.id,
-                                "name": block.name,
-                                "input": block.input
-                            })
+                    if use_gemini:
+                        # For Gemini, build simpler message format with tool results as text
+                        assistant_text = text_content if text_content else "I'll search for that information."
+                        results_text = "\n\n".join([f"[Search Result for '{t.get('query', 'query')}']:\n{r['content']}" for t, r in zip(search_tasks, tool_results)])
 
-                    new_msgs = msgs + [
-                        {"role": "assistant", "content": assistant_content},
-                        {"role": "user", "content": tool_results}
-                    ]
+                        new_msgs = msgs + [
+                            {"role": "assistant", "content": assistant_text},
+                            {"role": "user", "content": f"Here are the search results:\n\n{results_text}"}
+                        ]
+                    else:
+                        # Anthropic format - convert response.content to proper format
+                        assistant_content = []
+                        for block in response.content:
+                            if block.type == "text":
+                                assistant_content.append({"type": "text", "text": block.text})
+                            elif block.type == "tool_use":
+                                assistant_content.append({
+                                    "type": "tool_use",
+                                    "id": block.id,
+                                    "name": block.name,
+                                    "input": block.input
+                                })
 
-                    logger.info(f"[OutlineAgent] Calling model again with tool results (depth={depth+1})")
+                        new_msgs = msgs + [
+                            {"role": "assistant", "content": assistant_content},
+                            {"role": "user", "content": tool_results}
+                        ]
+
+                    # Log context size to help debug slow responses
+                    total_chars = sum(len(str(m)) for m in new_msgs)
+                    logger.info(f"[OutlineAgent] Calling model again with tool results (depth={depth+1}, context_size={total_chars} chars, {len(tool_results)} results)")
                     logger.info(f"[OutlineAgent] Tool result preview: {tool_results[0]['content'][:200] if tool_results else 'EMPTY'}...")
 
                     # Call model again with results
@@ -1863,9 +2290,13 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                     return
 
             # No tool use or end_turn - return the text content
-            for block in response.content:
-                if hasattr(block, 'text') and block.text:
-                    yield ("text", block.text)
+            if use_gemini:
+                if text_content:
+                    yield ("text", text_content)
+            else:
+                for block in response.content:
+                    if hasattr(block, 'text') and block.text:
+                        yield ("text", block.text)
 
         # Run the model and collect response
         full_response = ""
@@ -1898,6 +2329,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
             elif isinstance(result, tuple) and result[0] == "text":
                 text = result[1]
                 full_response += text
+                logger.info(f"[OutlineAgent] 📝 Received text chunk: {len(text)} chars (total: {len(full_response)} chars)")
 
                 # Detect JSON blocks (fenced or raw)
                 if contains_json_start(full_response) and not in_json_block:
@@ -1909,6 +2341,8 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                     if not is_thinking_text(text) and not contains_json_start(text):
                         yield f"data: {json.dumps({'type': 'text', 'content': text})}\n\n"
                         streamed_text += text
+
+        logger.info(f"[OutlineAgent] 🏁 Model loop complete. Total response: {len(full_response)} chars")
 
         # After streaming, extract JSON and any text after it
         # Find ALL JSON blocks to handle cases where agent outputs multiple actions
