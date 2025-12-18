@@ -947,7 +947,7 @@ def custom_component_rewrite(
             safe = [f"- {a.get('name','file')}: {a.get('url','')}" for a in attachments]
             attachment_context = "\n\nFILES (infer intent; if user says 'use this' and images exist, treat as primary reference and recreate):\n" + "\n".join(safe)
 
-        # Build chat context string
+        # Build chat context string (chronological: oldest first, newest last)
         chat_context = ""
         if chat_history:
             recent = chat_history[-10:] if len(chat_history) > 10 else chat_history
@@ -955,10 +955,10 @@ def custom_component_rewrite(
             for msg in recent:
                 role = msg.get('role', 'user')
                 content = str(msg.get('content', ''))[:500]
-                chat_lines.append(f"{role.upper()}: {content}")
+                chat_lines.append(f"[{role.upper()}]: {content}")
             if chat_lines:
-                chat_context = "\n\nCONVERSATION CONTEXT (use this to understand user preferences and agreements):\n" + "\n".join(chat_lines)
-                logger.info(f"[custom_component_rewrite] Including {len(recent)} chat messages as context")
+                chat_context = "\n\nCONVERSATION HISTORY (chronological - oldest first, newest last):\n" + "\n---\n".join(chat_lines)
+                logger.info(f"[custom_component_rewrite] Including {len(recent)} chat messages as context (chronological order)")
 
         # Extract actual content from existing HTML - DO NOT pass user instructions as content
         actual_content = _extract_slide_content_for_redesign(current_slide, current_html)
@@ -1346,19 +1346,24 @@ def create_slide(
     # Gather reference images from attachments
     reference_images = _gather_reference_images("", attachments)
 
-    # Build chat context string for the generator
+    # Build chat context string for the generator (chronological: oldest first, newest last)
     chat_context = ""
     if chat_history:
-        # Format the last 10 messages for context
+        # Format the last 10 messages for context, maintaining chronological order
         recent = chat_history[-10:] if len(chat_history) > 10 else chat_history
         chat_lines = []
         for msg in recent:
             role = msg.get('role', 'user')
             content = str(msg.get('content', ''))[:500]  # Truncate long messages
-            chat_lines.append(f"{role.upper()}: {content}")
+            timestamp = msg.get('timestamp', '')
+            if timestamp:
+                # Show relative time or short timestamp
+                chat_lines.append(f"[{role.upper()}]: {content}")
+            else:
+                chat_lines.append(f"[{role.upper()}]: {content}")
         if chat_lines:
-            chat_context = "\n\nCONVERSATION CONTEXT (use this to understand user preferences and agreements):\n" + "\n".join(chat_lines)
-            logger.info(f"[create_slide] Including {len(recent)} chat messages as context")
+            chat_context = "\n\nCONVERSATION HISTORY (chronological - oldest first, newest last):\n" + "\n---\n".join(chat_lines)
+            logger.info(f"[create_slide] Including {len(recent)} chat messages as context (chronological order)")
 
     # Build attachment context
     att_context = ""

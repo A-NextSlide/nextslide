@@ -1762,23 +1762,26 @@ CONTEXT: {' | '.join(design_context_parts)}
 """
 
         # Build chat context section for user preferences and conversation history
+        # Chronological order: oldest first, newest last (most recent message at the bottom)
         chat_context_section = ""
         chat_history = slide_context.get('chat_history')
         if chat_history and len(chat_history) > 0:
             # Format the last 8 messages for context (to avoid token overflow)
+            # Already in chronological order from the API
             recent = chat_history[-8:] if len(chat_history) > 8 else chat_history
             chat_lines = []
             for msg in recent:
                 role = msg.get('role', 'user')
                 content_text = str(msg.get('content', ''))[:400]  # Truncate long messages
-                chat_lines.append(f"{role.upper()}: {content_text}")
+                chat_lines.append(f"[{role.upper()}]: {content_text}")
             if chat_lines:
                 chat_context_section = f"""
-CONVERSATION CONTEXT (understand user preferences and agreements):
-{chr(10).join(chat_lines)}
+CONVERSATION HISTORY (chronological - oldest first, newest last):
+{chr(10).join(['---' + chr(10) + line for line in chat_lines])}
+---
 
 IMPORTANT: Use this conversation to understand:
-- What style/design preferences the user expressed
+- What style/design preferences the user expressed (most recent messages are most relevant)
 - What the user agreed to or confirmed
 - Any specific requirements mentioned in the discussion
 """
