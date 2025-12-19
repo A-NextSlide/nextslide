@@ -14,7 +14,8 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import EnhancedColorPicker from '@/components/EnhancedColorPicker';
 import GroupedDropdown from '@/components/settings/GroupedDropdown';
-import { ALL_FONT_NAMES, FONT_CATEGORIES } from '@/registry/library/fonts';
+import { FontLoadingService } from '@/services/FontLoadingService';
+import { useFontCatalog } from '@/hooks/useFontCatalog';
 import { ThemeEditorData, ThemeColorPalette } from '@/types/chatBlocks';
 
 interface InlineChatThemeEditorProps {
@@ -38,12 +39,6 @@ const COLOR_SWATCHES = [
   { key: 'primary_text', label: 'Text' },
 ] as const;
 
-// Build font groups for dropdown
-const fontGroups = Object.entries(FONT_CATEGORIES).reduce((acc, [category, fonts]) => {
-  acc[category] = fonts.map(f => f.name);
-  return acc;
-}, {} as Record<string, string[]>);
-
 const InlineChatThemeEditor: React.FC<InlineChatThemeEditorProps> = ({
   data,
   isCollapsed,
@@ -58,6 +53,8 @@ const InlineChatThemeEditor: React.FC<InlineChatThemeEditorProps> = ({
   className,
 }) => {
   const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
+  const { groups: fontGroups } = useFontCatalog();
+  const fontOptions = useMemo(() => FontLoadingService.getAllFontNames(), [fontGroups]);
 
   // Get display name for theme
   const themeName = useMemo(() => {
@@ -176,7 +173,7 @@ const InlineChatThemeEditor: React.FC<InlineChatThemeEditorProps> = ({
             <div className="flex-1 min-w-0">
               <GroupedDropdown
                 value={data.typography.headingFont}
-                options={ALL_FONT_NAMES}
+                options={fontOptions}
                 groups={fontGroups}
                 onChange={(value) => onFontChange('heading', value)}
                 placeholder="Heading"
@@ -186,7 +183,7 @@ const InlineChatThemeEditor: React.FC<InlineChatThemeEditorProps> = ({
             <div className="flex-1 min-w-0">
               <GroupedDropdown
                 value={data.typography.bodyFont}
-                options={ALL_FONT_NAMES}
+                options={fontOptions}
                 groups={fontGroups}
                 onChange={(value) => onFontChange('body', value)}
                 placeholder="Body"

@@ -1,9 +1,6 @@
 import os
 import sys
 
-# Enable RAG generation to reduce token usage - MUST BE SET BEFORE ANY OTHER IMPORTS!
-os.environ["USE_RAG_GENERATION"] = os.environ.get("USE_RAG_GENERATION", "true")
-
 # Disable debug logging from libraries before importing them
 os.environ["ANTHROPIC_LOG"] = "error"
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
@@ -60,10 +57,12 @@ def _get_request_hash(outline: dict, user_id: str) -> str:
     for slide in outline.get('slides', []):
         ed = slide.get('extractedData') or {}
         ed_has_chart = bool(isinstance(ed, dict) and ed.get('chartType') and isinstance(ed.get('data'), list) and len(ed.get('data')) > 0)
+        manual_charts = slide.get('manualCharts') or []
+        manual_has_chart = isinstance(manual_charts, list) and len(manual_charts) > 0
         hash_data['slides'].append({
             'title': slide.get('title', ''),
             'content': slide.get('content', '')[:100],  # First 100 chars of content
-            'has_chart': bool(slide.get('chart_data')) or ed_has_chart
+            'has_chart': ed_has_chart or manual_has_chart
         })
     
     # Create a deterministic hash
@@ -1170,7 +1169,6 @@ if __name__ == "__main__":
     # Run the server with uvicorn
     logger.info("Starting Slide Sorcery Chat API on http://127.0.0.1:9090")
     logger.info(f"Image Debug Visualization: {'ENABLED' if DEBUG_VISUALIZE_IMAGES else 'DISABLED'}")
-    logger.info(f"RAG Generation: {'ENABLED' if os.environ.get('USE_RAG_GENERATION', 'true').lower() == 'true' else 'DISABLED'}")
     logger.info("Press CTRL+C to quit")
     
     # Get environment variables with defaults

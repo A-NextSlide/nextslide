@@ -65,7 +65,7 @@ def execute_tool(
         replace_image_from_search,
         edit_image_with_ai,
     )
-    from agents.editing.tools.integration_tools import linkedin_lookup, web_search
+    from agents.editing.tools.integration_tools import linkedin_lookup, web_search, deep_extract
 
     # Tool map
     TOOLS = {
@@ -89,6 +89,7 @@ def execute_tool(
         "edit_image_with_ai": edit_image_with_ai,
         "linkedin_lookup": linkedin_lookup,
         "web_search": web_search,
+        "deep_extract": deep_extract,
     }
 
     # Tools that need event_cb for streaming

@@ -110,17 +110,36 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState(slide.title || '');
-  const [selectedChartType, setSelectedChartType] = useState<string | null>(null);
-  const [chartData, setChartData] = useState<{ title: string; data: any[] } | null>(null);
   // Multiple charts support
   const [charts, setCharts] = useState<ManualChart[]>(() => slide.manualCharts || []);
+  const [activeChartId, setActiveChartId] = useState<string | null>(() =>
+    slide.manualCharts && slide.manualCharts.length ? slide.manualCharts[0].id : null
+  );
   const [showChartData, setShowChartData] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+
+  const activeChart = charts.find(c => c.id === activeChartId) || null;
+  const activeChartType = activeChart?.chartType || null;
+  const activeChartTitle = activeChart?.title || '';
+  const activeChartData = activeChart?.data || [];
+  const fallbackChartType = activeChartType || 'bar';
 
   // Update title when slide changes
   useEffect(() => {
     setEditTitle(slide.title || `Slide ${index + 1}`);
   }, [slide.title, index]);
+
+  useEffect(() => {
+    const nextCharts = slide.manualCharts || [];
+    setCharts(nextCharts);
+    if (!nextCharts.length) {
+      setActiveChartId(null);
+      return;
+    }
+    setActiveChartId(prev =>
+      prev && nextCharts.some(c => c.id === prev) ? prev : nextCharts[0].id
+    );
+  }, [slide.manualCharts]);
 
   const handleTitleEdit = () => {
     setIsEditingTitle(true);
@@ -143,26 +162,24 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
   };
 
   const handleChartTypeChange = (chartType: string) => {
-    setSelectedChartType(chartType);
-    
-    // Update the slide with the new chart type
-    const updatedSlides = currentOutline.slides.map(s => 
-      s.id === slide.id 
-        ? { ...s, chartType, chartData: chartData || generateDefaultChartData(chartType) }
-        : s
+    if (!activeChartId) {
+      addNewChart(chartType);
+      return;
+    }
+
+    const chartConfig = CHART_TYPES[chartType];
+    const chartName = chartConfig?.label || chartType;
+    const updatedCharts = charts.map(c =>
+      c.id === activeChartId
+        ? { ...c, chartType, title: c.title || chartName }
+        : c
     );
-    
+
+    setCharts(updatedCharts);
     setCurrentOutline({
       ...currentOutline,
-      slides: updatedSlides
+      slides: currentOutline.slides.map(s => s.id === slide.id ? { ...s, manualCharts: updatedCharts } : s)
     });
-    
-    // If no chart data exists, generate default data
-    if (!chartData) {
-      const defaultData = generateDefaultChartData(chartType);
-      setChartData(defaultData);
-      updateSlideChartData(defaultData);
-    }
   };
 
   const addNewChart = (chartType: string) => {
@@ -176,8 +193,7 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
     };
     const newCharts = [...charts, newChart];
     setCharts(newCharts);
-    setSelectedChartType(chartType);
-    setChartData({ title: newChart.title, data: newChart.data });
+    setActiveChartId(newChart.id);
     setCurrentOutline({
       ...currentOutline,
       slides: currentOutline.slides.map(s => s.id === slide.id ? { ...s, manualCharts: newCharts } : s)
@@ -211,36 +227,6 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
     }
 
     return baseData;
-  };
-
-  const updateSlideChartData = (newData: any) => {
-    const updatedSlides = currentOutline.slides.map(s => 
-      s.id === slide.id 
-        ? { ...s, chartData: newData }
-        : s
-    );
-    
-    setCurrentOutline({
-      ...currentOutline,
-      slides: updatedSlides
-    });
-  };
-
-  const handleRemoveChart = () => {
-    setSelectedChartType(null);
-    setChartData(null);
-    setShowChartData(false);
-    
-    const updatedSlides = currentOutline.slides.map(s => 
-      s.id === slide.id 
-        ? { ...s, chartType: null, chartData: null }
-        : s
-    );
-    
-    setCurrentOutline({
-      ...currentOutline,
-      slides: updatedSlides
-    });
   };
 
   const onDropOnSlide = (e: React.DragEvent) => {
@@ -317,7 +303,7 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
           <div className="space-y-2">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-[11px] uppercase tracking-wide font-medium text-zinc-600 dark:text-zinc-400">Content</h4>
-              {!selectedChartType && (
+              {charts.length === 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="h-8 text-xs px-3">
@@ -400,7 +386,7 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
               <div className="flex items-center gap-2 flex-wrap">
                 {charts.map((c) => {
                   const ActiveIcon = getChartIcon(c.chartType);
-                  const isActive = selectedChartType === c.chartType && chartData?.data === c.data;
+                  const isActive = c.id === activeChartId;
                   return (
                     <Button
                       key={c.id}
@@ -408,8 +394,7 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
                       size="sm"
                       className={cn('h-7 text-xs px-2', isActive && 'bg-blue-600 text-white')}
                       onClick={() => {
-                        setSelectedChartType(c.chartType);
-                        setChartData({ title: c.title, data: c.data });
+                        setActiveChartId(c.id);
                       }}
                     >
                       <ActiveIcon className="h-3 w-3 mr-1" />
@@ -476,19 +461,16 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
                     size="sm"
                     onClick={() => {
                       // remove active chart
-                      const remaining = charts.filter(c => !(c.chartType === selectedChartType && c.data === chartData?.data));
+                      const remaining = activeChartId ? charts.filter(c => c.id !== activeChartId) : charts;
                       setCharts(remaining);
                       setCurrentOutline({
                         ...currentOutline,
                         slides: currentOutline.slides.map(s => s.id === slide.id ? { ...s, manualCharts: remaining } : s)
                       });
                       if (remaining.length) {
-                        const first = remaining[0];
-                        setSelectedChartType(first.chartType);
-                        setChartData({ title: first.title, data: first.data });
+                        setActiveChartId(remaining[0].id);
                       } else {
-                        setSelectedChartType(null);
-                        setChartData(null);
+                        setActiveChartId(null);
                       }
                     }}
                     className="h-8 text-xs px-3 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
@@ -506,10 +488,11 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
                     <Button variant="outline" className="w-full justify-between">
                       <div className="flex items-center gap-2">
                         {(() => {
-                          const Icon = getChartIcon(selectedChartType);
+                          const iconType = activeChartType || 'bar';
+                          const Icon = getChartIcon(iconType);
                           return <Icon className="h-4 w-4" />;
                         })()}
-                        <span>{CHART_TYPES[selectedChartType]?.label || 'Chart'}</span>
+                        <span>{CHART_TYPES[activeChartType || 'bar']?.label || 'Chart'}</span>
                       </div>
                       <ChevronDown className="h-4 w-4" />
                     </Button>
@@ -595,17 +578,17 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
                         <ChartDataTable
                           extractedData={{
                             source: 'manual',
-                            chartType: selectedChartType || 'bar',
-                            data: chartData?.data || generateDefaultChartData(selectedChartType).data,
-                            title: chartData?.title || slide.title || '',
+                            chartType: fallbackChartType,
+                            data: activeChartData.length ? activeChartData : generateDefaultChartData(fallbackChartType).data,
+                            title: activeChartTitle || slide.title || '',
                             compatibleChartTypes: Object.keys(CHART_TYPES)
                           }}
                           onChangeExtractedData={(updated) => {
-                            // update local
-                            setChartData({ title: updated.title, data: updated.data });
-                            // update active chart in charts array
+                            if (!activeChartId) {
+                              return;
+                            }
                             const updatedCharts = charts.map(c =>
-                              c.chartType === (selectedChartType || '') && c.data === chartData?.data
+                              c.id === activeChartId
                                 ? { ...c, title: updated.title, data: updated.data }
                                 : c
                             );
@@ -636,9 +619,9 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
                       <div className="flex-1 border rounded-lg p-6 bg-zinc-50 dark:bg-zinc-900/50 overflow-hidden">
                         <SlideChartViewer
                           extractedData={{
-                            chartType: selectedChartType,
-                            data: chartData?.data || [],
-                            title: chartData?.title || slide.title
+                            chartType: fallbackChartType,
+                            data: activeChartData,
+                            title: activeChartTitle || slide.title
                           }}
                         />
                       </div>

@@ -6,6 +6,7 @@ import { API_CONFIG } from '@/config/environment';
 import { API_ENDPOINTS } from '@/config/apiEndpoints';
 import { v4 as uuidv4 } from 'uuid';
 import { authService } from '@/services/authService';
+import { normalizeSseEvent } from '@/services/generation/normalizeEvent';
 
 // Types for API requests/responses
 interface OutlineGenerationRequest {
@@ -61,7 +62,8 @@ interface OutlineResponse {
       content: string;
       narrative_role: string;
       speaker_notes?: string;
-      chart_data?: any;
+      extractedData?: any;
+      manualCharts?: any[];
     }>;
     metadata: {
       depth: string;
@@ -208,11 +210,6 @@ export interface StreamingEvent {
     id: string;
     title: string;
     content: string;
-    chartData?: {
-      chart_type: 'bar' | 'line' | 'pie';
-      data: any[];
-      title?: string;
-    };
     extractedData?: {
       source: string;
       chartType: string;
@@ -220,6 +217,9 @@ export interface StreamingEvent {
       data: any[];
     };
     taggedMedia?: TaggedMedia[];
+    manualCharts?: any[];
+    citations?: any[];
+    footnotes?: any[];
   };
 
   // For theme_ready event
@@ -227,6 +227,10 @@ export interface StreamingEvent {
     font?: string;
     bodyFont?: string;
     logoUrl?: string;
+    brandName?: string;
+    brandDomain?: string;
+    brandDomainCandidates?: string[];
+    needsBrandDomainConfirmation?: boolean;
     colors?: {
       background?: string;
       text?: string;
@@ -861,7 +865,7 @@ export class OutlineAPI {
 
         eventSource.onmessage = (event) => {
           try {
-            const data = JSON.parse(event.data);
+            const data = normalizeSseEvent(JSON.parse(event.data));
 
             // IMPORTANT: Capture deck_id from ANY event that has it
             if (data.deck_id && !deckId) {
@@ -1019,7 +1023,7 @@ export class OutlineAPI {
           }
 
           try {
-            const event = JSON.parse(data) as StreamingEvent;
+            const event = normalizeSseEvent(JSON.parse(data)) as StreamingEvent;
 
             if (onProgress) {
               onProgress(event);

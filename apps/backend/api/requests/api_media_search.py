@@ -117,7 +117,7 @@ async def process_media_search(request: MediaSearchRequest) -> MediaSearchRespon
 
                     # Search for company website based on query
                     domain = request.query.lower().replace(" ", "").replace(".", "") + ".com"
-                    scrape_result = await scrape_website_videos(f"https://{domain}", max_videos=request.limit)
+                    scrape_result = await scrape_website_videos(f"https://{domain}", max_videos=request.limit, use_browser=True)
 
                     if scrape_result.success:
                         for video in scrape_result.videos:

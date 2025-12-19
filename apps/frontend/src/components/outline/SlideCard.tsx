@@ -2,11 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { SlideOutline, TaggedMedia, DeckOutline } from '@/types/SlideTypes';
+import { SlideOutline, TaggedMedia, DeckOutline, AssignedVideo } from '@/types/SlideTypes';
 import { determineFileType } from '../../lib/fileUtils';
 import {
   Microscope, Trash2, Loader2, Upload, ImageIcon, BarChart3, FileText, FileIcon, X,
-  Plus, ChevronDown, ChevronsUpDown, Check, ChevronRight, Copy, Settings2, Pencil
+  Plus, ChevronDown, ChevronsUpDown, Check, ChevronRight, Copy, Settings2, Pencil, Video
 } from 'lucide-react';
 import { CHART_TYPES } from '@/registry/library/chart-properties';
 import { 
@@ -87,10 +87,51 @@ const SlideCard: React.FC<SlideCardProps> = ({
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(slide.content || '');
+  const [animatingOutAssignedVideo, setAnimatingOutAssignedVideo] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const citations = (slide.extractedData as any)?.metadata?.citations as Citation[] | undefined;
+
+  // Helper function to extract video title from URL
+  const getVideoTitle = (video: AssignedVideo): string => {
+    if (video.title) return video.title;
+    try {
+      const url = new URL(video.url);
+      // Try to extract a readable name from the URL
+      const hostname = url.hostname.replace('www.', '');
+      const pathParts = url.pathname.split('/').filter(Boolean);
+      if (pathParts.length > 0) {
+        // Get the last meaningful part of the path
+        const lastPart = pathParts[pathParts.length - 1];
+        // Clean up the part (remove file extensions, replace dashes/underscores with spaces)
+        const cleanPart = lastPart
+          .replace(/\.[^.]+$/, '') // Remove file extension
+          .replace(/[-_]/g, ' ')
+          .replace(/\b\w/g, c => c.toUpperCase()); // Title case
+        if (cleanPart.length > 3) return cleanPart;
+      }
+      return `Video from ${hostname}`;
+    } catch {
+      return 'Brand Video';
+    }
+  };
+
+  // Helper function to get video thumbnail
+  const getVideoThumbnail = (video: AssignedVideo): string | null => {
+    if (video.thumbnail) return video.thumbnail;
+    // Try to generate thumbnail for known platforms
+    if (video.video_id) {
+      if (video.source_type === 'youtube') {
+        return `https://img.youtube.com/vi/${video.video_id}/mqdefault.jpg`;
+      }
+      if (video.source_type === 'vimeo') {
+        // Vimeo thumbnails require API call, skip for now
+        return null;
+      }
+    }
+    return null;
+  };
 
   const parseSourcesFromContent = (text: string): Citation[] => {
     const results: Citation[] = [];
@@ -740,16 +781,83 @@ const SlideCard: React.FC<SlideCardProps> = ({
           }}
         />
       )}
-      {slide.taggedMedia && slide.taggedMedia.length > 0 && (
+      {/* Unified Assigned Media Section - shows both videos and tagged media */}
+      {(slide.assignedVideo || (slide.taggedMedia && slide.taggedMedia.length > 0)) && (
         <div className="mt-3 space-y-2">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Tagged Media</h4>
-            {isProcessingMedia && slide.taggedMedia.some(m => m.status === 'pending') && (
+            <h4 className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Assigned Media</h4>
+            {isProcessingMedia && slide.taggedMedia?.some(m => m.status === 'pending') && (
               <div className="flex items-center text-xs text-zinc-500"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Processing...</div>
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            {slide.taggedMedia.map((media, mediaIndex) => (
+            {/* Assigned Video (from AI assignment) */}
+            {slide.assignedVideo && (
+              <div
+                className={cn(
+                  "relative group text-xs border px-2 py-1.5 rounded-md flex items-center text-zinc-700 dark:text-neutral-300 hover:shadow-sm",
+                  "bg-purple-100/50 dark:bg-purple-900/20 border-purple-300 dark:border-purple-800",
+                  animatingOutAssignedVideo ? 'animate-media-tag-out' : 'animate-media-tag-in'
+                )}
+              >
+                <Video className="h-3 w-3 mr-1 text-purple-500 dark:text-purple-400" />
+                <span className="truncate max-w-[120px]">{getVideoTitle(slide.assignedVideo)}</span>
+                {/* X button overlay on hover */}
+                <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-end rounded opacity-0 group-hover:opacity-100 transition-opacity pr-1">
+                  <button
+                    onClick={() => {
+                      setAnimatingOutAssignedVideo(true);
+                      setTimeout(() => {
+                        setCurrentOutline(prev => {
+                          if (!prev) return null;
+                          const updatedSlides = prev.slides.map(s =>
+                            s.id === slide.id ? { ...s, assignedVideo: undefined } : s
+                          );
+                          return { ...prev, slides: updatedSlides };
+                        });
+                        setAnimatingOutAssignedVideo(false);
+                      }, 300);
+                    }}
+                    className="p-0.5 bg-red-500/80 rounded-full hover:bg-red-600/80 text-white opacity-70 hover:opacity-100"
+                    title="Remove video from slide"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </div>
+                {/* Tooltip with video preview on hover */}
+                <div className={cn(
+                  "absolute bottom-full mb-2 w-72 p-3 bg-black/90 backdrop-blur-md text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-purple-500/30",
+                  "left-0"
+                )}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Video className="h-3 w-3 text-purple-400" />
+                    <p className="font-semibold text-[12px] text-purple-400">Brand Video</p>
+                  </div>
+                  {getVideoThumbnail(slide.assignedVideo) && (
+                    <div className="mb-2 flex justify-center">
+                      <img
+                        src={getVideoThumbnail(slide.assignedVideo)!}
+                        alt={getVideoTitle(slide.assignedVideo)}
+                        className="max-h-32 max-w-full rounded-md border border-purple-500/30"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  )}
+                  <p className="text-[11px] leading-relaxed mb-1 font-medium">{getVideoTitle(slide.assignedVideo)}</p>
+                  <p className="text-[10px] text-gray-400 truncate">{slide.assignedVideo.url}</p>
+                  {slide.assignedVideo.source_type && (
+                    <div className="border-t border-purple-500/20 pt-2 mt-2 text-[10px] text-gray-300/80">
+                      <span className="text-purple-400/80">Source:</span> {slide.assignedVideo.source_type}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* Tagged Media (uploaded images, charts, etc.) */}
+            {slide.taggedMedia?.map((media, mediaIndex) => (
               <div key={`${media.id}-${mediaIndex}`}
                 onMouseEnter={(e) => {
                   setTooltipHostSlideId(slide.id);
@@ -807,7 +915,7 @@ const SlideCard: React.FC<SlideCardProps> = ({
                   currentTooltipAlign === 'right' ? "right-0" : "left-0"
                 )}>
                   <div className="flex items-center gap-2 mb-2"><p className="font-semibold text-[12px] text-pink-400">AI Analysis:</p></div>
-                  {media.type === 'image' && media.previewUrl && (<div className="mb-2 flex justify-center"><img src={media.previewUrl} alt={media.filename} className="max-h-32 max-w-full rounded-md border border-pink-500/30" onError={(e) => { 
+                  {media.type === 'image' && media.previewUrl && (<div className="mb-2 flex justify-center"><img src={media.previewUrl} alt={media.filename} className="max-h-32 max-w-full rounded-md border border-pink-500/30" onError={(e) => {
                     const target = e.target as HTMLImageElement;
                     if (target.src !== '/placeholder.svg') {
                       target.src = '/placeholder.svg';

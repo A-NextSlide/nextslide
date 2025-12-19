@@ -172,17 +172,36 @@ class VideoScraperService:
         result = VideoScraperResult(domain=urlparse(url).netloc)
 
         try:
-            logger.info(f"🎬 [VideoScraper] Scraping videos from: {url}")
+            logger.info(f"🎬 [VideoScraper] Scraping videos from: {url} (browser={use_browser}, playwright_available={PLAYWRIGHT_AVAILABLE})")
 
-            # Fetch the webpage (with browser fallback for JS-rendered sites)
+            # Fetch the webpage
             html_content = await self._fetch_webpage(url)
+            html_len = len(html_content) if html_content else 0
+            logger.debug(f"🎬 [VideoScraper] Initial fetch got {html_len} chars")
 
-            # If we found no content or very little, try with browser
+            # Try browser-based scraping if requested and available
+            used_browser = False
             if use_browser and PLAYWRIGHT_AVAILABLE:
-                browser_html = await self._fetch_with_browser(url)
-                if browser_html and len(browser_html) > len(html_content or ''):
-                    html_content = browser_html
-                    logger.info(f"🎬 [VideoScraper] Using browser-rendered content for {url}")
+                logger.info(f"🎬 [VideoScraper] Attempting browser-based scraping for {url}")
+
+                # Try up to 2 times with browser
+                for attempt in range(2):
+                    browser_html = await self._fetch_with_browser(url)
+                    if browser_html:
+                        browser_len = len(browser_html)
+                        logger.info(f"🎬 [VideoScraper] Browser fetch got {browser_len} chars (vs {html_len} from HTTP) on attempt {attempt + 1}")
+                        if browser_len > html_len:
+                            html_content = browser_html
+                            used_browser = True
+                        break
+                    else:
+                        if attempt == 0:
+                            logger.warning(f"🎬 [VideoScraper] Browser fetch attempt 1 failed for {url}, retrying...")
+                            await asyncio.sleep(1)  # Brief pause before retry
+                        else:
+                            logger.warning(f"🎬 [VideoScraper] Browser fetch returned nothing for {url} after 2 attempts")
+            elif use_browser and not PLAYWRIGHT_AVAILABLE:
+                logger.warning(f"🎬 [VideoScraper] Browser scraping requested but Playwright not installed. Run: pip install playwright && playwright install chromium")
 
             if not html_content:
                 result.error = "Failed to fetch webpage"
@@ -314,32 +333,58 @@ class VideoScraperService:
             logger.debug(f"Failed to fetch {url}: {e}")
         return None
 
-    async def _fetch_with_browser(self, url: str, wait_time: int = 3000) -> Optional[str]:
+    async def _fetch_with_browser(self, url: str, wait_time: int = 5000) -> Optional[str]:
         """Fetch webpage content using headless browser for JS-rendered sites."""
         if not PLAYWRIGHT_AVAILABLE:
-            logger.debug("Playwright not available for browser-based fetching")
+            logger.warning("🎬 [VideoScraper] Playwright not available for browser-based fetching")
             return None
 
+        browser = None
         try:
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=True)
                 context = await browser.new_context(
-                    user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    viewport={'width': 1920, 'height': 1080}
                 )
                 page = await context.new_page()
 
                 try:
-                    await page.goto(url, wait_until='networkidle', timeout=15000)
-                    # Wait additional time for any lazy-loaded content
+                    # Try with domcontentloaded first, then wait for network to settle
+                    logger.debug(f"🎬 [VideoScraper] Navigating to {url}...")
+                    await page.goto(url, wait_until='domcontentloaded', timeout=20000)
+
+                    # Wait for network to be idle (no requests for 500ms)
+                    try:
+                        await page.wait_for_load_state('networkidle', timeout=10000)
+                    except Exception as e:
+                        logger.debug(f"🎬 [VideoScraper] Network idle timeout (continuing): {e}")
+
+                    # Additional wait for JS to render content
                     await page.wait_for_timeout(wait_time)
+
+                    # Scroll to trigger any lazy loading
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+                    await page.wait_for_timeout(1000)
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    await page.wait_for_timeout(1000)
+
                     html_content = await page.content()
-                    return html_content
+
+                    if html_content and len(html_content) > 1000:
+                        logger.debug(f"🎬 [VideoScraper] Successfully fetched {len(html_content)} chars from {url}")
+                        return html_content
+                    else:
+                        logger.warning(f"🎬 [VideoScraper] Page content too short ({len(html_content) if html_content else 0} chars) for {url}")
+                        return None
+
                 except Exception as e:
-                    logger.debug(f"Browser fetch failed for {url}: {e}")
+                    logger.warning(f"🎬 [VideoScraper] Browser navigation failed for {url}: {type(e).__name__}: {e}")
                 finally:
-                    await browser.close()
+                    if browser:
+                        await browser.close()
         except Exception as e:
-            logger.debug(f"Playwright error for {url}: {e}")
+            logger.warning(f"🎬 [VideoScraper] Playwright error for {url}: {type(e).__name__}: {e}")
 
         return None
 

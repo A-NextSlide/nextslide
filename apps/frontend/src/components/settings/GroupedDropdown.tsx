@@ -1,4 +1,4 @@
-import React, { useState, forwardRef, Ref, useEffect, useRef } from 'react';
+import React, { useState, forwardRef, Ref, useEffect, useRef, useMemo } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,13 +50,35 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
   const [loadedCategories, setLoadedCategories] = useState<Set<string>>(new Set());
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [groupMode, setGroupMode] = useState<'style' | 'source'>('style');
+
+  const sourceGroups = useMemo(() => {
+    if (!groups) return null;
+    return FontLoadingService.getFontSourceGroups?.() || null;
+  }, [groups]);
+  const hasSourceGroups = !!sourceGroups && Object.keys(sourceGroups).length > 0;
+  const effectiveGroups = groupMode === 'source' && hasSourceGroups ? sourceGroups : groups;
   
   // Call hook for the *selected* value unconditionally for the trigger
   const isSelectedValueLoaded = useFontLoading(value); 
 
+  // Find which group the current value belongs to
+  const findGroupForValue = (candidateGroups?: Record<string, string[]>) => {
+    if (!candidateGroups) return null;
+    
+    for (const [groupName, groupOptions] of Object.entries(candidateGroups)) {
+      if (groupOptions.includes(value)) {
+        return groupName;
+      }
+    }
+    return null;
+  };
+
+  const currentGroup = findGroupForValue(effectiveGroups || undefined);
+
   // Auto-position dropdown to selected font when it opens
   useEffect(() => {
-    if (open && value && groups) {
+    if (open && value && effectiveGroups) {
       // Small delay to ensure DOM is rendered
       setTimeout(() => {
         const selectedElement = document.querySelector(`[data-font-option="${value}"]`) as HTMLElement;
@@ -76,51 +98,32 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
         }
       }, 100);
     }
-  }, [open, value, groups]);
+  }, [open, value, effectiveGroups]);
+
+  useEffect(() => {
+    if (groupMode === 'source' && !hasSourceGroups) {
+      setGroupMode('style');
+    }
+  }, [groupMode, hasSourceGroups]);
+
+  useEffect(() => {
+    setLoadedCategories(new Set());
+  }, [groupMode, effectiveGroups]);
 
   // Smart font loading when dropdown opens
   useEffect(() => {
-    if (open && groups) {
-      // Load system fonts and common fonts immediately
-      const systemFonts = groups['System & Web Safe'] || [];
-      const awwwardsFonts = (groups['Awwwards Picks'] || []).slice(0, 10); // First 10 Awwwards fonts
-      const sansFonts = (groups['Sans-Serif'] || []).slice(0, 10); // First 10 sans-serif
-      
-      // Load high priority fonts immediately (these appear first in dropdown)
-      const highPriorityFonts = [...systemFonts, ...awwwardsFonts, ...sansFonts];
-      highPriorityFonts.forEach(font => {
-        if (!FontLoadingService.isFontLoaded(font)) {
-          FontLoadingService.loadFont(font);
-        }
-      });
-      
-      // Load the currently selected value immediately to ensure it displays
+    if (open && effectiveGroups) {
+      (async () => {
+        try {
+          await FontLoadingService.preloadForDropdown?.(effectiveGroups, currentGroup || undefined);
+        } catch {}
+      })();
+
       if (value && !FontLoadingService.isFontLoaded(value)) {
         FontLoadingService.loadFont(value);
       }
-      
-      // Load other categories progressively with shorter delays
-      const categoryOrder = [
-        'Designer', 'Premium', 'Serif', 'Monospace', 'Design', 
-        'Bold', 'Elegant', 'Contemporary', 'Variable', 'Modern',
-        'PixelBuddha', 'Designer Local', 'Pixel & Retro Display', 'Unique'
-      ];
-      const orderedCategories = [
-        ...categoryOrder,
-        ...Object.keys(groups).filter(cat => !categoryOrder.includes(cat) && cat !== 'System & Web Safe' && cat !== 'Awwwards Picks' && cat !== 'Sans-Serif')
-      ];
-      
-      orderedCategories.forEach((category, index) => {
-        if (groups[category]) {
-          setTimeout(() => {
-            if (open) { // Only load if dropdown is still open
-              loadFontsForCategory(category);
-            }
-          }, (index + 1) * 100); // Reduced from 500ms to 100ms for faster loading
-        }
-      });
     }
-  }, [open, groups, value]);
+  }, [open, effectiveGroups, value, currentGroup]);
 
   // Ensure the search input retains focus while typing
   useEffect(() => {
@@ -134,35 +137,26 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
 
   // Function to load fonts for a specific category
   const loadFontsForCategory = (categoryName: string) => {
-    if (!groups || loadedCategories.has(categoryName)) return;
+    if (!effectiveGroups || loadedCategories.has(categoryName)) return;
     
-    const categoryFonts = groups[categoryName] || [];
+    const categoryFonts = effectiveGroups[categoryName] || [];
     
     // Load fonts based on priority
     const priorityOrder = {
+      'Featured': 1,
       'System & Web Safe': 1,
-      'Awwwards Picks': 2,
+      'Google Fonts': 2,
+      'Fontshare': 2,
       'Designer': 2,
       'PixelBuddha': 3,
-      'Designer Local': 3,
-      'Premium': 2,
+      'CDN': 3,
       'Sans-Serif': 2,
       'Serif': 3,
-      'Contemporary': 3,
-      'Variable': 3,
+      'Display': 4,
+      'Slab': 4,
       'Monospace': 4,
-      'Design': 5,
-      'Bold': 5,
-      'Elegant': 5,
-      'Modern': 5,
-      'Script': 6,
-      'Unique': 6,
-      'Editorial': 4,
-      'Geometric': 3,
-      'Tech & Startup': 4,
-      'Luxury': 5,
-      'Retro': 6,
-      'Branding': 4
+      'Script': 5,
+      'Other': 6
     };
     
     const priority = priorityOrder[categoryName as keyof typeof priorityOrder] || 7;
@@ -185,19 +179,35 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
     setLoadedCategories(prev => new Set([...prev, categoryName]));
   };
 
-  // Find which group the current value belongs to
-  const findGroupForValue = () => {
-    if (!groups) return null;
-    
-    for (const [groupName, groupOptions] of Object.entries(groups)) {
-      if (groupOptions.includes(value)) {
-        return groupName;
-      }
-    }
-    return null;
-  };
-
-  const currentGroup = findGroupForValue();
+  const orderedCategories = useMemo(() => {
+    if (!effectiveGroups) return [];
+    const styleOrder = [
+      'Featured',
+      'Awwwards Picks',
+      'System & Web Safe',
+      'Sans-Serif',
+      'Serif',
+      'Display',
+      'Script',
+      'Monospace',
+      'Slab',
+      'Other'
+    ];
+    const sourceOrder = [
+      'PixelBuddha',
+      'Designer',
+      'Google Fonts',
+      'Fontshare',
+      'CDN',
+      'System & Web Safe',
+      'Other'
+    ];
+    const preferred = groupMode === 'source' ? sourceOrder : styleOrder;
+    return [
+      ...preferred,
+      ...Object.keys(effectiveGroups).filter(cat => !preferred.includes(cat))
+    ];
+  }, [effectiveGroups, groupMode]);
   
   // Sync inputValue with external value changes
   React.useEffect(() => {
@@ -414,13 +424,31 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
               }}
             />
           </div>
+          {hasSourceGroups && (
+            <div className="mt-2 flex items-center gap-1 rounded-md border bg-background p-0.5 text-[10px]">
+              <button
+                type="button"
+                className={`flex-1 rounded px-2 py-1 transition-colors ${groupMode === 'style' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setGroupMode('style')}
+              >
+                Style
+              </button>
+              <button
+                type="button"
+                className={`flex-1 rounded px-2 py-1 transition-colors ${groupMode === 'source' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setGroupMode('source')}
+              >
+                Source
+              </button>
+            </div>
+          )}
         </div>
         
         {filter ? (
           <ScrollArea className="h-[320px]">
             <div className="p-2">
               {(() => {
-                const allOptions = Object.values(groups).flat();
+                const allOptions = Object.values(effectiveGroups || {}).flat();
                 const filtered = filterOptions(allOptions);
                 if (filtered.length === 0) {
                   return (
@@ -463,21 +491,8 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-[260px] max-h-[200px] overflow-y-auto">
                   {(() => {
-                    const categoryOrder = [
-                      'Awwwards Picks', 'Designer', 'PixelBuddha', 'Designer Local', 'Pixel & Retro Display', 'System & Web Safe', 'Premium', 'Sans-Serif',
-                      'Serif', 'Monospace', 'Design', 
-                      'Bold', 'Script', 'Elegant', 'Modern',
-                      'Contemporary', 'Variable', 'Unique',
-                      'Editorial', 'Geometric', 'Tech & Startup',
-                      'Luxury', 'Retro', 'Branding'
-                    ];
-                    const orderedCategories = [
-                      ...categoryOrder,
-                      ...Object.keys(groups).filter(cat => !categoryOrder.includes(cat))
-                    ];
-                    
                     return orderedCategories
-                      .filter(cat => groups[cat] && groups[cat].length > 0)
+                      .filter(cat => effectiveGroups?.[cat] && effectiveGroups?.[cat].length > 0)
                       .map(category => (
                         <DropdownMenuItem
                           key={category}
@@ -500,6 +515,7 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
                                 }
                               }
                             }
+                            loadFontsForCategory(category);
                             // Close the dropdown after selection
                             setCategoryDropdownOpen(false);
                           }}
@@ -507,7 +523,7 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
                         >
                           <div className="flex items-center justify-between w-full">
                             <span>{category}</span>
-                            <span className="text-muted-foreground">({groups[category].length})</span>
+                            <span className="text-muted-foreground">({effectiveGroups?.[category].length})</span>
                           </div>
                         </DropdownMenuItem>
                       ));
@@ -520,23 +536,10 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
             <ScrollArea className="h-[320px]">
               <div className="p-1">
                 {(() => {
-                  const categoryOrder = [
-                    'Awwwards Picks', 'Designer', 'PixelBuddha', 'Designer Local', 'Pixel & Retro Display', 'System & Web Safe', 'Premium', 'Sans-Serif',
-                    'Serif', 'Monospace', 'Design', 
-                    'Bold', 'Script', 'Elegant', 'Modern',
-                    'Contemporary', 'Variable', 'Unique',
-                    'Editorial', 'Geometric', 'Tech & Startup',
-                    'Luxury', 'Retro', 'Branding'
-                  ];
-                  const orderedCategories = [
-                    ...categoryOrder,
-                    ...Object.keys(groups).filter(cat => !categoryOrder.includes(cat))
-                  ];
-                  
                   return orderedCategories
-                    .filter(cat => groups[cat] && groups[cat].length > 0)
+                    .filter(cat => effectiveGroups?.[cat] && effectiveGroups?.[cat].length > 0)
                     .map((categoryName, categoryIndex) => {
-                      const categoryFonts = groups[categoryName] || [];
+                      const categoryFonts = effectiveGroups?.[categoryName] || [];
                       
                       return (
                         <div key={categoryName} className="mb-4">

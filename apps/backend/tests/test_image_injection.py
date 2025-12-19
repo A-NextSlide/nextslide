@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
 from typing import Dict
+import pytest
 
 # Test the injection function directly
 def test_inject_prefetched_images():
@@ -127,13 +128,12 @@ def test_inject_prefetched_images():
     print("\n" + "="*60)
     print("🎉 ALL INJECTION TESTS PASSED!")
     print("="*60)
-    return True
 
 
 def test_term_to_prop_name():
     """Test prop name conversion."""
 
-    from agents.generation.custom_component_generator import _term_to_prop_name
+    from agents.generation.custom_component_helpers import _term_to_prop_name
 
     # Test conversions - but now we use numbered props so this is less critical
     # Keeping for backwards compatibility testing
@@ -143,9 +143,9 @@ def test_term_to_prop_name():
     assert _term_to_prop_name("AI") == "aiImage"
 
     print("✅ Prop name conversion tests PASSED")
-    return True
 
 
+@pytest.mark.asyncio
 async def test_full_flow_mock():
     """Test the full flow with mocked SerpAPI response."""
 
@@ -236,8 +236,6 @@ async def test_full_flow_mock():
     print(result[:500])
     print("-" * 40)
 
-    return True
-
 
 def test_external_media_conversion():
     """Test that external_media images are converted to prefetched_images format."""
@@ -293,7 +291,6 @@ def test_external_media_conversion():
     assert url_count >= 2, f"Should have at least 2 external URLs, got {url_count}"
 
     print("✅ External media conversion test PASSED")
-    return True
 
 
 def run_all_tests():

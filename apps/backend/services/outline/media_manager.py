@@ -75,38 +75,16 @@ class MediaManager:
             })
         
         # Create prompt for AI
-        prompt = f"""You are an expert at matching images to presentation slides. Analyze the following images and slides, then assign each image to the most appropriate slides.
-
-IMAGES:
-{json.dumps(images_data, indent=2)}
-
-SLIDES:
-{json.dumps(slides_data, indent=2)}
-
-ASSIGNMENT RULES:
-1. Logos and icons that have 'should_use_everywhere': true should be assigned to title and conclusion slides
-2. Chart images should go to slides that discuss data, metrics, or analysis
-3. Background images work well on title, section header, or conclusion slides
-4. Regular content images should match the slide's topic and content
-5. IMPORTANT: Regular content images (photos) should only be assigned to ONE slide each - choose the BEST match
-6. Only logos, icons, or images marked as 'should_use_everywhere' can appear on multiple slides
-7. Some images might not match any slide well - that's okay, leave them unassigned
-8. Consider the slide type and content when making assignments
-9. Prioritize unique visual storytelling - avoid repetition unless the image is a branding element
-
-Return a JSON object with this exact structure:
-{{
-  "assignments": [
-    {{
-      "image_index": 0,
-      "slide_ids": ["slide-id-1", "slide-id-2"],
-      "confidence": 0.9,
-      "reasoning": "Brief explanation"
-    }}
-  ]
-}}
-
-Only include images that have good matches. Be thoughtful and strategic about assignments."""
+        prompt = (
+            "Assign images to the slides where they best support the content. "
+            "Leave images unassigned if the match is weak. "
+            "If should_use_everywhere is true, you may assign to multiple slides; otherwise prefer a single best match. "
+            "Return JSON: {\"assignments\": [{\"image_index\": 0, \"slide_ids\": [\"slide-id\"], \"confidence\": 0.9, \"reasoning\": \"...\"}]}."
+            "\n\nIMAGES:\n"
+            f"{json.dumps(images_data, indent=2)}\n\n"
+            "SLIDES:\n"
+            f"{json.dumps(slides_data, indent=2)}"
+        )
 
         try:
             # Get AI client
@@ -198,89 +176,13 @@ Only include images that have good matches. Be thoughtful and strategic about as
             
         except Exception as e:
             logger.error(f"Error in AI-based media assignment: {e}")
-            # Fall back to simple assignment
-            self.assign_media_to_slides(slides, processed_files)
+            return
     
     def assign_media_to_slides(self, slides: List[SlideContent], processed_files: Dict[str, Any]) -> None:
-        """Simple fallback assignment when AI assignment fails"""
-        if not processed_files:
-            return
-        
-        # Process images with simple rules
-        for img in processed_files.get('images', []):
-            if img['category'] == 'rejected':
-                continue
-            
-            # Logos/icons go to title and conclusion
-            if img.get('should_use_everywhere'):
-                for slide in slides:
-                    if slide.slide_type in ['title', 'conclusion']:
-                        interpretation = f"{img['interpretation']} | Auto-assigned to {slide.slide_type} slide"
-                        tagged_media = {
-                            'id': str(uuid.uuid4()),
-                            'filename': img['filename'],
-                            'type': self._get_media_type(img['category'], img['filename']),
-                            'previewUrl': img.get('url', '') or img.get('base64', ''),
-                            'url': img.get('url', '') or img.get('base64', ''),  # Add url field
-                            'interpretation': interpretation,
-                            'slideId': slide.id,
-                            'status': 'processed',
-                            'metadata': {
-                                'componentType': 'Image',
-                                'confidence': 0.9,
-                                'category': img['category'],
-                                'auto_assigned': True
-                            }
-                        }
-                        slide.taggedMedia.append(tagged_media)
-            
-            # Chart images to data slides
-            elif img['category'] == 'chart':
-                for slide in slides:
-                    if slide.slide_type in ['data', 'comparison', 'timeline']:
-                        interpretation = f"{img['interpretation']} | Auto-assigned to {slide.slide_type} slide with data content"
-                        tagged_media = {
-                            'id': str(uuid.uuid4()),
-                            'filename': img['filename'],
-                            'type': self._get_media_type(img['category'], img['filename']),
-                            'previewUrl': img.get('url', '') or img.get('base64', ''),
-                            'url': img.get('url', '') or img.get('base64', ''),  # Add url field
-                            'interpretation': interpretation,
-                            'slideId': slide.id,
-                            'status': 'processed',
-                            'metadata': {
-                                'componentType': 'Image',
-                                'confidence': 0.8,
-                                'category': img['category'],
-                                'auto_assigned': True
-                            }
-                        }
-                        slide.taggedMedia.append(tagged_media)
-                        break  # Only assign to first matching slide
-            
-            # Background images to title/section slides  
-            elif img['category'] == 'background':
-                for slide in slides:
-                    if slide.slide_type in ['title', 'section', 'conclusion']:
-                        interpretation = f"{img['interpretation']} | Auto-assigned as background for {slide.slide_type} slide"
-                        tagged_media = {
-                            'id': str(uuid.uuid4()),
-                            'filename': img['filename'],
-                            'type': self._get_media_type(img['category'], img['filename']),
-                            'previewUrl': img.get('url', '') or img.get('base64', ''),
-                            'url': img.get('url', '') or img.get('base64', ''),  # Add url field
-                            'interpretation': interpretation,
-                            'slideId': slide.id,
-                            'status': 'processed',
-                            'metadata': {
-                                'componentType': 'Image',
-                                'confidence': 0.7,
-                                'category': img['category'],
-                                'auto_assigned': True
-                            }
-                        }
-                        slide.taggedMedia.append(tagged_media)
-                        break
+        """Deprecated fallback; keep API stable without heuristic assignment."""
+        _ = slides
+        _ = processed_files
+        return
     
     def generate_file_summary(self, processed_files: Dict[str, Any]) -> str:
         """Generate a user-friendly summary of processed files"""
@@ -449,89 +351,3 @@ Only include images that have good matches. Be thoughtful and strategic about as
             logger.error(f"Error generating chart from data file: {e}")
             return None
     
-    def _extract_keywords(self, text: str) -> List[str]:
-        """Extract meaningful keywords from text for matching"""
-        # Common words to ignore
-        stop_words = {
-            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-            'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during',
-            'before', 'after', 'above', 'below', 'between', 'under', 'again',
-            'further', 'then', 'once', 'is', 'are', 'was', 'were', 'been', 'be',
-            'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-            'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these',
-            'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'them', 'their',
-            'what', 'which', 'who', 'when', 'where', 'why', 'how', 'all', 'each',
-            'every', 'some', 'any', 'many', 'much', 'most', 'several', 'no', 'not',
-            'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just', 'image',
-            'photo', 'picture', 'showing', 'shows', 'depicts', 'featuring'
-        }
-        
-        # Extract words and filter
-        words = text.lower().split()
-        keywords = []
-        
-        for word in words:
-            # Clean punctuation
-            cleaned = word.strip('.,!?;:"\'()[]{}')
-            # Keep if it's meaningful (not a stop word, length > 3)
-            if cleaned and len(cleaned) > 3 and cleaned not in stop_words:
-                keywords.append(cleaned)
-        
-        return keywords
-    
-    def _calculate_relevance_score(
-        self, 
-        img_keywords: List[str], 
-        slide_title: str, 
-        slide_content: str,
-        suggested_slide_types: List[str],
-        actual_slide_type: str
-    ) -> float:
-        """Calculate relevance score between an image and a slide"""
-        score = 0.0
-        
-        # Combine slide text
-        slide_text = f"{slide_title} {slide_content}".lower()
-        slide_keywords = self._extract_keywords(slide_text)
-        
-        # 1. Check for keyword matches
-        matching_keywords = set(img_keywords) & set(slide_keywords)
-        if matching_keywords:
-            # Score based on percentage of matching keywords
-            keyword_score = len(matching_keywords) / max(len(img_keywords), 1)
-            score += keyword_score * 0.5  # Keywords are 50% of score
-            
-            # Bonus for title matches (more important)
-            title_keywords = self._extract_keywords(slide_title)
-            title_matches = set(img_keywords) & set(title_keywords)
-            if title_matches:
-                score += 0.2  # 20% bonus for title matches
-        
-        # 2. Check if slide type matches suggestions
-        if suggested_slide_types and actual_slide_type in suggested_slide_types:
-            score += 0.2  # 20% for matching suggested type
-        
-        # 3. Look for specific topic indicators
-        # Solar/energy specific keywords
-        energy_keywords = {'solar', 'energy', 'renewable', 'power', 'electricity', 
-                          'panel', 'wind', 'turbine', 'sustainable', 'green'}
-        
-        # Data/chart keywords
-        data_keywords = {'growth', 'trend', 'data', 'analysis', 'statistics', 
-                        'chart', 'graph', 'metrics', 'performance', 'results'}
-        
-        # Check for topic-specific matches
-        img_energy = any(kw in img_keywords for kw in energy_keywords)
-        slide_energy = any(kw in slide_keywords for kw in energy_keywords)
-        
-        img_data = any(kw in img_keywords for kw in data_keywords)
-        slide_data = any(kw in slide_keywords for kw in data_keywords)
-        
-        # Bonus for matching topics
-        if img_energy and slide_energy:
-            score += 0.1
-        if img_data and slide_data:
-            score += 0.1
-        
-        # Cap score at 1.0
-        return min(score, 1.0) 

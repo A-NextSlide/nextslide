@@ -29,13 +29,14 @@ class AISlideGenerator:
         user_prompt: str,
         response_model: Type,
         context: SlideGenerationContext,
-        predicted_components: List[str]
+        predicted_components: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Generate slide data using AI."""
-        
+        components_count = len(predicted_components or [])
         logger.info(
-            f"Using {response_model.__name__} model with schema injection for "
-            f"{len(predicted_components)} components"
+            "Using %s model with schema injection for %s components",
+            response_model.__name__,
+            components_count,
         )
         
         # Get client
@@ -115,23 +116,8 @@ class AISlideGenerator:
             f"User: {user_size} chars (~{(system_size + user_size) // 4} tokens)"
         )
         
-        # Check if we need CustomComponent
-        needs_custom_component = 'CustomComponent' in str(user_prompt)
-        
-        # Special settings for CustomComponent generation
-        if needs_custom_component:
-            temperature = 0.3  # Very low temperature for consistency
-            actual_max_tokens = min(max_tokens * 2, 32000)  # Increase limit
-            logger.info(f"  CustomComponent detected - using temperature={temperature}, max_tokens={actual_max_tokens}")
-            logger.info("  Adding extra guidance to prevent truncation")
-            
-            # Short reminder only (system prompt holds canonical rules)
-            messages[1]["content"] += (
-                "\n\nNote: For CustomComponent renders, use React.createElement. Extract props ONCE at top (var c1 = props.primaryColor; var padding = 24;). NEVER redeclare variables! Use camelCase CSS (fontSize, fontWeight)."
-            )
-        else:
-            temperature = 0.7  # Normal temperature
-            actual_max_tokens = max_tokens
+        temperature = 0.7
+        actual_max_tokens = max_tokens
         
         # Invoke AI with timeout
         logger.info(f"  Invoking AI model {model_name} for slide {context.slide_index + 1}...")

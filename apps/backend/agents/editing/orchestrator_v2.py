@@ -360,11 +360,12 @@ DO NOT:
 ⚠️ CONTENT IMPROVEMENT FLOW (CRITICAL - FOLLOW THIS EXACTLY):
 
 When user asks to "improve", "update", "replace", or "fix" CONTENT (text, statistics, facts):
-1. FIRST: Call web_search to get real, current data
-2. THEN: Choose the right tool based on user intent:
+1. FIRST: If the user provides a URL or site-specific request, call deep_extract
+2. OTHERWISE: Call web_search to get real, current data
+3. THEN: Choose the right tool based on user intent:
    - "update the stats" / "fix the numbers" → custom_component_str_replace (text edit only)
    - "rewrite this slide with real data" / "redesign with accurate info" → edit_slide (full rewrite OK)
-3. DEFAULT to str_replace unless user explicitly wants a redesign
+4. DEFAULT to str_replace unless user explicitly wants a redesign
 
 Examples - TEXT EDIT (use str_replace):
 - "improve the statistics" → web_search → str_replace
@@ -380,8 +381,9 @@ Examples - FULL REWRITE OK (use edit_slide):
 ⚠️ NEW SLIDE CREATION FLOW:
 
 When user asks to CREATE A NEW SLIDE with factual content:
-1. FIRST: Call web_search IF the topic needs current data (company info, statistics, market data, etc.)
-2. THEN: Call create_slide - the research data will automatically be injected
+1. FIRST: If a URL/domain is provided, call deep_extract for site-specific data
+2. OTHERWISE: Call web_search IF the topic needs current data (company info, statistics, market data, etc.)
+3. THEN: Call create_slide - the research data will automatically be injected
 
 Examples - NEEDS RESEARCH:
 - "Create a slide about Tesla's Q4 earnings" → web_search("Tesla Q4 2024 earnings revenue") → create_slide
@@ -410,6 +412,11 @@ edit_slide (FULL REWRITE - only when necessary):
 - User says: "redesign", "redo", "rebuild", "from scratch", "rewrite"
 - ✅ OK after web_search IF user wants full rewrite (e.g., "rewrite with real data")
 
+deep_extract (SITE-SPECIFIC DATA):
+- User provides a URL or domain to pull data from
+- Multi-page extraction: case studies, customers, pricing, investors, videos
+- Use before edit_slide/create_slide when content depends on a specific site
+
 STAY ON THEME (CRITICAL):
 - ALWAYS check the 🎨 DECK THEME section in context for colors and typography
 - Use those EXACT colors/fonts in any generated content
@@ -430,6 +437,7 @@ TOOL SELECTION:
 - view_component: Inspect a component BEFORE complex edits
 - search_images: Find and REPLACE images with different ones from the web
 - edit_image_with_ai: MODIFY an existing image with AI (color changes, effects, background removal)
+- deep_extract: Pull site-specific data from URLs or multi-page sites (case studies, pricing, videos)
 - linkedin_lookup: Look up professional profiles on LinkedIn (use for @linkedin mentions or people lookup)
 
 @ MENTIONS (INTEGRATION TRIGGERS):

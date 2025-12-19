@@ -5,26 +5,18 @@ import { useNavigation } from '../../context/NavigationContext';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useActiveSlide } from '../../context/ActiveSlideContext';
 import { useEditorStore } from '@/stores/editorStore';
-import { getContrastTextColor, isLightColor, getColorDistance, ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors } from '@/utils/colorUtils';
 import { CustomComponentEditOverlay, DetectedElement, injectEditMode } from '@/components/custom-component-editor';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-
-// Import visualization and animation libraries for CustomComponents
-import * as d3Import from 'd3';
-import animeImport from 'animejs';
-import roughImport from 'roughjs';
-import confettiImport from 'canvas-confetti';
-import * as gsapImport from 'gsap';
-
-// Extracted string utilities
-import { ensureHtmlNewlines, escapeRawNewlinesInStringLiterals } from './custom/stringUtils';
+import { compileRenderCode } from './custom/compileRenderCode';
+import { DEBUG_CUSTOM_COMPONENT } from './custom/debug';
+import { useCustomComponentImageAutoApply } from './custom/useCustomComponentImageAutoApply';
+import { useCustomComponentImageProxy } from './custom/useCustomComponentImageProxy';
+import { extractFontFamiliesFromHtml, injectIframeFonts } from './custom/iframeFonts';
+import { FontLoadingService } from '@/services/FontLoadingService';
 
 // Browser detection for iOS-specific safety checks
 import { BROWSER } from '@/utils/browser';
-
-// Debug flag - disabled in production for mobile performance
-const DEBUG_CUSTOM_COMPONENT = false;
 
 // Simple error boundary
 class ErrorBoundary extends React.Component<
@@ -131,6 +123,28 @@ export const CustomComponentRenderer: React.FC<{
     ...(component.props.props || {})
   }), [component.props]);
 
+  const [fontCatalogVersion, setFontCatalogVersion] = useState(0);
+  useEffect(() => {
+    let active = true;
+    FontLoadingService.syncDesignerFonts?.().then(() => {
+      if (active) setFontCatalogVersion((v) => v + 1);
+    }).catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const resolvedFonts = useMemo(() => {
+    const props = component.props || {};
+    const nested = (props.props && typeof props.props === 'object') ? props.props as Record<string, any> : {};
+    const bodyFont = props.fontFamily || props.bodyFont || nested.fontFamily || nested.bodyFont;
+    const heroFont = props.heroFont || props.headingFont || nested.heroFont || nested.headingFont;
+    return {
+      bodyFont: typeof bodyFont === 'string' ? bodyFont : undefined,
+      heroFont: typeof heroFont === 'string' ? heroFont : undefined
+    };
+  }, [component.props]);
+
   // Keep last successful compiled render to avoid flicker during recompilation
   const compiledRenderRef = useRef<Function | null>(null);
   const { currentSlideIndex } = useNavigation();
@@ -153,7 +167,7 @@ export const CustomComponentRenderer: React.FC<{
       // Only handle events for this component
       if (componentId !== component.id) return;
 
-      DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Received image selection:', { componentId, propName, imageUrl: imageUrl?.substring(0, 60) });
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Received image selection:', { componentId, propName, imageUrl: imageUrl?.substring(0, 60) });
 
       if (!propName || !imageUrl) {
         DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] Missing propName or imageUrl');
@@ -173,14 +187,14 @@ export const CustomComponentRenderer: React.FC<{
 
       // Get current props
       const currentProps = component.props.props || {};
-      DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Current props:', Object.keys(currentProps));
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Current props:', Object.keys(currentProps));
 
       // Update the specific prop
       const updatedProps = {
         ...currentProps,
         [propName]: imageUrl,
       };
-      DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Updated props:', Object.keys(updatedProps));
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Updated props:', Object.keys(updatedProps));
 
       // Update the component
       updateComponent(component.id, {
@@ -189,7 +203,7 @@ export const CustomComponentRenderer: React.FC<{
           props: updatedProps,
         }
       });
-      DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Component update dispatched');
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Component update dispatched');
 
       // Clear selected element to auto-dismiss picker state
       setSelectedElement(null);
@@ -202,482 +216,8 @@ export const CustomComponentRenderer: React.FC<{
     };
   }, [isEditing, isThumbnail, component.id, component.props, updateComponent]);
 
-  // Track if we've already auto-applied images for this component
-  const autoAppliedRef = useRef<Set<string>>(new Set());
-
-  // Auto-apply images for placeholder images when component first renders
-  // PERFORMANCE: Skip in view/presentation mode - only process when editing
-  useEffect(() => {
-    if (isThumbnail) return;
-    if (!isEditing) return; // Skip image auto-apply in view mode for mobile performance
-
-    const html = renderCode;
-    if (!html || typeof html !== 'string') return;
-
-    // Only process full HTML documents (iframe mode)
-    const trimmedHtml = html.trim().toLowerCase();
-    if (!trimmedHtml.startsWith('<!doctype html') && !trimmedHtml.startsWith('<html')) return;
-
-    // Bad/generic search terms that won't give good results
-    const BAD_SEARCH_TERMS = [
-      'image', 'image0', 'image1', 'image2', 'image3',
-      'visualization', 'dataname', 'photo', 'picture',
-      'graphic', 'visual', 'background', 'chart', 'icon',
-      'placeholder', 'img', 'figure', 'illustration'
-    ];
-
-    // Extract search query from prop name (e.g., "elonMuskImage" -> "elon musk")
-    const extractSearchQueryFromPropName = (propName: string): string => {
-      // Remove common image suffixes
-      let query = propName
-        .replace(/Image$|Photo$|Picture$|Src$|Url$|Img$|Thumbnail$|Avatar$|Icon$/i, '')
-        .replace(/^(hero|feature|background|banner|main|primary|secondary)/i, '');
-
-      // Convert camelCase to spaces: "elonMusk" -> "elon Musk" -> "elon musk"
-      query = query
-        .replace(/([a-z])([A-Z])/g, '$1 $2')
-        .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-        .toLowerCase()
-        .trim();
-
-      // If too generic, return empty to trigger fallback
-      const genericTerms = ['hero', 'feature', 'background', 'banner', 'main', 'primary', 'secondary', 'image', 'photo', ''];
-      if (genericTerms.includes(query)) {
-        return '';
-      }
-
-      return query;
-    };
-
-    // CRITICAL: Parse JavaScript to extract image prop names (e.g., props.elonMuskImage)
-    // This is where the AI puts the actual search terms, NOT in alt attributes
-    const extractImagePropsFromJS = (htmlContent: string): Map<string, string> => {
-      const propNameToSearchQuery = new Map<string, string>();
-
-      // Pattern 1: const varName = props.propName || 'placeholder'
-      const propPattern1 = /(?:const|let|var)\s+(\w+)\s*=\s*props\??\.(\w*[Ii]mage\w*|\w*[Pp]hoto\w*|\w*[Ll]ogo\w*|\w*[Ii]con\w*|\w*[Aa]vatar\w*|\w*[Bb]anner\w*|\w*[Hh]eadshot\w*)\s*(?:\|\||&&|\?\?)/gi;
-      let match;
-
-      while ((match = propPattern1.exec(htmlContent)) !== null) {
-        const propName = match[2];
-        const searchQuery = extractSearchQueryFromPropName(propName);
-        if (searchQuery && searchQuery.length > 2) {
-          propNameToSearchQuery.set(propName, searchQuery);
-          DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Found image prop from JS:', propName, '->', searchQuery);
-        }
-      }
-
-      // Pattern 2: props.propNameImage (direct access in template)
-      const propPattern2 = /\$\{+\s*(?:props\??\.)?(\w*[Ii]mage\w*|\w*[Pp]hoto\w*|\w*[Ll]ogo\w*|\w*[Ii]con\w*|\w*[Aa]vatar\w*|\w*[Bb]anner\w*|\w*[Hh]eadshot\w*)\s*\}+/gi;
-
-      while ((match = propPattern2.exec(htmlContent)) !== null) {
-        const propName = match[1];
-        if (!propNameToSearchQuery.has(propName)) {
-          const searchQuery = extractSearchQueryFromPropName(propName);
-          if (searchQuery && searchQuery.length > 2) {
-            propNameToSearchQuery.set(propName, searchQuery);
-            DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Found image prop from template:', propName, '->', searchQuery);
-          }
-        }
-      }
-
-      // Pattern 3: src="${propName}" where propName looks like an image prop
-      const propPattern3 = /src=["']\$\{+\s*(\w*[Ii]mage\w*|\w*[Pp]hoto\w*|\w*[Ll]ogo\w*|\w*[Aa]vatar\w*)\s*\}+["']/gi;
-
-      while ((match = propPattern3.exec(htmlContent)) !== null) {
-        const propName = match[1];
-        if (!propNameToSearchQuery.has(propName)) {
-          const searchQuery = extractSearchQueryFromPropName(propName);
-          if (searchQuery && searchQuery.length > 2) {
-            propNameToSearchQuery.set(propName, searchQuery);
-            DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Found image prop from src template:', propName, '->', searchQuery);
-          }
-        }
-      }
-
-      return propNameToSearchQuery;
-    };
-
-    // Get slide context for fallback search terms
-    const getSlideContext = () => {
-      try {
-        // Try to get slide title from the DOM or store
-        const slideContainer = document.querySelector('.slide-container[data-slide-id]');
-        const slideTitle = slideContainer?.getAttribute('data-slide-title') || '';
-
-        // Also try to extract title from the HTML itself
-        const titleMatch = html.match(/<(?:h1|h2|h3)[^>]*>([^<]+)</i);
-        const htmlTitle = titleMatch ? titleMatch[1].trim() : '';
-
-        return slideTitle || htmlTitle || 'professional business';
-      } catch {
-        return 'professional business';
-      }
-    };
-
-    // FIRST: Extract image props from JavaScript (these have the actual descriptive names)
-    const imagePropSearchQueries = extractImagePropsFromJS(html);
-    DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Extracted image props:', Array.from(imagePropSearchQueries.entries()));
-
-    // Check for placeholder images in the HTML
-    const imgRegex = /<img[^>]*>/gi;
-    const placeholders: Array<{ alt: string; searchQuery: string; propName?: string }> = [];
-    let match;
-    let imgIndex = 0;
-
-    while ((match = imgRegex.exec(html)) !== null) {
-      const imgTag = match[0];
-      const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
-      const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
-      const src = srcMatch?.[1] || '';
-      const alt = altMatch?.[1] || '';
-
-      // Check if this is a placeholder
-      const isPlaceholder = !src || src === 'placeholder' || src.includes('placeholder') ||
-        (!src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:') && !src.startsWith('//'));
-
-      if (isPlaceholder) {
-        // Create a unique key for this placeholder
-        const placeholderKey = `${component.id}-${alt || imgIndex}`;
-
-        // Skip if we've already auto-applied for this placeholder
-        if (autoAppliedRef.current.has(placeholderKey)) {
-          imgIndex++;
-          continue;
-        }
-
-        // PRIORITY 1: Use search query from JS prop names (most descriptive)
-        // Try to match this img to a prop by checking if src contains a variable reference
-        let searchQuery = '';
-        let matchedPropName = '';
-
-        // Check if src references a prop variable (e.g., src="${elonMuskImage}")
-        const srcPropMatch = src.match(/\$\{+\s*(\w+)\s*\}+/);
-        if (srcPropMatch) {
-          const varName = srcPropMatch[1];
-          // Find matching prop from our extracted props
-          for (const [propName, query] of imagePropSearchQueries.entries()) {
-            if (propName.toLowerCase() === varName.toLowerCase() ||
-                propName.toLowerCase().includes(varName.toLowerCase()) ||
-                varName.toLowerCase().includes(propName.toLowerCase().replace('image', ''))) {
-              searchQuery = query;
-              matchedPropName = propName;
-              DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Matched img to prop:', varName, '->', propName, '->', searchQuery);
-              break;
-            }
-          }
-        }
-
-        // If no match from src variable, try to find any unused prop that matches alt text
-        if (!searchQuery && imagePropSearchQueries.size > 0) {
-          for (const [propName, query] of imagePropSearchQueries.entries()) {
-            // Check if alt contains parts of the prop name
-            const altLower = alt.toLowerCase();
-            const propLower = propName.toLowerCase().replace('image', '').replace('photo', '');
-            if (altLower.includes(propLower) || propLower.includes(altLower.split(' ')[0])) {
-              searchQuery = query;
-              matchedPropName = propName;
-              DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Matched img alt to prop:', alt, '->', propName, '->', searchQuery);
-              break;
-            }
-          }
-        }
-
-        // PRIORITY 2: Use alt text if it's descriptive
-        if (!searchQuery) {
-          searchQuery = alt
-            .replace(/[^a-zA-Z0-9\s]/g, ' ')
-            .trim()
-            .toLowerCase();
-        }
-
-        // Check if the search query is bad/generic
-        const isBadSearchTerm = !searchQuery ||
-          searchQuery.length < 3 ||
-          BAD_SEARCH_TERMS.some(bad => searchQuery === bad || searchQuery.startsWith(bad + ' ') || searchQuery.match(new RegExp(`^${bad}\\d*$`)));
-
-        if (isBadSearchTerm) {
-          // PRIORITY 3: Use any remaining image prop that hasn't been used
-          if (imagePropSearchQueries.size > 0) {
-            const unusedProps = Array.from(imagePropSearchQueries.entries())
-              .filter(([prop]) => !placeholders.some(p => p.propName === prop));
-            if (unusedProps.length > 0) {
-              const [propName, query] = unusedProps[imgIndex % unusedProps.length] || unusedProps[0];
-              searchQuery = query;
-              matchedPropName = propName;
-              DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Using unused prop for generic img:', propName, '->', searchQuery);
-            }
-          }
-
-          // PRIORITY 4: Use slide context as last resort
-          if (!searchQuery || BAD_SEARCH_TERMS.includes(searchQuery)) {
-            const slideContext = getSlideContext();
-            searchQuery = `${slideContext} professional photo`;
-            DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Bad alt text detected, using slide context:', { original: alt, fallback: searchQuery });
-          }
-        }
-
-        placeholders.push({ alt: alt || 'image', searchQuery, propName: matchedPropName || undefined });
-        autoAppliedRef.current.add(placeholderKey);
-        imgIndex++;
-      }
-    }
-
-    if (placeholders.length === 0) return;
-
-    DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Found placeholder images to auto-apply:', placeholders);
-
-    // Auto-fetch and apply images for each placeholder
-    const autoApplyImages = async () => {
-      // Track all props that need to be updated
-      const propsToUpdate: Record<string, string> = {};
-      let currentHtml = component.props.render as string;
-      let anyReplaced = false;
-
-      for (const { alt, searchQuery, propName } of placeholders) {
-        try {
-          DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Auto-searching for:', searchQuery, 'propName:', propName);
-
-          // Search for images using the media search API
-          const response = await fetch('/api/media/search', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              query: searchQuery,
-              type: 'images',
-              limit: 1 // Only need one image
-            })
-          });
-
-          if (!response.ok) {
-            DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] Image search failed for:', searchQuery);
-            continue;
-          }
-
-          const data = await response.json();
-          const images = data.results || data.images || [];
-
-          if (images.length === 0) {
-            DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] No images found for:', searchQuery);
-            continue;
-          }
-
-          // Get the first image URL
-          let imageUrl = images[0].url || images[0].src?.large || images[0].src?.medium || images[0].src?.original;
-
-          if (!imageUrl) {
-            DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] No valid URL in image result');
-            continue;
-          }
-
-          DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Found image for', searchQuery, ':', imageUrl.substring(0, 60));
-
-          // Proxy external images through our backend for reliability
-          if (imageUrl.startsWith('http') && !imageUrl.includes('supabase') && !imageUrl.includes('nextslide')) {
-            try {
-              const proxyResponse = await fetch('/api/media/proxy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: imageUrl })
-              });
-
-              const proxyData = await proxyResponse.json();
-              if (proxyResponse.ok && proxyData.success && proxyData.url) {
-                imageUrl = proxyData.url;
-                DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Proxied URL:', imageUrl.substring(0, 60));
-              }
-            } catch (proxyError) {
-              DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] Proxy failed, using original URL');
-            }
-          }
-
-          // CRITICAL: If we have a prop name, store it for updating component props
-          // This is the key fix - we need to update props so iframe JS can access them
-          if (propName) {
-            propsToUpdate[propName] = imageUrl;
-            DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Will update prop:', propName, '=', imageUrl.substring(0, 50));
-          }
-
-          // Also update the HTML to replace placeholder src values
-          const altLower = alt.toLowerCase();
-          let replaced = false;
-
-          currentHtml = currentHtml.replace(/<img([^>]*)>/gi, (imgMatch, attrs) => {
-            if (replaced) return imgMatch;
-
-            const imgAltMatch = attrs.match(/alt=["']([^"']*)["']/i);
-            const imgAlt = imgAltMatch ? imgAltMatch[1].toLowerCase() : '';
-            const imgSrcMatch = attrs.match(/src=["']([^"']*)["']/i);
-            const imgSrc = imgSrcMatch ? imgSrcMatch[1] : '';
-
-            // Check if this is the placeholder we're looking for by:
-            // 1. Matching alt text
-            // 2. Or matching src that contains ${propName} pattern
-            // 3. Or matching src that equals 'placeholder' or is empty
-            const srcContainsProp = propName && imgSrc.includes(`\${${propName}}`);
-            const srcContainsAnyVar = imgSrc.match(/\$\{+\s*\w+\s*\}+/);
-            const isPlaceholderSrc = !imgSrc || imgSrc === 'placeholder' || imgSrc.includes('placeholder');
-
-            const isThisPlaceholder = (imgAlt === altLower || srcContainsProp) &&
-              (isPlaceholderSrc || srcContainsAnyVar ||
-               (!imgSrc.startsWith('http') && !imgSrc.startsWith('data:') && !imgSrc.startsWith('blob:')));
-
-            if (isThisPlaceholder) {
-              replaced = true;
-              anyReplaced = true;
-              if (attrs.includes('src=')) {
-                const newAttrs = attrs.replace(/src=["'][^"']*["']/i, `src="${imageUrl}"`);
-                DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Auto-replaced image src for:', alt || propName);
-                return `<img${newAttrs}>`;
-              } else {
-                return `<img src="${imageUrl}"${attrs}>`;
-              }
-            }
-            return imgMatch;
-          });
-
-        } catch (error) {
-          console.error('[CustomComponentRenderer] Error auto-applying image:', error);
-        }
-      }
-
-      // Update component with both new HTML AND new props
-      if (anyReplaced || Object.keys(propsToUpdate).length > 0) {
-        const currentProps = component.props.props || {};
-        const updatedProps = { ...currentProps, ...propsToUpdate };
-
-        DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Updating component with props:', Object.keys(propsToUpdate));
-
-        updateComponent(component.id, {
-          props: {
-            ...component.props,
-            render: currentHtml,
-            props: updatedProps, // This is CRITICAL - iframe reads from props.props
-          }
-        });
-        DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Auto-applied images, updated props:', Object.keys(propsToUpdate));
-      }
-    };
-
-    // Run auto-apply after a short delay to avoid blocking render
-    const timeoutId = setTimeout(autoApplyImages, 500);
-
-    return () => clearTimeout(timeoutId);
-  }, [component.id, renderCode, isThumbnail, isEditing, updateComponent, component.props]);
-
-  // Track proxied URLs to avoid re-processing
-  const proxiedUrlsRef = useRef<Set<string>>(new Set());
-
-  // Helper to decode HTML entities in URLs
-  const decodeHtmlEntities = (str: string): string => {
-    return str
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&#x27;/g, "'")
-      .replace(/&#x2F;/g, '/');
-  };
-
-  // Proxy any external image URLs in the HTML (handles cases where AI embeds direct URLs)
-  // PERFORMANCE: Skip in view/presentation mode - only process when editing
-  useEffect(() => {
-    if (isThumbnail) return;
-    if (!isEditing) return; // Skip URL proxying in view mode for mobile performance
-
-    const html = renderCode;
-    if (!html || typeof html !== 'string') return;
-
-    // Only process full HTML documents (iframe mode)
-    const trimmedHtml = html.trim().toLowerCase();
-    if (!trimmedHtml.startsWith('<!doctype html') && !trimmedHtml.startsWith('<html')) return;
-
-    // Find external image URLs that need proxying
-    const imgRegex = /<img[^>]*src=["']([^"']+)["'][^>]*>/gi;
-    const externalUrls: Array<{ originalUrl: string; decodedUrl: string; fullMatch: string }> = [];
-    let match;
-
-    while ((match = imgRegex.exec(html)) !== null) {
-      const rawSrc = match[1];
-      // CRITICAL: Decode HTML entities to get the actual URL
-      const src = decodeHtmlEntities(rawSrc);
-
-      // Check if this is an external URL that needs proxying
-      const isExternalUrl = src.startsWith('http') &&
-        !src.includes('supabase') &&
-        !src.includes('nextslide') &&
-        !src.includes('localhost') &&
-        !proxiedUrlsRef.current.has(src);
-
-      if (isExternalUrl) {
-        externalUrls.push({ originalUrl: rawSrc, decodedUrl: src, fullMatch: match[0] });
-        proxiedUrlsRef.current.add(src); // Mark as being processed
-        DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Found external URL to proxy:', src.substring(0, 80));
-      }
-    }
-
-    if (externalUrls.length === 0) return;
-
-    DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] External URLs to proxy:', externalUrls.length);
-
-    // Proxy all external URLs
-    const proxyExternalUrls = async () => {
-      let currentHtml = component.props.render as string;
-      let updated = false;
-
-      for (const { originalUrl, decodedUrl } of externalUrls) {
-        try {
-          DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Proxying:', decodedUrl.substring(0, 80));
-
-          const proxyResponse = await fetch('/api/media/proxy', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: decodedUrl }) // Use decoded URL for API call
-          });
-
-          const proxyData = await proxyResponse.json();
-
-          if (proxyResponse.ok && proxyData.success && proxyData.url) {
-            const proxiedUrl = proxyData.url;
-            DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Proxied to:', proxiedUrl.substring(0, 60));
-
-            // Replace BOTH the original (with &amp;) and decoded (with &) versions
-            // First try exact match with original
-            if (currentHtml.includes(originalUrl)) {
-              currentHtml = currentHtml.split(originalUrl).join(proxiedUrl);
-              updated = true;
-              DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Replaced original URL in HTML');
-            }
-            // Also try with decoded URL (in case HTML was already decoded somewhere)
-            if (currentHtml.includes(decodedUrl)) {
-              currentHtml = currentHtml.split(decodedUrl).join(proxiedUrl);
-              updated = true;
-              DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Replaced decoded URL in HTML');
-            }
-          } else {
-            DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] Proxy failed for:', decodedUrl.substring(0, 50), proxyData.error);
-          }
-        } catch (error) {
-          console.error('[CustomComponentRenderer] Error proxying URL:', error);
-        }
-      }
-
-      if (updated) {
-        // Update the component with proxied URLs
-        updateComponent(component.id, {
-          props: {
-            ...component.props,
-            render: currentHtml,
-          }
-        });
-        DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Updated component with proxied URLs');
-      }
-    };
-
-    // Run proxy immediately (not delayed) to avoid CORS issues on first render
-    proxyExternalUrls();
-  }, [component.id, renderCode, isThumbnail, isEditing, updateComponent, component.props]);
+  useCustomComponentImageAutoApply({ component, renderCode, isEditing, isThumbnail, updateComponent });
+  useCustomComponentImageProxy({ component, renderCode, isEditing, isThumbnail, updateComponent });
 
   // Reset state when slide changes
   useEffect(() => {
@@ -702,555 +242,7 @@ export const CustomComponentRenderer: React.FC<{
   }, []);
 
   // Compile render function synchronously to prevent initial flash
-  const { compiledRender, compilationError } = useMemo(() => {
-    if (!renderCode) {
-      return { compiledRender: null, compilationError: new Error('No render function provided') };
-    }
-
-    // CRITICAL: Unescape the code FIRST before any detection
-    // The stored code may have escaped newlines (\n as literal backslash-n)
-    let code = renderCode as string;
-    if (code.includes('\\n') || code.includes('\\t') || code.includes('\\"') || code.includes("\\'")) {
-      code = code
-        .replace(/\\n/g, '\n')
-        .replace(/\\t/g, '\t')
-        .replace(/\\"/g, '"')
-        .replace(/\\'/g, "'")
-        .replace(/\\\\/g, '\\');
-    }
-
-    // ADAPTIVE FORMAT DETECTION: Handle multiple formats from AI
-    const trimmedCode = code.trim();
-
-    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Compiling code:', {
-      codeLength: code.length,
-      trimmedLength: trimmedCode.length,
-      first50: trimmedCode.slice(0, 50).toLowerCase(),
-      startsWithDoctype: trimmedCode.toLowerCase().startsWith('<!doctype html'),
-      startsWithHtml: trimmedCode.toLowerCase().startsWith('<html'),
-      containsDoctype: trimmedCode.toLowerCase().includes('<!doctype html'),
-      containsHtmlTag: trimmedCode.toLowerCase().includes('<html')
-    });
-
-    // 0. IFRAME MODE: Check for Full HTML Document
-    // This allows "do whatever we want" - Tailwind, CDNs, full isolation
-    // Check both startsWith AND contains to handle leading whitespace or BOM
-    const lowerCode = trimmedCode.toLowerCase();
-    const isFullHtmlDoc = lowerCode.startsWith('<!doctype html') ||
-                          lowerCode.startsWith('<html') ||
-                          lowerCode.includes('<!doctype html') ||
-                          (lowerCode.includes('<html') && lowerCode.includes('</html>'));
-
-    if (isFullHtmlDoc) {
-      // Ensure proper newlines in HTML (fixes iframe rendering issues)
-      const formattedHtml = ensureHtmlNewlines(code);
-
-      // Return the base HTML - prop injection happens separately in stableIframeSrcDoc
-      return {
-        compiledRender: { __isIframe: true, srcDoc: formattedHtml, needsPropInjection: true } as any,
-        compilationError: null
-      };
-    }
-
-    // 0b. IFRAME MODE for render functions that return HTML strings
-    // Much cleaner than React.createElement - AI generates readable HTML/CSS
-    if (trimmedCode.startsWith('function render(') || trimmedCode.startsWith('function render (')) {
-      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Detected render function, executing in IFRAME sandbox');
-
-      const iframeFunctionRenderer = function ({ props, state, id, isThumbnail, containerWidth, containerHeight }: any) {
-        // Safely serialize props, filtering out functions and circular refs
-        const safeStringify = (obj: any): string => {
-          try {
-            return JSON.stringify(obj, (key, value) => {
-              if (typeof value === 'function') return undefined;
-              return value;
-            }) || '{}';
-          } catch {
-            return '{}';
-          }
-        };
-
-        // Build HTML document that executes the render function
-        // The render function returns an HTML string, not React elements
-        const htmlDoc = [
-          '<!DOCTYPE html>',
-          '<html>',
-          '<head>',
-          '  <meta charset="UTF-8">',
-          '  <style>',
-          '    * { margin: 0; padding: 0; box-sizing: border-box; }',
-          '    html, body { width: 100%; height: 100%; overflow: hidden; }',
-          '    body { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }',
-          '  </style>',
-          '  <link rel="preconnect" href="https://fonts.googleapis.com">',
-          '  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
-          '  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Poppins:wght@100..900&family=Playfair+Display:wght@400..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">',
-          '</head>',
-          '<body>',
-          '  <script>',
-          '    (function() {',
-          '      try {',
-          '        // Props passed from parent',
-          '        var props = ' + safeStringify(props || {}) + ';',
-          '        var state = ' + safeStringify(state || {}) + ';',
-          '        var id = ' + JSON.stringify(id || '') + ';',
-          '        var isThumbnail = ' + JSON.stringify(!!isThumbnail) + ';',
-          '        var containerWidth = ' + JSON.stringify(containerWidth || 800) + ';',
-          '        var containerHeight = ' + JSON.stringify(containerHeight || 600) + ';',
-          '        var updateState = function() {};',
-          '',
-          '        // Component render function (returns HTML string)',
-          '        ' + code,
-          '',
-          '        // Call render and inject HTML',
-          '        var html = render({ props, state, updateState, id, isThumbnail, containerWidth, containerHeight });',
-          '        document.body.innerHTML = html;',
-          '      } catch (err) {',
-          '        document.body.innerHTML = \'<div style="color: #dc2626; padding: 20px; font-family: monospace; background: #fef2f2; height: 100%; box-sizing: border-box;">\' +',
-          '          \'<strong>Error:</strong> \' + (err.message || err) + \'</div>\';',
-          '        console.error("[iframe] Render error:", err);',
-          '      }',
-          '    })();',
-          '  </script>',
-          '</body>',
-          '</html>'
-        ].join('\n');
-
-        return React.createElement('iframe', {
-          srcDoc: htmlDoc,
-          style: { width: '100%', height: '100%', border: 'none', backgroundColor: 'transparent' },
-          sandbox: "allow-scripts allow-same-origin",
-          title: "Custom Component"
-        });
-      };
-
-      return { compiledRender: iframeFunctionRenderer as Function, compilationError: null };
-    }
-
-    // 1. Check if it's raw HTML fragment (starts with <tag or just contains HTML)
-    if (trimmedCode.startsWith('<') && trimmedCode.includes('>') && !trimmedCode.includes('function render')) {
-      // Check for template variables like {icon}, {category}, etc.
-      const hasTemplateVars = /\{[a-zA-Z_][a-zA-Z0-9_]*\}/g.test(trimmedCode);
-
-      if (hasTemplateVars) {
-        DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Detected HTML with template variables - INVALID!', {
-          preview: trimmedCode.substring(0, 200),
-          variables: trimmedCode.match(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/g)
-        });
-        return {
-          compiledRender: null,
-          compilationError: new Error('HTML contains template variables like {icon}, {category}. Must use function format with props instead.')
-        };
-      }
-
-      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Detected raw HTML format, converting to React');
-      // Return a function that renders the HTML using dangerouslySetInnerHTML
-      const htmlRenderer = function ({ props }: any) {
-        return React.createElement('div', {
-          style: {
-            width: '100%',
-            height: '100%'
-          },
-          dangerouslySetInnerHTML: { __html: code }
-        });
-      };
-      return { compiledRender: htmlRenderer as Function, compilationError: null };
-    }
-
-    // 2. Allow providing a render function directly instead of a string
-    if (typeof renderCode === 'function') {
-      const originalRender = renderCode as Function;
-      const wrapped = function wrappedRender() {
-        try {
-          // @ts-ignore
-          return originalRender.apply(this, arguments);
-        } catch (err: any) {
-          // If React is not defined in the function scope, define it globally and retry once
-          if (err instanceof ReferenceError && typeof err.message === 'string' && /React is not defined/.test(err.message)) {
-            try {
-              // @ts-ignore
-              const g = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : {});
-              // @ts-ignore
-              if (!g.React) g.React = React;
-            } catch (_) { /* noop */ }
-            try {
-              // @ts-ignore
-              return originalRender.apply(this, arguments);
-            } catch (err2) {
-              throw err2;
-            }
-          }
-          throw err;
-        }
-      } as unknown as Function;
-      return { compiledRender: wrapped, compilationError: null };
-    }
-
-    // Use already-unescaped code from above
-    let unescapedCode = code;
-
-    // Harden: ensure raw newlines inside quoted string literals are converted to \n
-    unescapedCode = escapeRawNewlinesInStringLiterals(unescapedCode);
-
-    // FIX BRACKET MISMATCHES: AI sometimes generates extra closing parens/braces
-    // Detect and auto-fix before compilation to prevent SyntaxError
-    try {
-      let parenDepth = 0;
-      let braceDepth = 0;
-      let inString = false;
-      let stringChar: string | null = null;
-      let escapeNext = false;
-
-      for (let i = 0; i < unescapedCode.length; i++) {
-        const ch = unescapedCode[i];
-
-        if (escapeNext) {
-          escapeNext = false;
-          continue;
-        }
-        if (ch === '\\') {
-          escapeNext = true;
-          continue;
-        }
-        if (ch === '"' || ch === "'") {
-          if (!inString) {
-            inString = true;
-            stringChar = ch;
-          } else if (ch === stringChar) {
-            inString = false;
-            stringChar = null;
-          }
-          continue;
-        }
-
-        if (inString) continue;
-
-        if (ch === '(') {
-          parenDepth++;
-        } else if (ch === ')') {
-          parenDepth--;
-          if (parenDepth < 0) {
-            // Extra closing paren - remove it
-            DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Removing extra closing paren at position', i);
-            unescapedCode = unescapedCode.slice(0, i) + unescapedCode.slice(i + 1);
-            i--; // Re-check from same position
-            parenDepth = 0;
-          }
-        } else if (ch === '{') {
-          braceDepth++;
-        } else if (ch === '}') {
-          braceDepth--;
-          if (braceDepth < 0) {
-            // Extra closing brace - remove it
-            DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Removing extra closing brace at position', i);
-            unescapedCode = unescapedCode.slice(0, i) + unescapedCode.slice(i + 1);
-            i--;
-            braceDepth = 0;
-          }
-        }
-      }
-
-      // Add missing closing brackets at the end if needed
-      if (parenDepth > 0) {
-        DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Adding', parenDepth, 'missing closing parens');
-        unescapedCode += ')'.repeat(parenDepth);
-      }
-      if (braceDepth > 0) {
-        DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Adding', braceDepth, 'missing closing braces');
-        unescapedCode += '}'.repeat(braceDepth);
-      }
-    } catch (err) {
-      DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Bracket fix failed:', err);
-    }
-
-    // Note: Do NOT escape backticks. User code may legitimately use template literals,
-    // and since we inject via string interpolation, backticks inside the injected
-    // code do not interfere with this wrapper template.
-
-    // Sanitize: remove duplicate top-level const/let/var declarations of the same identifier
-    (function () {
-      try {
-        const lines = unescapedCode.split('\n');
-        const seen = new Set();
-        const decl = /^\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/;
-        const result = [] as string[];
-        for (const line of lines) {
-          const m = line.match(decl);
-          if (m) {
-            const name = m[1];
-            if (seen.has(name)) {
-              // Skip duplicate declaration line
-              continue;
-            }
-            seen.add(name);
-          }
-          result.push(line);
-        }
-        unescapedCode = result.join('\n');
-      } catch (_) { /* noop */ }
-    })();
-
-    // Sanitize: convert React.createElement('style', {...}, 'multiline css') to dangerouslySetInnerHTML with escaped newlines
-    try {
-      unescapedCode = unescapedCode.replace(/React\.createElement\(\s*['"]style['"]\s*,\s*\{([\s\S]*?)\}\s*,\s*(['"])([\s\S]*?)\2\s*\)/g,
-        function (_match, attrs, _quote, css) {
-          try {
-            const escaped = css
-              .replace(/\\/g, '\\\\')
-              .replace(/'/g, "\\'")
-              .replace(/\r?\n/g, '\\n');
-            const attrsTrim = attrs.trim();
-            const attrsWithComma = attrsTrim ? attrsTrim + ', ' : '';
-            return "React.createElement('style', { " + attrsWithComma + "dangerouslySetInnerHTML: { __html: '" + escaped + "' } })";
-          } catch (_) {
-            return _match;
-          }
-        }
-      );
-    } catch (_) { /* noop */ }
-
-    // Remove brittle spread-conditional normalization (it could corrupt user code). Kept intentionally no-op.
-
-    // Normalize the render function signature to a canonical form to avoid malformed params.
-    // 1. Handle function render(context) pattern - convert to destructured format
-    try {
-      // Check if it's the context pattern with var props = context.props extraction
-      if (/function\s+render\s*\(\s*context\s*\)/.test(unescapedCode)) {
-        // Remove the context parameter and var props extraction line
-        unescapedCode = unescapedCode.replace(
-          /function\s+render\s*\(\s*context\s*\)/,
-          'function render({ props, state, updateState, id, isThumbnail, containerWidth, containerHeight })'
-        );
-        // Remove the var props = context.props; line if it exists
-        unescapedCode = unescapedCode.replace(
-          /\s*(var|let|const)\s+props\s*=\s*context\.props\s*;/g,
-          ''
-        );
-      }
-    } catch (_) { /* noop */ }
-
-    // 2. Repair malformed parameter blocks that accidentally contain code (e.g., "function render({ const padding = 24; props }){ ... }")
-    //    Strategy: detect the render signature, extract everything between the first '(' and matching ')'.
-    //    If the parameter block contains semicolons, 'const', 'let', 'var', or assignment operators that are not part of an object pattern,
-    //    move those lines into a prelude inserted at the top of the function body, and clean the parameter list to the canonical shape.
-    try {
-      const renderSigPattern = /function\s+render\s*\(([^)]*)\)\s*\{/m;
-      const sigMatch = unescapedCode.match(renderSigPattern);
-      if (sigMatch) {
-        const rawParams = sigMatch[1] || '';
-        const suspicious = /\b(const|let|var)\b|;|=/.test(rawParams) && !/\{\s*props\s*(?:,[^}]*)?\}/.test(rawParams);
-        if (suspicious) {
-          // Extract any code-ish fragments to move into body prelude
-          const preludeLines: string[] = [];
-          // Grab things like "const x = ...;", "let x=...;", "var x=...;", and plain assignments "x = ...;"
-          const declRegex = /(const|let|var)\s+[^;]+;?/g;
-          let m: RegExpExecArray | null;
-          while ((m = declRegex.exec(rawParams)) !== null) {
-            preludeLines.push(m[0].trim().replace(/^(?:const|let)\s+/, 'var ').replace(/;+$/, ';'));
-          }
-          // Also capture bare assignments separated by semicolons
-          rawParams.split(';').forEach(seg => {
-            const s = seg.trim();
-            if (!s) return;
-            if (!/^(const|let|var)\b/.test(s) && /\w\s*=/.test(s)) {
-              preludeLines.push(s.replace(/;+$/, '') + ';');
-            }
-          });
-
-          // Replace the entire signature with canonical signature
-          unescapedCode = unescapedCode.replace(renderSigPattern, (_all) => {
-            return 'function render({ props, state, updateState, id, isThumbnail, containerWidth, containerHeight }) {';
-          });
-
-          // Insert prelude at the start of the function body right after opening brace
-          if (preludeLines.length > 0) {
-            unescapedCode = unescapedCode.replace(/function\s+render\s*\(\{[\s\S]*?\}\)\s*\{/, (hdr) => {
-              const prelude = '\n  ' + preludeLines.join('\n  ') + '\n';
-              return hdr + prelude;
-            });
-          }
-        }
-      }
-    } catch (_) { /* noop */ }
-
-    // 3. Accept trailing parameters after the destructured object (e.g., ", instanceId", ", containerWidth, containerHeight").
-    try {
-      unescapedCode = unescapedCode.replace(
-        /function\s+render\s*\(\{[\s\S]*?\}\s*(?:,[^)]*)?\)/,
-        'function render({ props, state, updateState, id, isThumbnail, containerWidth, containerHeight })'
-      );
-    } catch (_) { /* noop */ }
-
-    try {
-      if (code.includes('import ') || code.includes('require(')) {
-        throw new Error('Imports are not allowed in custom components');
-      }
-
-      const funcBody = `
-        'use strict';
-        function processReactElement(element) {
-          if (!element || typeof element !== 'object') return element;
-          if (typeof element === 'string' && element.includes('\\n')) {
-            const lines = element.split('\\n');
-            return lines.reduce((acc, line, index) => {
-              if (index > 0) acc.push(React.createElement('br', { key: 'br-' + index }));
-              if (line) acc.push(line);
-              return acc;
-            }, []);
-          }
-          if (React.isValidElement(element)) {
-            var props = element.props || {};
-            var children = props.children;
-            var style = props.style;
-
-            // CRITICAL FIX: Preserve ALL props including event handlers (onClick, onChange, etc.)
-            // Previously was stripping out important handlers by only copying specific props
-            var otherProps = {};
-            for (var key in props) {
-              if (key !== 'children' && key !== 'style' && Object.prototype.hasOwnProperty.call(props, key)) {
-                otherProps[key] = props[key];
-              }
-            }
-
-            var newStyle = style;
-            if (children && typeof children === 'string' && children.includes('\\n')) {
-              newStyle = Object.assign({}, style || {}, { whiteSpace: 'pre-line' });
-            }
-
-            // CRITICAL FIX: Only process children if they're strings with newlines
-            // Don't recursively clone React elements as it breaks event handlers and refs
-            var processedChildren = children;
-            if (children) {
-              if (Array.isArray(children)) {
-                // Map array children but only process strings
-                processedChildren = children.map(function (child) {
-                  return (typeof child === 'string' && child.includes('\\n')) ? processReactElement(child) : child;
-                });
-              } else if (typeof children === 'string' && children.includes('\\n') && !(newStyle && newStyle.whiteSpace)) {
-                var lines = children.split('\\n');
-                processedChildren = lines.reduce(function (acc, line, index) {
-                  if (index > 0) acc.push(React.createElement('br', { key: 'br-' + index }));
-                  if (line) acc.push(line);
-                  return acc;
-                }, []);
-              }
-              // Don't recursively process React elements - preserve them as-is
-            }
-
-            // Only clone if we actually modified the style or children
-            if (newStyle !== style || processedChildren !== children) {
-              return React.cloneElement(element, Object.assign({}, otherProps, { style: newStyle }), processedChildren);
-            }
-            return element;
-          }
-          if (Array.isArray(element)) return element.map((item) => processReactElement(item));
-          return element;
-        }
-        try {
-          ${unescapedCode}
-          if (typeof render !== 'function') {
-            throw new Error('Component must define a "render" function');
-          }
-          const originalRender = render;
-          return function wrappedRender() {
-            // Attempt call and auto-fill undefined variables up to a few retries
-            var lastError = null;
-            // Provide sane defaults for common variable names
-            var __defaultVarValues = { barHeight: 24, spacing: 12, topMargin: 0, rayCount: 12, itemHeight: 56, itemSpacing: 12, iconSize: 48 };
-            for (var __attempt = 0; __attempt < 5; __attempt++) {
-              try {
-                const result = originalRender.apply(this, arguments);
-                return processReactElement(result);
-              } catch (err) {
-                lastError = err;
-                if (err instanceof ReferenceError) {
-                  const msg = String(err && err.message ? err.message : '');
-                  const m = msg.match(/(\\w+) is not defined/);
-                  if (m) {
-                    const varName = m[1];
-                    // Pull candidate from props if available, else use known defaults, else 0
-                    const args0 = (arguments && arguments[0]) || {};
-                    const p = (args0.props || {});
-                    var value = (p && Object.prototype.hasOwnProperty.call(p, varName)) ? p[varName] : undefined;
-                    if (typeof value === 'undefined') value = (__defaultVarValues[varName] !== undefined) ? __defaultVarValues[varName] : 0;
-                    try {
-                      var g = (typeof globalThis !== 'undefined') ? globalThis : (typeof window !== 'undefined' ? window : {});
-                      if (!(varName in g)) {
-                        try { Object.defineProperty(g, varName, { value: value, writable: true, configurable: true }); }
-                        catch (_) { g[varName] = value; }
-                      }
-                    } catch (_) { /* ignore */ }
-                    // retry after defining
-                    continue;
-                  }
-                }
-                // Non-reference error or no var name; stop retrying
-                break;
-              }
-            }
-            if (lastError) throw lastError;
-            return null;
-          };
-        } catch (err) {
-          if (err instanceof ReferenceError) {
-            const match = err.message.match(/(\\w+) is not defined/);
-            if (match) {
-              const varName = match[1];
-              throw new Error(\`Variable '\${varName}' is not defined. Define it as: const \${varName} = props.\${varName} || defaultValue;\`);
-            }
-          }
-          throw err;
-        }
-      `;
-      // Inject visualization libraries into the sandbox for advanced CustomComponents
-      // Security: These libraries are sandboxed within the Function() scope and have no access to parent context
-      const compiledFunc = new Function(
-        'React',
-        'getContrastTextColor',
-        'isLightColor',
-        'getColorDistance',
-        'ensureChartColorsContrastWithBackground',
-        'getThemeAppropriateChartColors',
-        'd3',        // D3.js for advanced data visualizations
-        'anime',     // Anime.js for smooth animations
-        'rough',     // Rough.js for hand-drawn aesthetics
-        'confetti',  // Canvas-confetti for celebration effects
-        'gsap',      // GSAP for professional animations
-        funcBody
-      );
-      const fn = compiledFunc(
-        React,
-        getContrastTextColor,
-        isLightColor,
-        getColorDistance,
-        ensureChartColorsContrastWithBackground,
-        getThemeAppropriateChartColors,
-        d3Import,
-        animeImport,
-        roughImport,
-        confettiImport,
-        gsapImport
-      );
-      return { compiledRender: fn, compilationError: null };
-    } catch (err) {
-      console.error('[CustomComponent] Compilation error:', err);
-      console.error('[CustomComponent] Render code:', renderCode.substring(0, 200));
-      let errorMessage = (err && err.message) ? err.message : String(err);
-      if (typeof errorMessage === 'string' && errorMessage.includes('Invalid or unexpected token')) {
-        const lines = unescapedCode.split('\n');
-        const errorMatch = errorMessage.match(/at.*:(\d+):(\d+)/);
-        if (errorMatch) {
-          const lineNum = parseInt(errorMatch[1], 10) - 3;
-          if (!Number.isNaN(lineNum) && lineNum >= 0 && lineNum < lines.length) {
-            errorMessage = `Syntax error near line ${lineNum + 1}: "${lines[lineNum].trim()}"`;
-          }
-        } else {
-          errorMessage = 'Syntax error in component code. Check for missing quotes, brackets, or invalid JavaScript.';
-        }
-      }
-      return { compiledRender: null, compilationError: new Error(errorMessage) };
-    }
-  }, [renderCode]);
+  const { compiledRender, compilationError } = useMemo(() => compileRenderCode(renderCode), [renderCode]);
 
   // Cache last good compiled render to avoid flicker between edits
   useEffect(() => {
@@ -1271,7 +263,7 @@ export const CustomComponentRenderer: React.FC<{
 
   // Debug logging for interaction issues - always log for debugging edit mode
   useEffect(() => {
-    DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log(`[CustomComponent:${component.id.slice(0, 8)}] State:`, {
+    DEBUG_CUSTOM_COMPONENT && console.log(`[CustomComponent:${component.id.slice(0, 8)}] State:`, {
       effectiveIsEditMode,
       isPresenting,
       isThumbnail,
@@ -1560,7 +552,7 @@ export const CustomComponentRenderer: React.FC<{
       for (const name of possibleNames) {
         if (imagePropsMap[name.toLowerCase()]) {
           const newSrc = imagePropsMap[name.toLowerCase()];
-          DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log(`[CustomComponent] Injecting image from \${${varName}}: ${name} = ${newSrc.substring(0, 50)}...`);
+          DEBUG_CUSTOM_COMPONENT && console.log(`[CustomComponent] Injecting image from \${${varName}}: ${name} = ${newSrc.substring(0, 50)}...`);
           return `<img ${before}src="${newSrc}"${after}>`;
         }
       }
@@ -1623,7 +615,7 @@ export const CustomComponentRenderer: React.FC<{
       imageIndex++;
 
       if (propValue) {
-        DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log(`[CustomComponent] Injecting image (${matchedBy}): ${propValue.substring(0, 50)}...`);
+        DEBUG_CUSTOM_COMPONENT && console.log(`[CustomComponent] Injecting image (${matchedBy}): ${propValue.substring(0, 50)}...`);
         return `<img ${before}src="${propValue}"${after}>`;
       }
 
@@ -1723,6 +715,13 @@ export const CustomComponentRenderer: React.FC<{
       propsKey: propsKey.substring(0, 100)
     });
     let html = injectImageProps(cleanHtml, imageProps);
+
+    const extraFonts = extractFontFamiliesFromHtml(html);
+    html = injectIframeFonts(html, {
+      bodyFont: resolvedFonts.bodyFont,
+      heroFont: resolvedFonts.heroFont,
+      extraFonts
+    });
 
     // Then add click handlers for edit mode (skip on iOS due to postMessage issues)
     if (!BROWSER.isIOS) {
@@ -1835,7 +834,7 @@ export const CustomComponentRenderer: React.FC<{
     }
 
     return html;
-  }, [iframeSrcDoc, component.id, isEditing, propsKey, effectiveIsEditMode, isSelected]); // Use propsKey instead of object reference
+  }, [iframeSrcDoc, component.id, isEditing, propsKey, effectiveIsEditMode, isSelected, resolvedFonts.bodyFont, resolvedFonts.heroFont, fontCatalogVersion]); // Use propsKey instead of object reference
 
   // Listen for messages from iframe (placeholder image clicks and edit mode)
   // NOTE: Disabled on iOS due to postMessage crash issues

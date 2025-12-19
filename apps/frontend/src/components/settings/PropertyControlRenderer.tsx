@@ -14,6 +14,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { getAvailableFontWeights } from '@/utils/fontCapabilities';
 import { formatJavaScript } from '@/utils/codeFormatting';
 import { FontLoadingService } from '@/services/FontLoadingService';
+import { useFontCatalog } from '@/hooks/useFontCatalog';
 
 type ControlTypes = 'input' | 'textarea' | 'slider' | 'checkbox' | 'dropdown' | 'grouped-dropdown' | 'editable-dropdown' | 'colorpicker' | 'gradientpicker' | 'code-editor' | 'custom';
 
@@ -64,26 +65,11 @@ const PropertyControlRenderer: React.FC<PropertyControlRendererProps> = ({
   // Determine the control type from the schema
   const schemaType = schema.type as string;
 
-  // Dynamically augment font groups/options to include Designer fonts from backend
-  const [dynamicFontGroups, setDynamicFontGroups] = useState<Record<string, string[]> | null>(null);
-  const [dynamicFontOptions, setDynamicFontOptions] = useState<string[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    if (propName === 'fontFamily') {
-      (async () => {
-        try {
-          await FontLoadingService.syncDesignerFonts();
-        } catch {}
-        if (!cancelled) {
-          try {
-            setDynamicFontGroups(FontLoadingService.getDedupedFontGroups());
-            setDynamicFontOptions(FontLoadingService.getAllFontNames());
-          } catch {}
-        }
-      })();
-    }
-    return () => { cancelled = true; };
-  }, [propName]);
+  const { groups: dynamicFontGroups } = useFontCatalog({ enabled: propName === 'fontFamily' });
+  const dynamicFontOptions = React.useMemo(
+    () => (propName === 'fontFamily' ? FontLoadingService.getAllFontNames() : null),
+    [propName, dynamicFontGroups]
+  );
 
   switch (controlType) {
     case 'input':

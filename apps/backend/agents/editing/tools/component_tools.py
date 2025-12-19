@@ -13,24 +13,10 @@ import uuid
 from models.deck import DeckDiff, DeckDiffBase
 from models.component import ComponentDiffBase
 from models.registry import ComponentRegistry
-from agents.ai.clients import get_client, invoke
-from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_rate_limited
-from agents.config import get_model, MODEL_FALLBACK
+from agents.editing.tools.llm_utils import get_model_and_client, invoke_with_fallback
+from agents.editing.tools.struct_utils import get_attr as _get_attr
 
 logger = logging.getLogger(__name__)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# HELPER - Dict/Pydantic safe access
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _get_attr(obj, key, default=None):
-    """Safely get attribute from dict or Pydantic model."""
-    if obj is None:
-        return default
-    if isinstance(obj, dict):
-        return obj.get(key, default)
-    return getattr(obj, key, default)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -81,51 +67,6 @@ COMPONENT SPECS:
 USER REQUEST: {instruction}
 
 Generate the component props. Position it nicely on the canvas (avoid top-left corner unless requested)."""
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# HELPER FUNCTIONS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _get_model_and_client(task: str = "component_edit"):
-    """Get model and client, handling rate limits."""
-    model = get_model(task)
-
-    if "gemini" in model and is_provider_in_cooldown("gemini"):
-        model = get_model("fallback")
-        logger.info(f"[COMPONENT_TOOLS] Gemini in cooldown, using fallback: {model}")
-
-    return get_client(model)
-
-
-def _invoke_with_fallback(client, model, messages, response_model, max_tokens=8000):
-    """Invoke LLM with automatic fallback on rate limit."""
-    try:
-        return invoke(
-            client=client,
-            model=model,
-            messages=messages,
-            response_model=response_model,
-            max_tokens=max_tokens,
-        )
-    except Exception as e:
-        error_str = str(e).lower()
-        # Only fallback on actual rate limits, not other errors
-        is_rate_limit = ('429' in error_str or 'rate limit' in error_str or 'quota exceeded' in error_str)
-        is_not_filesystem = 'errno' not in error_str and 'file name' not in error_str
-
-        if is_rate_limit and is_not_filesystem:
-            logger.warning(f"[COMPONENT_TOOLS] Rate limited, trying fallback")
-            mark_provider_rate_limited("gemini" if "gemini" in model else "anthropic")
-            fallback_client, fallback_model = get_client(MODEL_FALLBACK)
-            return invoke(
-                client=fallback_client,
-                model=fallback_model,
-                messages=messages,
-                response_model=response_model,
-                max_tokens=max_tokens,
-            )
-        raise
 
 
 def _find_component(slide, component_id: str) -> Optional[Dict]:
@@ -183,14 +124,15 @@ def edit_component(
         att_list = [f"- {a.get('name', 'file')}: {a.get('url', '')}" for a in attachments]
         prompt += f"\n\nUSER ATTACHMENTS:\n" + "\n".join(att_list)
 
-    client, model = _get_model_and_client("component_edit")
+    client, model = get_model_and_client("component_edit", log_prefix="COMPONENT_TOOLS")
 
-    response = _invoke_with_fallback(
+    response = invoke_with_fallback(
         client=client,
         model=model,
         messages=[{"role": "user", "content": prompt}],
         response_model=ComponentUpdate,
         max_tokens=8000,
+        log_prefix="COMPONENT_TOOLS",
     )
 
     # Merge with existing props (ensure current_props is a dict)
@@ -241,14 +183,15 @@ def create_component(
         att_list = [f"- {a.get('name', 'file')}: {a.get('url', '')}" for a in attachments]
         prompt += f"\n\nUSER ATTACHMENTS (use if relevant):\n" + "\n".join(att_list)
 
-    client, model = _get_model_and_client("component_create")
+    client, model = get_model_and_client("component_create", log_prefix="COMPONENT_TOOLS")
 
-    response = _invoke_with_fallback(
+    response = invoke_with_fallback(
         client=client,
         model=model,
         messages=[{"role": "user", "content": prompt}],
         response_model=NewComponent,
         max_tokens=8000,
+        log_prefix="COMPONENT_TOOLS",
     )
 
     # Build component

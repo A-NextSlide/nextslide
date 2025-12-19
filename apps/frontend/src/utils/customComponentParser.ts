@@ -202,9 +202,23 @@ function extractImageSearchQuery(propName: string): string {
 
 // Create a human-readable label from variable name
 function createLabel(name: string): string {
-  // Convert camelCase to Title Case
-  return name
-    .replace(/([A-Z])/g, ' $1')
+  const trimmed = name.trim();
+  if (!trimmed) return 'Label';
+
+  const indexedImageMatch = trimmed.match(/^(image|img|photo|picture|asset|media)[-_]?(\d+)$/i);
+  if (indexedImageMatch) {
+    const base = indexedImageMatch[1];
+    const rawIndex = parseInt(indexedImageMatch[2], 10);
+    const displayIndex = rawIndex === 0 ? 1 : rawIndex;
+    const labelBase = base.toLowerCase() === 'img' ? 'Image' : base.charAt(0).toUpperCase() + base.slice(1).toLowerCase();
+    return `${labelBase} ${displayIndex}`;
+  }
+
+  return trimmed
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([a-zA-Z])(\d)/g, '$1 $2')
+    .replace(/(\d)([a-zA-Z])/g, '$1 $2')
     .replace(/^./, str => str.toUpperCase())
     .trim();
 }
@@ -790,6 +804,21 @@ export function parseCustomComponentCode(code: string): ParseResult {
     }
   } catch {
     // best-effort; ignore if regex fails
+  }
+
+  // Normalize labels for indexed image props like image0/image1
+  const indexedImageVars = variables.filter((variable) =>
+    variable.type === 'image' && /^(image|img|photo|picture|asset|media)\d+$/i.test(variable.name)
+  );
+  const hasZeroIndex = indexedImageVars.some((variable) => /^(image|img|photo|picture|asset|media)0$/i.test(variable.name));
+  if (indexedImageVars.length > 0) {
+    indexedImageVars.forEach((variable) => {
+      const match = variable.name.match(/(\d+)$/);
+      if (!match) return;
+      const rawIndex = parseInt(match[1], 10);
+      const displayIndex = hasZeroIndex ? rawIndex + 1 : rawIndex;
+      variable.label = `Image ${displayIndex}`;
+    });
   }
   
   return {

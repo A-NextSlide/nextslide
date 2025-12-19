@@ -143,9 +143,7 @@ class FileProcessor:
     
     def _is_style_file(self, filename: str) -> bool:
         """Check if file is likely a style/brand guideline"""
-        style_keywords = ['brand', 'guideline', 'style', 'template', 'theme', 
-                         'identity', 'standards', 'logo', 'color', 'palette']
-        return any(keyword in filename.lower() for keyword in style_keywords)
+        return False
     
     async def _process_image(self, file_info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Process an image file"""
@@ -558,36 +556,7 @@ class FileProcessor:
                     if rgb_matches:
                         logger.info(f"[BRAND GUIDELINE] Found {len(rgb_matches)} RGB colors, converted to hex")
                     
-                    # Look for font mentions
-                    font_keywords = ['font:', 'typeface:', 'typography:', 'font-family:']
-                    for line in text_content.split('\n'):
-                        line_lower = line.lower()
-                        for keyword in font_keywords:
-                            if keyword in line_lower:
-                                # Extract font name after the keyword
-                                font_part = line.split(keyword, 1)[1].strip()
-                                # Clean up common delimiters
-                                font_name = font_part.split(',')[0].split(';')[0].strip(' "\';')
-                                if font_name and len(font_name) < 50:  # Reasonable font name length
-                                    extracted_brand_info['fonts'].append(font_name)
-                    
-                    if extracted_brand_info['fonts']:
-                        logger.info(f"[BRAND GUIDELINE] Found {len(extracted_brand_info['fonts'])} fonts: {extracted_brand_info['fonts']}")
-                    
-                    # Look for style descriptors
-                    style_keywords = ['style:', 'design:', 'aesthetic:', 'look:', 'feel:', 'tone:']
-                    style_descriptors = []
-                    for line in text_content.split('\n'):
-                        line_lower = line.lower()
-                        for keyword in style_keywords:
-                            if keyword in line_lower:
-                                style_part = line.split(keyword, 1)[1].strip()[:100]  # Limit length
-                                if style_part:
-                                    style_descriptors.append(style_part)
-                    
-                    if style_descriptors:
-                        extracted_brand_info['style'] = ' | '.join(style_descriptors[:3])  # Max 3 descriptors
-                        logger.info(f"[BRAND GUIDELINE] Found style descriptors: {extracted_brand_info['style']}")
+                    # Skip font/style keyword extraction to keep logic minimal.
                 
                 except Exception as e:
                     logger.warning(f"[BRAND GUIDELINE] Error extracting brand info from text content: {e}")

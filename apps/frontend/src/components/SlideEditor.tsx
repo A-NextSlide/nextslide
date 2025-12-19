@@ -1,11 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useParams } from 'react-router-dom';
 import ChatPanel from './ChatPanel';
 import DeckPanel from './DeckPanel';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import SyncIndicator from './SyncIndicator';
 import DeckHeader from './deck/DeckHeader';
 import DeckSharing from './deck/DeckSharing';
 import { createComponent } from "../utils/componentUtils";
@@ -24,25 +22,18 @@ import { CollaborationWrapper } from '../yjs/CollaborationWrapper';
 import { supabase } from '@/integrations/supabase/client';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
-import { DeckStatus, CompleteDeckData } from '@/types/DeckTypes';
+import { DeckStatus } from '@/types/DeckTypes';
 import { SlideData } from '@/types/SlideTypes';
-import { Database } from '@/integrations/supabase/types';
-import { ChatPanelProps } from './ChatPanel';
-import { v4 as uuidv4 } from 'uuid';
+import type { ChatPanelProps } from './ChatPanel';
 import PresentationMode from './deck/PresentationMode';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import Slide from './Slide';
-import { useSlideGeneration, UseSlideGenerationOptions } from '@/hooks/useSlideGeneration';
-import { GenerationCoordinator } from '@/services/generation/GenerationCoordinator';
-import { SlideImageUpdater } from '@/utils/slideImageUpdater';
-import { ProcessedEvent } from '@/services/generation';
-import { TestOutlineService } from '@/services/generation/TestOutlineService';
-import { useActiveSlide } from '@/context/ActiveSlideContext';
+import { useSlideGenerationFlow } from './slide-editor/useSlideGenerationFlow';
+import { useSlideImageAutomation } from './slide-editor/useSlideImageAutomation';
 import QuickTipBubble from './common/QuickTipBubble';
 import GuidedTour from './common/GuidedTour';
 import DeckNotes from './deck/DeckNotes';
-import { authService } from '@/services/authService';
 import { debugSlideImages } from '@/utils/debugSlideImages';
 import { useOnboarding } from '@/context/OnboardingContext';
 
@@ -51,11 +42,9 @@ import { useOnboarding } from '@/context/OnboardingContext';
  */
 const SlideEditorContent: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const isNewDeck = searchParams.get('new') === 'true';
   
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
-  const { updateComponent } = useActiveSlide();
   const [chatOpacity, setChatOpacity] = useState(1);
   const [hasSyncError, setHasSyncError] = useState(false);
   const [showQuickTip, setShowQuickTip] = useState(false);
@@ -181,7 +170,6 @@ const SlideEditorContent: React.FC = () => {
   // Moved below to ensure deckData is initialized and changes are tracked
   const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null);
   const isUpdatingRef = useRef(false);
-  const hasAttemptedAutoStartRef = useRef(false);
   const realtimeSetupRef = useRef(false);
   const lastProcessedUpdateRef = useRef<string>(''); // Track last update to prevent duplicates
   const lastMessageRef = useRef<string>(''); // Track last message to prevent duplicates
@@ -201,7 +189,6 @@ const SlideEditorContent: React.FC = () => {
   const { toast } = useToast();
   const { isHistoryPanelOpen } = useVersionHistory();
   const { deckId } = useParams<{ deckId: string }>();
-  const isPendingDeck = searchParams.get('pending') === 'true';
   
   // Constants for panel management
   const CHAT_MIN_SIZE = 22; // Reduced from 22 to give more space to slides
@@ -265,9 +252,6 @@ const SlideEditorContent: React.FC = () => {
     window.addEventListener('tour:force-edit', handler as EventListener);
     return () => window.removeEventListener('tour:force-edit', handler as EventListener);
   }, [setIsEditing]);
-  
-  // Setup periodic fetch ref early so it's available in callbacks
-  const fetchIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Function to fetch latest deck data
   const lastFetchTimeRef = useRef<number>(0);
@@ -1422,133 +1406,21 @@ const SlideEditorContent: React.FC = () => {
         supabase.removeChannel(componentChannel);
       }
       realtimeSetupRef.current = false;
-      hasAttemptedAutoStartRef.current = false;
     };
   }, [deckId, isNewDeck, toast]);
 
-  // Cleanup periodic fetch on unmount
-  useEffect(() => {
-    return () => {
-      if (fetchIntervalRef.current) {
-        clearInterval(fetchIntervalRef.current);
-      }
-    };
-  }, []);
-  
-  // Use the slide generation hook
-  const generationCallbacks: UseSlideGenerationOptions = {
-    onProgress: (event: ProcessedEvent) => {
-      // Handle special events like test deck creation
-      if (event.stage === 'outline_structure' && !event.data?.slideTitles) {
-        const currentDeckData = useDeckStore.getState().deckData;
-        
-        // Special handling for test decks
-        if (TestOutlineService.isTestDeck(currentDeckData)) {
-          const testOutline = TestOutlineService.createPikachuOutline(deckId!, currentDeckData);
-          updateDeckData({ outline: testOutline });
-        }
-      }
-      
-      // Start periodic fetching when slides are being generated
-      const isSlideGenPhase = event.phase === 'slide_generation' || event.stage === 'slide_generation';
-      if (!fetchIntervalRef.current && isSlideGenPhase) {
-        console.log('[SlideGeneration] Starting periodic fetch for slide updates');
-        fetchIntervalRef.current = setInterval(async () => {
-          try {
-            await fetchLatestDeck();
-          } catch (error) {
-            console.error('[SlideGeneration] Error fetching latest deck:', error);
-          }
-        }, 3000); // Fetch every 3 seconds
-      }
-      
-      // Don't fetch on every slide_completed - periodic fetch handles it
-    },
-    onComplete: () => {
-      console.log('[SlideGeneration] Generation complete');
-      // Stop periodic fetching
-      if (fetchIntervalRef.current) {
-        clearInterval(fetchIntervalRef.current);
-        fetchIntervalRef.current = null;
-      }
-      // The deck_complete event handler already sets completion state
-      // Just ensure we have the latest deck data
-      fetchLatestDeck();
-    },
-    onError: (error: Error) => {
-      // Stop periodic fetching on error
-      if (fetchIntervalRef.current) {
-        clearInterval(fetchIntervalRef.current);
-        fetchIntervalRef.current = null;
-      }
-    }
-  };
-
-  const {
-    isGenerating: generationInProgress,
-    deckStatus: generationStatus,
-    lastSystemMessage: generationMessage,
-    startGeneration,
-    stopGeneration,
-    handleGenerationProgress
-  } = useSlideGeneration(deckId || '', generationCallbacks);
-
-  // Update local state when generation updates - with proper checks to prevent loops
-  useEffect(() => {
-    const differs = (a: any, b: any) => {
-      if (!a && !b) return false;
-      if (!a || !b) return true;
-      return (
-        a.state !== b.state ||
-        a.progress !== b.progress ||
-        a.currentSlide !== b.currentSlide ||
-        a.totalSlides !== b.totalSlides ||
-        a.message !== b.message
-      );
-    };
-
-    if (generationStatus && differs(generationStatus, deckStatus)) {
-      setDeckStatus(generationStatus);
-      
-      // Immediately send generation status to chat panel
-      if (generationStatus.state === 'generating' || generationStatus.state === 'creating' || generationStatus.state === 'pending') {
-        setLastSystemMessageForChat({
-          message: generationStatus.message || 'Generating your presentation...',
-          metadata: {
-            type: 'generation_status',
-            state: generationStatus.state,
-            progress: generationStatus.progress,
-            currentSlide: generationStatus.currentSlide,
-            totalSlides: generationStatus.totalSlides,
-            isStreamingUpdate: true  // Ensure streaming flag is set
-          }
-        });
-      }
-      
-      // Clean up URL when generation completes
-      if (generationStatus.state === 'completed' && searchParams.get('new') === 'true') {
-        // Remove the ?new=true parameter when generation completes
-        const newSearchParams = new URLSearchParams(searchParams);
-        newSearchParams.delete('new');
-        setSearchParams(newSearchParams, { replace: true });
-        console.log('[SlideEditor] Removed ?new=true parameter after completion');
-      }
-    }
-  }, [generationStatus, deckStatus, searchParams, setSearchParams]);
-  
-  // Track last sent message to prevent duplicates
-  const lastSentMessageRef = useRef<string>('');
-  
-  useEffect(() => {
-    // Forward streaming updates even if message text is empty; progress/phase still matter
-    if (generationMessage) {
-      const messageKey = `${generationMessage.message ?? ''}-${generationMessage.metadata?.progress ?? ''}-${generationMessage.metadata?.stage ?? ''}`;
-      if (lastSentMessageRef.current !== messageKey) {
-        setLastSystemMessageForChat(generationMessage);
-        lastSentMessageRef.current = messageKey;
-      }
-    }
-  }, [generationMessage]);
+  useSlideGenerationFlow({
+    deckId,
+    isNewDeck,
+    deckStatus,
+    setDeckStatus,
+    setLastSystemMessageForChat,
+    searchParams,
+    setSearchParams,
+    deckData,
+    fetchLatestDeck
+  });
+  useSlideImageAutomation({ deckData, deckStatus });
 
   // Debug helper for stuck generation UI
   useEffect(() => {
@@ -1589,11 +1461,6 @@ const SlideEditorContent: React.FC = () => {
     }
   }, [deckStatus, setDeckStatus, setLastSystemMessageForChat]);
 
-  const handleStartGeneration = useCallback(async () => {
-    // Simply call startGeneration - the coordinator handles all duplicate prevention
-    await startGeneration({ auto: true });
-  }, [startGeneration]);
-
   // Effect to ensure chat panel is visible during generation
   useEffect(() => {
     // Expose deck status globally for editor store to access
@@ -1613,66 +1480,6 @@ const SlideEditorContent: React.FC = () => {
     }
     
   }, [deckStatus?.state, isChatCollapsed]);
-  
-  // Simplified auto-start effect
-  useEffect(() => {
-    if (!deckId || !deckStatus || !isNewDeck || hasAttemptedAutoStartRef.current) {
-      return;
-    }
-    
-    // IMPORTANT: Don't auto-start if deck is already completed
-    if (deckStatus.state === 'completed' || deckStatus.progress === 100) {
-      console.log('[SlideGeneration] Deck already completed, skipping auto-start');
-      hasAttemptedAutoStartRef.current = true;
-      return;
-    }
-    
-    // Check if deck has slides with content - indicates it's already generated
-    const currentDeckData = useDeckStore.getState().deckData;
-    const hasGeneratedContent = currentDeckData.slides?.some(slide => 
-      slide.components && slide.components.length > 0
-    );
-    if (hasGeneratedContent) {
-      console.log('[SlideGeneration] Deck already has generated content, skipping auto-start');
-      hasAttemptedAutoStartRef.current = true;
-      return;
-    }
-    
-    // If DeckList kicked off generation and set the active deck, do not auto-start again
-    if (typeof window !== 'undefined' && (window as any).__activeGenerationDeckId === deckId) {
-      console.log('[SlideGeneration] Detected active generation from DeckList, skipping auto-start');
-      hasAttemptedAutoStartRef.current = true;
-      return;
-    }
-
-    // Check if generation is already in progress from outline creation
-    const coordinator = GenerationCoordinator.getInstance();
-    if (coordinator.isGenerating(deckId)) {
-      console.log('[SlideGeneration] Generation already in progress from outline, skipping auto-start');
-      hasAttemptedAutoStartRef.current = true;
-      return;
-    }
-    
-    // Only check for pending state, not slides content
-    // This prevents re-running when slides update
-    if (deckStatus.state === 'pending') {
-      // Ensure deck data has outline before starting (supports both data.outline and outline)
-      const currentDeckData = useDeckStore.getState().deckData as any;
-      const hasOutline = Boolean(currentDeckData?.data?.outline || currentDeckData?.outline);
-      if (!hasOutline) {
-        console.log('[SlideGeneration] Waiting for deck outline to load');
-        return; // Will retry on next render when deck data updates
-      }
-      
-      console.log('[SlideGeneration] Auto-starting generation for pending deck with outline');
-      hasAttemptedAutoStartRef.current = true;
-      
-      // Small delay to ensure everything is initialized
-      setTimeout(() => {
-        handleStartGeneration();
-      }, 100);
-    }
-  }, [deckId, deckStatus?.state, isNewDeck, handleStartGeneration, deckData.data]);
 
   // Debug: Log slide status changes (only once per deck load)
   useEffect(() => {
@@ -1681,213 +1488,6 @@ const SlideEditorContent: React.FC = () => {
     }
   }, [deckData.slides.length, deckId]);
   
-  // Restore autoSelectImages preference from deck data
-  // IMPORTANT: Only restore if window preference is NOT already set (don't overwrite what the toggle just set!)
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const existingPref = (window as any).__slideGenerationPreferences?.autoSelectImages;
-      const outlinePref = deckData.data?.outline?.stylePreferences?.autoSelectImages;
-
-      // Only restore from outline if:
-      // 1. Window preference is NOT already set (undefined)
-      // 2. AND outline has an explicit preference
-      if (existingPref === undefined && outlinePref !== undefined) {
-        (window as any).__slideGenerationPreferences = {
-          ...(window as any).__slideGenerationPreferences,
-          autoSelectImages: outlinePref
-        };
-      }
-    }
-  }, [deckData.data?.outline?.stylePreferences?.autoSelectImages]);
-
-  // Track if we're currently applying images to prevent infinite loops
-  const applyingImagesRef = useRef(false);
-  const lastAppliedSlidesLengthRef = useRef(0);
-
-  // Apply cached images to slides when available
-  useEffect(() => {
-    // Prevent infinite loop: skip if already applying or if slides length hasn't changed
-    if (applyingImagesRef.current || deckData.slides.length === lastAppliedSlidesLengthRef.current) {
-      return;
-    }
-
-    // Apply images when:
-    // 1. Deck has slides
-    // 2. Either generation is complete or slides are being updated
-    // 3. Auto-select images is enabled
-    if (deckData.slides.length > 0) {
-      const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
-      if (autoSelectImages) {
-        const imageUpdater = SlideImageUpdater.getInstance();
-
-        // Mark as applying and update the last applied length
-        applyingImagesRef.current = true;
-        lastAppliedSlidesLengthRef.current = deckData.slides.length;
-
-        // Apply any cached images to slides
-        setTimeout(async () => {
-          try {
-            await imageUpdater.applyAllCachedImages();
-          } finally {
-            // Reset the flag after a delay to allow for new changes
-            setTimeout(() => {
-              applyingImagesRef.current = false;
-            }, 2000);
-          }
-        }, 500); // Small delay to ensure images are cached
-      }
-    }
-  }, [deckData.slides.length, deckStatus?.state]);
-
-  // Apply images when slides are loaded and autoSelectImages is enabled
-  // This triggers image search and application based on searchQuery metadata
-  useEffect(() => {
-    // Check if we have slides with Image components that need images
-    if (deckData.slides.length === 0) return;
-
-    const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
-    if (!autoSelectImages) return;
-
-    // Prevent infinite loop
-    if (applyingImagesRef.current) return;
-
-    // Check if any slides have placeholder images that need to be filled
-    const hasPlaceholderImages = deckData.slides.some(slide =>
-      slide.components?.some((c: any) => {
-        if (c.type !== 'Image') return false;
-        const src = c.props?.src || '';
-        return !src || src === 'placeholder' || src === '/placeholder.svg';
-      })
-    );
-
-    if (!hasPlaceholderImages) return;
-
-    const imageUpdater = SlideImageUpdater.getInstance();
-
-    // Apply images after a brief delay to ensure DOM is ready
-    const timeoutId = setTimeout(async () => {
-      applyingImagesRef.current = true;
-      try {
-        // This will search and apply images based on searchQuery metadata
-        await imageUpdater.applyAllCachedImages();
-      } finally {
-        setTimeout(() => {
-          applyingImagesRef.current = false;
-        }, 2000);
-      }
-    }, 300);
-
-    return () => clearTimeout(timeoutId);
-  }, [deckData.data?.outline?.stylePreferences?.autoSelectImages, deckData.slides.length]); // Re-run when preference or slides change
-
-  // Also listen for slide_images_available events directly
-  useEffect(() => {
-    const handleImagesAvailable = (event: CustomEvent) => {
-      console.log('[SlideEditor] slide_images_available event received:', event.detail);
-
-      // Prevent infinite loop
-      if (applyingImagesRef.current) {
-        console.log('[SlideEditor] Already applying images, skipping to prevent loop');
-        return;
-      }
-
-      // Check if auto-select images is enabled
-      const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
-
-      // IMPORTANT: If auto-select is enabled, we DON'T use the old cached image system
-      // The new system applies images immediately in fetchLatestDeck using searchQuery metadata
-      if (autoSelectImages) {
-        console.log('[SlideEditor] Auto-select is ENABLED - ignoring slide_images_available event (using new immediate application system)');
-        return;
-      }
-
-      // Only for manual selection mode (auto-select disabled)
-      console.log('[SlideEditor] Auto-select is DISABLED - these images are for manual selection');
-    };
-
-    window.addEventListener('slide_images_available', handleImagesAvailable);
-
-    return () => {
-      window.removeEventListener('slide_images_available', handleImagesAvailable);
-    };
-  }, []);
-
-  // Auto-generate and apply images per slide when auto-apply is enabled
-  useEffect(() => {
-    const generatePromptForSlide = (slideTitle: string): string => {
-      try {
-        const stylePrefs = (deckData as any)?.data?.outline?.stylePreferences || (deckData as any)?.outline?.stylePreferences || {};
-        const parts: string[] = [];
-        parts.push(`Create a compelling image for slide: "${slideTitle}"`);
-        if (stylePrefs.vibeContext) parts.push(`Visual vibe: ${stylePrefs.vibeContext}`);
-        if (stylePrefs.colors) {
-          const c = stylePrefs.colors;
-          parts.push(`Prefer palette hints: background ${c.background || ''}, text ${c.text || ''}, accent ${c.accent1 || ''}`);
-        }
-        // Keep simple; the backend adds strong no-text and theme constraints
-        return parts.filter(Boolean).join('. ');
-      } catch {
-        return `Create an image for slide: "${slideTitle}"`;
-      }
-    };
-
-    const handleSlideCompleted = async (e: CustomEvent) => {
-      try {
-        // Only auto-generate images if explicitly enabled (defaults to OFF)
-        const autoSelect = (window as any).__slideGenerationPreferences?.autoSelectImages === true;
-        if (!autoSelect) return;
-        const slideIndex: number | undefined = e.detail?.slideIndex;
-        if (typeof slideIndex !== 'number') return;
-        const slide = useDeckStore.getState().deckData?.slides?.[slideIndex];
-        if (!slide) return;
-
-        const title = slide.title || `Slide ${slideIndex + 1}`;
-        const prompt = generatePromptForSlide(title);
-        const deckTheme = (deckData as any)?.theme || (deckData as any)?.data?.theme || (deckData as any)?.workspaceTheme || undefined;
-
-        // Fire-and-forget generation; apply via cache/event when ready
-        const resp = await fetch('/api/images/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt,
-            slideContext: { title, content: '', theme: null },
-            style: 'photorealistic',
-            aspectRatio: '16:9',
-            deckTheme
-          })
-        });
-        if (!resp.ok) return;
-        const data = await resp.json();
-        const url: string | undefined = data?.url;
-        if (!url) return;
-
-        // Stash in cache and dispatch availability event for updater
-        const slideId = slide.id;
-        (window as any).__slideImageCache = (window as any).__slideImageCache || {};
-        (window as any).__slideImageCache[`slide_index_${slideIndex}`] = {
-          slideId,
-          slideIndex,
-          images: [{ url, alt: title }],
-          images_by_topic: {},
-          topics: []
-        };
-        window.dispatchEvent(new CustomEvent('slide_images_available', {
-          detail: {
-            slideId,
-            slideIndex,
-            images: [{ url, alt: title }]
-          }
-        }));
-      } catch {
-        // Silent fail; user can still pick images manually
-      }
-    };
-
-    window.addEventListener('slide_completed', handleSlideCompleted as EventListener);
-    return () => window.removeEventListener('slide_completed', handleSlideCompleted as EventListener);
-  }, [deckData]);
-
   // Font optimization handler
   const handleSlideOptimization = useCallback(async (slide: SlideData) => {
     // Individual slide optimization removed - handled by manual button

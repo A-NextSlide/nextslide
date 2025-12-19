@@ -23,8 +23,8 @@ import { useThemeStore } from '@/stores/themeStore';
 import EnhancedColorPicker from '@/components/EnhancedColorPicker';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import GroupedDropdown from '@/components/settings/GroupedDropdown';
-import { ALL_FONT_NAMES, FONT_CATEGORIES } from '@/registry/library/fonts';
 import { FontLoadingService } from '@/services/FontLoadingService';
+import { useFontCatalog } from '@/hooks/useFontCatalog';
 import { Input } from '@/components/ui/input';
 import { uploadFile } from '@/utils/fileUploadUtils';
 import {
@@ -241,71 +241,18 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   const [colorEditor, setColorEditor] = useState<{ open: boolean; swatchIndex: number; x: number; y: number } | null>(null);
   const [draggedExtraIndex, setDraggedExtraIndex] = useState<number | null>(null);
 
-  // Dynamic font groups that update when fonts are synced (like ChatInputView)
-  const [dynamicFontGroups, setDynamicFontGroups] = useState<Record<string, string[]> | null>(null);
-
-  // Static font groups as fallback
-  const fontGroups = React.useMemo<Record<string, string[]>>(() => {
-    try {
-      // Prefer deduped groups if available (same as ChatInputView)
-      if (FontLoadingService?.getDedupedFontGroups) {
-        return FontLoadingService.getDedupedFontGroups();
-      }
-      // Fallback to manual construction
-      const groups: Record<string, string[]> = {};
-      for (const [category, fonts] of Object.entries(FONT_CATEGORIES)) {
-        if (Array.isArray(fonts)) {
-          groups[category] = fonts.map(font => font.name);
-        } else {
-          groups[category] = [];
-        }
-      }
-      return groups;
-    } catch {
-      return {} as Record<string, string[]>;
-    }
-  }, []);
+  const { groups: fontGroups, refresh: refreshFontCatalog } = useFontCatalog();
+  const allFontOptions = React.useMemo(() => FontLoadingService.getAllFontNames(), [fontGroups]);
 
   // Track current font value from theme store for dropdown
   const currentHeadingFont = workspaceTheme?.typography?.heading?.fontFamily || '';
   const currentBodyFont = workspaceTheme?.typography?.paragraph?.fontFamily || '';
 
-  // Initial font sync on component mount
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        await FontLoadingService.syncDesignerFonts?.();
-        if (!cancelled) {
-          const groups = FontLoadingService.getDedupedFontGroups?.();
-          if (groups) {
-            setDynamicFontGroups(groups);
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to sync designer fonts on mount:', err);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []); // Run once on mount
-
-  // Sync designer fonts when font editor opens (like ChatInputView)
-  useEffect(() => {
-    let cancelled = false;
     if (fontEditor?.open) {
-      (async () => {
-        try {
-          await FontLoadingService.syncDesignerFonts?.();
-        } catch { }
-        if (!cancelled) {
-          try {
-            setDynamicFontGroups(FontLoadingService.getDedupedFontGroups?.() || null);
-          } catch { }
-        }
-      })();
+      refreshFontCatalog();
     }
-    return () => { cancelled = true; };
-  }, [fontEditor?.open]);
+  }, [fontEditor?.open, refreshFontCatalog]);
 
   // Load fonts when theme changes - with loading state to prevent FOUC
   useEffect(() => {
@@ -2333,7 +2280,6 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                               </div>
                               {/* Floating editors */}
                               {fontEditor?.open && (() => {
-                                const groups = dynamicFontGroups || fontGroups;
                                 return (
                                   <div
                                     ref={fontEditorRef}
@@ -2351,8 +2297,8 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                     </div>
                                     <GroupedDropdown
                                       value={fontEditor.type === 'heading' ? currentHeadingFont : currentBodyFont}
-                                      options={ALL_FONT_NAMES}
-                                      groups={groups}
+                                      options={allFontOptions}
+                                      groups={fontGroups}
                                       onChange={async (value) => {
                                         const fontName = String(value);
                                         console.log('[OutlineDisplayView] Font selected:', fontName);

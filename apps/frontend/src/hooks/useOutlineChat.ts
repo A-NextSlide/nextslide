@@ -26,6 +26,26 @@ interface UseOutlineChatProps {
   deckId?: string; // CRITICAL: Deck ID to use for outline.id (ensures UUID consistency)
 }
 
+const extractDomainFromText = (input?: string): string | undefined => {
+  if (!input) return undefined;
+  const trimmed = input.trim();
+  if (!trimmed) return undefined;
+  const urlMatch = trimmed.match(/https?:\/\/[^\s)]+/i);
+  const domainMatch = trimmed.match(/\b([a-z0-9-]+(?:\.[a-z0-9-]+)+)\b/i);
+  const raw = urlMatch?.[0] || domainMatch?.[1];
+  if (!raw) return undefined;
+  const cleaned = raw.replace(/[),.;]+$/g, '');
+  const normalized = cleaned.startsWith('http') ? cleaned : `https://${cleaned}`;
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    return host || undefined;
+  } catch {
+    const fallback = cleaned.replace(/^www\./i, '').toLowerCase();
+    return fallback.includes('.') ? fallback : undefined;
+  }
+};
+
 export const useOutlineChat = ({
   initialIdea,      // Now a direct prop for the core prompt
   styleVibeText,
@@ -62,6 +82,88 @@ export const useOutlineChat = ({
   const [analyzingFileProgress, setAnalyzingFileProgress] = useState<{ current: number; total: number } | undefined>();
   const chatTextareaRef = useRef<HTMLTextAreaElement>(null); // Keep ref for auto-resize if needed
   const { toast } = useToast();
+  const outlineIdRef = useRef<string | null>(null);
+
+  const resolveOutlineId = useCallback((preferredId?: string) => {
+    if (deckId && deckId.trim()) {
+      outlineIdRef.current = deckId.trim();
+      return outlineIdRef.current;
+    }
+    if (outlineIdRef.current) return outlineIdRef.current;
+    if (preferredId && preferredId.trim()) {
+      outlineIdRef.current = preferredId.trim();
+      return outlineIdRef.current;
+    }
+    const generated = uuidv4();
+    outlineIdRef.current = generated;
+    return generated;
+  }, [deckId]);
+
+  const buildThemeStylePreferences = useCallback(() => {
+    const trimmedIdea = initialIdea?.trim();
+    const trimmedVibe = styleVibeText?.trim();
+    const domainFromIdea = extractDomainFromText(trimmedIdea);
+    const domainFromVibe = extractDomainFromText(trimmedVibe);
+    const domainFromRefs = Array.isArray(referenceLinks)
+      ? referenceLinks.map(extractDomainFromText).find(Boolean)
+      : undefined;
+    const vibeContext = domainFromIdea || domainFromVibe || domainFromRefs || trimmedVibe;
+
+    const prefs = {
+      initialIdea: trimmedIdea || undefined,
+      vibeContext: vibeContext || undefined,
+      font: selectedFont ?? undefined,
+      colors: colorConfig ?? undefined,
+    };
+
+    const hasAny = Boolean(prefs.initialIdea || prefs.vibeContext || prefs.font || prefs.colors);
+    return hasAny ? prefs : undefined;
+  }, [initialIdea, styleVibeText, selectedFont, colorConfig, referenceLinks]);
+
+  const handleThemeProgressEvent = useCallback((evt: StreamingEvent) => {
+    if (!evt) return;
+    try {
+      let detail: any = null;
+      if ((evt as any).type === 'artifact' && String((evt as any).kind).toLowerCase() === 'theme_json') {
+        const theme = (evt as any)?.content?.deck_theme || (evt as any)?.content?.theme || (evt as any)?.content;
+        const palette = theme?.color_palette || (evt as any)?.content?.palette;
+        detail = { theme, palette, typography: theme?.typography };
+        try {
+          const colors = (palette?.colors || theme?.color_palette?.colors || []) as any[];
+          console.warn('[useOutlineChat] Received theme artifact', { colorsCount: colors.length, palette });
+        } catch { }
+      } else if ((evt as any).type === 'theme_generated') {
+        detail = { theme: (evt as any).theme, palette: (evt as any).palette, typography: (evt as any).theme?.typography };
+        try {
+          const colors = ((evt as any).palette?.colors || (evt as any).theme?.color_palette?.colors || []) as any[];
+          console.warn('[useOutlineChat] Received theme_generated', { colorsCount: colors.length, palette: (evt as any).palette });
+        } catch { }
+      }
+      if (detail && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('theme_preview_update', { detail }));
+      }
+    } catch { }
+  }, []);
+
+  const requestThemeForOutline = useCallback(async (outline: DeckOutline | null | undefined) => {
+    if (!outline) return;
+    const outlineId = resolveOutlineId(outline.id);
+    if (!outlineId) return;
+    const themeStore = useThemeStore.getState();
+    if (themeStore.hasOutlineThemeRequested(outlineId)) {
+      return;
+    }
+    themeStore.markOutlineThemeRequested(outlineId);
+    const stylePreferences = outline.stylePreferences || buildThemeStylePreferences();
+    const outlineForTheme = stylePreferences
+      ? { ...outline, id: outlineId, stylePreferences }
+      : { ...outline, id: outlineId };
+    try {
+      await outlineApi.generateThemeFromOutline(outlineForTheme, deckId, handleThemeProgressEvent);
+    } catch {
+      themeStore.clearOutlineThemeRequested?.(outlineId);
+    }
+  }, [buildThemeStylePreferences, deckId, handleThemeProgressEvent, resolveOutlineId]);
 
   // Track research events and theme events for the thinking process display
   const [researchEvents, setResearchEvents] = useState<any[]>([]);
@@ -72,6 +174,7 @@ export const useOutlineChat = ({
     setOutlineStructureInfo(null);
     setProcessedSlidesCount(0);
     completedSlideIndicesRef.current = new Set();
+    outlineIdRef.current = null;
     // Don't reset research events - keep them visible until manual reset
     // setResearchEvents([]); // Reset research events
     // If these setters are provided, also reset files
@@ -128,28 +231,32 @@ export const useOutlineChat = ({
           case 'research_plan':
             // Optimistically show placeholder outline cards during research phase
             try {
+              const estimatedCount = (slideCount && slideCount > 0)
+                ? slideCount
+                : (detailLevel === 'detailed' ? 10 : detailLevel === 'quick' ? 3 : 6);
+              const placeholderSlides: SlideOutline[] = Array.from({ length: estimatedCount }).map((_, idx) => ({
+                id: uuidv4(),
+                title: `Slide ${idx + 1}`,
+                content: '',
+                deepResearch: false,
+                taggedMedia: []
+              }));
+              console.log('[useOutlineChat] research_plan - Creating placeholder outline');
+              console.log('[useOutlineChat] research_plan - deckId provided:', deckId);
+              const outlineId = resolveOutlineId();
+              console.log('[useOutlineChat] research_plan - Will use ID:', outlineId);
+              const newOutline: DeckOutline = {
+                id: outlineId, // CRITICAL: Use deckId for UUID consistency
+                title: 'Generating your outline…',
+                slides: placeholderSlides,
+                stylePreferences: buildThemeStylePreferences()
+              };
               setCurrentOutline(prev => {
                 if (prev && prev.slides && prev.slides.length > 0) return prev;
-                const estimatedCount = (slideCount && slideCount > 0)
-                  ? slideCount
-                  : (detailLevel === 'detailed' ? 10 : detailLevel === 'quick' ? 3 : 6);
-                const placeholderSlides: SlideOutline[] = Array.from({ length: estimatedCount }).map((_, idx) => ({
-                  id: uuidv4(),
-                  title: `Slide ${idx + 1}`,
-                  content: '',
-                  deepResearch: false,
-                  taggedMedia: []
-                }));
-                console.log('[useOutlineChat] research_plan - Creating placeholder outline');
-                console.log('[useOutlineChat] research_plan - deckId provided:', deckId);
-                console.log('[useOutlineChat] research_plan - Will use ID:', deckId || uuidv4());
-                const newOutline: DeckOutline = {
-                  id: deckId || uuidv4(), // CRITICAL: Use deckId for UUID consistency
-                  title: 'Generating your outline…',
-                  slides: placeholderSlides
-                };
                 return newOutline;
               });
+              console.warn('[useOutlineChat] Theme generation starting at research_plan', { outlineId });
+              void requestThemeForOutline(newOutline);
             } catch { }
             // Also track the event for thinking UI
             setResearchEvents(prev => [...prev, event]);
@@ -263,38 +370,49 @@ export const useOutlineChat = ({
             }
 
             // **NEW: Initialize outline with placeholder slides immediately**
-            if (event.title && event.slideTitles && event.slideCount > 0) {
+            if (event.slideCount && event.slideCount > 0) {
               console.warn('[useOutlineChat] outline_structure - Creating placeholder outline with', event.slideCount, 'slides');
+              const outlineId = resolveOutlineId();
+              const rawSlideTitles = Array.isArray(event.slideTitles) && event.slideTitles.length > 0
+                ? event.slideTitles
+                : Array.from({ length: event.slideCount }, (_, idx) => `Slide ${idx + 1}`);
+              const placeholderSlides: SlideOutline[] = rawSlideTitles.map((slideTitle: any, idx: number) => {
+                const title = typeof slideTitle === 'string'
+                  ? slideTitle
+                  : (slideTitle?.slide_title || slideTitle?.title || `Slide ${idx + 1}`);
+
+                return {
+                  id: uuidv4(),
+                  title,
+                  content: '',
+                  deepResearch: false,
+                  taggedMedia: []
+                };
+              });
               setCurrentOutline(prev => {
                 // If we already have an outline, preserve it (e.g., during re-generation)
                 if (prev && prev.slides.length > 0) return prev;
 
                 // Create initial outline with placeholder slides
-                const placeholderSlides: SlideOutline[] = event.slideTitles.map((slideTitle: any, idx: number) => {
-                  const title = typeof slideTitle === 'string'
-                    ? slideTitle
-                    : (slideTitle?.slide_title || slideTitle?.title || `Slide ${idx + 1}`);
-
-                  return {
-                    id: uuidv4(),
-                    title,
-                    content: '',
-                    deepResearch: false,
-                    taggedMedia: []
-                  };
-                });
-
                 console.log('[useOutlineChat] outline_structure - deckId provided:', deckId);
-                console.log('[useOutlineChat] outline_structure - Will use ID:', deckId || uuidv4());
+                console.log('[useOutlineChat] outline_structure - Will use ID:', outlineId);
                 const newOutline: DeckOutline = {
-                  id: deckId || uuidv4(), // CRITICAL: Use deckId for UUID consistency
-                  title: event.title,
+                  id: outlineId, // CRITICAL: Use deckId for UUID consistency
+                  title: event.title || 'Untitled Presentation',
                   slides: placeholderSlides
                 };
 
                 console.log('[useOutlineChat] Created placeholder outline:', newOutline);
                 return newOutline;
               });
+              const themeOutline: DeckOutline = {
+                id: outlineId,
+                title: event.title || 'Untitled Presentation',
+                slides: placeholderSlides,
+                stylePreferences: buildThemeStylePreferences()
+              };
+              console.warn('[useOutlineChat] Theme generation starting in parallel', { outlineId });
+              void requestThemeForOutline(themeOutline);
             }
             break;
 
@@ -335,11 +453,12 @@ export const useOutlineChat = ({
                 if (!prev) {
                   console.log('[useOutlineChat] No previous outline, creating new one');
                   console.log('[useOutlineChat] deckId provided:', deckId);
-                  console.log('[useOutlineChat] Will use ID:', deckId || (outlineStructureInfo?.title ? uuidv4() : ''));
+                  const outlineId = resolveOutlineId();
+                  console.log('[useOutlineChat] Will use ID:', outlineId);
                   // If no outline exists yet, create one with structure info
                   // CRITICAL: Use deckId if provided, otherwise fallback to uuidv4() for UUID consistency
                   const newOutline: DeckOutline = {
-                    id: deckId || (outlineStructureInfo?.title ? uuidv4() : ''),
+                    id: outlineId,
                     title: outlineStructureInfo?.title || 'Untitled Presentation',
                     slides: Array(totalSlides || event.slideIndex + 1).fill(null).map((_, idx) => ({
                       id: uuidv4(),
@@ -442,7 +561,7 @@ export const useOutlineChat = ({
                   : prev.slides; // Do NOT clear slides if backend returned an empty array
                 return {
                   ...prev,
-                  id: prev.id || finalOutline.id,
+                  id: prev.id || finalOutline.id || resolveOutlineId(),
                   title: finalOutline.title || prev.title,
                   slides: mergedSlides,
                   narrativeFlow: (event as any).narrative_flow || prev.narrativeFlow,
@@ -466,7 +585,8 @@ export const useOutlineChat = ({
             // Immediately apply brand theme derived from stylePreferences (only if real palette exists)
             try {
               const outline: any = (event as any).outline;
-              const sp = outline?.stylePreferences || {};
+              const outlineForTheme = outline ? { ...outline, id: resolveOutlineId(outline?.id) } : null;
+              const sp = outlineForTheme?.stylePreferences || {};
               const colors = sp.colors || {};
               const allColorValues: string[] = [];
               const pushIfValid = (v?: string) => {
@@ -509,8 +629,9 @@ export const useOutlineChat = ({
               const meaningfulAccents = uniqueUpper(combinedAccents.filter(c => !isNeutralHex(c)));
               const hasMeaningfulPalette = (meaningfulAccents.length >= 1) || (meaningful.length >= 2);
 
+              let palette: any = null;
               if (hasMeaningfulPalette) {
-                const palette: any = { metadata: sp.logoUrl ? { logo_url: sp.logoUrl } : {} };
+                palette = { metadata: sp.logoUrl ? { logo_url: sp.logoUrl } : {} };
                 if (colors.background) palette.primary_background = colors.background;
                 if (colors.text) palette.primary_text = colors.text;
                 const extraColors: string[] = (meaningfulAccents.length > 0 ? meaningfulAccents : meaningful).slice(0, 6);
@@ -535,60 +656,16 @@ export const useOutlineChat = ({
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(new CustomEvent('theme_preview_update', { detail }));
                 }
-
-                // ALWAYS request full theme to ensure we have complete theme document (typography, visual style)
-                // Backend will use existing brand colors if available, or generate new ones
-                const colorCount = Array.isArray(palette.colors) ? palette.colors.length : 0;
-                console.warn('[useOutlineChat] 🎨 Triggering theme generation after outline_complete', { colorCount, hasMeaningfulPalette, outlineId: outline?.id });
-                if (outline) {
-                  try {
-                    void outlineApi.generateThemeFromOutline(outline, deckId, (evt) => {
-                      try {
-                        let d: any = null;
-                        if ((evt as any).type === 'artifact' && String((evt as any).kind).toLowerCase() === 'theme_json') {
-                          const theme = (evt as any)?.content?.deck_theme || (evt as any)?.content?.theme || (evt as any)?.content;
-                          const palette2 = theme?.color_palette || (evt as any)?.content?.palette;
-                          d = { theme, palette: palette2, typography: theme?.typography };
-                          try {
-                            const colors = (palette2?.colors || theme?.color_palette?.colors || []) as any[];
-                            console.warn('[useOutlineChat] Received theme artifact', { colorsCount: colors.length, palette: palette2 });
-                          } catch { }
-                        } else if ((evt as any).type === 'theme_generated') {
-                          d = { theme: (evt as any).theme, palette: (evt as any).palette, typography: (evt as any).theme?.typography };
-                          try {
-                            const colors = ((evt as any).palette?.colors || (evt as any).theme?.color_palette?.colors || []) as any[];
-                            console.warn('[useOutlineChat] Received theme_generated', { colorsCount: colors.length, palette: (evt as any).palette });
-                          } catch { }
-                        }
-                        if (d) {
-                          window.dispatchEvent(new CustomEvent('theme_preview_update', { detail: d }));
-                        }
-                      } catch { }
-                    });
-                  } catch { }
+              }
+              if (outlineForTheme) {
+                if (!hasMeaningfulPalette) {
+                  // Even without a meaningful palette from outline, still trigger theme generation
+                  console.warn('[useOutlineChat] 🎨 No meaningful palette from outline, triggering theme generation');
+                } else {
+                  const colorCount = Array.isArray(palette?.colors) ? palette.colors.length : 0;
+                  console.warn('[useOutlineChat] 🎨 Triggering theme generation after outline_complete', { colorCount, hasMeaningfulPalette, outlineId: outlineForTheme.id });
                 }
-              } else if (outline) {
-                // Even without a meaningful palette from outline, still trigger theme generation
-                console.warn('[useOutlineChat] 🎨 No meaningful palette from outline, triggering theme generation');
-                try {
-                  void outlineApi.generateThemeFromOutline(outline, deckId, (evt) => {
-                    try {
-                      let d: any = null;
-                      if ((evt as any).type === 'artifact' && String((evt as any).kind).toLowerCase() === 'theme_json') {
-                        const theme = (evt as any)?.content?.deck_theme || (evt as any)?.content?.theme || (evt as any)?.content;
-                        const palette2 = theme?.color_palette || (evt as any)?.content?.palette;
-                        d = { theme, palette: palette2, typography: theme?.typography };
-                        console.warn('[useOutlineChat] Received theme artifact (fallback)', { palette: palette2 });
-                      } else if ((evt as any).type === 'theme_generated') {
-                        d = { theme: (evt as any).theme, palette: (evt as any).palette, typography: (evt as any).theme?.typography };
-                        console.warn('[useOutlineChat] Received theme_generated (fallback)', { palette: (evt as any).palette });
-                      }
-                      if (d) {
-                        window.dispatchEvent(new CustomEvent('theme_preview_update', { detail: d }));
-                      }
-                    } catch { }
-                  });
-                } catch { }
+                void requestThemeForOutline(outlineForTheme);
               }
             } catch (err) {
               // Swallow theme derivation errors
@@ -633,6 +710,19 @@ export const useOutlineChat = ({
             console.log('[useOutlineChat] 🎨 Theme ready:', (event as any).theme);
             if (typeof window !== 'undefined') {
               const themeData = (event as any).theme || {};
+              if (setCurrentOutline) {
+                setCurrentOutline(prev => {
+                  if (!prev) return prev;
+                  const nextStylePrefs = {
+                    ...(prev.stylePreferences || {}),
+                    brandName: themeData.brandName || prev.stylePreferences?.brandName,
+                    brandDomain: themeData.brandDomain || prev.stylePreferences?.brandDomain,
+                    brandDomainCandidates: themeData.brandDomainCandidates || prev.stylePreferences?.brandDomainCandidates,
+                    needsBrandDomainConfirmation: themeData.needsBrandDomainConfirmation ?? prev.stylePreferences?.needsBrandDomainConfirmation
+                  };
+                  return { ...prev, stylePreferences: nextStylePrefs };
+                });
+              }
               const themePayload = {
                 color_palette: {
                   primary_background: themeData.colors?.background || '#ffffff',
@@ -782,7 +872,7 @@ export const useOutlineChat = ({
     } catch (error) {
       console.error('[useOutlineChat] Error in handleProgressUpdate:', error);
     }
-  }, [onOutlineStructure, onSlideComplete, setCurrentOutline]);
+  }, [buildThemeStylePreferences, onOutlineStructure, onSlideComplete, requestThemeForOutline, resolveOutlineId, setCurrentOutline]);
 
   // Generate outline with streaming
   const handleChatSubmit = useCallback(async (overrides?: {
@@ -807,9 +897,12 @@ export const useOutlineChat = ({
     console.warn('[useOutlineChat] Starting generation, setting isGenerating to true');
     // Reset Theme Store for new outline to avoid reusing old colors/fonts
     try {
-      const outlineId = useDeckStore.getState().deckData?.outline?.id || undefined;
+      const outlineId = useDeckStore.getState().deckData?.outline?.id || outlineIdRef.current || undefined;
       useThemeStore.getState().resetForNewOutline?.(outlineId);
     } catch { }
+    if (deckId && deckId.trim()) {
+      outlineIdRef.current = deckId.trim();
+    }
     console.warn('[useOutlineChat] ========== STARTING GENERATION ==========');
     console.warn('[useOutlineChat] Setting isGenerating to TRUE');
     setIsGenerating(true);
@@ -825,7 +918,10 @@ export const useOutlineChat = ({
     setCurrentOutline(prev => {
       if (prev?.id) {
         existingOutlineId = prev.id;
+        outlineIdRef.current = prev.id;
         // console.log('[useOutlineChat] Preserving existing outline ID:', existingOutlineId);
+      } else if (deckId && deckId.trim()) {
+        outlineIdRef.current = deckId.trim();
       }
       return prev;
     });
@@ -1096,12 +1192,8 @@ export const useOutlineChat = ({
           content: slide.content,
           taggedMedia: [],
           deepResearch: false,
-          extractedData: slide.chart_data ? {
-            source: 'ai_generated',
-            chartType: slide.chart_data.chart_type || 'bar',
-            compatibleChartTypes: [slide.chart_data.chart_type || 'bar'],
-            data: slide.chart_data.data || []
-          } : undefined
+          extractedData: slide.extractedData || undefined,
+          manualCharts: slide.manualCharts || undefined
         })),
         stylePreferences: options.style_preferences
       };

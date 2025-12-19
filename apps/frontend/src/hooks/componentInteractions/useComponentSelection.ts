@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore'; // Restore import
 import { useEditorStore } from '@/stores/editorStore';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
+import { getSelectionPathAtPoint } from '@/utils/selectionUtils';
 
 interface UseComponentSelectionProps {
   componentId: string;
@@ -62,19 +63,76 @@ export function useComponentSelection({
       }
     } catch {}
 
-    // Check if component is already selected in multi-selection
     const editorStore = useEditorStore.getState();
     const components = activeSlideId ? editorStore.getDraftComponents(activeSlideId) : [];
-    const component = components.find(c => c.id === componentId);
-    
-    // Check if this component is part of a group
-    const isInGroup = component?.props.parentId && component.type !== 'Group';
-    const effectiveId = isInGroup && editorStore.editingGroupId !== component.props.parentId
-      ? component.props.parentId // Select the parent group instead
-      : componentId;
-    
-    const isInMultiSelection = editorStore.selectedComponentIds.size > 1 && 
-                              editorStore.isComponentSelected(effectiveId);
+
+    // Resolve click point to slide coordinates
+    const slideElement = containerRef.current?.closest('.slide-container') as HTMLElement | null;
+    const slideRect = slideElement?.getBoundingClientRect();
+    const slideWidth = Number(slideElement?.getAttribute('data-slide-width')) || 1920;
+    const slideHeight = Number(slideElement?.getAttribute('data-slide-height')) || 1080;
+    if (!slideRect) {
+      return;
+    }
+    const clickPoint = {
+      x: ((e.clientX - slideRect.left) / slideRect.width) * slideWidth,
+      y: ((e.clientY - slideRect.top) / slideRect.height) * slideHeight
+    };
+
+    const selectionPath = getSelectionPathAtPoint(components, clickPoint);
+    if (selectionPath.length === 0) {
+      editorStore.clearSelection();
+      return;
+    }
+
+    const lastAnchor = editorStore.selectionAnchor;
+    const currentPath = editorStore.selectionPath;
+    const currentIndex = editorStore.selectionPathIndex;
+    const isMultiSelectKey = e.shiftKey || e.metaKey || e.ctrlKey;
+    const deepestIndex = selectionPath.length - 1;
+
+    const isSameRoot = currentPath.length > 0 && selectionPath.length > 0 && currentPath[0] === selectionPath[0];
+    const isSamePath = isSameRoot &&
+      selectionPath.length === currentPath.length &&
+      selectionPath.every((id, idx) => id === currentPath[idx]);
+    const isSameAnchor = !!(lastAnchor &&
+      lastAnchor.slideId === activeSlideId &&
+      Math.hypot(lastAnchor.x - clickPoint.x, lastAnchor.y - clickPoint.y) <= 8);
+
+    let nextIndex = 0;
+    if (isMultiSelectKey) {
+      nextIndex = isSameRoot && currentIndex > 0
+        ? Math.min(currentIndex, deepestIndex)
+        : 0;
+    } else if (isSamePath && isSameAnchor) {
+      nextIndex = Math.min(currentIndex + 1, deepestIndex);
+    } else if (isSameRoot && currentIndex > 0) {
+      nextIndex = Math.min(currentIndex, deepestIndex);
+    } else if (isSameRoot && currentIndex === 0) {
+      nextIndex = Math.min(1, deepestIndex);
+    } else {
+      nextIndex = 0;
+    }
+
+    editorStore.setSelectionPath(selectionPath, {
+      x: clickPoint.x,
+      y: clickPoint.y,
+      slideId: activeSlideId || ''
+    }, nextIndex);
+
+    const targetId = selectionPath[nextIndex];
+    const targetComponent = components.find(c => c.id === targetId);
+    const parentGroupId = targetComponent?.props.parentId || null;
+
+    // Update group edit context only when selecting an inner element
+    if (targetComponent?.type !== 'Group' && parentGroupId) {
+      editorStore.setEditingGroupId(parentGroupId);
+    } else {
+      editorStore.setEditingGroupId(null);
+    }
+
+    const isInMultiSelection = editorStore.selectedComponentIds.size > 1 &&
+      editorStore.isComponentSelected(targetId);
     
     // CRITICAL FIX: If just dragged a multi-selected item, do NOT clear selection
     // This prevents the accidental deselection on drag end
@@ -85,21 +143,14 @@ export function useComponentSelection({
     // If already part of multi-selection, don't change selection
     // This allows dragging to work properly with multi-selected items
     if (!isInMultiSelection) {
-      // Check for modifier keys for multi-selection
-      const isMultiSelectKey = e.shiftKey || e.metaKey || e.ctrlKey;
-      
       if (isMultiSelectKey) {
-        // Add to selection
-        editorStore.selectComponent(effectiveId, true);
+        editorStore.selectComponent(targetId, true, activeSlideId || undefined);
       } else {
-        // Replace selection - this will also handle group selection logic
-        editorStore.selectComponent(effectiveId, false);
+        editorStore.selectComponent(targetId, false, activeSlideId || undefined);
       }
 
-      // Also inform parent that this component was selected so UI reflects selection immediately
-      // This ensures single-source of truth selection flows up as requested
       if (typeof onSelect === 'function') {
-        onSelect(effectiveId);
+        onSelect(targetId);
       }
     }
     
@@ -110,7 +161,8 @@ export function useComponentSelection({
     didJustDrag, // Add ref to dependency array
     isTextEditingGlobal,
     setTextEditingGlobal,
-    activeSlideId
+    activeSlideId,
+    containerRef
   ]);
 
   // Double click handler - triggers text editing mode for compatible components or group edit mode
@@ -128,19 +180,6 @@ export function useComponentSelection({
     
     // In edit mode, handle component-specific double-click actions
     e.stopPropagation(); // Prevent other actions only when in edit mode
-    
-    const editorStore = useEditorStore.getState();
-    const components = activeSlideId ? editorStore.getDraftComponents(activeSlideId) : [];
-    const component = components.find(c => c.id === componentId);
-    
-    // Check if this component is part of a group
-    if (component?.props.parentId && editorStore.editingGroupId !== component.props.parentId) {
-      // Enter group edit mode
-      editorStore.setEditingGroupId(component.props.parentId);
-      // Select the component within the group
-      editorStore.selectComponent(componentId, false);
-      return;
-    }
     
     // Check if editing is enabled and the component type is text-editable
     if (isEditing && ['TiptapTextBlock'].includes(componentType)) {

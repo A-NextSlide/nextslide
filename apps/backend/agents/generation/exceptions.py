@@ -99,23 +99,6 @@ class ImageSizeError(MediaProcessingError):
     pass
 
 
-# === RAG exceptions ===
-
-class RAGError(GenerationError):
-    """RAG system error"""
-    pass
-
-
-class RAGContextError(RAGError):
-    """Failed to retrieve RAG context"""
-    pass
-
-
-class RAGKnowledgeBaseError(RAGError):
-    """Knowledge base error"""
-    pass
-
-
 # === Orchestration exceptions ===
 
 class OrchestrationError(GenerationError):

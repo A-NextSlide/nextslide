@@ -435,6 +435,7 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
           console.log(`[OutlineEditor] Received ${slideData.taggedMedia.length} tagged media from API for slide ${slideIndex}`);
         }
         
+        const existingManualCharts = updatedSlides[slideIndex].manualCharts;
         updatedSlides[slideIndex] = {
           ...updatedSlides[slideIndex],
           id: currentSlideId || slideData.id || updatedSlides[slideIndex].id,
@@ -444,12 +445,8 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
           deepResearch: updatedSlides[slideIndex].deepResearch || false,
           // IMPORTANT: Use tagged media from slideData if available, otherwise preserve existing
           taggedMedia: slideData.taggedMedia || existingTaggedMedia || [],
-          extractedData: slideData.extractedData || (slideData.chartData ? {
-            source: `slide_${slideIndex}_data`,
-            chartType: slideData.chartData.chart_type,
-            compatibleChartTypes: [slideData.chartData.chart_type],
-            data: slideData.chartData.data
-          } : undefined)
+          extractedData: slideData.extractedData || undefined,
+          manualCharts: slideData.manualCharts ?? existingManualCharts ?? []
         };
         
         // Log final tagged media state

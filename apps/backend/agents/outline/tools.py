@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal, Optional, Dict, Any, List, Tuple
+import os
 import asyncio
 from pydantic import Field
 
@@ -245,6 +246,89 @@ def firecrawl_outline_fetch(args: FirecrawlOutlineArgs, outline: Dict[str, Any])
 
 
 # ---------------------------------------------
+# Firecrawl agent tool: deep extract
+# ---------------------------------------------
+class DeepExtractArgs(ToolModel):
+    tool_name: Literal["deep_extract"] = Field(
+        description=(
+            "Use Firecrawl Agent or Scrape to deeply extract structured data from a website. "
+            "Best for multi-page or site-specific extraction like case studies, investors, or pricing details."
+        )
+    )
+    slide_id: Optional[str] = Field(default=None, description="Slide id to update")
+    slide_index: Optional[int] = Field(default=None, description="Slide index to update")
+    query: Optional[str] = Field(default=None, description="Extraction goal or question")
+    url: Optional[str] = Field(default=None, description="Primary URL to focus on")
+    urls: Optional[List[str]] = Field(default=None, description="Optional list of URLs to scope the extraction")
+    mode: Literal["append", "replace"] = Field(default="append", description="How to apply extracted text to content")
+    max_credits: Optional[int] = Field(default=60, description="Max Firecrawl agent credits")
+    include_videos: bool = Field(default=False, description="If true, include videos via fallback scraping")
+    schema: Optional[Dict[str, Any]] = Field(default=None, description="Optional schema hint for structured extraction")
+
+
+def deep_extract(args: DeepExtractArgs, outline: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+    idx = _find_slide_index(outline, args.slide_id, args.slide_index)
+    if idx is None:
+        return outline, "No-op: slide not found"
+
+    slides = outline.get("slides", [])
+    slide = slides[idx]
+
+    try:
+        from services.firecrawl_agent_service import get_firecrawl_agent_service, ExtractRequest
+        svc = get_firecrawl_agent_service()
+        if not svc.is_configured() and not os.getenv("PPLX_API_KEY") and not os.getenv("PERPLEXITY_API_KEY"):
+            return outline, "No-op: Firecrawl and Perplexity not configured"
+
+        query = (args.query or "").strip()
+        if not query:
+            query = f"Extract key information from {args.url or (args.urls[0] if args.urls else 'the site')}"
+
+        req = ExtractRequest(
+            query=query,
+            url=args.url,
+            urls=args.urls,
+            schema=args.schema,
+            max_credits=args.max_credits or 60,
+            include_videos=args.include_videos,
+        )
+        result = svc.extract_sync(req)
+        if not result.success:
+            return outline, f"No-op: Deep extract failed: {result.error or 'Unknown error'}"
+
+        text = result.text or ""
+        if result.citations:
+            text = (text + "\n\nSources:\n" + "\n".join(result.citations[:5])).strip()
+
+        if text:
+            body = slide.get("content") or ""
+            if args.mode == "replace":
+                slide["content"] = text.strip()
+            else:
+                sep = "\n" if body.endswith("\n") or body == "" else "\n"
+                slide["content"] = (body + sep + text).strip()
+            slide["deepResearch"] = True
+
+        # Attach videos if found
+        if result.videos:
+            tm = slide.setdefault("taggedMedia", [])
+            for video in result.videos[:3]:
+                url = video.get("url") or video.get("embed_url")
+                if not url:
+                    continue
+                tm.append({
+                    "type": "video",
+                    "url": url,
+                    "source": result.route,
+                })
+
+        return outline, f"Deep extracted content for slide {(slide or {}).get('id') or idx}"
+
+    except Exception as e:
+        return outline, f"No-op: Deep extract error: {str(e)}"
+
+
+# ---------------------------------------------
 # Scrape media for custom component generation
 # ---------------------------------------------
 class ScrapeMediaForSlideArgs(ToolModel):
@@ -343,5 +427,3 @@ def scrape_media_for_slide(args: ScrapeMediaForSlideArgs, outline: Dict[str, Any
 
     except Exception as e:
         return outline, f"No-op: Error scraping media: {str(e)}"
-
-

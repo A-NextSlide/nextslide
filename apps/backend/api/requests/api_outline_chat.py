@@ -16,6 +16,7 @@ from api.requests.api_auth import get_auth_header
 from setup_logging_optimized import get_logger
 from models.narrative_flow import NarrativeFlow, NarrativeFlowChanges
 from services.narrative_flow_analyzer import NarrativeFlowAnalyzer
+from services.outline.chart_normalization import normalize_slide_chart_fields
 
 logger = get_logger(__name__)
 
@@ -35,7 +36,7 @@ class SlideData(BaseModel):
     taggedMedia: Optional[List[Any]] = Field(default_factory=list)
     # Optional chart fields that may be added during outline edits
     extractedData: Optional[Dict[str, Any]] = None
-    chart_data: Optional[Dict[str, Any]] = None
+    manualCharts: Optional[List[Dict[str, Any]]] = None
 
 
 class OutlineMetadata(BaseModel):
@@ -249,6 +250,7 @@ Please apply the requested changes and return the updated outline with ALL slide
             MoveSlideArgs, move_slide_outline,
             ResearchSlideArgs, research_slide_outline,
             FirecrawlOutlineArgs, firecrawl_outline_fetch,
+            DeepExtractArgs, deep_extract,
         )
 
         tools = [
@@ -258,6 +260,7 @@ Please apply the requested changes and return the updated outline with ALL slide
             MoveSlideArgs,
             ResearchSlideArgs,
             FirecrawlOutlineArgs,
+            DeepExtractArgs,
         ]
 
         descriptions = get_tools_descriptions(tools)
@@ -271,7 +274,7 @@ Please apply the requested changes and return the updated outline with ALL slide
             tool_calls=(List[ToolCall], Field(description="List of tool calls to apply"))
         )
 
-        tool_system = f"""You are an outline editor. Choose tool calls to modify the outline based on the user's message.\n\nAvailable tools:\n{descriptions}\n\nRules:\n- Keep edits minimal and targeted\n- Maintain all required slide fields\n- When research or external data/images are requested, prefer firecrawl_outline_fetch\n- When research is requested, you may also use research_slide_outline to add supporting bullets or chart data\n- If the user asks to add/remove/reorder slides, pick the appropriate tool\n- If the user asks to change a specific slide, prefer update_slide_content\n"""
+        tool_system = f"""You are an outline editor. Choose tool calls to modify the outline based on the user's message.\n\nAvailable tools:\n{descriptions}\n\nRules:\n- Keep edits minimal and targeted\n- Maintain all required slide fields\n- When research or external data/images are requested, prefer firecrawl_outline_fetch for quick single-page grabs\n- When the user requests deep, multi-page, or site-specific extraction, use deep_extract\n- When research is requested, you may also use research_slide_outline to add supporting bullets or chart data\n- If the user asks to add/remove/reorder slides, pick the appropriate tool\n- If the user asks to change a specific slide, prefer update_slide_content\n"""
 
         client, model_name = get_client(OUTLINE_CONTENT_MODEL)
         try:
@@ -340,6 +343,8 @@ Please apply the requested changes and return the updated outline with ALL slide
                         updated_outline_dict, s = research_slide_outline(tool, updated_outline_dict)
                     elif tname == 'firecrawl_outline_fetch':
                         updated_outline_dict, s = firecrawl_outline_fetch(tool, updated_outline_dict)
+                    elif tname == 'deep_extract':
+                        updated_outline_dict, s = deep_extract(tool, updated_outline_dict)
                     else:
                         s = f"Skipped unknown tool {tname}"
                     applied_summaries.append(getattr(call, 'summary', None) or s)
@@ -362,9 +367,20 @@ Please apply the requested changes and return the updated outline with ALL slide
                     merged.setdefault('tone', original.get('tone'))
                     merged.setdefault('narrative_arc', original.get('narrative_arc'))
                     merged.setdefault('metadata', original.get('metadata') or {})
-                    # Ensure slides exist
+                    # Ensure slides exist and normalize chart fields
                     if not isinstance(merged.get('slides'), list):
                         merged['slides'] = original.get('slides') or []
+                    normalized_slides: List[Any] = []
+                    for slide in merged.get('slides', []):
+                        slide_dict = (
+                            slide.model_dump() if hasattr(slide, 'model_dump')
+                            else slide.dict() if hasattr(slide, 'dict')
+                            else slide
+                        )
+                        if isinstance(slide_dict, dict):
+                            normalize_slide_chart_fields(slide_dict)
+                        normalized_slides.append(slide_dict)
+                    merged['slides'] = normalized_slides
                     return OutlineData(**merged)
                 except Exception:
                     return OutlineData(**(original_model.model_dump() if hasattr(original_model, 'model_dump') else dict(original_model)))
@@ -374,180 +390,49 @@ Please apply the requested changes and return the updated outline with ALL slide
                 summary="; ".join(applied_summaries) or "Applied outline edits",
                 modifiedSlides=[]
             )
-            return EditOutlineResponse(
-                updatedOutline=updated,
-                changes=changes,
-                updatedNarrativeFlow=None,
-                narrativeChanges=None
-            )
-            
-            # Log the raw response for debugging
-            logger.info(f"AI raw response: {response[:500]}...")
-            
-            # Parse the response
-            updated_data = _parse_ai_response(response)
 
-            # Normalize potential AI fields (e.g., chartData -> extractedData)
-            try:
-                if isinstance(updated_data, dict) and 'updatedOutline' in updated_data:
-                    uo = updated_data['updatedOutline']
-                    if isinstance(uo, dict) and 'slides' in uo and isinstance(uo['slides'], list):
-                        for s in uo['slides']:
-                            if not isinstance(s, dict):
-                                continue
-                            # Promote chartData to extractedData if present
-                            if 'chartData' in s and s['chartData']:
-                                cd = s.get('chartData') or {}
-                                transformed = []
-                                for item in (cd.get('data') or []):
-                                    if isinstance(item, dict):
-                                        if 'id' in item and 'value' in item:
-                                            transformed.append({
-                                                'label': item.get('id'),
-                                                'value': item.get('value')
-                                            })
-                                        elif 'label' in item and 'value' in item:
-                                            transformed.append({
-                                                'label': item.get('label'),
-                                                'value': item.get('value')
-                                            })
-                                        elif 'name' in item and 'value' in item:
-                                            transformed.append({
-                                                'label': item.get('name'),
-                                                'value': item.get('value')
-                                            })
-                                s['extractedData'] = {
-                                    'source': 'outline_edit_ai',
-                                    'chartType': cd.get('chart_type') or cd.get('chartType') or 'bar',
-                                    'data': transformed,
-                                    'title': cd.get('title') or s.get('title'),
-                                    'metadata': cd.get('metadata') or {}
-                                }
-                                # Also keep a normalized snake_case for downstream if needed
-                                s['chart_data'] = {
-                                    'chart_type': s['extractedData']['chartType'],
-                                    'data': [{ 'name': d.get('label'), 'value': d.get('value') } for d in s['extractedData']['data'] if isinstance(d, dict)],
-                                    'title': s['extractedData']['title'],
-                                    'metadata': s['extractedData']['metadata']
-                                }
-                                # Remove original chartData to avoid confusion
-                                del s['chartData']
-            except Exception as _norm_e:
-                logger.warning(f"Failed to normalize chartData to extractedData: {_norm_e}")
-            
-            # Log parsed data structure
-            logger.info(f"Parsed data keys: {list(updated_data.keys())}")
-            if 'updatedOutline' in updated_data:
-                outline_keys = list(updated_data['updatedOutline'].keys())
-                logger.info(f"Updated outline keys: {outline_keys}")
-                if 'slides' in updated_data['updatedOutline'] and updated_data['updatedOutline']['slides']:
-                    first_slide = updated_data['updatedOutline']['slides'][0]
-                    logger.info(f"First slide keys: {list(first_slide.keys())}")
-            
-            # Validate the response has required fields
-            if 'updatedOutline' not in updated_data or 'changes' not in updated_data:
-                raise ValueError("AI response missing required fields")
-            
-            # Convert to response models
-            updated_outline = OutlineData(**updated_data['updatedOutline'])
-            changes = OutlineChanges(**updated_data['changes'])
-            
-            # IMPORTANT: Preserve the original outline ID - AI returns example IDs
-            updated_outline.id = request.outline.id
-            logger.info(f"Preserved original outline ID: {updated_outline.id}")
-            
-            # Log the changes
-            logger.info(f"Outline edited successfully: {changes.summary}")
-
-            # If the user asked for a chart but the AI did not include one, try to create
-            # an extractedData object from the ORIGINAL slide content as a fallback.
-            try:
-                if _is_chart_request(request.message):
-                    # Build index map for slide ids
-                    id_to_index = {s.id: idx for idx, s in enumerate(updated_outline.slides)}
-                    candidate_indexes: List[int] = []
-                    if request.target_slide_index is not None:
-                        candidate_indexes.append(int(request.target_slide_index))
-                    elif changes and getattr(changes, 'modifiedSlides', None):
-                        for sid in changes.modifiedSlides:
-                            if sid in id_to_index:
-                                candidate_indexes.append(id_to_index[sid])
-                    # Fallback: if nothing identified, use first slide
-                    if not candidate_indexes and updated_outline.slides:
-                        candidate_indexes.append(0)
-
-                    for idx in candidate_indexes:
-                        if idx < 0 or idx >= len(updated_outline.slides):
-                            continue
-                        slide_obj = updated_outline.slides[idx]
-                        already_has_chart = bool(getattr(slide_obj, 'extractedData', None) or getattr(slide_obj, 'chart_data', None))
-                        if already_has_chart:
-                            continue
-                        candidate = _extract_chart_extractedData_from_content(slide_obj.content or "", slide_obj.title or "")
-                        if candidate:
-                            # Attach as extractedData to slide
-                            slide_obj.extractedData = candidate
-                            logger.info(f"Added extractedData to slide '{slide_obj.title}' based on original content")
-            except Exception as _chart_e:
-                logger.warning(f"Chart fallback generation failed: {_chart_e}")
-            
-            # Check if narrative flow needs updating
             updated_narrative_flow = None
             narrative_changes = None
-            
             try:
                 flow_analyzer = NarrativeFlowAnalyzer()
-                
-                # Detect if changes warrant narrative update
-                original_outline_dict = request.outline.model_dump()
-                updated_outline_dict = updated_outline.model_dump()
-                
+                original_outline_dict = (
+                    request.outline.model_dump() if hasattr(request.outline, 'model_dump') else dict(request.outline)
+                )
+                updated_outline_dict = updated.model_dump() if hasattr(updated, 'model_dump') else dict(updated)
                 needs_update, flow_adjustments = await flow_analyzer.detect_narrative_changes(
                     original_outline_dict,
                     updated_outline_dict
                 )
-                
                 if needs_update:
-                    # Analyze the new narrative flow
                     updated_narrative_flow = await flow_analyzer.analyze_narrative_flow(
                         updated_outline_dict,
-                        context=request.message  # Use the edit message as context
+                        context=request.message
                     )
-                    
-                    # Determine impact level
                     impact = "high" if len(flow_adjustments) >= 3 else "medium" if len(flow_adjustments) >= 2 else "low"
-                    
                     narrative_changes = NarrativeFlowChanges(
                         narrative_impact=impact,
                         flow_adjustments=flow_adjustments
                     )
-                    
                     logger.info(f"Narrative flow updated with {impact} impact: {flow_adjustments}")
-                    
-                    # Save updated narrative flow to deck if we have a deck_id
-                    if hasattr(request, 'deck_id') and request.deck_id:
+
+                    deck_id = getattr(request, "deck_id", None)
+                    if deck_id:
                         try:
                             from utils.supabase import get_supabase_client
                             supabase = get_supabase_client()
-                            
-                            # Update deck with new narrative flow notes
-                            update_result = supabase.table("decks").update({
+                            supabase.table("decks").update({
                                 "notes": updated_narrative_flow.model_dump()
-                            }).eq("uuid", request.deck_id).execute()
-                            
-                            if update_result.data:
-                                logger.info(f"Updated deck {request.deck_id} with new narrative flow notes")
+                            }).eq("uuid", deck_id).execute()
+                            logger.info(f"Updated deck {deck_id} with new narrative flow notes")
                         except Exception as save_error:
                             logger.warning(f"Failed to save narrative flow to deck: {save_error}")
                 else:
                     logger.info("No narrative flow update needed for these changes")
-                    
             except Exception as e:
                 logger.warning(f"Failed to analyze narrative flow changes: {e}")
-                # Continue without narrative flow updates
-            
+
             return EditOutlineResponse(
-                updatedOutline=updated_outline,
+                updatedOutline=updated,
                 changes=changes,
                 updatedNarrativeFlow=updated_narrative_flow,
                 narrativeChanges=narrative_changes
@@ -689,295 +574,3 @@ def _parse_ai_response(response: str) -> Dict[str, Any]:
         # Try to extract key parts manually as fallback
         # This is a basic fallback - in production you'd want more robust parsing
         raise ValueError("Invalid JSON response from AI") 
-
-
-def _is_chart_request(message: str) -> bool:
-    """Heuristic to detect if the user is asking to add a chart."""
-    if not message:
-        return False
-    text = message.lower()
-    keywords = [
-        "add a chart", "add chart", "insert chart", "chart", "graph",
-        "visualize", "visualization", "make a chart", "include a chart"
-    ]
-    return any(k in text for k in keywords)
-
-
-def _extract_chart_extractedData_from_content(content: str, slide_title: str) -> Optional[Dict[str, Any]]:
-    """Parse the slide content to build an extractedData payload if possible.
-
-    Handles multiple formats:
-    1. Label:value pairs (e.g., "North America: 4.5M")
-    2. Tabular data with tabs or multiple spaces as delimiters
-    Returns None if insufficient comparable series is found.
-    """
-    if not content:
-        return None
-
-    # Keep lines unstripped initially to preserve tabs and multiple spaces
-    raw_lines = [l for l in content.split("\n") if l.strip()]
-    data_points: List[Dict[str, Any]] = []
-    percent_points = []
-
-    def _to_number(s: str) -> Optional[float]:
-        try:
-            clean = s.replace(",", "").replace("$", "").replace("%", "").replace("(", "").replace(")", "").strip()
-            # Handle shorthand like 1.2M or 3.4k
-            match = re.match(r"^([\d\.]+)\s*([kKmMbB])?$", clean)
-            if match:
-                val = float(match.group(1))
-                suffix = match.group(2)
-                if suffix:
-                    if suffix.lower() == 'k':
-                        val *= 1_000
-                    elif suffix.lower() == 'm':
-                        val *= 1_000_000
-                    elif suffix.lower() == 'b':
-                        val *= 1_000_000_000
-                return float(val)
-            return float(clean)
-        except Exception:
-            return None
-
-    # STEP 1: Try to parse as tabular data (tab-separated or multi-space separated)
-    # Check if content looks like a table (check raw lines before stripping)
-    has_tabs = any('\t' in line for line in raw_lines)
-    has_multi_spaces = any('  ' in line for line in raw_lines)  # 2+ consecutive spaces
-    
-    if has_tabs or has_multi_spaces:
-        # Parse as table (use raw_lines to preserve delimiters)
-        table_rows = []
-        for line in raw_lines:
-            # Split by tabs or multiple spaces
-            if '\t' in line:
-                cells = [cell.strip() for cell in line.split('\t') if cell.strip()]
-            else:
-                # Split by 2+ spaces
-                cells = [cell.strip() for cell in re.split(r'\s{2,}', line) if cell.strip()]
-            
-            if cells:
-                table_rows.append(cells)
-        
-        if len(table_rows) >= 3:  # Need at least header + 2 data rows
-            # Try to identify header row and data columns
-            header = table_rows[0]
-            data_rows = table_rows[1:]
-            
-            # Find which columns contain mostly numeric data
-            # Also check if header contains unit/measurement indicators
-            if len(header) >= 2:
-                col_is_numeric = []
-                for col_idx in range(len(header)):
-                    # Check header for numeric indicators (units, $, %, etc.)
-                    header_cell = header[col_idx].lower().strip()
-                    
-                    # Skip generic axis labels like "X Value", "Y Value", "X", "Y"
-                    is_generic_axis = header_cell in ['x', 'y', 'x value', 'y value', 'x-value', 'y-value']
-                    
-                    header_suggests_numeric = not is_generic_axis and any(indicator in header_cell for indicator in [
-                        '$', '€', '£', '¥', '%', 'revenue', 'sales', 'price', 'cost', 'amount',
-                        'million', 'billion', 'thousand', 'growth', 'rate', 'percentage',
-                        'total', 'sum', 'average', 'mean', 'median', 'count'
-                    ])
-                    header_suggests_label = not is_generic_axis and any(indicator in header_cell for indicator in [
-                        'name', 'label', 'category', 'region', 'country', 'product', 'id',
-                        'year', 'month', 'quarter', 'date', 'time', 'period', 'type', 'group'
-                    ])
-                    
-                    # Count numeric values in data rows
-                    numeric_count = 0
-                    total_count = 0
-                    for row in data_rows:
-                        if col_idx < len(row):
-                            total_count += 1
-                            if _to_number(row[col_idx]) is not None:
-                                numeric_count += 1
-                    
-                    # Column is numeric if:
-                    # - Header suggests it (has units/indicators) OR
-                    # - Majority of data rows contain numbers AND header doesn't suggest labels
-                    is_numeric = (
-                        header_suggests_numeric or 
-                        (numeric_count > 0 and numeric_count >= total_count * 0.8 and not header_suggests_label)
-                    )
-                    col_is_numeric.append(is_numeric)
-                
-                # Try to find label column (first non-numeric) and value column (first numeric)
-                # Prefer the first column as label if it's not strongly numeric
-                label_col_idx = None
-                value_col_idx = None
-                
-                # First pass: look for clear labels and values based on analysis
-                for idx, is_numeric in enumerate(col_is_numeric):
-                    if not is_numeric and label_col_idx is None:
-                        label_col_idx = idx
-                    elif is_numeric and value_col_idx is None:
-                        value_col_idx = idx
-                    if label_col_idx is not None and value_col_idx is not None:
-                        break
-                
-                # If no label column found but we have 2+ columns, use first as label
-                if label_col_idx is None and value_col_idx is not None:
-                    label_col_idx = 0 if value_col_idx != 0 else 1
-                
-                # Extract data points from table
-                if label_col_idx is not None and value_col_idx is not None:
-                    for row in data_rows:
-                        if len(row) > max(label_col_idx, value_col_idx):
-                            label = row[label_col_idx].strip()
-                            val = _to_number(row[value_col_idx])
-                            
-                            # Skip if label looks like a header or column name
-                            label_lower = label.lower()
-                            # Check for obvious header patterns
-                            header_keywords = [
-                                'x value', 'y value', 'label', 'value', 'name', 'category', 'data'
-                            ]
-                            # Check for measurement/metric keywords that shouldn't be labels
-                            metric_keywords = [
-                                'market size', 'revenue', 'sales', 'price', 'cost', 'growth rate',
-                                'market share', 'profit', 'income', 'expense', 'total'
-                            ]
-                            is_likely_header = (
-                                any(keyword in label_lower for keyword in header_keywords) or
-                                (any(keyword in label_lower for keyword in metric_keywords) and 
-                                 ('$' in label or '€' in label or '£' in label or '¥' in label or '%' in label))
-                            )
-                            
-                            if label and val is not None and not is_likely_header:
-                                data_points.append({"label": label, "value": val})
-                                if '%' in row[value_col_idx]:
-                                    percent_points.append(val)
-                    
-                    # If no valid labels found (all filtered as headers), create data points with auto-generated labels
-                    if len(data_points) == 0 and len(data_rows) >= 2:
-                        logger.warning(f"[CHART] All labels filtered as headers, auto-generating labels for {len(data_rows)} data points")
-                        for i, row in enumerate(data_rows):
-                            if len(row) > value_col_idx:
-                                val = _to_number(row[value_col_idx])
-                                if val is not None:
-                                    data_points.append({"label": f"Point {i + 1}", "value": val})
-                                    if '%' in row[value_col_idx]:
-                                        percent_points.append(val)
-                    
-                    # If we successfully extracted table data, return it
-                    if len(data_points) >= 2:
-                        logger.info(f"[CHART] Extracted {len(data_points)} points from tabular data")
-                        
-                        # Check if all labels are the same (indicating they're actually column headers repeated)
-                        unique_labels = set(p['label'] for p in data_points)
-                        if len(unique_labels) == 1:
-                            # All labels are identical - this is likely a column header repeated
-                            # Replace with sequential labels
-                            logger.warning(f"[CHART] All X values are identical ('{list(unique_labels)[0]}'), auto-generating sequential labels")
-                            for i, point in enumerate(data_points):
-                                point['label'] = f"Point {i + 1}"
-                        elif len(unique_labels) < len(data_points) * 0.5:
-                            # More than half the labels are duplicates - likely a data issue
-                            # Check if labels look like column headers
-                            first_label = data_points[0]['label'].lower()
-                            if any(keyword in first_label for keyword in ['market', 'revenue', 'sales', 'value', 'size', 'price', 'cost', 'growth']):
-                                logger.warning(f"[CHART] Many duplicate X values that look like column headers, auto-generating sequential labels")
-                                for i, point in enumerate(data_points):
-                                    point['label'] = f"Data Point {i + 1}"
-                        
-                        # Determine chart type
-                        pct_sum = sum(percent_points) if percent_points else 0.0
-                        is_time_series = any(header_name.lower() in ['year', 'month', 'date', 'time', 'quarter', 'q1', 'q2', 'q3', 'q4'] 
-                                           for header_name in [header[label_col_idx]])
-                        
-                        if percent_points and len(percent_points) >= len(data_points) * 0.6 and 90 <= pct_sum <= 110:
-                            chart_type = "pie"
-                        elif is_time_series:
-                            chart_type = "line"
-                        else:
-                            chart_type = "column"
-                        
-                        # Normalize pie charts
-                        if chart_type == "pie":
-                            total = sum(p['value'] for p in data_points)
-                            if total > 0:
-                                scaled = []
-                                running = 0.0
-                                for i, p in enumerate(data_points):
-                                    if i < len(data_points) - 1:
-                                        v = round(p['value'] * 100.0 / total, 1)
-                                        running += v
-                                        scaled.append({"label": p['label'], "value": v})
-                                    else:
-                                        scaled.append({"label": p['label'], "value": round(100.0 - running, 1)})
-                                data_points = scaled
-                        
-                        return {
-                            "source": "outline_edit",
-                            "chartType": chart_type,
-                            "title": f"{slide_title} {('Distribution' if chart_type == 'pie' else 'Over Time' if chart_type == 'line' else 'Comparison')}",
-                            "data": data_points[:12],
-                            "metadata": {}
-                        }
-
-    # STEP 2: Fall back to label:value pair parsing
-    # Regex patterns for label:value pairs with optional units/symbols
-    pair_pattern = re.compile(r"^[-•*\d\.)\s]*([A-Za-z0-9][^:–—\-\(]{0,100}?)\s*[:\-–—]\s*\$?([\d,\.]+)\s*%?\s*$")
-    paren_pct_pattern = re.compile(r"^[-•*\d\.)\s]*([^\(]{1,100}?)\s*\(\s*([\d,\.]+)\s*%\s*\)\s*$")
-    trailing_pct_pattern = re.compile(r"^[-•*\d\.)\s]*([^\d]{1,100}?)\s+([\d,\.]+)\s*%\s*$")
-
-    # Strip lines for pattern matching
-    lines = [l.strip() for l in raw_lines]
-    for line in lines:
-        m = pair_pattern.match(line)
-        if m:
-            label = m.group(1).strip()
-            val = _to_number(m.group(2))
-            if label and val is not None:
-                data_points.append({"label": label, "value": val})
-                continue
-        m = paren_pct_pattern.match(line)
-        if m:
-            label = m.group(1).strip()
-            val = _to_number(m.group(2))
-            if label and val is not None:
-                data_points.append({"label": label, "value": val})
-                percent_points.append(val)
-                continue
-        m = trailing_pct_pattern.match(line)
-        if m:
-            label = m.group(1).strip()
-            val = _to_number(m.group(2))
-            if label and val is not None:
-                data_points.append({"label": label, "value": val})
-                percent_points.append(val)
-
-    # Require minimum 2 points for a meaningful chart (reduced from 3 to be more lenient)
-    if len(data_points) < 2:
-        return None
-
-    # Decide chartType: if mostly percentages -> pie, else column
-    pct_sum = sum(percent_points) if percent_points else 0.0
-    chart_type = "pie" if percent_points and len(percent_points) >= len(data_points) * 0.6 and 90 <= pct_sum <= 110 else "column"
-
-    # If pie, normalize to 100
-    if chart_type == "pie":
-        total = sum(p['value'] for p in data_points)
-        if total > 0:
-            scaled = []
-            running = 0.0
-            for i, p in enumerate(data_points):
-                if i < len(data_points) - 1:
-                    v = round(p['value'] * 100.0 / total, 1)
-                    running += v
-                    scaled.append({"label": p['label'], "value": v})
-                else:
-                    scaled.append({"label": p['label'], "value": round(100.0 - running, 1)})
-            data_points = scaled
-
-    # Limit to a reasonable number of points
-    data_points = data_points[:12]
-
-    return {
-        "source": "outline_edit",
-        "chartType": chart_type,
-        "title": f"{slide_title} {('Distribution' if chart_type == 'pie' else 'Comparison')}",
-        "data": data_points,
-        "metadata": {}
-    }

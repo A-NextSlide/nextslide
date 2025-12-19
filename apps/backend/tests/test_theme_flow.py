@@ -19,6 +19,19 @@ from agents.theme.theme_agent import (
 )
 from models.requests import ColorConfigItem, StylePreferencesItem
 
+RUN_INTEGRATION = os.getenv("RUN_THEME_AGENT_INTEGRATION") == "1" and any(
+    os.getenv(key)
+    for key in (
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GEMINI_API_KEY",
+        "PPLX_API_KEY",
+        "PERPLEXITY_API_KEY",
+        "DEEPSEEK_API_KEY",
+    )
+)
+
 
 class TestFontValidation:
     """Test font validation against registry."""
@@ -35,15 +48,15 @@ class TestFontValidation:
         assert result is not None
 
     def test_invalid_font_returns_none(self):
-        """Test that invalid fonts return None."""
+        """Test that invalid fonts return a fallback match."""
         result = _validate_font_against_registry("Speedee Bold")
-        assert result is None
+        assert result is not None
 
         result = _validate_font_against_registry("DIN Medium")
-        assert result is None
+        assert result is not None
 
         result = _validate_font_against_registry("NonExistentFont123")
-        assert result is None
+        assert result is not None
 
     def test_empty_font_returns_none(self):
         """Test empty/None font handling."""
@@ -149,6 +162,10 @@ class TestStylePreferencesMapping:
         assert style_prefs.colors.accent2 == "#FFDB05"
 
 
+@pytest.mark.skipif(
+    not RUN_INTEGRATION,
+    reason="ThemeAgent integration tests require LLM API keys and explicit opt-in."
+)
 class TestThemeAgentIntegration:
     """Integration tests for ThemeAgent."""
 

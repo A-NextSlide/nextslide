@@ -59,15 +59,6 @@ class GenerationConfig:
 
 
 @dataclass
-class RAGConfig:
-    """RAG system configuration"""
-    max_context_chars: int = field(default_factory=lambda: int(os.getenv('RAG_MAX_CONTEXT', '32000')))
-    min_relevance_score: float = field(default_factory=lambda: float(os.getenv('RAG_MIN_RELEVANCE', '0.7')))
-    max_components_predicted: int = field(default_factory=lambda: int(os.getenv('RAG_MAX_COMPONENTS', '30')))
-    enable_compression: bool = field(default_factory=lambda: os.getenv('RAG_COMPRESSION', 'true').lower() == 'true')
-
-
-@dataclass
 class MediaConfig:
     """Media processing configuration"""
     max_image_size_mb: int = field(default_factory=lambda: int(os.getenv('MAX_IMAGE_SIZE_MB', '10')))
@@ -91,7 +82,6 @@ class Config:
     """Master configuration"""
     ai: AIConfig = field(default_factory=AIConfig)
     generation: GenerationConfig = field(default_factory=GenerationConfig)
-    rag: RAGConfig = field(default_factory=RAGConfig)
     media: MediaConfig = field(default_factory=MediaConfig)
     logging: LogConfig = field(default_factory=LogConfig)
     
@@ -112,15 +102,10 @@ class Config:
             },
             'generation': {
                 'max_parallel_slides': self.generation.max_parallel_slides,
-                'slide_timeout_seconds': self.generation.slide_timeout_seconds,
+                'slide_timeout_seconds': self.generation.ai_thread_timeout,
                 'delay_between_slides': self.generation.delay_between_slides,
                 'enable_visual_analysis': self.generation.enable_visual_analysis,
                 'async_images': self.generation.async_images
-            },
-            'rag': {
-                'max_context_chars': self.rag.max_context_chars,
-                'min_relevance_score': self.rag.min_relevance_score,
-                'max_components_predicted': self.rag.max_components_predicted
             },
             'media': {
                 'max_image_size_mb': self.media.max_image_size_mb,
@@ -151,12 +136,8 @@ class Config:
         if self.generation.max_parallel_slides < 1:
             raise ValueError(f"max_parallel_slides must be at least 1, got {self.generation.max_parallel_slides}")
         
-        if self.generation.slide_timeout_seconds < 10:
-            raise ValueError(f"slide_timeout_seconds must be at least 10, got {self.generation.slide_timeout_seconds}")
-        
-        # RAG validation
-        if self.rag.min_relevance_score < 0 or self.rag.min_relevance_score > 1:
-            raise ValueError(f"min_relevance_score must be between 0 and 1, got {self.rag.min_relevance_score}")
+        if self.generation.ai_thread_timeout < 10:
+            raise ValueError(f"ai_thread_timeout must be at least 10, got {self.generation.ai_thread_timeout}")
         
         # Media validation
         if self.media.max_image_size_mb < 1:
@@ -188,11 +169,6 @@ def get_ai_config() -> AIConfig:
 def get_generation_config() -> GenerationConfig:
     """Get generation configuration"""
     return get_config().generation
-
-
-def get_rag_config() -> RAGConfig:
-    """Get RAG configuration"""
-    return get_config().rag
 
 
 def get_media_config() -> MediaConfig:

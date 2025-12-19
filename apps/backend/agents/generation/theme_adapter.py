@@ -70,6 +70,21 @@ class ThemeAdapter:
         body_family = body.get('family') or 'Poppins'
         hero_family = hero.get('family') or 'Montserrat'
 
+        def _to_weight(value: Any, default: int) -> int:
+            try:
+                if value is None:
+                    return default
+                return int(str(value).strip())
+            except Exception:
+                return default
+
+        body_weight = _to_weight(body.get('weight') or body.get('fontWeight'), 400)
+        hero_weight = _to_weight(hero.get('weight') or hero.get('fontWeight'), 700)
+        if hero_weight <= body_weight:
+            hero_weight = min(900, body_weight + 200)
+            if hero_weight <= body_weight:
+                body_weight = max(100, hero_weight - 200)
+
         # Detect palette source if we have it (used to disable gradients)
         palette_source = colors.get('source') or td.get('palette_source')
 
@@ -81,10 +96,12 @@ class ThemeAdapter:
             'typography': {
                 'paragraph': {
                     'fontFamily': body_family,
-                    'color': primary_text
+                    'color': primary_text,
+                    'fontWeight': body_weight
                 },
                 'heading': {
-                    'fontFamily': hero_family
+                    'fontFamily': hero_family,
+                    'fontWeight': hero_weight
                 }
             },
             'accent1': accent_1,  # Flat structure, only 1 accent (3 colors total)
@@ -528,5 +545,4 @@ class ThemeAdapter:
             comp['props'] = props
 
         return components
-
 

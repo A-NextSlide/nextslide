@@ -62,13 +62,9 @@ export function useGroupKeyboardShortcuts() {
 
       // Deselect all (Escape)
       if (e.key === 'Escape') {
-        // If in group edit mode, exit it first
         const editorStore = useEditorStore.getState();
-        if (editorStore.editingGroupId) {
-          editorStore.setEditingGroupId(null);
-        } else {
-          clearSelection();
-        }
+        editorStore.setEditingGroupId(null);
+        clearSelection();
       }
     };
 

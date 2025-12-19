@@ -12,7 +12,7 @@ import { UNBLAST_LOCAL_FONTS } from './unblast-local';
 export interface FontDefinition {
   name: string;
   family: string;
-  source: 'system' | 'google' | 'local' | 'fontshare' | 'cdn' | 'designer';
+  source: 'system' | 'google' | 'local' | 'fontshare' | 'cdn' | 'designer' | 'pixelbuddha';
   weight?: string | number;
   style?: string;
   url?: string;

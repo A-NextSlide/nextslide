@@ -108,7 +108,6 @@ class DeckGenerationProgress:
             if substep:
                 substep_messages = {
                     "preparing_context": "Preparing context",
-                    "rag_lookup": "Finding design patterns",
                     "ai_generation": "Generating content",
                     "saving": "Saving slide"
                 }

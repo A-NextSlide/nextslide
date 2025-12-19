@@ -84,15 +84,13 @@ export function useComponentDrag({
   const editorStore = useEditorStore.getState();
   
   // Get multi-selection state
-  const { selectedComponentIds, isComponentSelected, updateDraftComponent: updateStoreComponent, editingGroupId, getDraftComponents } = useEditorStore();
+  const { selectedComponentIds, isComponentSelected, updateDraftComponent: updateStoreComponent } = useEditorStore();
   const isInMultiSelection = selectedComponentIds.size > 1 && isComponentSelected(component.id);
+  const isDraggingGroup = component.type === 'Group';
   
   // Track initial positions for multi-drag
   const multiDragStartPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
   
-  // Check if this component is part of a group
-  const isInGroup = component.props.parentId && component.type !== 'Group';
-  const shouldDragGroup = isInGroup && editingGroupId !== component.props.parentId;
 
   const handleDragStart = useCallback((e: React.MouseEvent) => {
     const globalTextEditing = useEditorSettingsStore.getState().isTextEditing;
@@ -159,7 +157,7 @@ export function useComponentDrag({
     }
     
     // Store positions for multi-drag if needed
-    if (isInMultiSelection || shouldDragGroup || component.type === 'Group') {
+    if (isInMultiSelection || component.type === 'Group') {
       multiDragStartPositions.current.clear();
       const slideComponents = editorStore.getDraftComponents(slideId || '');
       
@@ -171,15 +169,6 @@ export function useComponentDrag({
             multiDragStartPositions.current.set(id, { ...comp.props.position });
           }
         });
-      } else if (shouldDragGroup && component.props.parentId) {
-        // Store positions of all group siblings
-        slideComponents
-          .filter(c => c.props.parentId === component.props.parentId)
-          .forEach(comp => {
-            if (comp.props.position) {
-              multiDragStartPositions.current.set(comp.id, { ...comp.props.position });
-            }
-          });
       } else if (component.type === 'Group') {
         // Store positions of all children
         const childIds = component.props.children || [];
@@ -232,9 +221,7 @@ export function useComponentDrag({
     slideId,
     onSelect,
     isInMultiSelection,
-    shouldDragGroup,
-    selectedComponentIds,
-    editingGroupId
+    selectedComponentIds
   ]);
 
   const handleMouseMove = useCallback((moveEvent: MouseEvent) => {
@@ -255,7 +242,7 @@ export function useComponentDrag({
       let guides: SnapGuideInfo[] = [];
 
       // Apply snapping only for single components (not groups)
-      if (isSnapEnabled && !shouldDragGroup && component.type !== 'Group') {
+      if (isSnapEnabled && !isInMultiSelection && component.type !== 'Group') {
         const snapResult = calculateSnap(
           component,
           allComponents,
@@ -305,7 +292,7 @@ export function useComponentDrag({
 
         // ALSO apply to ALL other selected components if in multi-selection mode
         // This ensures visual sync for the whole group
-        if (isInMultiSelection) {
+        if (isInMultiSelection || isDraggingGroup) {
           selectedComponentIds.forEach(id => {
             if (id !== component.id) {
               const peerEl = document.querySelector(`[data-component-id="${id}"]`) as HTMLElement | null;
@@ -319,6 +306,20 @@ export function useComponentDrag({
                    peerEl.style.transform = `translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) rotate(${peerRotation})`;
                 }
               }
+            }
+          });
+        }
+
+        if (isDraggingGroup) {
+          const childIds = (component.props.children as string[]) || [];
+          childIds.forEach((childId) => {
+            const childEl = document.querySelector(`[data-component-id="${childId}"]`) as HTMLElement | null;
+            if (!childEl) return;
+            childEl.style.setProperty('--drag-x', `${displayDx}px`);
+            childEl.style.setProperty('--drag-y', `${displayDy}px`);
+            const childRotation = childEl.style.transform.match(/rotate\(([^)]+)\)/)?.[1] || '0deg';
+            if (!childEl.style.transform.includes('var(--drag-x')) {
+              childEl.style.transform = `translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) rotate(${childRotation})`;
             }
           });
         }
@@ -357,7 +358,7 @@ export function useComponentDrag({
       }
 
       // Update connected lines for single component drag (throttle heavy work)
-      if (!shouldDragGroup && component.type !== 'Group') {
+      if (!isInMultiSelection && component.type !== 'Group') {
         const nowLines = Date.now();
         if (nowLines - lastLinesUpdateRef.current > 50) {
           const tempComponents = allComponents.map(c =>
@@ -371,7 +372,7 @@ export function useComponentDrag({
       }
       
       // Handle multi-selection drag with batched updates (throttled)
-      if (isInMultiSelection && slideId && !shouldDragGroup) {
+      if ((isInMultiSelection || isDraggingGroup) && slideId) {
         const nowMulti = Date.now();
         if (nowMulti - lastMultiUpdateRef.current > 50) {
           const updates: Array<{ id: string; position: { x: number; y: number } }> = [];
@@ -396,27 +397,7 @@ export function useComponentDrag({
       }
       
       // Handle group drag similarly (throttled)
-      if (shouldDragGroup && slideId && multiDragStartPositions.current.size > 0) {
-        const nowGroup = Date.now();
-        if (nowGroup - lastMultiUpdateRef.current > 50) {
-          const updates: Array<{ id: string; position: { x: number; y: number } }> = [];
-          multiDragStartPositions.current.forEach((startPos, compId) => {
-            updates.push({
-              id: compId,
-              position: {
-                x: Math.round(startPos.x + actualDeltaX),
-                y: Math.round(startPos.y + actualDeltaY)
-              }
-            });
-          });
-          updates.forEach(({ id, position }) => {
-            updateStoreComponent(slideId, id, {
-              props: { position }
-            }, true);
-          });
-          lastMultiUpdateRef.current = nowGroup;
-        }
-      }
+      // Group drag updates are handled when the Group component itself is dragged
   }, [
     isDragging,
     component,
@@ -425,7 +406,6 @@ export function useComponentDrag({
     isSnapEnabled,
     slideId,
     updateComponent,
-    shouldDragGroup,
     isInMultiSelection,
     updateStoreComponent
   ]);
@@ -461,7 +441,7 @@ export function useComponentDrag({
     }
 
     // Clear CSS variables for all other selected components
-    if (isInMultiSelection) {
+    if (isInMultiSelection || isDraggingGroup) {
       selectedComponentIds.forEach(id => {
         if (id !== component.id) {
           const peerEl = document.querySelector(`[data-component-id="${id}"]`) as HTMLElement | null;
@@ -473,6 +453,18 @@ export function useComponentDrag({
             peerEl.style.transform = `rotate(${peerRotation})`;
           }
         }
+      });
+    }
+
+    if (isDraggingGroup) {
+      const childIds = (component.props.children as string[]) || [];
+      childIds.forEach((childId) => {
+        const childEl = document.querySelector(`[data-component-id="${childId}"]`) as HTMLElement | null;
+        if (!childEl) return;
+        childEl.style.removeProperty('--drag-x');
+        childEl.style.removeProperty('--drag-y');
+        const childRotation = childEl.style.transform.match(/rotate\(([^)]+)\)/)?.[1] || '0deg';
+        childEl.style.transform = `rotate(${childRotation})`;
       });
     }
 
@@ -543,7 +535,7 @@ export function useComponentDrag({
       }
       
       // Handle group drag final updates
-      if ((shouldDragGroup || component.type === 'Group') && multiDragStartPositions.current.size > 0) {
+      if (component.type === 'Group' && multiDragStartPositions.current.size > 0) {
         multiDragStartPositions.current.forEach((startPos, compId) => {
           const finalCompPosition = {
             x: Math.round(startPos.x + dragOffsetRef.current.x),
@@ -598,7 +590,6 @@ export function useComponentDrag({
     slideId,
     updateComponent,
     updateStoreComponent,
-    shouldDragGroup,
     isInMultiSelection
   ]);
 

@@ -1,7 +1,5 @@
 import { FONT_CATEGORIES, FontDefinition, COMMON_FONTS } from '../registry/library/fonts';
-import { designerFontsApi, chooseBestFile } from './designerFontsApi';
 import { FontApiService } from './FontApiService';
-import { PixelBuddhaFontService } from './PixelBuddhaFontService';
 
 // Track loaded fonts (using font name as key)
 const loadedFonts = new Set<string>();
@@ -11,6 +9,10 @@ let dynamicStyleTag: HTMLStyleElement | null = null;
 // Track designer fonts sync
 let designerFontsSynced = false;
 let designerFontsSyncing: Promise<void> | null = null;
+const backendFontByName = new Map<string, FontDefinition & { id?: string; category?: string; tags?: string[] }>();
+let backendFontGroups: Record<string, string[]> | null = null;
+let backendSourceGroups: Record<string, string[]> | null = null;
+let backendFontNames: string[] | null = null;
 
 // Font priority tiers for optimized loading
 const FONT_PRIORITY = {
@@ -47,6 +49,11 @@ const fontPerformanceMetrics: Record<string, { loadTime: number, uses: number }>
 
 // Helper function to find FontDefinition by name (Restore this)
 function findFontDefinition(fontName: string): FontDefinition | null {
+  const key = fontName.trim().toLowerCase();
+  const backendDef = backendFontByName.get(key);
+  if (backendDef) {
+    return backendDef;
+  }
   for (const category in FONT_CATEGORIES) {
     const fontDef = FONT_CATEGORIES[category].find(f => f.name === fontName);
     if (fontDef) {
@@ -82,6 +89,103 @@ function getFontPriority(fontDef: FontDefinition): number {
   return FONT_PRIORITY.STANDARD; // Default priority
 }
 
+function normalizeBackendCategory(category?: string): string {
+  const cat = (category || '').toLowerCase();
+  if (cat.includes('mono')) return 'Monospace';
+  if (cat.includes('script') || cat.includes('hand')) return 'Script';
+  if (cat.includes('slab')) return 'Slab';
+  if (cat.includes('serif') && !cat.includes('sans')) return 'Serif';
+  if (cat.includes('sans')) return 'Sans-Serif';
+  if (cat.includes('display') || cat.includes('headline') || cat.includes('decorative')) return 'Display';
+  return 'Other';
+}
+
+function buildBackendFontGroups(fonts: Iterable<FontDefinition & { category?: string; source?: string }>): Record<string, string[]> {
+  const groups: Record<string, string[]> = {};
+  const seen = new Set<string>();
+
+  const featuredFonts = (FONT_CATEGORIES['Awwwards Picks'] || []).map(font => font.name);
+  if (featuredFonts.length) {
+    const featuredAvailable = featuredFonts.filter(name => {
+      const key = name.toLowerCase();
+      return backendFontByName.has(key);
+    });
+    if (featuredAvailable.length) {
+      groups['Featured'] = featuredAvailable;
+      featuredAvailable.forEach(name => seen.add(name.toLowerCase()));
+    }
+  }
+
+  const systemFonts = (FONT_CATEGORIES['System & Web Safe'] || []).map(f => f.name);
+  if (systemFonts.length) {
+    groups['System & Web Safe'] = systemFonts;
+    systemFonts.forEach(name => seen.add(name.toLowerCase()));
+  }
+
+  for (const def of fonts) {
+    const name = def.name;
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const category = normalizeBackendCategory((def as any).category);
+    if (category) {
+      if (!groups[category]) groups[category] = [];
+      if (!groups[category].includes(name)) {
+        groups[category].push(name);
+      }
+    }
+  }
+
+  Object.keys(groups).forEach(group => {
+    groups[group] = groups[group].slice().sort((a, b) => a.localeCompare(b));
+  });
+
+  return groups;
+}
+
+function normalizeSourceGroup(source?: string): string {
+  const src = (source || '').toLowerCase();
+  if (src === 'pixelbuddha') return 'PixelBuddha';
+  if (src === 'designer' || src === 'local') return 'Designer';
+  if (src === 'google') return 'Google Fonts';
+  if (src === 'fontshare') return 'Fontshare';
+  if (src === 'cdn') return 'CDN';
+  if (src === 'system') return 'System & Web Safe';
+  return 'Other';
+}
+
+function buildBackendSourceGroups(fonts: Iterable<FontDefinition & { source?: string }>): Record<string, string[]> {
+  const groups: Record<string, string[]> = {};
+  const seen = new Set<string>();
+
+  for (const def of fonts) {
+    const name = def.name;
+    if (!name) continue;
+    const group = normalizeSourceGroup((def as any).source);
+    if (!groups[group]) groups[group] = [];
+    if (!groups[group].includes(name)) {
+      groups[group].push(name);
+    }
+    seen.add(name.toLowerCase());
+  }
+
+  const systemFonts = (FONT_CATEGORIES['System & Web Safe'] || []).map(f => f.name);
+  if (systemFonts.length) {
+    if (!groups['System & Web Safe']) groups['System & Web Safe'] = [];
+    systemFonts.forEach(name => {
+      const key = name.toLowerCase();
+      if (seen.has(key)) return;
+      groups['System & Web Safe'].push(name);
+      seen.add(key);
+    });
+  }
+
+  Object.keys(groups).forEach(group => {
+    groups[group] = groups[group].slice().sort((a, b) => a.localeCompare(b));
+  });
+
+  return groups;
+}
+
 /**
  * Service to manage font loading on demand with performance optimizations
  * - Tracks loaded fonts to avoid duplicate loading
@@ -91,85 +195,36 @@ function getFontPriority(fontDef: FontDefinition): number {
  */
 export const FontLoadingService = {
   /**
-   * Ensure designer fonts are merged into FONT_CATEGORIES dynamically.
-   * Now loads ALL 700+ PixelBuddha fonts + 200+ Designer fonts.
-   * PERFORMANCE: Only metadata is loaded here (~500KB), actual font files loaded on-demand.
+   * Sync backend font catalog for dropdowns and on-demand loading.
+   * Loads metadata only; actual font files are fetched on demand.
    */
   syncDesignerFonts: async (): Promise<void> => {
     if (designerFontsSynced) return;
     if (designerFontsSyncing) return designerFontsSyncing;
     designerFontsSyncing = (async () => {
       try {
-        // Fetch ALL backend fonts (no limit - backend now returns all ~900 fonts)
-        // This is just metadata (id, name, category, tags) - cheap to load
-        const allBackendFonts = await FontApiService.listFonts(undefined, undefined, 2000, 0);
+        const allBackendFonts = await FontApiService.listFonts(undefined, undefined, 5000, 0, false);
 
-        const existingNames = new Set<string>(Object.values(FONT_CATEGORIES).flat().map(f => f.name));
-
-        // Ensure all category groups exist
-        const designerCat = FONT_CATEGORIES['Designer'] || (FONT_CATEGORIES['Designer'] = []);
-        const pixelBuddhaCat = FONT_CATEGORIES['PixelBuddha'] || (FONT_CATEGORIES['PixelBuddha'] = []);
-        const displayCat = FONT_CATEGORIES['Display'] || (FONT_CATEGORIES['Display'] = []);
-        const sansCat = FONT_CATEGORIES['Sans-Serif'] || (FONT_CATEGORIES['Sans-Serif'] = []);
-        const serifCat = FONT_CATEGORIES['Serif'] || (FONT_CATEGORIES['Serif'] = []);
-        const scriptCat = FONT_CATEGORIES['Script'] || (FONT_CATEGORIES['Script'] = []);
-        const retroCat = FONT_CATEGORIES['Retro'] || (FONT_CATEGORIES['Retro'] = []);
-        const techCat = FONT_CATEGORIES['Tech'] || (FONT_CATEGORIES['Tech'] = []);
-
+        backendFontByName.clear();
         for (const item of allBackendFonts) {
           const displayName = (item as any).name || (item as any).id;
           if (!displayName) continue;
-          if (existingNames.has(displayName)) continue;
-
           const def: FontDefinition = {
             name: displayName,
             family: displayName,
-            source: 'designer'
+            source: (item as any).source || 'designer'
           } as any;
 
-          // Attach backend metadata for on-demand loading
           (def as any).id = (item as any).id;
           (def as any).category = (item as any).category;
-          (def as any).tags = (item as any).tags;
+          (def as any).tags = (item as any).tags || [];
 
-          // Categorize fonts by source and category for better organization
-          const category = ((item as any).category || '').toLowerCase();
-          const source = (item as any).source;
-
-          // Add to source-specific category
-          // PERFORMANCE: Skip PixelBuddha from frontend dropdowns to prevent slowdown
-          // PixelBuddha fonts are still used by backend for hero/title generation
-          if (source === 'pixelbuddha') {
-            // DON'T add to categories - hide from frontend dropdowns
-            // pixelBuddhaCat.push(def); // Commented out for performance
-            continue; // Skip to next font
-          } else {
-            designerCat.push(def);
-          }
-
-          // Also categorize by type for easier selection
-          if (category.includes('display') || category.includes('headline')) {
-            displayCat.push(def);
-          } else if (category.includes('sans')) {
-            sansCat.push(def);
-          } else if (category.includes('serif') && !category.includes('sans')) {
-            serifCat.push(def);
-          } else if (category.includes('script') || category.includes('handwritten')) {
-            scriptCat.push(def);
-          }
-
-          // Tag-based categorization
-          const tags = (item as any).tags || [];
-          if (tags.some((t: string) => t.toLowerCase().includes('retro') || t.toLowerCase().includes('vintage'))) {
-            retroCat.push(def);
-          }
-          if (tags.some((t: string) => t.toLowerCase().includes('tech') || t.toLowerCase().includes('futuristic'))) {
-            techCat.push(def);
-          }
-
-          existingNames.add(displayName);
+          backendFontByName.set(displayName.toLowerCase(), def);
         }
 
+        backendFontNames = Array.from(backendFontByName.values()).map(def => def.name).sort((a, b) => a.localeCompare(b));
+        backendFontGroups = buildBackendFontGroups(backendFontByName.values());
+        backendSourceGroups = buildBackendSourceGroups(backendFontByName.values());
         designerFontsSynced = true;
       } catch (e) {
         console.error('[FontLoadingService] Failed to sync designer fonts:', e);
@@ -200,12 +255,7 @@ export const FontLoadingService = {
       // This handles PixelBuddha and other backend fonts not in FONT_CATEGORIES
       const loadPromiseFallback = (async () => {
         try {
-
-          // DISABLED: PixelBuddha fonts disabled (using only Designer + Google fonts)
-          // const isPixelBuddha = await PixelBuddhaFontService.isPixelBuddhaFamily(fontName);
-          // if (isPixelBuddha) { ... }
-
-          // Try loading via FontApiService (Designer fonts only)
+          // Try loading via FontApiService (backend fonts)
           const loaded = await FontApiService.findAndLoadByFamily(fontName, '400');
           if (loaded) {
             loadedFonts.add(fontName);
@@ -236,7 +286,6 @@ export const FontLoadingService = {
       try {
         const styleTag = getOrCreateDynamicStyleTag();
         let cssToInject = '';
-        // DISABLED: PixelBuddha fonts disabled (using only Designer + Google fonts)
 
         // 5. Generate CSS based on source
         switch (fontDef.source) {
@@ -375,44 +424,20 @@ export const FontLoadingService = {
             }
             break;
 
-          case 'designer':
+          case 'pixelbuddha':
+          case 'designer': {
             try {
-              // Attempt optimal path: details -> pick woff2 -> FontFace
-              // @ts-ignore
               const fontId: string | undefined = (fontDef as any).id;
               if (fontId) {
-                const details = await designerFontsApi.details(fontId);
-                // Find a regular style if available
-                const allStyleFiles = (details.styles || []).flatMap(s => s.files.map(f => ({ style: s.style, file: f })));
-                let picked = allStyleFiles.find(sf => sf.style.toLowerCase() === 'regular');
-                if (!picked && allStyleFiles.length > 0) picked = allStyleFiles[0];
-                if (picked) {
-                  const best = chooseBestFile([picked.file]);
-                  if (best) {
-                    const url = best.format?.toLowerCase() === 'woff2'
-                      ? designerFontsApi.designerFileUrl(fontId, best.filename)
-                      : designerFontsApi.designerFileUrl(fontId, best.filename);
-                    const formatSuffix = best.format ? ` format('${best.format.toLowerCase()}')` : '';
-                    const face = new FontFace(fontDef.family, `url(${url})${formatSuffix}`);
-                    await face.load();
-                    document.fonts.add(face);
-                    break;
-                  }
-                }
+                const ok = await FontApiService.loadFontById(fontId, fontDef.family, fontDef.weight || '400');
+                if (ok) break;
               }
-              // Fallback quick path: use style endpoint for regular
-              if (fontId) {
-                const url = designerFontsApi.fileUrlByStyle(fontId, 'regular');
-                const css = `\n@font-face {\n  font-family: "${fontDef.family}";\n  src: url("${url}");\n  font-weight: 400;\n  font-style: normal;\n  font-display: swap;\n}\n`;
-                const styleTag = getOrCreateDynamicStyleTag();
-                if (!styleTag.textContent?.includes(url)) {
-                  styleTag.textContent += css;
-                }
-              }
+              await FontApiService.findAndLoadByFamily(fontDef.family, fontDef.weight || '400');
             } catch (e) {
               // ignore and proceed; readiness check will handle
             }
             break;
+          }
         }
 
         // 6. Inject CSS if not already present (Only for non-google sources now)
@@ -650,6 +675,9 @@ export const FontLoadingService = {
    * Get all available font names (for UI dropdowns)
    */
   getAllFontNames: (): string[] => {
+    if (backendFontNames && backendFontNames.length) {
+      return backendFontNames.slice();
+    }
     const seen = new Set<string>();
     const result: string[] = [];
     for (const def of Object.values(FONT_CATEGORIES).flat()) {
@@ -666,12 +694,40 @@ export const FontLoadingService = {
    * Get all font categories mapped to font names (for grouped dropdowns)
    */
   getFontCategories: (): Record<string, string[]> => {
+    if (backendFontGroups) {
+      return { ...backendFontGroups };
+    }
     return Object.entries(FONT_CATEGORIES).reduce((acc, [category, fonts]) => {
       acc[category] = fonts.map(font => font.name);
       return acc;
     }, {} as Record<string, string[]>);
   },
 
+  /**
+   * Get font groups by source (PixelBuddha, Designer, Google, etc.)
+   */
+  getFontSourceGroups: (): Record<string, string[]> => {
+    if (backendSourceGroups) {
+      return { ...backendSourceGroups };
+    }
+
+    const groups: Record<string, string[]> = {};
+    for (const fonts of Object.values(FONT_CATEGORIES)) {
+      fonts.forEach((def) => {
+        const group = normalizeSourceGroup(def.source);
+        if (!groups[group]) groups[group] = [];
+        if (!groups[group].includes(def.name)) {
+          groups[group].push(def.name);
+        }
+      });
+    }
+
+    Object.keys(groups).forEach(group => {
+      groups[group] = groups[group].slice().sort((a, b) => a.localeCompare(b));
+    });
+
+    return groups;
+  },
   /**
    * Check if designer fonts have been synced
    */
@@ -683,6 +739,9 @@ export const FontLoadingService = {
    * Get de-duplicated font groups using priority order similar to registry.
    */
   getDedupedFontGroups: (): Record<string, string[]> => {
+    if (backendFontGroups) {
+      return { ...backendFontGroups };
+    }
     const priorityOrder = [
       'Awwwards Picks',
       'Designer',
@@ -728,13 +787,17 @@ export const FontLoadingService = {
    * Preload fonts for dropdown opening - smart loading strategy
    */
   preloadForDropdown: async (categories: Record<string, string[]>, activeTab?: string): Promise<void> => {
+    const previewLimit = 24;
     // 1. Load system fonts immediately (always available)
     const systemFonts = categories['System & Web Safe'] || [];
     await FontLoadingService.loadFonts(systemFonts, { maxConcurrent: 5, delayBetweenBatches: 0 });
 
     // 2. Load active tab fonts immediately
     if (activeTab && categories[activeTab]) {
-      await FontLoadingService.loadFonts(categories[activeTab], { maxConcurrent: 3, delayBetweenBatches: 50 });
+      await FontLoadingService.loadFonts(categories[activeTab].slice(0, previewLimit), {
+        maxConcurrent: 3,
+        delayBetweenBatches: 50
+      });
     }
 
     // 3. Load common fonts (Sans-Serif) with priority
@@ -750,7 +813,7 @@ export const FontLoadingService = {
 
     otherCategories.forEach((category, index) => {
       setTimeout(() => {
-        const fonts = categories[category] || [];
+        const fonts = (categories[category] || []).slice(0, previewLimit);
         FontLoadingService.loadFonts(fonts, {
           maxConcurrent: 2,
           delayBetweenBatches: 200,

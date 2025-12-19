@@ -8,7 +8,6 @@ import { streamOutlineAgentChat, ChatMessage, AgentEvent, OutlineData, FileAttac
 import { fileToBase64, getFileCategory, formatFileSize, createImagePreview, revokeImagePreview } from '@/services/fileAnalysisService';
 import { ThinkingStatusDisplay, ThemeChatBlock, DropdownOutlineChatBlock, IntegrationMentionPopover, IntegrationMentionBubble } from '@/components/chat';
 import ThinkingIndicator from '@/components/common/ThinkingIndicator';
-import type { ThemeBlockData, OutlineBlockData, OutlineSlide, DropdownOutlineBlockData } from '@/components/chat';
 import { useIntegrationMentions } from '@/hooks/useIntegrationMentions';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { ThinkingStep, StatusPhase, STATUS_PHASES } from '@/types/agentEvents';
@@ -47,6 +46,13 @@ const renderText = (text: string) => {
   }
 
   return parts.length > 0 ? parts : text;
+};
+
+const createOutlineSlideId = () => {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `slide-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 };
 
 interface AttachmentPreview {
@@ -189,6 +195,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   const [themeBlockCollapsed, setThemeBlockCollapsed] = useState(true); // Start collapsed
   const [isThemeLoading, setIsThemeLoading] = useState(false); // Track theme generation
   const isThemeLoadingRef = useRef(false); // Ref for async access
+  const [lastThemeVibeContext, setLastThemeVibeContext] = useState<string | null>(null); // Track brand context we fetched theme for
   const [outlineBlock, setOutlineBlock] = useState<OutlinePreviewData | null>(null);
   const [outlineBlockCollapsed, setOutlineBlockCollapsed] = useState(true); // Start collapsed
 
@@ -651,15 +658,40 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
           style: outlineData.style,
         });
 
-        // Start with defaults, then fetch real theme from backend
-        let newThemeBlock = buildThemeBlockFromOutline(outlineData);
-        setThemeBlock(newThemeBlock);
-        setThemeBlockCollapsed(true);
+        // Check if we already have a fetched theme (not default colors)
+        const hasExistingTheme = themeBlock && themeBlock.colors &&
+          themeBlock.colors.accent_1 !== '#FF6B35' && // Not default accent color
+          themeBlock.colors.accent_1 !== '#000000';   // Not black fallback
 
-        // ALWAYS attempt to fetch theme colors from backend
-        // Use brandContext, style, or topic as vibeContext for theme generation
+        // Get current vibeContext
         const vibeContext = outlineData.brandContext || outlineData.style || outlineData.topic;
-        if (vibeContext) {
+
+        // Check if the brand/vibeContext has changed (user asked for different theme)
+        // We should refetch theme if:
+        // 1. We don't have an existing theme, OR
+        // 2. The vibeContext has changed (e.g., user said "use Tesla branding" after OpenAI)
+        const vibeContextChanged = vibeContext && lastThemeVibeContext &&
+          vibeContext.toLowerCase() !== lastThemeVibeContext.toLowerCase();
+        const shouldFetchTheme = !hasExistingTheme || vibeContextChanged;
+
+        // Build new theme block or use existing one
+        let currentThemeBlock = (hasExistingTheme && !vibeContextChanged) ? themeBlock : buildThemeBlockFromOutline(outlineData);
+
+        // Set theme block if needed
+        if (!hasExistingTheme || vibeContextChanged) {
+          setThemeBlock(currentThemeBlock);
+          setThemeBlockCollapsed(true);
+        }
+
+        // Fetch theme colors from backend
+        // Skip if we already have theme AND vibeContext hasn't changed (just outline detail changes)
+        if (vibeContextChanged) {
+          console.log('[ConversationalOnboarding] 🎨 Brand changed from', lastThemeVibeContext, 'to', vibeContext, '- fetching new theme');
+        } else if (hasExistingTheme) {
+          console.log('[ConversationalOnboarding] 🎨 Skipping theme fetch - already have theme:', themeBlock?.colors?.accent_1);
+        }
+
+        if (vibeContext && shouldFetchTheme) {
           // Set loading state BEFORE calling API
           setIsThemeLoading(true);
 
@@ -740,8 +772,9 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                           },
                         };
                       });
-                      // Theme received - stop loading
+                      // Theme received - stop loading and track which brand we fetched for
                       setIsThemeLoading(false);
+                      setLastThemeVibeContext(vibeContext);
                       completeThinkingStep('fetching_brand');
                     }
                   }
@@ -752,6 +785,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
               if (themeResult?.theme?.color_palette) {
                 console.log('[ConversationalOnboarding] ✅ Final theme result:', themeResult.theme);
                 setIsThemeLoading(false);
+                setLastThemeVibeContext(vibeContext);
               }
             } catch (err) {
               console.error('[ConversationalOnboarding] ❌ Failed to fetch brand colors:', err);
@@ -765,21 +799,29 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
         }
 
         // Load fonts
-        loadThemeFonts(newThemeBlock.typography.headingFont, newThemeBlock.typography.bodyFont);
-        console.log('[ConversationalOnboarding] ✅ Built initial theme block:', newThemeBlock);
+        loadThemeFonts(currentThemeBlock.typography.headingFont, currentThemeBlock.typography.bodyFont);
+        console.log('[ConversationalOnboarding] ✅ Using theme block:', currentThemeBlock);
 
         // Build outline block for preview - include ALL content that will be on slides
         if (outlineData.slides && outlineData.slides.length > 0) {
           console.log('[ConversationalOnboarding] 📋 Building outline block with', outlineData.slides.length, 'slides');
+          // Log assigned videos for debugging
+          const slidesWithVideos = outlineData.slides.filter(s => s.assignedVideo);
+          if (slidesWithVideos.length > 0) {
+            console.log('[ConversationalOnboarding] 🎬 Slides with assigned videos:', slidesWithVideos.map(s => ({ title: s.title, video: s.assignedVideo?.title })));
+          }
           const outlinePreview: OutlinePreviewData = {
             outlineId: `outline-${Date.now()}`,
             title: outlineData.topic || 'Your Presentation',
-            slides: outlineData.slides.map((s, i) => ({
-              id: `slide-${i}`,
+            slides: outlineData.slides.map((s) => ({
+              id: createOutlineSlideId(),
               title: s.title,
               subtitle: s.subtitle,
               keyPoints: s.key_points,
               content: s.content, // Include narrative/content if available
+              isContentLoaded: Boolean(s.content),
+              assignedVideo: s.assignedVideo, // Pass through assigned video from AI
+              taggedMedia: s.taggedMedia, // Pass through any tagged media
             })),
           };
           setOutlineBlock(outlinePreview);
@@ -1178,6 +1220,8 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
     }
   };
 
+  const stackedBlocks = Boolean(outlineBlock && themeBlock);
+
   return (
     <div className="flex flex-col h-full max-w-2xl mx-auto w-full px-4 sm:px-6 lg:px-0">
       {/* Header with back button */}
@@ -1285,22 +1329,17 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
 
             {/* Chat Blocks: Outline & Theme - show after last assistant message in planning */}
             {message.role === 'assistant' && index === messages.length - 1 && (stage === 'planning' || stage === 'slide_mode_selection') && (themeBlock || outlineBlock) && (
-              <div className="mt-4 mb-3 flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className={cn(
+                "mt-4 mb-3 flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-300",
+                stackedBlocks ? "gap-0" : "gap-3"
+              )}>
                 {/* Outline Block - Dropdown with editable content */}
                 {outlineBlock && (
                   <DropdownOutlineChatBlock
-                    data={{
-                      title: outlineBlock.title,
-                      slides: outlineBlock.slides.map(s => ({
-                        id: s.id,
-                        title: s.title,
-                        subtitle: s.subtitle,
-                        keyPoints: s.keyPoints,
-                        content: s.content,
-                        isContentLoaded: !!(s.content || (s.keyPoints && s.keyPoints.length > 0)),
-                      })),
-                    }}
+                    className={stackedBlocks ? "rounded-b-none" : undefined}
+                    data={outlineBlock}
                     onSlideEdit={(slideId, updates) => {
+                      const slideIndex = outlineBlock.slides.findIndex(s => s.id === slideId);
                       setOutlineBlock(prev => {
                         if (!prev) return prev;
                         return {
@@ -1310,38 +1349,46 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                           ),
                         };
                       });
-                      if (outlineFlow) {
-                        const idx = parseInt(slideId.replace('slide-', ''));
-                        const updatedSlides = [...(outlineFlow.slides || [])];
-                        if (updatedSlides[idx]) {
-                          updatedSlides[idx] = {
-                            ...updatedSlides[idx],
-                            title: updates.title ?? updatedSlides[idx].title,
-                            content: updates.content ?? updatedSlides[idx].content,
-                            key_points: updates.keyPoints ?? updatedSlides[idx].key_points,
-                          };
-                          setOutlineFlow({ ...outlineFlow, slides: updatedSlides });
-                        }
-                      }
+                      setOutlineFlow(prev => {
+                        if (!prev?.slides || slideIndex < 0) return prev;
+                        const updatedSlides = [...prev.slides];
+                        const currentSlide = updatedSlides[slideIndex];
+                        if (!currentSlide) return prev;
+                        updatedSlides[slideIndex] = {
+                          ...currentSlide,
+                          title: updates.title ?? currentSlide.title,
+                          content: updates.content ?? currentSlide.content,
+                          key_points: updates.keyPoints ?? currentSlide.key_points,
+                        };
+                        return { ...prev, slides: updatedSlides };
+                      });
                     }}
                     onSlideAdd={() => {
-                      const newSlide = { id: `slide-${outlineBlock.slides.length}`, title: 'New Slide', content: '' };
+                      const newSlide = {
+                        id: createOutlineSlideId(),
+                        title: 'New Slide',
+                        content: '',
+                        keyPoints: [],
+                        isContentLoaded: false,
+                      };
                       setOutlineBlock(prev => prev ? { ...prev, slides: [...prev.slides, newSlide] } : prev);
-                      if (outlineFlow) {
-                        setOutlineFlow({ ...outlineFlow, slides: [...(outlineFlow.slides || []), { title: 'New Slide', content: '' }] });
-                      }
+                      setOutlineFlow(prev => prev ? {
+                        ...prev,
+                        slides: [...(prev.slides || []), { title: 'New Slide', content: '', key_points: [] }],
+                      } : prev);
                     }}
                     onSlideDelete={(slideId) => {
+                      const slideIndex = outlineBlock.slides.findIndex(s => s.id === slideId);
                       setOutlineBlock(prev => {
                         if (!prev) return prev;
                         return { ...prev, slides: prev.slides.filter(s => s.id !== slideId) };
                       });
-                      if (outlineFlow) {
-                        const idx = parseInt(slideId.replace('slide-', ''));
-                        const updatedSlides = [...(outlineFlow.slides || [])];
-                        updatedSlides.splice(idx, 1);
-                        setOutlineFlow({ ...outlineFlow, slides: updatedSlides });
-                      }
+                      setOutlineFlow(prev => {
+                        if (!prev?.slides || slideIndex < 0) return prev;
+                        const updatedSlides = [...prev.slides];
+                        updatedSlides.splice(slideIndex, 1);
+                        return { ...prev, slides: updatedSlides };
+                      });
                     }}
                     onSlideReorder={(fromIndex, toIndex) => {
                       // Reorder outline block slides
@@ -1350,30 +1397,28 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                         const newSlides = [...prev.slides];
                         const [movedSlide] = newSlides.splice(fromIndex, 1);
                         newSlides.splice(toIndex, 0, movedSlide);
-                        // Re-assign IDs to match new order
                         return {
                           ...prev,
-                          slides: newSlides.map((s, i) => ({ ...s, id: `slide-${i}` }))
+                          slides: newSlides,
                         };
                       });
                       // Reorder outline flow slides
-                      if (outlineFlow && outlineFlow.slides) {
-                        const newSlides = [...outlineFlow.slides];
+                      setOutlineFlow(prev => {
+                        if (!prev?.slides) return prev;
+                        const newSlides = [...prev.slides];
                         const [movedSlide] = newSlides.splice(fromIndex, 1);
                         newSlides.splice(toIndex, 0, movedSlide);
-                        setOutlineFlow({ ...outlineFlow, slides: newSlides });
-                      }
+                        return { ...prev, slides: newSlides };
+                      });
                     }}
-                    onLoadContent={async (slideId) => {
-                      // Find the slide
-                      const idx = parseInt(slideId.replace('slide-', ''));
-                      const slide = outlineBlock.slides[idx];
+                    onLoadContent={async (slideId, slideIndex) => {
+                      const slide = outlineBlock.slides[slideIndex];
                       if (!slide) {
                         return { content: '', keyPoints: [] };
                       }
 
                       // If content already exists, return it
-                      if (slide.content || (slide.keyPoints && slide.keyPoints.length > 0)) {
+                      if (slide.isContentLoaded || slide.content) {
                         return { content: slide.content || '', keyPoints: slide.keyPoints || [] };
                       }
 
@@ -1415,7 +1460,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                       try {
                         const result = await generateSlideContent({
                           slide_title: slide.title,
-                          slide_index: idx,
+                          slide_index: slideIndex,
                           total_slides: outlineBlock.slides.length,
                           presentation_topic: outlineFlow?.topic || outlineBlock.title,
                           presentation_context: chatHistory.map(m => `${m.role}: ${m.content}`).slice(-3).join('\n'),
@@ -1439,6 +1484,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                 {/* Theme Block */}
                 {themeBlock && (
                   <ThemeChatBlock
+                    className={stackedBlocks ? "rounded-t-none border-t-0" : undefined}
                     data={{
                       colors: {
                         background: themeBlock.colors.primary_background,

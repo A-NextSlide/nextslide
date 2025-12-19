@@ -11,6 +11,7 @@ from agents.domain.models import (
     DeckState, CompositionOptions, SlideGenerationContext,
     SlideStatus, ThemeSpec
 )
+from agents.generation.context_builder import build_slide_context
 from agents.application.event_bus import get_event_bus, Events
 from setup_logging_optimized import get_logger
 from agents.config import ENABLE_PROMPT_CACHE_PREWARM
@@ -71,58 +72,32 @@ class ParallelSlideOrchestrator:
                 if deck_state.deck_outline.slides:
                     first_slide = deck_state.deck_outline.slides[0]
                     theme_to_pass = deck_state.theme or ThemeSpec.from_dict({})
-                    # Extract presentation context for prewarm
-                    prewarm_presentation_context = None
-                    prewarm_reference_images = []
-                    if hasattr(deck_state.deck_outline, 'stylePreferences') and deck_state.deck_outline.stylePreferences:
-                        style_prefs = deck_state.deck_outline.stylePreferences
-                        parts = []
-                        if hasattr(style_prefs, 'initialIdea') and style_prefs.initialIdea:
-                            parts.append(style_prefs.initialIdea)
-                        if hasattr(style_prefs, 'vibeContext') and style_prefs.vibeContext:
-                            parts.append(style_prefs.vibeContext)
-                        if parts:
-                            prewarm_presentation_context = " | ".join(parts)
-                        # Extract design reference images
-                        if hasattr(style_prefs, 'referenceImages') and style_prefs.referenceImages:
-                            prewarm_reference_images = list(style_prefs.referenceImages)
-
-                    # Also check theme for reference_images (brand screenshots from Firecrawl)
-                    theme_dict_prewarm = theme_to_pass.to_dict() if hasattr(theme_to_pass, 'to_dict') else {}
-                    if theme_dict_prewarm.get('reference_images'):
-                        prewarm_reference_images.extend(theme_dict_prewarm['reference_images'])
-
-                    context = SlideGenerationContext(
+                    context = build_slide_context(
+                        deck_outline=deck_state.deck_outline,
                         slide_outline=first_slide,
                         slide_index=0,
-                        deck_outline=deck_state.deck_outline,
                         theme=theme_to_pass,
                         palette=deck_state.palette or {},
                         style_manifesto=deck_state.style_manifesto or "",
                         deck_uuid=deck_state.deck_uuid,
-                        available_images=[],
                         async_images=options.async_images,
+                        available_images=[],
+                        user_id=getattr(deck_state, "user_id", None),
                         visual_density=self._infer_visual_density(deck_state, first_slide),
-                        tagged_media=[
-                            media.model_dump() if hasattr(first_slide, 'taggedMedia') and hasattr(media, 'model_dump') else media
-                            for media in (first_slide.taggedMedia if hasattr(first_slide, 'taggedMedia') and first_slide.taggedMedia else [])
-                        ],
-                        user_id=getattr(deck_state, 'user_id', None),
-                        presentation_context=prewarm_presentation_context,
-                        reference_images=prewarm_reference_images
                     )
                     # Build prompts using the same code paths
                     try:
-                        rag_ctx = await self.slide_generator._retrieve_rag_context(context)
-                        system_prompt, user_prompt = await self.slide_generator._build_prompts(context, rag_ctx)
+                        from agents.generation.component_hints import infer_component_hints
+                        component_hints = infer_component_hints(context)
+                        system_prompt, user_prompt = await self.slide_generator._build_prompts(context, component_hints)
                     except Exception:
                         # Fallback: build minimal prompts synchronously
                         system_prompt = self.slide_generator.prompt_builder.build_system_prompt()
                         try:
-                            static_block, slide_block = self.slide_generator.prompt_builder.build_user_prompt_blocks(context, {"predicted_components": []})
+                            static_block, slide_block = self.slide_generator.prompt_builder.build_user_prompt_blocks(context, None)
                             user_prompt = f"{static_block}\n<<<CACHE_BREAKPOINT>>>\n{slide_block}"
                         except Exception:
-                            user_prompt = self.slide_generator.prompt_builder.build_user_prompt(context, {"predicted_components": []})
+                            user_prompt = self.slide_generator.prompt_builder.build_user_prompt(context, None)
                     # Issue tiny Anthropic call via clients.invoke with low max_tokens to write cache
                     from agents.ai.clients import get_client, invoke
                     # Use the same model as slide generation
@@ -410,66 +385,18 @@ class ParallelSlideOrchestrator:
                     except Exception as e:
                         logger.warning(f"[CHART DEBUG] Error accessing extractedData details: {e}")
 
-                # Extract presentation context from user's initial request (for design context)
-                presentation_context = None
-                reference_images = []
-                if hasattr(deck_state.deck_outline, 'stylePreferences') and deck_state.deck_outline.stylePreferences:
-                    style_prefs = deck_state.deck_outline.stylePreferences
-                    parts = []
-                    if hasattr(style_prefs, 'initialIdea') and style_prefs.initialIdea:
-                        parts.append(style_prefs.initialIdea)
-                    if hasattr(style_prefs, 'vibeContext') and style_prefs.vibeContext:
-                        parts.append(style_prefs.vibeContext)
-                    if parts:
-                        presentation_context = " | ".join(parts)
-                        logger.debug(f"[DESIGN CONTEXT] Extracted presentation context: {presentation_context[:100]}...")
-                    # Extract design reference images
-                    if hasattr(style_prefs, 'referenceImages') and style_prefs.referenceImages:
-                        reference_images = list(style_prefs.referenceImages)
-                        logger.info(f"[REFERENCE IMAGES] Found {len(reference_images)} design reference images from stylePreferences")
-
-                # Also check theme for reference_images (brand screenshots from Firecrawl)
-                theme_dict = theme_to_pass.to_dict() if hasattr(theme_to_pass, 'to_dict') else (theme_to_pass if isinstance(theme_to_pass, dict) else {})
-                if theme_dict.get('reference_images'):
-                    theme_refs = theme_dict['reference_images']
-                    if isinstance(theme_refs, list):
-                        reference_images.extend(theme_refs)
-                        logger.info(f"[REFERENCE IMAGES] 📸 Added {len(theme_refs)} brand screenshots from theme")
-
-                # Include extracted images from uploaded PPTX/PDF files as available images
-                if hasattr(deck_state.deck_outline, 'extractedImages') and deck_state.deck_outline.extractedImages:
-                    available_images = list(available_images) + list(deck_state.deck_outline.extractedImages)
-                    logger.info(f"[EXTRACTED IMAGES] Added {len(deck_state.deck_outline.extractedImages)} extracted images from PPTX/PDF")
-
-                # Extract videos from deck notes (populated by ThemeAgent for real brands)
-                available_videos = []
-                logger.info(f"[VIDEO TRACE] deck_state.notes type: {type(deck_state.notes)}, value: {deck_state.notes}")
-                if deck_state.notes and isinstance(deck_state.notes, dict):
-                    available_videos = deck_state.notes.get('videos', [])
-                    logger.info(f"[VIDEO TRACE] Found {len(available_videos)} videos in deck_state.notes")
-                else:
-                    logger.info(f"[VIDEO TRACE] deck_state.notes is empty/None - no videos available")
-
-                context = SlideGenerationContext(
+                context = build_slide_context(
+                    deck_outline=deck_state.deck_outline,
                     slide_outline=slide_outline,
                     slide_index=slide_index,
-                    deck_outline=deck_state.deck_outline,
                     theme=theme_to_pass,
                     palette=deck_state.palette or {},
                     style_manifesto=deck_state.style_manifesto or "",
                     deck_uuid=deck_state.deck_uuid,
-                    available_images=available_images,
-                    available_videos=available_videos,
                     async_images=options.async_images,
-                    visual_density=self._infer_visual_density(deck_state, slide_outline),
-                    tagged_media=[
-                        # Convert to dict if it's a Pydantic model
-                        media.model_dump() if hasattr(media, 'model_dump') else media
-                        for media in (slide_outline.taggedMedia if hasattr(slide_outline, 'taggedMedia') and slide_outline.taggedMedia else [])
-                    ],
+                    available_images=available_images,
                     user_id=user_id,
-                    presentation_context=presentation_context,
-                    reference_images=reference_images
+                    visual_density=self._infer_visual_density(deck_state, slide_outline),
                 )
                 
                 logger.debug(f"[SLIDE GENERATION] Created context with {len(context.tagged_media)} tagged media items")
@@ -613,29 +540,30 @@ class ParallelSlideOrchestrator:
                 slides_in_progress.discard(slide_index)
 
     def _infer_visual_density(self, deck_state: DeckState, slide_outline: Any) -> str:
-        """Infer a simple visual density hint from theme and slide type/title.
-        Returns one of: 'minimal', 'moderate', 'rich', 'data-heavy'.
-        """
+        """Resolve visual density from explicit inputs (no keyword heuristics)."""
         try:
-            title = (getattr(slide_outline, 'title', '') or '').lower()
-            content = (getattr(slide_outline, 'content', '') or '')
-            # If extracted data present or data-like title, prefer data-heavy
-            if hasattr(slide_outline, 'extractedData') and getattr(slide_outline, 'extractedData'):
-                return 'data-heavy'
-            if any(k in title for k in ['data', 'metrics', 'analysis', 'results', 'growth', 'trend', 'kpi']):
-                return 'data-heavy'
-            # Title slide or dividers are minimal by design
-            if any(k in title for k in ['title', 'cover']) or deck_state.deck_outline.slides and slide_outline == deck_state.deck_outline.slides[0]:
-                return 'minimal'
-            if any(k in title for k in ['divider', 'section', 'chapter']):
-                return 'minimal'
-            # If content already long, choose rich
-            if isinstance(content, str) and len(content.split()) > 110:
-                return 'rich'
-            # Default moderate
-            return 'moderate'
+            for attr in ("visual_density", "visualDensity"):
+                value = getattr(slide_outline, attr, None)
+                if isinstance(value, str) and value.strip():
+                    return value.strip().lower()
+
+            style_prefs = getattr(deck_state.deck_outline, "stylePreferences", None)
+            if style_prefs:
+                for key in ("visual_density", "visualDensity"):
+                    if isinstance(style_prefs, dict):
+                        value = style_prefs.get(key)
+                    else:
+                        value = getattr(style_prefs, key, None)
+                    if isinstance(value, str) and value.strip():
+                        return value.strip().lower()
+
+            has_extracted = bool(getattr(slide_outline, "extractedData", None))
+            has_manual = bool(getattr(slide_outline, "manualCharts", None))
+            if has_extracted or has_manual:
+                return "data-heavy"
         except Exception:
-            return 'moderate'
+            pass
+        return "moderate"
     
     async def _collect_slide_updates(
         self,

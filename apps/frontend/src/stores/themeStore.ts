@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 import { Theme, defaultThemes, initialWorkspaceTheme } from '@/types/themes';
+import { normalizeThemeWeights } from '@/utils/themeTypography';
 
 interface ThemeStore {
   workspaceThemeId: string;
@@ -55,11 +56,11 @@ export const useThemeStore = create<ThemeStore>()(
 
       addCustomTheme: (theme) => {
         const newId = uuidv4();
-        const newTheme: Theme = {
+        const newTheme: Theme = normalizeThemeWeights({
           ...theme,
           id: newId,
           isCustom: true
-        };
+        });
 
         set(state => ({
           availableThemes: [...state.availableThemes, newTheme]
@@ -80,7 +81,7 @@ export const useThemeStore = create<ThemeStore>()(
         set(state => ({
           availableThemes: state.availableThemes.map(theme => 
             theme.id === themeId && theme.isCustom === true
-              ? { ...theme, ...updates }
+              ? normalizeThemeWeights({ ...theme, ...updates } as Theme)
               : theme
           )
         }));
@@ -88,7 +89,7 @@ export const useThemeStore = create<ThemeStore>()(
 
       setOutlineTheme: (outlineId, theme) => {
         set(state => ({
-          outlineThemes: { ...state.outlineThemes, [outlineId]: theme }
+          outlineThemes: { ...state.outlineThemes, [outlineId]: normalizeThemeWeights(theme) }
         }));
       },
 

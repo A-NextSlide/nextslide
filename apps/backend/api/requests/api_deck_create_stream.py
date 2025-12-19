@@ -18,6 +18,8 @@ from models.requests import DeckOutline
 from models.registry import ComponentRegistry
 from models.deck import DeckBase
 from utils.supabase import upload_deck, get_deck
+from services.outline.chart_normalization import normalize_slide_chart_fields
+from agents.generation.events import sse_encode
 
 # Import new deck composition method
 from agents.generation.deck_composer import compose_deck_stream, SCHEMA_VERSION
@@ -45,6 +47,59 @@ class CreateDeckFromOutlineRequest(BaseModel):
     streaming: bool = Field(True, description="Whether to use token streaming where applicable")
     deck_uuid: Optional[str] = Field(None, description="Optional deck UUID. If not provided, one will be generated.")
     async_images: bool = Field(True, description="If False, images are auto-applied synchronously; if True, images are searched asynchronously and user selects manually (default: True = placeholders)")
+
+
+def merge_style_preferences_into_outline(outline_dict: Dict[str, Any], request_style: Optional[Dict[str, Any]]) -> None:
+    if not request_style:
+        return
+    if 'stylePreferences' not in outline_dict:
+        outline_dict['stylePreferences'] = request_style
+        return
+
+    outline_style = outline_dict.get('stylePreferences') or {}
+
+    def is_missing_style_value(key: str, value: Any) -> bool:
+        if value is None:
+            return True
+        if key in ('autoSelectImages',):
+            return False
+        if isinstance(value, (str, list, dict)) and len(value) == 0:
+            return True
+        return False
+
+    def merge_if_missing(key: str) -> None:
+        incoming = request_style.get(key)
+        if incoming is None:
+            return
+        if key not in outline_style or is_missing_style_value(key, outline_style.get(key)):
+            outline_style[key] = incoming
+
+    # Merge common style preferences when missing
+    for style_key in (
+        'initialIdea',
+        'vibeContext',
+        'font',
+        'bodyFont',
+        'colors',
+        'autoSelectImages',
+        'slideMode',
+        'referenceImages',
+        'referenceLinks',
+        'enableResearch'
+    ):
+        merge_if_missing(style_key)
+
+    # CRITICAL: Merge logo fields and deck_theme when missing (may come from separate style_preferences)
+    if request_style.get('logoUrl') and not outline_style.get('logoUrl'):
+        outline_style['logoUrl'] = request_style['logoUrl']
+        logger.info(f"[DECK_CREATE] 🖼️ Merged logoUrl from request into outline: {request_style['logoUrl'][:60]}...")
+    if request_style.get('logoUrlDark') and not outline_style.get('logoUrlDark'):
+        outline_style['logoUrlDark'] = request_style['logoUrlDark']
+    if request_style.get('deck_theme') and not outline_style.get('deck_theme'):
+        outline_style['deck_theme'] = request_style['deck_theme']
+        logger.info("[DECK_CREATE] 🎨 Merged deck_theme from request into outline")
+
+    outline_dict['stylePreferences'] = outline_style
 
 
 def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: ComponentRegistry) -> AsyncIterator[str]:
@@ -81,9 +136,9 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
         # Emit bytes for SSE and always close with an explicit end marker
         def _sse(event: Dict[str, Any]) -> bytes:
             try:
-                return f"data: {json.dumps(event)}\n\n".encode("utf-8")
+                return sse_encode(event)
             except Exception:
-                return b"data: {\"type\": \"error\", \"error\": \"serialization_failed\"}\n\n"
+                return sse_encode({"type": "error", "error": "serialization_failed"})
         # Start Sentry transaction for deck creation
         print(f"[DEBUG] stream_deck_creation generate() called")
         logger.info(f"[DEBUG] stream_deck_creation generate() called")
@@ -108,20 +163,9 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 deck_uuid = outline_dict['id']
                 logger.info(f"[UUID_FIX] Using outline.id as deck UUID: {deck_uuid}")
 
-                if 'title' not in outline_dict: outline_dict['title'] = 'Untitled Presentation'
-                if 'stylePreferences' not in outline_dict and request.stylePreferences:
-                    outline_dict['stylePreferences'] = request.stylePreferences
-                elif 'stylePreferences' in outline_dict and request.stylePreferences:
-                    # CRITICAL: Merge logoUrl from request if not in outline (logo may come from separate style_preferences)
-                    if request.stylePreferences.get('logoUrl') and not outline_dict['stylePreferences'].get('logoUrl'):
-                        outline_dict['stylePreferences']['logoUrl'] = request.stylePreferences['logoUrl']
-                        logger.info(f"[DECK_CREATE] 🖼️ Merged logoUrl from request into outline: {request.stylePreferences['logoUrl'][:60]}...")
-                    if request.stylePreferences.get('logoUrlDark') and not outline_dict['stylePreferences'].get('logoUrlDark'):
-                        outline_dict['stylePreferences']['logoUrlDark'] = request.stylePreferences['logoUrlDark']
-                    # Also merge deck_theme if present in request but not outline
-                    if request.stylePreferences.get('deck_theme') and not outline_dict['stylePreferences'].get('deck_theme'):
-                        outline_dict['stylePreferences']['deck_theme'] = request.stylePreferences['deck_theme']
-                        logger.info(f"[DECK_CREATE] 🎨 Merged deck_theme from request into outline")
+                if 'title' not in outline_dict:
+                    outline_dict['title'] = 'Untitled Presentation'
+                merge_style_preferences_into_outline(outline_dict, request.stylePreferences)
 
                 # Filter out any legacy upgrade slides (no longer used, popup shown instead)
                 outline_dict['slides'] = [
@@ -139,6 +183,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                     slide.setdefault('manualCharts', None)  # ✅ Support multiple charts per slide
                     slide.setdefault('speaker_notes', "")
                     slide.setdefault('media_items', [])
+                    normalize_slide_chart_fields(slide)
 
                 # ✅ CRITICAL: Distribute uploadedMedia from outline to slides as taggedMedia
                 # This ensures images uploaded through chat are available for slide generation

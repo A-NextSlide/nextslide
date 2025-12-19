@@ -1,6 +1,6 @@
 """
-Minimal Slide Model for RAG-based generation with schema injection
-This model has minimal validation to allow flexible component generation
+Minimal slide model for AI generation with schema injection.
+This model has minimal validation to allow flexible component generation.
 """
 
 from typing import List, Dict, Any, Optional

@@ -88,6 +88,15 @@ class ManualChartItem(BaseModel):
     data: List[Dict[str, Any]] = Field(description="Chart data array.")
     title: Optional[str] = Field(None, description="Title for the chart.")
 
+class AssignedVideoItem(BaseModel):
+    """Represents a video assigned to a slide from brand website scraping"""
+    url: str = Field(description="URL of the video.")
+    title: Optional[str] = Field(None, description="Title of the video.")
+    thumbnail: Optional[str] = Field(None, description="Thumbnail URL for the video.")
+    source_type: Optional[str] = Field(None, description="Video source type (e.g., 'youtube', 'vimeo', 'wistia').")
+    embed_url: Optional[str] = Field(None, description="Embed URL for the video player.")
+    video_id: Optional[str] = Field(None, description="Platform-specific video ID.")
+
 class SlideOutline(BaseModel):
     id: str = Field(description="Unique identifier for the slide.")
     title: str = Field(description="Title of the slide.")
@@ -116,6 +125,11 @@ class SlideOutline(BaseModel):
         default=None,
         description="Numbered footnotes for citation panel dropdown"
     )
+    # Assigned video from brand website scraping (set by AI during outline generation)
+    assignedVideo: Optional[AssignedVideoItem] = Field(
+        default=None,
+        description="Video assigned to this slide from brand website scraping."
+    )
 
 class DiscardedFileItem(BaseModel):
     file_id: str = Field(description="Unique ID of the discarded file.")
@@ -139,6 +153,10 @@ class StylePreferencesItem(BaseModel):
     colors: Optional[ColorConfigItem] = Field(None, description="Color preferences for the deck.")
     logoUrl: Optional[str] = Field(None, description="URL to a company/brand logo to place consistently on slides (typically light/white variant for dark backgrounds).")
     logoUrlDark: Optional[str] = Field(None, description="URL to dark variant of the logo for use on light backgrounds.")
+    brandName: Optional[str] = Field(None, description="Detected brand name when a real brand is identified.")
+    brandDomain: Optional[str] = Field(None, description="Resolved brand domain when confidence is high.")
+    brandDomainCandidates: Optional[List[str]] = Field(None, description="Candidate domains for brand confirmation.")
+    needsBrandDomainConfirmation: Optional[bool] = Field(None, description="True when brand domain needs user confirmation.")
     autoSelectImages: Optional[bool] = Field(None, description="When True, frontend handles image search/application; backend skips SerpAPI search.")
     slideMode: Optional[str] = Field(None, description="Slide mode: 'interactive' for animations/interactions, 'static' for classic clean slides.")
     referenceImages: Optional[List[str]] = Field(None, description="URLs of design reference images (e.g., PPT screenshots) for the AI to match style/design from.")

@@ -194,31 +194,6 @@ class AIImageOrchestrator:
                 logger.info("[AIImageOrchestrator] Slide %s: plan produced 0 images", slide_index + 1)
                 return
 
-            # Prefer functional modes based on slide intent (non-decorative)
-            def _is_infoy(text: str) -> bool:
-                t = (text or '').lower()
-                return any(k in t for k in [
-                    'diagram','process','flow','timeline','structure','components','how it works','factors','rate','steps','architecture','overview'
-                ])
-
-            builder_for_modes = ImageGenerationPromptBuilder(theme)
-            infoy = _is_infoy(title) or _is_infoy(content)
-            if infoy:
-                info_plans = builder_for_modes.build_infographic_for_slide(slide_data, title, "", max_images=1)
-                if info_plans:
-                    plans = info_plans
-            else:
-                # Team slide detection
-                if builder_for_modes._is_team_slide(title, content):
-                    team_plans = builder_for_modes.build_team_for_slide(slide_data, title, "", max_images=3)
-                    if team_plans:
-                        plans = team_plans
-                else:
-                    # Large design element (non-decorative) for hero areas
-                    hero_plans = builder_for_modes.build_hero_design_element_for_slide(slide_data, title, "", max_images=1)
-                    if hero_plans:
-                        plans = hero_plans
-
             # Generate images concurrently (but with small fan-out)
             gen_tasks: List[asyncio.Task] = []
             for plan in plans:
@@ -819,5 +794,4 @@ class AIImageOrchestrator:
         return None
 
     # _try_nudge_image_box removed - AI model handles image positioning directly
-
 

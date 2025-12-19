@@ -12,6 +12,7 @@ import { parseCustomComponentCode, ParsedVariable, convertToPropsBasedCode } fro
 import AdvancedCodeEditor from '@/components/ui/AdvancedCodeEditor';
 import { Textarea } from '@/components/ui/textarea';
 import { FontLoadingService } from '@/services/FontLoadingService';
+import { useFontCatalog } from '@/hooks/useFontCatalog';
 import {
   Dialog,
   DialogContent,
@@ -24,11 +25,11 @@ import { HexColorPicker } from 'react-colorful';
 import EditableDropdown from '@/components/settings/EditableDropdown';
 import GroupedDropdown from '@/components/settings/GroupedDropdown';
 import ImageSlotEditor from '@/components/settings/ImageSlotEditor';
-import { FONT_CATEGORIES } from '@/registry/library/fonts';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCustomComponentEditStore } from '@/stores/customComponentEditStore';
 import { VirtualElement } from '@/components/custom-component-editor/types';
 import { LayersPanel } from '@/components/settings/LayersPanel';
+import { getElementDisplayName, getImagePropLabel } from '@/utils/customComponentLabels';
 
 interface CustomComponentSettingsEditorProps {
   component: ComponentInstance;
@@ -122,8 +123,8 @@ const DynamicTextEditor: React.FC<{
   onRequestHtmlUpdate?: () => void;
 }> = ({ element, onStyleUpdate, onTextUpdate, onSave, onInjectFont, onRequestHtmlUpdate }) => {
   const [localText, setLocalText] = useState(element.textContent || '');
-  const [fontCategories, setFontCategories] = useState<Record<string, string[]>>({});
-  const [allFonts, setAllFonts] = useState<string[]>([]);
+  const { groups: fontCategories } = useFontCatalog();
+  const allFonts = useMemo(() => FontLoadingService.getAllFontNames(), [fontCategories]);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
 
   // Convert RGB color to hex for the color picker
@@ -157,14 +158,6 @@ const DynamicTextEditor: React.FC<{
     if (tag === 'h3' || tag === 'h4') return 100;
     return 72;
   }, [element.tagName]);
-
-  useEffect(() => {
-    (async () => {
-      try { await FontLoadingService.syncDesignerFonts?.(); } catch {}
-      setFontCategories(FontLoadingService.getDedupedFontGroups?.() || FontLoadingService.getFontCategories());
-      setAllFonts(FontLoadingService.getAllFontNames());
-    })();
-  }, []);
 
   // Load the current font on mount to ensure it's available
   useEffect(() => {
@@ -319,15 +312,38 @@ const DynamicTextEditor: React.FC<{
   );
 };
 
+const FontVariableSelector: React.FC<{
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}> = ({ label, value, onChange }) => {
+  const { groups } = useFontCatalog();
+  const options = useMemo(() => FontLoadingService.getAllFontNames(), [groups]);
+
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">{label}</Label>
+      <GroupedDropdown
+        value={value || ''}
+        options={options}
+        groups={groups}
+        onChange={onChange}
+        placeholder="Select font"
+      />
+    </div>
+  );
+};
+
 // Dynamic image element editor
 const DynamicImageEditor: React.FC<{
   element: VirtualElement;
   componentId: string;
+  elementIndex?: number;
   onImageUpdate: (elementId: string, newSrc: string) => void;
   onStyleUpdate: (selector: string, property: string, value: string) => void;
   onSave: (message?: string) => void;
   onRequestHtmlUpdate?: () => void;
-}> = ({ element, componentId, onImageUpdate, onStyleUpdate, onSave, onRequestHtmlUpdate }) => {
+}> = ({ element, componentId, elementIndex, onImageUpdate, onStyleUpdate, onSave, onRequestHtmlUpdate }) => {
   const searchQuery = useMemo(() => {
     if (element.alt && element.alt.length > 2 && !element.alt.toLowerCase().includes('placeholder')) {
       return element.alt.replace(/[^a-zA-Z0-9\s]/g, ' ').trim().toLowerCase();
@@ -338,7 +354,7 @@ const DynamicImageEditor: React.FC<{
   return (
     <ImageSlotEditor
       propName={element.id}
-      label={element.alt || 'Image'}
+      label={getElementDisplayName(element, elementIndex)}
       value={element.src}
       searchQuery={searchQuery}
       objectFit={(element.computedStyle?.height && element.computedStyle?.width) ? 'cover' : 'contain'}
@@ -703,32 +719,19 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
       case 'text':
         // Font-family like fields should render a font selector
         if (variable.name.toLowerCase().includes('font')) {
-          const [categories, setCategories] = useState<Record<string, string[]>>(FontLoadingService.getDedupedFontGroups?.() || FontLoadingService.getFontCategories());
-          const [allFonts, setAllFonts] = useState<string[]>(FontLoadingService.getAllFontNames());
-          useEffect(() => {
-            (async () => {
-              try { await FontLoadingService.syncDesignerFonts?.(); } catch {}
-              setCategories(FontLoadingService.getDedupedFontGroups?.() || FontLoadingService.getFontCategories());
-              setAllFonts(FontLoadingService.getAllFontNames());
-            })();
-          }, []);
           return (
-            <div key={variable.name} className="space-y-1">
-              <Label className="text-xs">{variable.label}</Label>
-              <GroupedDropdown
-                value={currentValue || ''}
-                options={allFonts}
-                groups={categories}
-                onChange={(value) => {
-                  updateProp(variable.name, value);
-                  FontLoadingService.syncDesignerFonts?.().finally(() => {
-                    FontLoadingService.loadFont(String(value)).catch(() => {});
-                  });
-                  saveChanges(variable.name, variable.label || variable.name);
-                }}
-                placeholder="Select font"
-              />
-            </div>
+            <FontVariableSelector
+              key={variable.name}
+              label={variable.label || variable.name}
+              value={currentValue || ''}
+              onChange={(value) => {
+                updateProp(variable.name, value);
+                FontLoadingService.syncDesignerFonts?.().finally(() => {
+                  FontLoadingService.loadFont(String(value)).catch(() => {});
+                });
+                saveChanges(variable.name, variable.label || variable.name);
+              }}
+            />
           );
         }
         return (
@@ -1070,12 +1073,12 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
             <div className="space-y-2 p-2 bg-muted/30 rounded-lg border border-pink-200">
               <div className="flex items-center gap-2 pb-1 border-b border-pink-200/50">
                 {activeSelectedElement.type === 'text' && <Type className="w-3 h-3 text-blue-500" />}
-                {activeSelectedElement.type === 'image' && <Image className="w-3 h-3 text-green-500" />}
-                {activeSelectedElement.type === 'container' && <Maximize2 className="w-3 h-3 text-purple-500" />}
-                <span className="text-[10px] font-medium text-pink-600">
+              {activeSelectedElement.type === 'image' && <Image className="w-3 h-3 text-green-500" />}
+              {activeSelectedElement.type === 'container' && <Maximize2 className="w-3 h-3 text-purple-500" />}
+              <span className="text-[10px] font-medium text-pink-600">
                   Selected: {activeSelectedElement.type === 'text'
                     ? (activeSelectedElement.textContent?.slice(0, 25) + (activeSelectedElement.textContent && activeSelectedElement.textContent.length > 25 ? '...' : ''))
-                    : activeSelectedElement.alt || `${activeSelectedElement.tagName}`}
+                    : getElementDisplayName(activeSelectedElement)}
                 </span>
               </div>
 
@@ -1094,6 +1097,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                 <DynamicImageEditor
                   element={activeSelectedElement}
                   componentId={component.id}
+                  elementIndex={activeDetectedElements.filter(e => e.type === 'image').findIndex(e => e.id === activeSelectedElement.id)}
                   onImageUpdate={updateElementImage}
                   onStyleUpdate={updateElementStyle}
                   onSave={saveComponentToHistory}
@@ -1131,11 +1135,12 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                     {activeDetectedElements.filter(e => e.type === 'image').map((element, index) => (
                       <div key={element.id} className="space-y-2 pb-2 border-b last:border-0">
                         <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                          {element.alt || `Image ${index + 1}`}
+                          {getElementDisplayName(element, index)}
                         </div>
                         <DynamicImageEditor
                           element={element}
                           componentId={component.id}
+                          elementIndex={index}
                           onImageUpdate={updateElementImage}
                           onStyleUpdate={updateElementStyle}
                           onSave={saveComponentToHistory}
@@ -1266,7 +1271,13 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
             <div className="space-y-2">
               <h4 className="text-xs font-medium text-muted-foreground">Image Properties</h4>
               <div className="grid grid-cols-1 gap-3">
-                {groupedVariables.image.map(renderVariableControl)}
+                {groupedVariables.image.map((variable, index) => {
+                  const currentValue = (componentProps as any)[variable.name] ?? variable.defaultValue;
+                  return renderVariableControl({
+                    ...variable,
+                    label: getImagePropLabel(variable.name, currentValue, index),
+                  });
+                })}
               </div>
             </div>
           )}

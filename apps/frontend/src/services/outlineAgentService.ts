@@ -107,7 +107,14 @@ export interface OutlineData {
     font?: string;
     bodyFont?: string;
     logoUrl?: string;
+    logoUrlDark?: string;
+    brandName?: string;
+    brandDomain?: string;
+    brandDomainCandidates?: string[];
+    needsBrandDomainConfirmation?: boolean;
     vibeContext?: string;
+    slideMode?: 'interactive' | 'static';
+    referenceImages?: string[];
   };
   brandContext?: string;  // Brand name or domain detected
   style?: string;  // Style descriptor (e.g., "playful", "professional")

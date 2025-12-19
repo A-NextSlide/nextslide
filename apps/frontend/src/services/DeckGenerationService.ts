@@ -112,16 +112,8 @@ class DeckGenerationService {
         );
       }
       
-      // For manual mode, include chart data from slide
-      const chartData = (outline as any).isManualMode && slide.chartData ? {
-        chart_type: slide.chartType,
-        data: slide.chartData.data,
-        title: slide.chartData.title || slide.title
-      } : slide.extractedData ? {
-        chart_type: slide.extractedData.chartType,
-        data: slide.extractedData.data,
-        title: slide.title
-      } : undefined;
+      const extractedData = slide.extractedData || undefined;
+      const manualCharts = slide.manualCharts && slide.manualCharts.length > 0 ? slide.manualCharts : undefined;
       
       return {
         id: slide.id,
@@ -130,7 +122,8 @@ class DeckGenerationService {
         content: slide.content,
         narrative_role: 'supporting',
         speaker_notes: '',
-        chart_data: chartData,
+        extractedData,
+        manualCharts,
         taggedMedia: processedTaggedMedia,
         // Mark as manual content to preserve exactly
         is_manual_content: (outline as any).isManualMode || false

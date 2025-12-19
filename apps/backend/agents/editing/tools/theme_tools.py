@@ -10,14 +10,14 @@ Uses existing services:
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 import logging
-import asyncio
 
 from models.deck import DeckDiff, DeckDiffBase
 from models.component import ComponentDiffBase
 from models.registry import ComponentRegistry
-from agents.ai.clients import get_client, invoke
-from agents.ai.rate_limit_tracker import is_provider_in_cooldown
-from agents.config import get_model, MODEL_FALLBACK
+from agents.ai.clients import invoke
+from agents.editing.tools.async_utils import run_async
+from agents.editing.tools.llm_utils import get_model_and_client
+from agents.editing.tools.struct_utils import get_attr as _get_attr
 
 logger = logging.getLogger(__name__)
 
@@ -39,27 +39,6 @@ class ThemeResponse(BaseModel):
     """AI-generated theme."""
     palette: ThemePalette = Field(description="Color palette")
     reasoning: str = Field(description="Brief explanation of color choices")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# HELPER FUNCTIONS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _get_attr(obj, key, default=None):
-    """Safely get attribute from dict or Pydantic model."""
-    if obj is None:
-        return default
-    if isinstance(obj, dict):
-        return obj.get(key, default)
-    return getattr(obj, key, default)
-
-
-def _get_model_and_client(task: str = "brand_detect"):
-    """Get model and client, handling rate limits."""
-    model = get_model(task)
-    if "gemini" in model and is_provider_in_cooldown("gemini"):
-        model = get_model("fallback")
-    return get_client(model)
 
 
 async def _fetch_brand_from_services(brand_or_domain: str) -> Optional[Dict]:
@@ -112,7 +91,9 @@ async def _fetch_theme_from_agent(title: str, instruction: str) -> Optional[Dict
         result = await agent.run(
             title=title or "Presentation",
             prompt=instruction,
-            context=None
+            context=None,
+            include_videos=False,
+            include_brand_design=False,
         )
 
         if result and result.get("colors"):
@@ -146,7 +127,7 @@ Consider:
 Return a cohesive 5-color palette."""
 
     try:
-        client, model = _get_model_and_client("brand_detect")
+        client, model = get_model_and_client("brand_detect", log_prefix="THEME_TOOLS")
         response = invoke(
             client=client,
             model=model,
@@ -274,20 +255,6 @@ def apply_theme(
         if brand in instruction_lower:
             domain_hints.append(domain)
             break
-
-    # Helper to run async functions from sync context (works in threadpool)
-    def run_async(coro):
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # We're in an async context, create a new loop in a thread
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    return pool.submit(asyncio.run, coro).result()
-            return loop.run_until_complete(coro)
-        except RuntimeError:
-            # No event loop, create one
-            return asyncio.run(coro)
 
     # Step 1: Try Brandfetch service for known brands
     if domain_hints:

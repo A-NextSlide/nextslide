@@ -163,8 +163,14 @@ class FontIntelligence:
     def available_fonts(self) -> List[str]:
         """Get list of available font names"""
         if self._available_fonts is None:
-            from services.registry_fonts import RegistryFonts
-            self._available_fonts = RegistryFonts.get_all_fonts_list()
+            try:
+                available_ids = self.font_service.get_available_font_ids(include_remote=False)
+                self._available_fonts = [
+                    self.font_service.all_fonts[font_id].get('name', font_id)
+                    for font_id in available_ids
+                ]
+            except Exception:
+                self._available_fonts = []
         return self._available_fonts
 
     @property

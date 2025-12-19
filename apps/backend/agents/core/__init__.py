@@ -4,7 +4,7 @@ Core interfaces and contracts for the agents system.
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, AsyncIterator
-from models.requests import SlideOutline, DeckOutline
+from models.requests import DeckOutline
 
 
 class ISlideGenerator(ABC):
@@ -68,22 +68,6 @@ class IPersistence(ABC):
     @abstractmethod
     async def get_deck(self, deck_uuid: str) -> Optional[Dict[str, Any]]:
         """Get deck data."""
-        pass
-
-
-class IRAGRepository(ABC):
-    """Interface for RAG context retrieval."""
-    
-    @abstractmethod
-    def get_slide_context(
-        self,
-        slide_outline: SlideOutline,
-        slide_index: int,
-        deck_outline: DeckOutline,
-        theme: Dict[str, Any],
-        palette: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Get relevant context for slide generation."""
         pass
 
 

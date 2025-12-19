@@ -10,8 +10,10 @@ import LineSnapIndicators from '@/components/LineSnapIndicators';
 import TextBoundingBoxOverlay from '@/components/TextBoundingBoxOverlay';
 import MultiSelectionBoundingBox from '@/components/MultiSelectionBoundingBox';
 import { useEditorStore } from '@/stores/editorStore';
+import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 import GroupEditIndicator from '@/components/GroupEditIndicator';
 import { useDeckStore } from '@/stores/deckStore';
+import { isBackgroundOnlySelection } from '@/utils/selectionUtils';
 
 interface SlideProps {
   slide: SlideData;
@@ -341,6 +343,7 @@ const SlideContent: React.FC<SlideProps> = ({
   
   // Track selected components with proper React state
   const selectedComponentIds = useEditorStore(state => state.selectedComponentIds);
+  const isTextEditing = useEditorSettingsStore(state => state.isTextEditing);
   const getSelectedComponentsForBoundingBox = useMemo(() => {
     if (!isEditing || !activeSlideContext || selectedComponentIds.size <= 1) {
       return [];
@@ -348,6 +351,11 @@ const SlideContent: React.FC<SlideProps> = ({
     // Use componentsToRender which updates during drag
     return componentsToRender.filter(comp => selectedComponentIds.has(comp.id));
   }, [selectedComponentIds, componentsToRender, isEditing, activeSlideContext]);
+
+  const showCrosshairCursor = useMemo(() => {
+    if (!isEditing || isTextEditing) return false;
+    return isBackgroundOnlySelection(componentsToRender, selectedComponentIds);
+  }, [componentsToRender, selectedComponentIds, isEditing, isTextEditing]);
 
   // Removed citations overlay logic
 
@@ -374,6 +382,9 @@ const SlideContent: React.FC<SlideProps> = ({
       <AspectRatio 
         ratio={slideSize.width / slideSize.height} 
         className={`w-full h-full p-0 m-0 relative slide-container ${isDraggingRef.current ? 'dragging' : ''}`}
+        style={{
+          cursor: showCrosshairCursor ? 'crosshair' : 'default'
+        }}
         data-slide-id={slideData.id}
         data-dragging={isDraggingRef.current ? 'true' : 'false'}
 
@@ -398,12 +409,6 @@ const SlideContent: React.FC<SlideProps> = ({
             className="absolute inset-0 w-full h-full overflow-hidden"
             style={{
               zIndex: 0
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isEditing && onComponentSelect) {
-                handleComponentSelect(backgroundComponent);
-              }
             }}
           >
             <ComponentRenderer 

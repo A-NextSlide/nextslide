@@ -466,7 +466,6 @@ export class GenerationStateManager {
       }
       const tokenMap: Record<string, string> = {
         ai_generation: 'AI Generation',
-        rag_lookup: 'RAG Lookup',
         theme_creation: 'Theme Creation',
         palette_generation: 'Palette Generation',
         preparing_context: 'Preparing Context',
@@ -567,8 +566,6 @@ export class GenerationStateManager {
         return 'Generating color palette...';
       case 'preparing_context':
         return 'Preparing slide context...';
-      case 'rag_lookup':
-        return 'Finding best design patterns...';
       case 'ai_generation':
         return 'Generating slide content...';
       case 'saving':
@@ -583,8 +580,6 @@ export class GenerationStateManager {
     switch (substep) {
       case 'preparing_context':
         return `Preparing context for slide ${slideNum}...`;
-      case 'rag_lookup':
-        return `Finding design patterns for slide ${slideNum}...`;
       case 'ai_generation':
         return `Generating content for slide ${slideNum}...`;
       case 'saving':

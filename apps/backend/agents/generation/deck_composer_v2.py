@@ -315,6 +315,16 @@ class DeckComposerV2(IDeckComposer):
         deck_outline: DeckOutline
     ):
         """Create initial deck skeleton in database."""
+        try:
+            existing = await self.persistence.get_deck(deck_uuid)
+        except Exception:
+            existing = None
+
+        if existing:
+            logger.info(f"[COMPOSER V2] Using existing deck {deck_uuid} - skipping skeleton overwrite")
+            self.persistence.start_composition(deck_uuid)
+            return
+
         skeleton = {
             'uuid': deck_uuid,
             'name': deck_outline.title or 'Untitled',

@@ -64,7 +64,8 @@ class SlideContent(BaseModel):
     title: str
     content: str
     slide_type: str = "content"  # Type of slide: title, transition, content, or conclusion
-    chart_data: Optional[ChartData] = None
+    # Internal-only chart data; excluded from API serialization.
+    chart_data: Optional[ChartData] = Field(default=None, exclude=True)
     research_notes: Optional[str] = None
     images: List[Dict[str, Any]] = Field(default_factory=list)  # Images assigned to this slide
     # Additional fields for frontend compatibility
@@ -131,11 +132,12 @@ WHEN TO PROVIDE chartData:
 ✅ You have quantitative data from research/search results
 ✅ Values are in consistent units (all $, all %, all counts)
 ✅ Data shows patterns better visualized on axes than as text
+✅ The deck is data-driven/analytical/scientific or explicitly requests charts
 
 WHEN TO OMIT chartData:
 ❌ Content is about people/roles/hierarchies (use text/CustomComponent instead)
 ❌ Content is event timeline/roadmap (use text/CustomComponent instead)
-❌ Less than 5 data points
+❌ Data is too sparse to show a clear pattern
 ❌ Mixed units that can't be dual-axis
 
 FORMAT: [{"name": "Category", "value": 123.45}, ...]
@@ -144,7 +146,7 @@ For dual-axis: [{"name": "Q1", "value": 2500, "series": "Revenue ($M)"}, {"name"
 CRITICAL RULES:
 - ALL values in same series MUST be same unit
 - Maximum 2 different units (dual-axis)
-- Minimum 5 data points
+- Use enough points to show a meaningful pattern; include as many as the domain supports
 - Use REAL research data only"""
     )
     chartType: Optional[str] = Field(

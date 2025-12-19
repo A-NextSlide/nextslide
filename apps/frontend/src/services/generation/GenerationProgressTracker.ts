@@ -727,7 +727,6 @@ export class GenerationProgressTracker extends EventEmitter {
       if (substep && (message === substep || message.toLowerCase() === substep.toLowerCase())) {
         const substepMap: Record<string, string> = {
           ai_generation: 'AI Generation',
-          rag_lookup: 'RAG Lookup',
           theme_creation: 'Theme Creation',
           palette_generation: 'Palette Generation',
           preparing_context: 'Preparing Context',
@@ -737,7 +736,6 @@ export class GenerationProgressTracker extends EventEmitter {
       }
       const tokenMap: Record<string, string> = {
         ai_generation: 'AI Generation',
-        rag_lookup: 'RAG Lookup',
         theme_creation: 'Theme Creation',
         palette_generation: 'Palette Generation',
         preparing_context: 'Preparing Context',

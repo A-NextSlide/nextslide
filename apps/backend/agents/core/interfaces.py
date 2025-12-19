@@ -125,15 +125,6 @@ class IDeckOrchestrator(ABC):
 
 # ============= Infrastructure Interfaces =============
 
-class IRAGService(ABC):
-    """Retrieves relevant context for generation"""
-    
-    @abstractmethod
-    async def get_context(self, context: SlideContext) -> Dict[str, Any]:
-        """Get RAG context for slide"""
-        pass
-
-
 class IAIClient(ABC):
     """Interface to AI models"""
     

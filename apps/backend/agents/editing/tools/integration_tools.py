@@ -163,6 +163,95 @@ Keep responses concise and factual - just the key points and data."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# DEEP EXTRACT TOOL - Firecrawl Agent/Scrape with smart routing
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def deep_extract(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry: ComponentRegistry = None,
+    attachments: List[Dict] = None,
+    event_cb: Callable = None,
+) -> DeckDiff:
+    """
+    Extract data from a specific website or multi-page site using Firecrawl Agent or Scrape.
+    Uses smart routing to decide between Perplexity, Firecrawl Agent, or Firecrawl Scrape.
+
+    Args:
+        args: Tool arguments
+            - query: Extraction goal or question
+            - url: Optional primary URL
+            - urls: Optional list of URLs
+            - schema: Optional schema hint for structured output
+            - max_credits: Max Firecrawl agent credits
+            - include_videos: Include videos via fallback scraping
+            - route_hint: Optional override ("perplexity", "firecrawl_agent", "firecrawl_scrape")
+    """
+    from services.firecrawl_agent_service import get_firecrawl_agent_service, ExtractRequest
+
+    query = (args.get("query") or args.get("prompt") or "").strip()
+    url = args.get("url")
+    urls = args.get("urls")
+    schema = args.get("schema")
+    max_credits = args.get("max_credits") or 60
+    include_videos = bool(args.get("include_videos"))
+    route_hint = args.get("route_hint") or args.get("route")
+
+    query_lower = query.lower()
+    if not include_videos and ("video" in query_lower or "youtube" in query_lower or "demo" in query_lower):
+        include_videos = True
+
+    if not query:
+        query = f"Extract key information from {url or (urls[0] if isinstance(urls, list) and urls else 'the site')}"
+
+    logger.info(f"[DeepExtract] Requesting: query='{query[:80]}', url={url}, urls={urls}")
+
+    svc = get_firecrawl_agent_service()
+    req = ExtractRequest(
+        query=query,
+        url=url,
+        urls=urls if isinstance(urls, list) else None,
+        schema=schema if isinstance(schema, dict) else None,
+        max_credits=int(max_credits) if str(max_credits).isdigit() else 60,
+        include_videos=include_videos,
+        route_hint=route_hint if route_hint in ("perplexity", "firecrawl_agent", "firecrawl_scrape") else None,
+    )
+    result = svc.extract_sync(req)
+
+    diff = DeckDiff(DeckDiffBase())
+    if not result.success:
+        diff.observation = {
+            "integration": "deep_extract",
+            "type": "research",
+            "data": [],
+            "query": query,
+            "error": result.error or "Extraction failed",
+            "source": result.route,
+        }
+        return diff
+
+    content = result.text or ""
+    citations = result.citations or []
+    if citations:
+        content = (content + "\n\nSources:\n" + "\n".join(citations[:5])).strip()
+
+    diff.observation = {
+        "integration": "deep_extract",
+        "type": "research",
+        "data": [{
+            "content": content,
+            "citations": citations,
+            "query": query,
+            "route": result.route,
+        }],
+        "query": query,
+        "source": result.route,
+    }
+    return diff
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # LINKEDIN LOOKUP TOOL
 # ═══════════════════════════════════════════════════════════════════════════════
 

@@ -53,9 +53,20 @@ export interface DeckOutline {
     initialIdea?: string;
     vibeContext?: string;
     font?: string | null;
+    bodyFont?: string | null;
+    brandName?: string;
+    brandDomain?: string;
+    brandDomainCandidates?: string[];
+    needsBrandDomainConfirmation?: boolean;
     colors?: ColorConfig | null;
+    logoUrl?: string;
+    logoUrlDark?: string;
     autoSelectImages?: boolean;
     referenceLinks?: string[];
+    enableResearch?: boolean;
+    slideMode?: 'interactive' | 'static';
+    referenceImages?: string[];
+    deck_theme?: any;
   };
   narrativeFlow?: NarrativeFlow; // Narrative flow analysis
   notes?: {
@@ -144,6 +155,20 @@ export interface SlideOutline {
     headers: string[];
     data: string[][];
   };
+  // Assigned video from brand website (set by AI during outline generation)
+  assignedVideo?: AssignedVideo;
+}
+
+/**
+ * Represents a video assigned to a slide from brand website scraping
+ */
+export interface AssignedVideo {
+  url: string;
+  title?: string;
+  thumbnail?: string;
+  source_type?: string;
+  embed_url?: string;
+  video_id?: string;
 }
 
 /**

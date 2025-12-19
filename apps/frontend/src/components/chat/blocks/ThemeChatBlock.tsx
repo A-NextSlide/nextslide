@@ -9,7 +9,7 @@ import { Image, X, Loader2, ChevronDown } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import EnhancedColorPicker from '@/components/EnhancedColorPicker';
 import { FontLoadingService } from '@/services/FontLoadingService';
-import { FONT_CATEGORIES } from '@/registry/library/fonts';
+import { useFontCatalog } from '@/hooks/useFontCatalog';
 
 export interface ThemeBlockData {
   colors: {
@@ -36,28 +36,6 @@ interface ThemeChatBlockProps {
   isLoading?: boolean;
   className?: string;
 }
-
-// Build font groups
-const getFontGroups = (): Record<string, string[]> => {
-  try {
-    if (FontLoadingService?.getDedupedFontGroups) {
-      return FontLoadingService.getDedupedFontGroups();
-    }
-    const groups: Record<string, string[]> = {};
-    for (const [category, fonts] of Object.entries(FONT_CATEGORIES)) {
-      if (Array.isArray(fonts)) {
-        groups[category] = fonts.map((font: any) => font.name);
-      }
-    }
-    return groups;
-  } catch {
-    return {
-      'Sans Serif': ['Inter', 'Roboto', 'Open Sans', 'Poppins', 'Montserrat'],
-      'Serif': ['Playfair Display', 'Merriweather', 'Lora'],
-      'Display': ['Oswald', 'Bebas Neue', 'Anton'],
-    };
-  }
-};
 
 // Helper to normalize color values (handle arrays from backend)
 const normalizeColor = (color: string | string[] | undefined, fallback = '#000000'): string => {
@@ -88,23 +66,9 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
   const [activeColor, setActiveColor] = useState<'background' | 'text' | 'accent' | null>(null);
   const [showHeadingFonts, setShowHeadingFonts] = useState(false);
   const [showBodyFonts, setShowBodyFonts] = useState(false);
-  const [fontGroups, setFontGroups] = useState<Record<string, string[]>>(getFontGroups);
+  const { groups: fontGroups } = useFontCatalog();
   const [loadingFont, setLoadingFont] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Sync fonts on mount
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        await FontLoadingService.syncDesignerFonts?.();
-        if (!cancelled) {
-          setFontGroups(getFontGroups());
-        }
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, []);
 
   // Load current fonts
   useEffect(() => {
@@ -192,7 +156,7 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
   if (isLoading) {
     return (
       <div className={cn(
-        "w-full max-w-[320px] rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900",
+        "w-full max-w-[360px] rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900",
         className
       )}>
         <div className="h-20 flex items-center justify-center gap-2">
@@ -205,7 +169,7 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
 
   return (
     <div className={cn(
-      "w-full max-w-[320px] rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900",
+      "w-full max-w-[360px] rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900",
       className
     )}>
       {/* Color bars with logo */}
@@ -221,13 +185,13 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
           />
           <div
             className={cn(
-              "flex-1 flex items-center justify-center bg-white dark:bg-zinc-900",
-              isEditable && "cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800"
+              "flex-1 flex items-center justify-center bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-900 shadow-inner",
+              isEditable && "cursor-pointer hover:from-zinc-200 hover:to-zinc-100 dark:hover:from-zinc-700 dark:hover:to-zinc-800"
             )}
             onClick={() => isEditable && fileInputRef.current?.click()}
           >
             {data.logo ? (
-              <img src={data.logo} alt="Logo" className="w-7 h-7 object-contain" />
+              <img src={data.logo} alt="Logo" className="w-7 h-7 object-contain drop-shadow-sm" />
             ) : (
               <Image className="w-4 h-4 text-zinc-300 dark:text-zinc-600" />
             )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useThemeStore } from '@/stores/themeStore';
-import { Theme, initialWorkspaceTheme, defaultThemes } from '@/types/themes';
+import { Theme, initialWorkspaceTheme } from '@/types/themes';
 import { useShallow } from 'zustand/react/shallow';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,13 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { ALL_FONT_NAMES, FONT_CATEGORIES } from '@/registry/library/fonts';
 import { FontLoadingService } from '@/services/FontLoadingService';
 import { FontApiService } from '@/services/FontApiService';
-import { registry } from '@/registry';
 import GroupedDropdown from '../settings/GroupedDropdown';
 import GradientPicker from '../GradientPicker';
-import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { useDeckStore } from '@/stores/deckStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { SlideThumbnailService } from '@/services/SlideThumbnailService';
@@ -25,17 +22,23 @@ import { useEditorStore } from '@/stores/editorStore';
 import TemplateSketchLoader from './TemplateSketchLoader';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
-import type { Tables } from '@/integrations/supabase/types';
-import { createDefaultBackground } from '@/utils/componentUtils';
-import { generateColorPalette, generateChartColorPalette, isLightColor } from '@/utils/colorUtils';
+import { buildThemeSlideUpdates } from './themeApplier';
+import { generateHuemintThemes } from './themeGeneration';
+import { useFontCatalog } from '@/hooks/useFontCatalog';
+import { normalizeThemeWeights } from '@/utils/themeTypography';
 
 export interface ThemePanelProps {
   onClose?: () => void;
 }
 
-interface HuemintResult {
-    palette: string[];
-}
+const cloneTheme = (theme: Theme): Theme => {
+  try {
+    if (typeof structuredClone === 'function') {
+      return structuredClone(theme);
+    }
+  } catch {}
+  return JSON.parse(JSON.stringify(theme));
+};
 
 const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
   const availableThemes = useThemeStore(state => state.availableThemes);
@@ -44,13 +47,10 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
   const addCustomTheme = useThemeStore(state => state.addCustomTheme);
   const updateCustomTheme = useThemeStore(state => state.updateCustomTheme);
   const deckData = useDeckStore(state => state.deckData);
-  const updateDeckData = useDeckStore(state => state.updateDeckData);
   const allSlideIds = useDeckStore(useShallow(state => state.deckData.slides.map(slide => slide.id)));
   const batchUpdateSlideComponents = useDeckStore(state => state.batchUpdateSlideComponents);
   const { addDeckHistory, undoDeck, canUndoDeck, addToHistory } = useHistoryStore();
   const setDraftComponentsForSlide = useEditorStore(state => state.setDraftComponentsForSlide);
-
-  const activeSlide = useActiveSlide();
 
   const workspaceTheme = useMemo(() => {
     return availableThemes.find(theme => theme.id === workspaceThemeId) || initialWorkspaceTheme;
@@ -67,6 +67,11 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
   const previousWorkspaceThemeId = useRef(workspaceThemeId);
   const [dbPalettes, setDbPalettes] = useState<Array<{ id: string; name: string; colors: string[] }>>([]);
   const [recommendedFonts, setRecommendedFonts] = useState<{ hero?: string; body?: string } | null>(null);
+  const stylePrefs = deckData.outline?.stylePreferences;
+  const vibeContext = useMemo(() => (stylePrefs?.vibeContext || stylePrefs?.initialIdea || '').trim(), [
+    stylePrefs?.vibeContext,
+    stylePrefs?.initialIdea
+  ]);
 
   useEffect(() => {
     generateThemes();
@@ -122,7 +127,7 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
 
   const updateThemeValue = (path: string, value: any) => {
     const keys = path.split('.');
-    const newTheme = JSON.parse(JSON.stringify(currentThemeEdit));
+    const newTheme = cloneTheme(currentThemeEdit);
 
     let current: any = newTheme;
     for (let i = 0; i < keys.length - 1; i++) {
@@ -143,17 +148,17 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
         newTheme.isCustom = false;
     }
 
-    setCurrentThemeEdit(newTheme);
+    const normalizedTheme = normalizeThemeWeights(newTheme);
+    setCurrentThemeEdit(normalizedTheme);
     // Live real-time apply without history
     try {
-      applySpecificTheme(newTheme);
+      applySpecificTheme(normalizedTheme);
     } catch (e) {
       console.warn('[ThemePanel] Live apply failed:', e);
     }
   };
 
   const applySpecificTheme = (themeToApply: Theme, recordHistory: boolean = false) => {
-    console.log(`[ThemePanel] Applying theme to ALL slides:`, themeToApply);
     if (!themeToApply?.page?.backgroundColor ||
         !themeToApply?.typography?.paragraph?.color ||
         !themeToApply?.typography?.paragraph?.fontFamily ||
@@ -162,210 +167,51 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
       return;
     }
 
-    const targetSlideIds = allSlideIds;
-    console.log(`[ThemePanel] Target Slide IDs:`, targetSlideIds);
-    if (targetSlideIds.length === 0) {
-        console.warn('ApplyTheme: No target slide ID found for scope ');
-        return;
+    if (allSlideIds.length === 0) {
+      console.warn('[ThemePanel] No slides found for theme application');
+      return;
     }
 
-    const bgColor = themeToApply.page.backgroundColor;
-    const paraStyle = themeToApply.typography.paragraph;
-    const accentColor = themeToApply.accent1;
-    const fontFamily = themeToApply.typography.paragraph.fontFamily;
-
-    const slideUpdatesMap: Record<string, { slideId: string; components: any[] }> = {};
-    let changesMade = false;
-
-    // Get registry component definitions to validate types
-    const registeredTypes = registry.getAllDefinitions().map(def => def.type);
-    console.log(`[ThemePanel] Registered component types:`, registeredTypes);
-
-    targetSlideIds.forEach(slideId => {
-      const slide = deckData.slides.find(s => s.id === slideId);
-      if (!slide) {
-          console.warn(`ApplyTheme: Slide not found for ID: ${slideId}`);
-          return;
-      }
-      const originalComponents = slide.components;
-      const updatedComponents = JSON.parse(JSON.stringify(originalComponents));
-
-      // Log component types being processed for debugging
-      const componentTypes = updatedComponents.map((c: any) => c.type);
-      console.log(`[ThemePanel] Processing components of types:`, [...new Set(componentTypes)]);
-
-      updatedComponents.forEach((component: any) => {
-        // Use exact types from TypeBox registry
-        switch (component.type) {
-          case 'Background':
-            component.props.backgroundColor = bgColor;
-            component.props.color = bgColor;
-            component.props.backgroundType = 'color';
-            component.props.gradient = null;
-            if (typeof component.props.background === 'string') {
-              component.props.background = '';
-            }
-            if (component.props.backgroundImageUrl) {
-              component.props.backgroundImageUrl = null;
-            }
-            if (component.props.patternType) {
-              component.props.patternType = null;
-            }
-            break;
-          case 'TiptapTextBlock':
-            component.props.fontFamily = fontFamily;
-            component.props.textColor = paraStyle.color;
-            console.log(`[ThemePanel] Applying fontFamily '${fontFamily}' to ${component.type} ${component.id}`);
-            break;
-          case 'Icon':
-            // Apply accent color to icons
-            component.props.color = accentColor;
-            break;
-          case 'Lines':
-          case 'Line':
-          case 'line':
-            // Apply accent color to line strokes
-            component.props.stroke = accentColor;
-            break;
-          case 'WavyLines':
-            // Apply accent color to decorative wavy lines
-            component.props.lineColor = accentColor;
-            break;
-          case 'Shape':
-            component.props.fill = accentColor;
-            break;
-          case 'ShapeWithText':
-            // Alias of Shape; ensure text follows theme too
-            component.props.fill = accentColor;
-            component.props.textColor = paraStyle.color;
-            component.props.fontFamily = fontFamily;
-            break;
-          case 'Chart':
-            try {
-              // Determine chart background (use slide background if chart is transparent)
-              const currentBgColor = component.props.backgroundColor;
-              const isTransparent = !currentBgColor || 
-                                   currentBgColor === 'transparent' || 
-                                   currentBgColor === '#00000000' ||
-                                   currentBgColor === 'rgba(0,0,0,0)' ||
-                                   currentBgColor === 'rgba(0, 0, 0, 0)' ||
-                                   (currentBgColor.startsWith('#') && currentBgColor.length === 9 && currentBgColor.endsWith('00'));
-              
-              const effectiveChartBg = isTransparent ? bgColor : currentBgColor;
-              
-              // Generate a theme-based palette and apply to chart colors and data
-              const dataArr = Array.isArray(component.props.data) ? component.props.data : [];
-              const inferredCount = dataArr.length > 0 ? dataArr.length : 8;
-              const palette = generateChartColorPalette(
-                accentColor, 
-                effectiveChartBg, 
-                Math.max(3, Math.min(24, inferredCount)),
-                paraStyle.color // Pass text color for subtle variation
-              );
-              component.props.colors = palette;
-
-              if (dataArr.length > 0) {
-                // If series-based (each item has a 'data' array), color per series
-                if (dataArr[0] && typeof dataArr[0] === 'object' && Array.isArray((dataArr[0] as any).data)) {
-                  dataArr.forEach((series: any, idx: number) => {
-                    series.color = palette[idx % palette.length];
-                  });
-                } else {
-                  // Otherwise assume bar/pie-like data points
-                  dataArr.forEach((item: any, idx: number) => {
-                    item.color = palette[idx % palette.length];
-                  });
-                }
-              }
-
-              // Update chart theme to match slide background (light or dark)
-              const shouldBeDarkTheme = !isLightColor(bgColor);
-              component.props.theme = shouldBeDarkTheme ? 'dark' : 'light';
-              
-              // Update chart font family to match theme
-              component.props.fontFamily = fontFamily;
-              
-              // Update chart background color if not transparent
-              if (!isTransparent) {
-                component.props.backgroundColor = bgColor;
-              }
-              // If it's transparent, keep it transparent (do nothing)
-            } catch (e) {
-              console.warn('[ThemePanel] Failed to apply chart palette from accent', e);
-              component.props.colors = [accentColor, ...(component.props.colors?.slice(1) || [])];
-            }
-            break;
-          case 'Table':
-            component.props.tableStyles = {
-              ...(component.props.tableStyles || {}),
-              fontFamily,
-              textColor: paraStyle.color,
-              headerBackgroundColor: accentColor,
-              headerTextColor: paraStyle.color,
-            };
-            break;
-          case 'CustomComponent':
-            try {
-              // Best-effort: propagate theme into common custom props if present
-              if (component.props && typeof component.props === 'object') {
-                if (!component.props.props || typeof component.props.props !== 'object') {
-                  component.props.props = {};
-                }
-                const customProps = component.props.props as Record<string, any>;
-                customProps.color = accentColor;
-                if (bgColor) customProps.backgroundColor = bgColor;
-                customProps.textColor = paraStyle.color;
-              }
-            } catch {}
-            break;
-        }
-      });
-
-      // Ensure a background exists
-      const hasBackground = updatedComponents.some((c: any) => c.type === 'Background');
-      if (!hasBackground) {
-        const bgComp = createDefaultBackground(bgColor) as any;
-        bgComp.props.backgroundColor = bgColor;
-        bgComp.props.backgroundType = 'color';
-        bgComp.props.gradient = null;
-        updatedComponents.unshift(bgComp);
-      }
-
-      if (JSON.stringify(originalComponents) !== JSON.stringify(updatedComponents)) {
-          if (recordHistory) {
-            try {
-              // Push before state so Ctrl+Z can revert
-              addToHistory(slideId, originalComponents);
-            } catch (e) {
-              console.warn('[ThemePanel] addToHistory (before) failed for', slideId, e);
-            }
-          }
-          slideUpdatesMap[slideId] = { slideId, components: updatedComponents };
-          changesMade = true;
-      }
+    const updates = buildThemeSlideUpdates({
+      theme: themeToApply,
+      slides: deckData.slides,
+      slideIds: allSlideIds
     });
 
-    if (changesMade && Object.keys(slideUpdatesMap).length > 0) {
-        console.log("[ThemePanel] Applying updates via batchUpdateSlideComponents for all slides");
-        batchUpdateSlideComponents(Object.values(slideUpdatesMap));
-
-        if (recordHistory) {
-          // Push updated state entries
-          try {
-            Object.values(slideUpdatesMap).forEach(({ slideId, components }) => {
-              addToHistory(slideId, components);
-            });
-          } catch (e) {
-            console.warn('[ThemePanel] addToHistory (after) failed', e);
-          }
-        }
-
-        Object.keys(slideUpdatesMap).forEach(slideId => {
-          SlideThumbnailService.clearThumbnail(slideId);
-        });
-    } else {
-         console.warn("ApplyTheme (All): No actual changes detected or updates generated.");
+    if (updates.length === 0) {
+      console.warn('[ThemePanel] No component changes detected for theme application');
+      return;
     }
+
+    const slideById = new Map(deckData.slides.map(slide => [slide.id, slide]));
+
+    if (recordHistory) {
+      updates.forEach(({ slideId }) => {
+        const slide = slideById.get(slideId);
+        if (!slide) return;
+        try {
+          addToHistory(slideId, slide.components);
+        } catch (e) {
+          console.warn('[ThemePanel] addToHistory (before) failed for', slideId, e);
+        }
+      });
+    }
+
+    batchUpdateSlideComponents(updates);
+
+    if (recordHistory) {
+      updates.forEach(({ slideId, components }) => {
+        try {
+          addToHistory(slideId, components);
+        } catch (e) {
+          console.warn('[ThemePanel] addToHistory (after) failed for', slideId, e);
+        }
+      });
+    }
+
+    updates.forEach(({ slideId }) => {
+      SlideThumbnailService.clearThumbnail(slideId);
+    });
   };
 
   const applyThemeWithHistory = (themeToApply: Theme) => {
@@ -450,140 +296,38 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
   };
 
   const previewGeneratedTheme = (theme: Theme) => {
-      console.log("[ThemePanel] Saving and applying generated theme:", theme);
-      saveAndApplyTheme(theme);
+    saveAndApplyTheme(theme);
   };
 
   const generateThemes = async () => {
     setIsGenerating(true);
     setGeneratedThemes([]);
 
-    // Generate a variety seed for different results each time
-    const varietySeed = `${Date.now()}-${Math.random()}`;
-
-    // Hash the seed to get a deterministic but varied temperature (1.0-1.4)
-    const seedHash = Math.abs(varietySeed.split('').reduce((acc, char) => {
-      return acc + char.charCodeAt(0);
-    }, 0));
-    const temperature = 1.0 + (seedHash % 5) * 0.1;
-
-    const lockedPalette = ["-", "-", "-"];
-
-    const adjacencyMatrix = [
-        "0", "60", "50",
-        "60", "0", "50",
-        "50", "50", "0"
-    ];
-
-    const json_data = {
-      mode: "transformer",
-      num_colors: 3,
-      temperature: temperature.toString(),
-      num_results: 10,
-      adjacency: adjacencyMatrix,
-      palette: lockedPalette,
-    };
-
     try {
-      const response = await fetch("https://api.huemint.com/color", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-        },
-        body: JSON.stringify(json_data),
-      });
+      const deckTitle = useDeckStore.getState().deckData.title || 'Presentation';
+      const slideSnippets = useDeckStore.getState().deckData.slides as Array<{ title?: string; content?: string }>;
+      const keywords: string[] = (slideSnippets || [])
+        .slice(0, 8)
+        .flatMap(s => [s.title, s.content])
+        .filter(Boolean) as string[];
 
-      if (!response.ok) {
-        throw new Error(`Huemint API error: ${response.statusText}`);
-      }
+      const themes = (await generateHuemintThemes({
+        currentTheme: currentThemeEdit,
+        deckTitle,
+        keywords,
+        vibe: vibeContext
+      })).map(normalizeThemeWeights);
 
-      const data = await response.json();
-
-      const currentFontFamily = currentThemeEdit.typography.paragraph.fontFamily;
-      const currentFontSize = currentThemeEdit.typography.paragraph.fontSize;
-      const currentFontWeight = currentThemeEdit.typography.paragraph.fontWeight;
-
-      // Request font recommendations from backend (semantic + per-slide context ready)
-      let headingFont: string | undefined = undefined;
-      let bodyFont: string | undefined = undefined;
-      try {
-        const deckTitle = useDeckStore.getState().deckData.title || 'Presentation';
-        const vibe = 'modern';
-        const keywords: string[] = (useDeckStore.getState().deckData.slides || [])
-          .slice(0, 8)
-          .flatMap(s => [s.title, s.content])
-          .filter(Boolean) as string[];
-        const rec = await FontApiService.recommend({ deck_title: deckTitle, vibe, content_keywords: keywords });
-        headingFont = rec?.hero?.[0]?.name;
-        bodyFont = rec?.body?.[0]?.name;
-        // Preload recommended fonts conservatively
-        const preload = Array.from(new Set([headingFont, bodyFont].filter(Boolean))) as string[];
-        if (preload.length) {
-          for (const fam of preload) {
-            await FontApiService.findAndLoadByFamily(fam!, '400');
-          }
-        }
-      } catch {}
-
-      const appliedBodyFont = bodyFont || currentFontFamily;
-      const appliedHeadingFont = headingFont || currentThemeEdit.typography.heading?.fontFamily || currentFontFamily;
-
-      const newThemes: Theme[] = data.results.map((result: HuemintResult, index: number) => ({
-        id: `generated-${Date.now()}-${index}`,
-        name: `Generated ${index + 1}`,
-        page: { backgroundColor: result.palette[0] },
-        typography: {
-          paragraph: {
-            fontFamily: appliedBodyFont,
-            fontSize: currentFontSize,
-            fontWeight: currentFontWeight,
-            color: result.palette[1],
-          },
-          heading: {
-            fontFamily: appliedHeadingFont,
-            color: result.palette[1],
-            fontWeight: 700
-          }
-        },
-        accent1: result.palette[2],
-        accent2: currentThemeEdit.accent2,
-        isCustom: true
-      }));
-
-      setGeneratedThemes(newThemes);
-
+      setGeneratedThemes(themes);
     } catch (error) {
-      console.error("Failed to generate themes:", error);
+      console.error('Failed to generate themes:', error);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // Dynamic font options/groups (runtime + backend designer)
-  const [fontOptions, setFontOptions] = useState<string[]>(ALL_FONT_NAMES);
-  const [fontGroups, setFontGroups] = useState<Record<string, string[]>>(() => {
-    const groups: Record<string, string[]> = {};
-    for (const [category, fonts] of Object.entries(FONT_CATEGORIES)) {
-      groups[category] = fonts.map(font => font.name);
-    }
-    return groups;
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        await FontLoadingService.syncDesignerFonts();
-      } catch {}
-      if (!cancelled) {
-        try {
-          setFontGroups(FontLoadingService.getDedupedFontGroups());
-          setFontOptions(FontLoadingService.getAllFontNames());
-        } catch {}
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  const { groups: fontGroups } = useFontCatalog();
+  const fontOptions = useMemo(() => FontLoadingService.getAllFontNames(), [fontGroups]);
 
   // Preload currently selected fonts via backend service to ensure rendering
   useEffect(() => {
@@ -607,12 +351,15 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
     (async () => {
       try {
         const deckTitle = useDeckStore.getState().deckData.title || 'Presentation';
-        const vibe = 'modern';
         const keywords: string[] = (useDeckStore.getState().deckData.slides || [])
           .slice(0, 8)
           .flatMap(s => [s.title, s.content])
           .filter(Boolean) as string[];
-        const rec = await FontApiService.recommend({ deck_title: deckTitle, vibe, content_keywords: keywords });
+        const rec = await FontApiService.recommend({
+          deck_title: deckTitle,
+          vibe: vibeContext,
+          content_keywords: keywords
+        });
         if (!cancelled && rec) {
           const hero = rec.hero?.[0]?.name;
           const body = rec.body?.[0]?.name;
@@ -746,7 +493,6 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
   const handleUndoThemeChange = () => {
     if (!canUndoDeck()) return; // Guard clause
 
-    console.log("[ThemePanel] Undoing last deck history state...");
     // 1. Revert the main deck data in deckStore
     undoDeck();
 

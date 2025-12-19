@@ -1,4 +1,5 @@
 import { authService } from '@/services/authService';
+import { normalizeSseEvent } from './normalizeEvent';
 
 /**
  * Server-Sent Events handler for managing streaming connections
@@ -116,7 +117,7 @@ export class SSEHandler {
         // Try to parse as JSON first
         if (message.startsWith('{')) {
           try {
-            const parsed = JSON.parse(message);
+            const parsed = normalizeSseEvent(JSON.parse(message));
             
             // Log slide events specifically
             if (parsed.type === 'slide_completed' || parsed.type === 'slide_generated') {

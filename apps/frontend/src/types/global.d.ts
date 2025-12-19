@@ -35,6 +35,8 @@ interface SlideImageCacheEntry {
   topics?: string[];
   images?: any[];
   images_by_topic?: Record<string, any[]>;
+  images_by_search_term?: Record<string, any[]>;
+  search_terms?: string[];
   images_count?: number;
 }
 

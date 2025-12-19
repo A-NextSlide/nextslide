@@ -51,6 +51,7 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
   const removeDraftComponent = useEditorStore(state => state.removeDraftComponent);
   const lastOperation = useEditorStore(state => state.lastOperation); // Track undo/redo operations
   const draftComponentsVersion = useEditorStore(state => state.draftComponentsVersion); // Track draft modifications
+  const setActiveSlideId = useEditorStore(state => state.setActiveSlideId);
 
   // Get history index from history store
   const historyIndex = useHistoryStore(state => state.historyIndex); // Track history changes
@@ -63,6 +64,10 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
   
   // Track the current slide ID
   const currentSlideId = currentSlide?.id;
+
+  useEffect(() => {
+    setActiveSlideId(currentSlideId || null);
+  }, [currentSlideId, setActiveSlideId]);
   
   // Keep a local copy of active components
   const [activeComponents, setActiveComponents] = useState<ComponentInstance[]>([]);

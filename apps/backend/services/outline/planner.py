@@ -281,67 +281,8 @@ Make it specific to the topic, not generic."""
         }
     
     def _infer_slide_types(self, slides: List[str]) -> List[str]:
-        """Infer slide types based on titles"""
-        types = []
-        num_slides = len(slides)
-        
-        for i, slide in enumerate(slides):
-            # Handle dict slide titles
-            if isinstance(slide, dict):
-                slide = slide.get('title', str(slide))
-            title_lower = str(slide).lower()
-            
-            # For 1-2 slides, they're all content
-            if num_slides <= 2:
-                types.append('content')
-            # For 3+ slides, use normal logic
-            elif i == 0 and num_slides >= 3:
-                # Only label first as title if it looks like an explicit title/cover
-                title_text = str(slide).lower()
-                is_explicit_title = any(word in title_text for word in ['title', 'cover', 'welcome'])
-                is_very_short = len(title_text.split()) <= 3
-                types.append('title' if (is_explicit_title or is_very_short) else 'content')
-            # Transition slides (progress markers)
-            elif '>>' in title_lower or '✓' in title_lower or 'progress' in title_lower:
-                types.append('transition')
-            # Divider slides
-            elif any(word in title_lower for word in ['divider', 'section break', 'section divider', 'chapter']):
-                types.append('divider')
-            # Agenda/outline
-            elif any(word in title_lower for word in ['agenda', 'outline', 'objectives']):
-                types.append('agenda')
-            # Team/about
-            elif any(word in title_lower for word in ['team', 'about us', 'who we are']):
-                types.append('team')
-            # Quote slides (look for quotes or explicit tag)
-            elif 'quote' in title_lower or '“' in slide or '”' in slide or '"' in slide:
-                types.append('quote')
-            # Stat slides (short numeric-heavy titles)
-            elif any(ch.isdigit() for ch in str(slide)) and (
-                str(slide).strip().startswith('$') or '%' in str(slide)
-            ):
-                # Keep stat slides only when clearly a single-metric title
-                if len(str(slide).split()) <= 5:
-                    types.append('stat')
-                else:
-                    types.append('content')
-            # Conclusion/thanks
-            elif any(word in title_lower for word in ['thank', 'questions', 'q&a', 'conclusion']):
-                types.append('conclusion')
-            elif any(word in title_lower for word in [
-                'revenue', 'sales', 'growth', 'performance', 'metrics', 'kpi', 'roi',
-                'profit', 'margin', 'cost', 'expense', 'budget', 'forecast', 'trend',
-                'analysis', 'breakdown', 'comparison', 'statistics', 'data', 'results',
-                'efficiency', 'productivity', 'conversion', 'rate', 'percentage',
-                'quarter', 'q1', 'q2', 'q3', 'q4', 'ytd', 'yoy', 'mom', 'financial',
-                'cash flow', 'balance', 'snapshot', 'overview', 'chart', 'graph'
-            ]):
-                # Prefer content; data charts will be decided later based on grounded data availability
-                types.append('content')
-            else:
-                types.append('content')
-        
-        return types
+        """Default to content types; defer type specialization to the model."""
+        return ['content' for _ in slides]
     
     def _get_model(self, task: str, options: Optional[OutlineOptions] = None) -> str:
         """Select model for task"""
@@ -363,34 +304,7 @@ Make it specific to the topic, not generic."""
         return f"{min_slides}-{max_slides} slides"
     
     def _get_flow_rules(self, slide_count: Optional[int], detail_level: Optional[str] = None) -> str:
-        """Get flow rules based on slide count or detail level when count is unknown"""
-        if not slide_count:
-            # Infer a nominal count midpoint when only detail level is known
-            if detail_level == 'quick':
-                slide_count = 2  # midpoint of 1-3
-            elif detail_level == 'standard':
-                slide_count = 6  # midpoint of 4-8
-            else:
-                slide_count = 10  # typical starting point for detailed
-        
-        rules = []
-        
-        if slide_count >= 8:
-            rules.append("- Slide 2 MUST be an 'agenda' type showing the presentation roadmap")
-            rules.append("- Add 'transition' slides every 4-5 content slides showing progress (e.g., 'Problem ✓ | >> Solution | Next Steps')")
-            rules.append("- Include 'divider' slides for major section changes")
-        
-        if slide_count >= 12:
-            rules.append("- Include at least 2-3 'stat' slides for key metrics")
-            rules.append("- Add a 'quote' slide for testimonials or key insights")
-            rules.append("- Include a summary/recap slide before the conclusion")
-        
-        if slide_count >= 20:
-            rules.append("- Add sub-section dividers within major topics")
-            rules.append("- Include multiple checkpoint transitions throughout")
-            rules.append("- Consider breaking into chapters with intro/summary for each")
-        
-        if not rules:
-            return "- Keep a logical flow from introduction to conclusion"
-        
-        return "\n".join(rules) 
+        """Get flow rules with minimal guidance."""
+        _ = slide_count
+        _ = detail_level
+        return "- Logical flow"

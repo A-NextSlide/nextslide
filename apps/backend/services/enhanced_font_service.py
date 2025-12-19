@@ -6,6 +6,7 @@ Intelligently recommends fonts based on actual font characteristics from PixelBu
 import json
 import random
 import hashlib
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Set
 import logging
@@ -38,38 +39,16 @@ class EnhancedFontService:
     
     def __init__(self):
         self.font_metadata = self._load_font_metadata()
-        
-        # Load ALL fonts from ComponentRegistry instead of just 26!
-        try:
-            from services.registry_fonts import RegistryFonts
-            
-            # Use static method that doesn't need registry instance
-            all_font_names = RegistryFonts.get_all_fonts_list()
-            
-            # Build font dict from registry names
-            self.all_fonts = {}
-            invalid_fonts = ['fonts', 'font', 'font family', 'fontfamily', 'default', 'none', 'null']
-            
-            for font_name in all_font_names:
-                if font_name.lower() not in invalid_fonts:
-                    font_id = font_name.lower().replace(' ', '-')
-                    self.all_fonts[font_id] = {
-                        'id': font_id,
-                        'name': font_name,
-                        'source': 'registry',
-                        'category': self._guess_category_from_name(font_name)
-                    }
-            
-            logger.info(f"✅ Loaded {len(self.all_fonts)} fonts from ComponentRegistry")
-            print(f"✅ ENHANCED_FONT_SERVICE: Loaded {len(self.all_fonts)} fonts from registry")
-            
-        except Exception as e:
-            # Fallback to old method if registry fails
-            logger.warning(f"Failed to load from registry: {e}, using fallback")
-            self.pixelbuddha_fonts = {}
-            self.designer_fonts = self._load_designer_fonts()
-            self.google_fonts = self._load_google_fonts()
-            self.all_fonts = {**self.designer_fonts, **self.google_fonts}
+        self.pixelbuddha_fonts = self._load_pixelbuddha_fonts()
+        self.designer_fonts = self._load_designer_fonts()
+        self.loose_designer_fonts = self._scan_loose_designer_fonts()
+        self.google_fonts = self._load_google_fonts()
+        self.all_fonts = {}
+
+        self._merge_fonts(self.pixelbuddha_fonts)
+        self._merge_fonts(self.designer_fonts)
+        self._merge_fonts(self.loose_designer_fonts)
+        self._merge_fonts(self.google_fonts)
 
         # Build tag index for fast lookup
         self.tag_index = self._build_tag_index()
@@ -89,67 +68,173 @@ class EnhancedFontService:
         
         logger.warning("Font metadata file not found")
         return {}
+
+    def _load_registry_file(self, path: Path) -> Dict:
+        """Load a registry JSON file, unwrapping `fonts` if present."""
+        if not path.exists():
+            return {}
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+            if isinstance(data, dict) and 'fonts' in data and isinstance(data['fonts'], dict):
+                return data['fonts']
+            if isinstance(data, dict):
+                return data
+        except Exception as e:
+            logger.warning(f"Failed to load registry from {path}: {e}")
+        return {}
+
+    def _merge_fonts(self, fonts: Dict) -> None:
+        """Merge fonts into the catalog without overwriting existing IDs."""
+        if not fonts:
+            return
+        for font_id, font_data in fonts.items():
+            if font_id not in self.all_fonts:
+                self.all_fonts[font_id] = font_data
     
     def _load_pixelbuddha_fonts(self) -> Dict:
         """
         Load PixelBuddha font registry.
         PERFORMANCE: Only loads curated subset (80 fonts) instead of all 701.
         """
-        registry_path = Path(__file__).parent.parent / 'assets' / 'fonts' / 'pixelbuddha' / 'font_registry.json'
-        
-        if registry_path.exists():
-            with open(registry_path, 'r') as f:
-                data = json.load(f)
-                fonts = {}
-                
-                # Handle both wrapped and unwrapped formats
-                font_data_dict = data.get('fonts', data) if isinstance(data, dict) else data
-                
-                # Create curated set for fast lookup
-                curated_set = set(CURATED_PIXELBUDDHA_FONTS + FALLBACK_PIXELBUDDHA_FONTS) if USE_CURATED_ONLY else None
-                
-                loaded_count = 0
-                skipped_count = 0
-                
-                for font_id, font_data in font_data_dict.items():
-                    if isinstance(font_data, dict):
-                        # PERFORMANCE FIX: Only load curated fonts
-                        if USE_CURATED_ONLY and curated_set and font_id not in curated_set:
-                            skipped_count += 1
-                            continue
-                        
-                        font_data['source'] = 'pixelbuddha'
-                        font_data['category'] = self._categorize_pixelbuddha_font(font_id, font_data)
-                        fonts[font_id] = font_data
-                        loaded_count += 1
-                
-                if USE_CURATED_ONLY:
-                    logger.info(f"Loaded {loaded_count} curated PixelBuddha fonts (skipped {skipped_count})")
-                else:
-                    logger.info(f"Loaded {loaded_count} PixelBuddha fonts (all)")
-                
-                return fonts
-        
-        return {}
+        registry_root = Path(__file__).parent.parent / 'assets' / 'fonts' / 'pixelbuddha'
+        registry_path = registry_root / 'font_registry_filtered.json'
+        if not registry_path.exists():
+            registry_path = registry_root / 'font_registry.json'
+
+        font_data_dict = self._load_registry_file(registry_path)
+        if not font_data_dict:
+            return {}
+
+        fonts = {}
+        curated_set = set(CURATED_PIXELBUDDHA_FONTS + FALLBACK_PIXELBUDDHA_FONTS) if USE_CURATED_ONLY else None
+        loaded_count = 0
+        skipped_count = 0
+
+        for font_id, font_data in font_data_dict.items():
+            if not isinstance(font_data, dict):
+                continue
+            if USE_CURATED_ONLY and curated_set and font_id not in curated_set:
+                skipped_count += 1
+                continue
+            normalized = dict(font_data)
+            normalized.setdefault('id', font_id)
+            normalized['source'] = 'pixelbuddha'
+            normalized['category'] = self._categorize_pixelbuddha_font(font_id, normalized)
+            fonts[font_id] = normalized
+            loaded_count += 1
+
+        if USE_CURATED_ONLY:
+            logger.info(f"Loaded {loaded_count} curated PixelBuddha fonts (skipped {skipped_count})")
+        else:
+            logger.info(f"Loaded {loaded_count} PixelBuddha fonts (all)")
+
+        return fonts
     
     def _load_designer_fonts(self) -> Dict:
         """Load Designer/Unblast font registry"""
         registry_path = Path(__file__).parent.parent / 'assets' / 'fonts' / 'designer' / 'font_registry.json'
-        
-        if registry_path.exists():
-            with open(registry_path, 'r') as f:
-                data = json.load(f)
-                fonts = {}
-                
-                for font_id, font_data in data.items():
-                    if isinstance(font_data, dict):
-                        font_data['source'] = 'designer'
-                        font_data['category'] = font_data.get('category', 'display')
-                        fonts[font_id] = font_data
-                
-                return fonts
-        
-        return {}
+        data = self._load_registry_file(registry_path)
+        if not data:
+            return {}
+
+        fonts = {}
+        for font_id, font_data in data.items():
+            if not isinstance(font_data, dict):
+                continue
+            normalized = dict(font_data)
+            normalized.setdefault('id', font_id)
+            normalized['source'] = 'designer'
+            normalized['category'] = normalized.get('category') or self._guess_category_from_name(normalized.get('name', font_id))
+            fonts[font_id] = normalized
+
+        return fonts
+
+    def _scan_loose_designer_fonts(self) -> Dict:
+        """Scan designer folder for font files not tracked in the registry."""
+        root = Path(__file__).parent.parent / 'assets' / 'fonts' / 'designer'
+        if not root.exists():
+            return {}
+
+        registered_dirs: Set[str] = set()
+        for font_data in (self.designer_fonts or {}).values():
+            styles = font_data.get('styles', {}) or {}
+            for files in styles.values():
+                for file_info in files or []:
+                    path = file_info.get('path') if isinstance(file_info, dict) else None
+                    if not path:
+                        continue
+                    parts = path.split('/')
+                    if parts:
+                        registered_dirs.add(parts[0])
+
+        fonts: Dict[str, Dict] = {}
+        weight_map = {
+            'thin': 100,
+            'extralight': 200,
+            'ultralight': 200,
+            'light': 300,
+            'book': 400,
+            'regular': 400,
+            'medium': 500,
+            'semibold': 600,
+            'demibold': 600,
+            'bold': 700,
+            'extrabold': 800,
+            'ultrabold': 800,
+            'black': 900,
+            'heavy': 900,
+        }
+
+        def _slugify(name: str) -> str:
+            return re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+
+        def _parse_name(stem: str) -> Tuple[str, str, int]:
+            cleaned = re.sub(r'[_-]+', ' ', stem).strip()
+            tokens = cleaned.split()
+            if not tokens:
+                return stem, 'regular', 400
+            last = tokens[-1].lower()
+            if last in weight_map:
+                family = ' '.join(tokens[:-1]).strip() or cleaned
+                return family, last, weight_map[last]
+            return cleaned, 'regular', 400
+
+        for font_file in root.rglob('*'):
+            if not font_file.is_file():
+                continue
+            if font_file.suffix.lower() not in {'.otf', '.ttf', '.woff', '.woff2'}:
+                continue
+            if '__MACOSX' in font_file.parts or font_file.name.startswith('._'):
+                continue
+            rel = font_file.relative_to(root).as_posix()
+            first_dir = rel.split('/')[0] if '/' in rel else ''
+            if first_dir in registered_dirs:
+                continue
+            if font_file.name in {'font_registry.json', 'font_list.json'}:
+                continue
+
+            family, style_key, weight_val = _parse_name(font_file.stem)
+            font_id = _slugify(family)
+            if font_id in self.designer_fonts or font_id in self.pixelbuddha_fonts:
+                font_id = f"{font_id}-local"
+
+            entry = fonts.setdefault(font_id, {
+                'id': font_id,
+                'name': family,
+                'source': 'designer',
+                'category': self._guess_category_from_name(family),
+                'styles': {}
+            })
+            entry_styles = entry.setdefault('styles', {})
+            entry_styles.setdefault(style_key, []).append({
+                'path': rel,
+                'format': font_file.suffix.lstrip('.'),
+                'weight': weight_val,
+                'style': 'normal'
+            })
+
+        return fonts
     
     def _load_google_fonts(self) -> Dict:
         """
@@ -189,6 +274,9 @@ class EnhancedFontService:
             'source-code-pro': {'name': 'Source Code Pro', 'source': 'google', 'category': 'mono'},
         }
         
+        for font_id, font_data in google_fonts.items():
+            if isinstance(font_data, dict):
+                font_data.setdefault('id', font_id)
         return google_fonts
     
     def _guess_category_from_name(self, font_name: str) -> str:
@@ -273,6 +361,152 @@ class EnhancedFontService:
                 best_for_index[use_case].add(font_id)
         
         return best_for_index
+
+    def _normalize_font_query(self, font_name: str) -> str:
+        """Normalize font names for fuzzy matching."""
+        if not font_name:
+            return ''
+        cleaned = re.sub(r'[_-]+', ' ', str(font_name)).lower()
+        cleaned = re.sub(r'[^a-z0-9\\s]+', ' ', cleaned)
+        weight_tokens = {
+            'thin', 'extralight', 'ultralight', 'light', 'book', 'regular', 'medium',
+            'semibold', 'demibold', 'bold', 'extrabold', 'ultrabold', 'black', 'heavy',
+            'italic', 'oblique', 'condensed', 'expanded', 'narrow', 'wide'
+        }
+        tokens = [t for t in cleaned.split() if t and t not in weight_tokens]
+        return ' '.join(tokens).strip()
+
+    def _tokenize_font_name(self, font_name: str) -> Set[str]:
+        normalized = self._normalize_font_query(font_name)
+        if not normalized:
+            return set()
+        return set(normalized.split())
+
+    def _infer_style_from_name(self, font_name: str) -> Optional[str]:
+        name = str(font_name or '').lower()
+        if any(tok in name for tok in ['script', 'hand', 'brush', 'calligraphy']):
+            return 'script'
+        if 'mono' in name or 'code' in name:
+            return 'mono'
+        if 'slab' in name:
+            return 'slab'
+        if 'serif' in name and 'sans' not in name:
+            return 'serif'
+        if any(tok in name for tok in ['sans', 'grotesk', 'gotham', 'helvetica']):
+            return 'sans'
+        if any(tok in name for tok in ['display', 'headline']):
+            return 'display'
+        return None
+
+    def _normalize_category(self, category: str) -> Optional[str]:
+        cat = str(category or '').lower()
+        if 'mono' in cat:
+            return 'mono'
+        if 'script' in cat or 'hand' in cat:
+            return 'script'
+        if 'slab' in cat:
+            return 'slab'
+        if 'serif' in cat and 'sans' not in cat:
+            return 'serif'
+        if 'sans' in cat:
+            return 'sans'
+        if 'display' in cat:
+            return 'display'
+        return None
+
+    def _get_available_font_ids(self, include_remote: bool = False) -> Set[str]:
+        cache_attr = '_available_font_ids_remote' if include_remote else '_available_font_ids_local'
+        cached = getattr(self, cache_attr, None)
+        if cached is not None:
+            return cached
+
+        available: Set[str] = set()
+        for font_id, font_data in self.all_fonts.items():
+            source = font_data.get('source', '')
+            if not include_remote and source in {'google', 'system', 'cdn', 'fontshare'}:
+                continue
+            try:
+                if source in {'google', 'system', 'cdn', 'fontshare'}:
+                    available.add(font_id)
+                elif self.get_font_path(font_id, 'regular'):
+                    available.add(font_id)
+            except Exception:
+                continue
+
+        setattr(self, cache_attr, available)
+        return available
+
+    def get_available_font_ids(self, include_remote: bool = False) -> Set[str]:
+        """Public accessor for available font IDs."""
+        return self._get_available_font_ids(include_remote=include_remote)
+
+    def match_font_name(
+        self,
+        font_name: str,
+        *,
+        is_hero: bool = False,
+        include_remote: bool = False
+    ) -> Optional[str]:
+        """Find the best available font name to match a requested font."""
+        if not font_name:
+            return None
+
+        normalized = self._normalize_font_query(font_name)
+        if not normalized:
+            return None
+
+        available_ids = self._get_available_font_ids(include_remote=include_remote)
+        requested_tokens = self._tokenize_font_name(font_name)
+        desired_style = self._infer_style_from_name(font_name)
+
+        best_name = None
+        best_score = 0.0
+
+        for font_id in available_ids:
+            font_data = self.all_fonts.get(font_id, {})
+            candidate_name = font_data.get('name', font_id)
+            candidate_norm = self._normalize_font_query(candidate_name)
+            if not candidate_norm:
+                continue
+            if candidate_norm == normalized:
+                return candidate_name
+
+            name_similarity = SequenceMatcher(None, normalized, candidate_norm).ratio()
+            candidate_tokens = self._tokenize_font_name(candidate_name)
+            token_overlap = 0.0
+            if requested_tokens and candidate_tokens:
+                token_overlap = len(requested_tokens & candidate_tokens) / len(requested_tokens | candidate_tokens)
+
+            candidate_category = self._normalize_category(font_data.get('category'))
+            category_match = 0.0
+            if desired_style and candidate_category == desired_style:
+                category_match = 1.0
+
+            metadata = self.font_metadata.get(font_id, {})
+            tags = set(tag.lower() for tag in metadata.get('tags', []) if isinstance(tag, str))
+            tag_overlap = 0.0
+            if requested_tokens and tags:
+                tag_overlap = len(requested_tokens & tags) / max(len(requested_tokens), 1)
+
+            score = (
+                name_similarity * 0.55 +
+                token_overlap * 0.2 +
+                category_match * 0.15 +
+                tag_overlap * 0.1
+            )
+
+            if is_hero:
+                if candidate_category in {'display', 'serif'}:
+                    score += 0.05
+            else:
+                if candidate_category == 'display':
+                    score -= 0.1
+
+            if score > best_score:
+                best_score = score
+                best_name = candidate_name
+
+        return best_name
     
     def get_fonts_for_theme(self,
                            deck_title: str,
@@ -673,8 +907,10 @@ class EnhancedFontService:
         font_data = self.all_fonts.get(font_id)
         if not font_data:
             return None
-        
+
         source = font_data.get('source', 'pixelbuddha')
+        if source in {'google', 'system', 'cdn', 'fontshare'}:
+            return None
         assets_root = Path(__file__).parent.parent / 'assets' / 'fonts'
 
         def _path_exists(rel: str) -> bool:
@@ -794,6 +1030,7 @@ class EnhancedFontService:
             'total': len(self.all_fonts),
             'pixelbuddha': len(self.pixelbuddha_fonts),
             'designer': len(self.designer_fonts),
+            'google': len(self.google_fonts),
             'with_metadata': len(self.font_metadata),
             'categories': {},
             'tags': {},
@@ -835,6 +1072,10 @@ class EnhancedFontService:
         available = []
         for font in fonts:
             font_id = font.get('id', '')
+            source = str(font.get('source', '')).lower()
+            if source in {'google', 'system', 'cdn', 'fontshare'}:
+                available.append(font)
+                continue
             if font_id and self._font_has_files(font_id):
                 available.append(font)
         return available

@@ -12,10 +12,9 @@ import os
 import time
 
 from agents.core.interfaces import (
-    IRAGService, IAIClient, IThemeGenerator,
-    IPersistence, IImageService, SlideContext
+    IAIClient, IThemeGenerator,
+    IPersistence, IImageService,
 )
-from agents.rag.slide_context_retriever import SlideContextRetriever
 from agents.ai.clients import get_client, invoke
 from agents.persistence.deck_persistence import DeckPersistence
 from services.image_storage_service import ImageStorageService
@@ -23,31 +22,6 @@ from agents.generation.theme_style_manager import ThemeStyleManager
 from agents.generation.config import get_config
 
 logger = logging.getLogger(__name__)
-
-
-class RAGService(IRAGService):
-    """RAG service implementation using SlideContextRetriever"""
-    
-    def __init__(self):
-        self.retriever = SlideContextRetriever()
-        
-    async def get_context(self, context: SlideContext) -> Dict[str, Any]:
-        """Get RAG context for slide"""
-        # SlideContextRetriever is synchronous, so we run it in executor
-        loop = asyncio.get_event_loop()
-        
-        return await loop.run_in_executor(
-            None,
-            self.retriever.get_slide_context,
-            context.outline,
-            context.index,
-            {
-                'title': context.deck_title,
-                'slides': [{'title': s.title} for s in [context.outline]]  # Simplified
-            },
-            context.theme,
-            context.palette
-        )
 
 
 class AIClient(IAIClient):
@@ -100,15 +74,8 @@ class ThemeGenerator(IThemeGenerator):
         """Generate theme for deck"""
         # Use existing theme manager
         global_theme = {"system": "AI-generated"}
-        
-        # Run blocking operation in executor
-        loop = asyncio.get_event_loop()
-        theme = await loop.run_in_executor(
-            None,
-            self.theme_manager.generate_theme,
-            deck_outline,
-            global_theme
-        )
+
+        theme = await self.theme_manager.generate_theme(deck_outline, global_theme)
         
         # Convert to dict if needed
         if hasattr(theme, 'to_dict'):
@@ -117,14 +84,7 @@ class ThemeGenerator(IThemeGenerator):
         
     async def generate_palette(self, deck_outline: Any, theme: Dict[str, Any]) -> Dict[str, Any]:
         """Generate color palette"""
-        # Run blocking operation in executor
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
-            self.theme_manager.generate_palette,
-            deck_outline,
-            theme
-        )
+        return await self.theme_manager.generate_palette(deck_outline, theme)
 
 
 class Persistence(IPersistence):

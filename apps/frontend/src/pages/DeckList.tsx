@@ -47,6 +47,7 @@ import BrandWordmark from '@/components/common/BrandWordmark';
 import { useSlideResearch } from '@/hooks/useSlideResearch';
 import { useOutlineChat } from '@/hooks/useOutlineChat';
 import { cn } from '@/lib/utils';
+import { normalizeReferenceImages } from '@/utils/referenceImages';
 import { outlineApi } from '@/services/outlineApi';
 import { deckSyncService } from '@/lib/deckSyncService';
 import { useSlideGeneration } from '@/hooks/useSlideGeneration';
@@ -63,6 +64,49 @@ import { RotatingWords, VirtualizedDeckGrid, VirtualizedPopupDeckGrid } from './
 
 // Component instance counter for debugging
 let componentInstanceCount = 0;
+
+const normalizeUploadedMedia = (
+  media?: Array<{
+    id?: string;
+    name?: string;
+    filename?: string;
+    type?: string;
+    content?: string;
+    url?: string;
+    previewUrl?: string;
+    size?: number;
+    metadata?: Record<string, any>;
+  }>
+): FrontendTaggedMedia[] | undefined => {
+  if (!Array.isArray(media) || media.length === 0) return undefined;
+  const normalized = media.map((item) => {
+    const rawType = String(item.type || '').toLowerCase();
+    const resolvedType: FrontendTaggedMedia['type'] =
+      rawType === 'image' || rawType.startsWith('image/')
+        ? 'image'
+        : rawType === 'pdf' || rawType.includes('pdf')
+          ? 'pdf'
+          : rawType === 'chart' || rawType === 'data'
+            ? (rawType as FrontendTaggedMedia['type'])
+            : 'other';
+
+    return {
+      id: item.id || uuidv4(),
+      filename: item.filename || item.name || 'uploaded_file',
+      type: resolvedType,
+      content: item.content,
+      previewUrl: item.previewUrl || item.url,
+      interpretation: undefined,
+      status: 'processed',
+      metadata: {
+        originalType: item.type,
+        size: item.size,
+        ...(item.metadata || {})
+      }
+    };
+  });
+  return normalized.length > 0 ? normalized : undefined;
+};
 
 /**
  * DeckList page component that displays all available decks
@@ -520,8 +564,7 @@ const DeckList: React.FC = () => {
         narrative_role: 'supporting',
         slide_type: 'content',
         speaker_notes: '',
-        chartData: null,
-        chartType: null
+        manualCharts: []
       }],
       isManualMode: true
     };
@@ -620,6 +663,8 @@ const DeckList: React.FC = () => {
     }
 
     const vibeContext = data.style || parsedStylePrefs?.vibeContext || data.stylePreferences;
+    const normalizedReferenceImages = normalizeReferenceImages(data.slideScreenshots);
+    const normalizedUploadedMedia = normalizeUploadedMedia(data.uploadedMedia);
 
     // Update style preferences
     setStylePreferences({
@@ -627,7 +672,7 @@ const DeckList: React.FC = () => {
       vibeContext: vibeContext,
       colors: undefined,
       slideMode: data.slideMode || 'interactive',
-      referenceImages: data.slideScreenshots,
+      referenceImages: normalizedReferenceImages,
     });
 
     setConversationalData(data);
@@ -648,7 +693,15 @@ const DeckList: React.FC = () => {
         notes: '',
         layout: 'default' as const,
         deepResearch: false,
+        assignedVideo: s.assignedVideo, // Pass through assigned video from AI
+        taggedMedia: s.taggedMedia, // Pass through tagged media
       }));
+
+      // Log video assignments for debugging
+      const slidesWithVideos = outlineSlides.filter(s => s.assignedVideo);
+      if (slidesWithVideos.length > 0) {
+        console.log('[DeckList] 🎬 Slides with assigned videos:', slidesWithVideos.map(s => ({ title: s.title, video: s.assignedVideo?.title })));
+      }
 
       // Build theme payload from parsed style prefs FIRST so we can include it in outline.notes
       // NOTE: Colors should ALWAYS be provided from ConversationalOnboarding (which fetches from backend)
@@ -682,13 +735,17 @@ const DeckList: React.FC = () => {
         id: newOutlineId,
         title: data.topic || 'New Presentation',
         stylePreferences: {
+          initialIdea: data.topic,
           vibeContext: vibeContext,
+          slideMode: data.slideMode || 'interactive',
+          referenceImages: normalizedReferenceImages,
           // CRITICAL: Include colors, fonts, and logo so backend can use them
           colors: parsedStylePrefs?.colors,
           font: parsedStylePrefs?.font,
           bodyFont: parsedStylePrefs?.bodyFont,
           logoUrl: parsedStylePrefs?.logoUrl,  // CRITICAL: Include logo URL for brand slides
         },
+        uploadedMedia: normalizedUploadedMedia,
         slides: outlineSlides,
         // CRITICAL: Embed theme and videos in notes so backend finds them
         notes: Object.keys(notesPayload).length > 0 ? notesPayload : undefined,
@@ -738,7 +795,7 @@ const DeckList: React.FC = () => {
         const genStylePrefs = {
           vibeContext: vibeContext,
           slideMode: data.slideMode || 'interactive',
-          referenceImages: data.slideScreenshots,
+          referenceImages: normalizedReferenceImages,
           deck_theme: themePayload || undefined,
           // CRITICAL: Include colors, fonts, and logo from parsed style prefs
           colors: parsedStylePrefs?.colors,
@@ -1648,6 +1705,7 @@ const DeckList: React.FC = () => {
                           initialConversationalData={conversationalData}
                           onOutlineAgentToolCall={(params) => {
                             console.log('[DeckList] Agent generated outline:', params);
+                            const normalizedUploadedMedia = normalizeUploadedMedia(params.uploadedMedia);
 
                             // Handle streaming slide updates (one at a time)
                             if (params.slideIndex !== undefined && params.slides && params.slides.length === 1) {
@@ -1680,7 +1738,8 @@ const DeckList: React.FC = () => {
                                   deepResearch: slide.deepResearch || false,
                                   citations: slide.citations || [],
                                   footnotes: slide.footnotes || [],
-                                  taggedMedia: slide.taggedMedia || []
+                                  taggedMedia: slide.taggedMedia || [],
+                                  assignedVideo: slide.assignedVideo,
                                 };
 
                                 console.log('[DeckList] ✅ Created newSlide with content length:', newSlide.content?.length);
@@ -1700,7 +1759,8 @@ const DeckList: React.FC = () => {
 
                                 return {
                                   ...prev,
-                                  slides: updatedSlides
+                                  slides: updatedSlides,
+                                  uploadedMedia: normalizedUploadedMedia || prev.uploadedMedia
                                 };
                               });
                               return;
@@ -1725,7 +1785,8 @@ const DeckList: React.FC = () => {
                                     ...prev.stylePreferences,
                                     ...apiStylePrefs,
                                     colors: apiColors || prev.stylePreferences?.colors
-                                  }
+                                  },
+                                  uploadedMedia: normalizedUploadedMedia || prev.uploadedMedia
                                 };
                               });
                               
@@ -1799,7 +1860,8 @@ const DeckList: React.FC = () => {
                                   stylePreferences: params.stylePreferences ? {
                                     ...prev.stylePreferences,
                                     ...params.stylePreferences
-                                  } : prev.stylePreferences
+                                  } : prev.stylePreferences,
+                                  uploadedMedia: normalizedUploadedMedia || prev.uploadedMedia
                                 };
                               });
                               return;
@@ -1825,7 +1887,8 @@ const DeckList: React.FC = () => {
                                 deepResearch: s.deepResearch || false,
                                 citations: s.citations || [],
                                 footnotes: s.footnotes || [],
-                                taggedMedia: s.taggedMedia || []
+                                taggedMedia: s.taggedMedia || [],
+                                assignedVideo: s.assignedVideo,
                               };
                             }) : [];
 
@@ -1861,6 +1924,7 @@ const DeckList: React.FC = () => {
                               id: currentOutline?.id || uuidv4(), // Preserve ID if updating placeholder
                               title: params.topic || currentOutline?.title || 'Presentation',
                               slides: initialSlides,
+                              uploadedMedia: normalizedUploadedMedia || currentOutline?.uploadedMedia,
                               // CRITICAL: Persist stylePreferences so theme tab can load them on revisit
                               stylePreferences: {
                                 ...currentOutline?.stylePreferences,

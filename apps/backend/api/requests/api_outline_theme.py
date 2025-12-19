@@ -23,14 +23,19 @@ async def _ai_select_body_font(hero_font: str, context: str) -> str:
     """Use AI to select a complementary body font from 700+ available fonts."""
     try:
         import anthropic
-        from services.registry_fonts import RegistryFonts
+        from services.enhanced_font_service import EnhancedFontService
 
-        # Get categorized fonts
-        font_categories = RegistryFonts.get_available_fonts()
+        font_service = EnhancedFontService()
+        available_ids = font_service.get_available_font_ids(include_remote=False)
 
         # Build font list string
         font_list_parts = []
-        for category, fonts_in_cat in font_categories.items():
+        category_map: Dict[str, list[str]] = {}
+        for font_id in available_ids:
+            data = font_service.all_fonts.get(font_id, {})
+            cat = str(data.get('category') or 'unknown').title()
+            category_map.setdefault(cat, []).append(data.get('name', font_id))
+        for category, fonts_in_cat in category_map.items():
             if fonts_in_cat:
                 font_list_parts.append(f"**{category}**: {', '.join(fonts_in_cat[:30])}")
         available_fonts_str = "\n".join(font_list_parts)
@@ -62,19 +67,19 @@ Return ONLY the exact font name, nothing else."""
         body_font = response.content[0].text.strip().strip('"\'')
 
         # Validate font exists
-        all_fonts = RegistryFonts.get_all_fonts_list()
-        if body_font in all_fonts and body_font.lower() != hero_font.lower():
-            logger.info(f"[OutlineTheme] AI selected body font: {body_font}")
-            return body_font
+        normalized_hero = hero_font.lower()
+        matched = font_service.match_font_name(body_font, is_hero=False, include_remote=False)
+        if matched and matched.lower() != normalized_hero:
+            logger.info(f"[OutlineTheme] AI selected body font: {matched}")
+            return matched
 
         # Fuzzy match
-        for font in all_fonts:
-            if body_font.lower() in font.lower() or font.lower() in body_font.lower():
-                if font.lower() != hero_font.lower():
-                    return font
+        matched = font_service.match_font_name(body_font, is_hero=False, include_remote=True)
+        if matched and matched.lower() != normalized_hero:
+            return matched
 
         # Fallback
-        return 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
+        return font_service.match_font_name('Open Sans', is_hero=False, include_remote=True) or 'Open Sans'
 
     except Exception as e:
         logger.error(f"[OutlineTheme] AI font selection error: {e}")
@@ -292,24 +297,20 @@ async def apply_theme_changes(request: ApplyThemeChangesRequest) -> ApplyThemeCh
                         # Extract fonts - CRITICAL: hero and body MUST be different!
                         # AND validate they exist in our font registry
                         if brand_data.get('fonts') and len(brand_data['fonts']) > 0:
-                            from services.registry_fonts import RegistryFonts
-                            available_fonts = RegistryFonts.get_all_fonts_list(None)
-                            available_lower = {f.lower(): f for f in available_fonts}
+                            from services.enhanced_font_service import EnhancedFontService
+                            font_service = EnhancedFontService()
 
-                            # Try to find valid hero font from brand fonts
                             hero_font = None
                             body_font = None
                             for font in brand_data['fonts']:
-                                font_lower = font.lower()
-                                if font_lower in available_lower:
-                                    if not hero_font:
-                                        hero_font = available_lower[font_lower]
-                                    elif not body_font:
-                                        body_font = available_lower[font_lower]
-                                        break
+                                if not hero_font:
+                                    hero_font = font_service.match_font_name(font, is_hero=True, include_remote=False)
+                                elif not body_font:
+                                    body_font = font_service.match_font_name(font, is_hero=False, include_remote=False)
+                                if hero_font and body_font:
+                                    break
 
                             if hero_font:
-                                # Brand font available - use it
                                 if not body_font:
                                     body_font = await _ai_select_body_font(hero_font, brand_name or 'brand')
                                 style_preferences['font'] = hero_font
@@ -318,9 +319,8 @@ async def apply_theme_changes(request: ApplyThemeChangesRequest) -> ApplyThemeCh
                                     'hero_title': {'family': hero_font},
                                     'body_text': {'family': body_font}
                                 }
-                                logger.info(f"[OutlineTheme] Brand fonts (validated): hero={hero_font}, body={body_font}")
+                                logger.info(f"[OutlineTheme] Brand fonts (matched): hero={hero_font}, body={body_font}")
                             else:
-                                # Brand fonts not available - use AI to select brand-appropriate fonts
                                 logger.info(f"[OutlineTheme] Brand fonts not available locally, using AI selection")
                                 brand_fonts = await _select_brand_fonts_ai(brand_name or brand_url or 'brand', brand_url)
                                 style_preferences['font'] = brand_fonts['hero']

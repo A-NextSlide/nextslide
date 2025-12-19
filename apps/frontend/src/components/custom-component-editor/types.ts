@@ -36,6 +36,9 @@ export interface VirtualElement {
   /** Element type for UI purposes */
   type: 'text' | 'image' | 'container' | 'shape' | 'icon';
 
+  /** Optional label derived from alt/title/aria/id/class/src */
+  label?: string;
+
   /** Original HTML tag name */
   tagName: string;
 
@@ -53,6 +56,15 @@ export interface VirtualElement {
 
   /** How the element is positioned in CSS */
   positioningStrategy: PositioningStrategy;
+
+  /** Parent element id (for layers tree) */
+  parentId?: string | null;
+
+  /** DOM order index captured during extraction */
+  domIndex?: number;
+
+  /** Computed z-index for layering */
+  zIndex?: number;
 
   /** Current computed CSS properties */
   computedStyle: {
@@ -78,6 +90,7 @@ export interface VirtualElement {
     borderColor?: string;
     borderWidth?: string;
     borderStyle?: string;
+    zIndex?: string;
   };
 
   /** Text content (for text elements) */

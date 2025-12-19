@@ -42,9 +42,9 @@ import {
   ChevronDown, ChevronLeft, CheckCircle2, Plus, Link, ChevronRight, Presentation
 } from 'lucide-react';
 import { InteractionStage } from './OutlineEditor'; // Import the type
-import { ALL_FONT_NAMES, FONT_CATEGORIES } from '@/registry/library/fonts'; // For font dropdown
 import GroupedDropdown from '@/components/settings/GroupedDropdown'; // For font dropdown
 import { FontLoadingService } from '@/services/FontLoadingService';
+import { useFontCatalog } from '@/hooks/useFontCatalog';
 import { ColorConfig } from '@/types/SlideTypes'; // ADDED IMPORT
 
 // Add this import
@@ -178,7 +178,8 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
   
   // State for style dropdown
   const [isStyleDropdownOpen, setIsStyleDropdownOpen] = useState(false);
-  const [dynamicFontGroups, setDynamicFontGroups] = useState<Record<string, string[]> | null>(null);
+  const { groups: fontGroups, refresh: refreshFontCatalog } = useFontCatalog({ enabled: isStyleDropdownOpen });
+  const allFontOptions = useMemo(() => FontLoadingService.getAllFontNames(), [fontGroups]);
   
   // State for color pickers
   const [isBgPickerOpen, setIsBgPickerOpen] = useState(false);
@@ -501,44 +502,11 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
     // setInteractionStage('initial') is handled by handleResetInput from parent
   };
 
-  // Transform FONT_CATEGORIES for GroupedDropdown
-  const fontGroups = useMemo(() => {
-    try {
-      // Prefer deduped groups if available
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { FontLoadingService } = require('@/services/FontLoadingService');
-      if (FontLoadingService?.getDedupedFontGroups) {
-        return FontLoadingService.getDedupedFontGroups();
-      }
-    } catch {}
-    const groups: Record<string, string[]> = {};
-    for (const [category, fonts] of Object.entries(FONT_CATEGORIES)) {
-      if (Array.isArray(fonts)) {
-        groups[category] = fonts.map(font => font.name);
-      } else {
-        groups[category] = [];
-      }
-    }
-    return groups;
-  }, []);
-
-  // On open, sync backend fonts and refresh groups so PixelBuddha appears
   useEffect(() => {
-    let cancelled = false;
     if (isStyleDropdownOpen) {
-      (async () => {
-        try {
-          await FontLoadingService.syncDesignerFonts?.();
-        } catch {}
-        if (!cancelled) {
-          try {
-            setDynamicFontGroups(FontLoadingService.getDedupedFontGroups?.() || null);
-          } catch {}
-        }
-      })();
+      refreshFontCatalog();
     }
-    return () => { cancelled = true; };
-  }, [isStyleDropdownOpen]);
+  }, [isStyleDropdownOpen, refreshFontCatalog]);
 
   // Helper to generate the label for the style dropdown trigger
   const getStyleDropdownTriggerLabel = () => {
@@ -1350,8 +1318,8 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                           </div>
                           <GroupedDropdown
                             value={selectedFont || ''}
-                            options={ALL_FONT_NAMES}
-                            groups={dynamicFontGroups || fontGroups}
+                            options={allFontOptions}
+                            groups={fontGroups}
                             onChange={(value) => setSelectedFont(value === '' ? null : value)}
                             placeholder="Default Font"
                           />

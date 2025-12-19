@@ -113,16 +113,124 @@ export function generateEditModeScript(componentId: string): string {
     return 'static';
   }
 
+  function extractBackgroundImage(style) {
+    const bg = style.backgroundImage || '';
+    if (!bg || bg === 'none') return '';
+    const match = bg.match(/url\\(["']?([^"')]+)["']?\\)/i);
+    return match ? match[1] : '';
+  }
+
+  function getParentNsId(el) {
+    let current = el.parentElement;
+    while (current) {
+      if (current.dataset && current.dataset.nsId) {
+        return current.dataset.nsId;
+      }
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  function normalizeLabel(value) {
+    return (value || '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\\s+/g, ' ')
+      .trim();
+  }
+
+  function isGenericLabel(value) {
+    if (!value) return true;
+    const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    if (!normalized) return true;
+    return (
+      normalized === 'image' ||
+      normalized === 'img' ||
+      normalized === 'photo' ||
+      normalized === 'picture' ||
+      normalized === 'graphic' ||
+      normalized === 'icon' ||
+      normalized === 'logo' ||
+      normalized === 'figure' ||
+      normalized === 'background' ||
+      /^image\\s*\\d+$/.test(normalized) ||
+      /^img\\s*\\d+$/.test(normalized)
+    );
+  }
+
+  function extractFilename(url) {
+    if (!url) return '';
+    try {
+      const cleaned = url.split('?')[0].split('#')[0];
+      const parts = cleaned.split('/');
+      const last = parts[parts.length - 1] || '';
+      return decodeURIComponent(last).replace(/\\.[a-z0-9]+$/i, '');
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function deriveLabel(el, type, style, src) {
+    const candidates = [
+      el.getAttribute('aria-label'),
+      el.getAttribute('title'),
+      el.getAttribute('alt'),
+      el.getAttribute('data-name'),
+      el.getAttribute('data-label'),
+      el.getAttribute('data-title'),
+      el.id
+    ];
+
+    const className = el.getAttribute('class') || '';
+    const classParts = className
+      .split(/\\s+/)
+      .map(function(part) { return part.trim(); })
+      .filter(function(part) { return part && !part.startsWith('ns-'); });
+    if (classParts.length > 0) {
+      candidates.push(classParts[0]);
+    }
+
+    for (let i = 0; i < candidates.length; i++) {
+      const label = normalizeLabel(candidates[i]);
+      if (label && !isGenericLabel(label)) {
+        return label;
+      }
+    }
+
+    if (type === 'image') {
+      const filename = extractFilename(src);
+      if (filename) return filename;
+    }
+
+    if (type === 'text') {
+      const text = (el.textContent || '').trim();
+      if (text) {
+        return text.length > 40 ? text.slice(0, 40) + '...' : text;
+      }
+    }
+
+    if (type === 'container') {
+      return 'Container';
+    }
+
+    return type.charAt(0).toUpperCase() + type.slice(1);
+  }
+
   // Extract full element layout
-  function extractElementLayout(el, type) {
+  function extractElementLayout(el, type, domIndex) {
     const rect = el.getBoundingClientRect();
     const style = getComputedStyle(el);
     const strategy = detectPositioningStrategy(el, style);
+    const backgroundImage = extractBackgroundImage(style);
+    const src = el.tagName.toLowerCase() === 'img' ? el.src : backgroundImage;
 
     return {
       id: el.dataset.nsId,
       type: type,
+      label: deriveLabel(el, type, style, src),
       tagName: el.tagName.toLowerCase(),
+      parentId: getParentNsId(el),
+      domIndex: domIndex,
+      zIndex: parseInt(style.zIndex || '0', 10) || 0,
       iframeBounds: {
         x: rect.left,
         y: rect.top,
@@ -158,12 +266,13 @@ export function generateEditModeScript(componentId: string): string {
         borderRadius: style.borderRadius,
         borderColor: style.borderColor,
         borderWidth: style.borderWidth,
-        borderStyle: style.borderStyle
+        borderStyle: style.borderStyle,
+        zIndex: style.zIndex
       },
       textContent: el.textContent?.trim().slice(0, 500),
       htmlContent: el.innerHTML,
-      src: el.src,
-      alt: el.alt,
+      src: src,
+      alt: el.alt || el.getAttribute('aria-label') || el.getAttribute('title') || '',
       selector: '[data-ns-id="' + el.dataset.nsId + '"]',
       // All elements can be dragged - styleMutator handles positioning strategy appropriately
       // For flex/grid items, only resize will take effect (position determined by layout)
@@ -244,17 +353,18 @@ export function generateEditModeScript(componentId: string): string {
   function extractAllElements() {
     const elements = [];
 
-    document.querySelectorAll('.ns-editable-text').forEach(el => {
-      elements.push(extractElementLayout(el, 'text'));
-    });
-
-    document.querySelectorAll('.ns-editable-image').forEach(el => {
-      elements.push(extractElementLayout(el, 'image'));
-    });
-
-    document.querySelectorAll('.ns-editable-container').forEach(el => {
-      if (!el.classList.contains('ns-editable-text') && !el.classList.contains('ns-editable-image')) {
-        elements.push(extractElementLayout(el, 'container'));
+    const allEditable = Array.from(document.querySelectorAll('[data-ns-id]'));
+    allEditable.forEach(function(el, index) {
+      if (el.classList.contains('ns-editable-text')) {
+        elements.push(extractElementLayout(el, 'text', index));
+        return;
+      }
+      if (el.classList.contains('ns-editable-image')) {
+        elements.push(extractElementLayout(el, 'image', index));
+        return;
+      }
+      if (el.classList.contains('ns-editable-container')) {
+        elements.push(extractElementLayout(el, 'container', index));
       }
     });
 
@@ -509,7 +619,7 @@ export function generateEditModeScript(componentId: string): string {
         var link = document.createElement('link');
         link.rel = 'stylesheet';
         link.setAttribute('data-font', cleanFont);
-        link.href = 'https://api.fontshare.com/v2/css?f[]=' + encodeURIComponent(cleanFont.toLowerCase().replace(/\s+/g, '-')) + '@300,400,500,600,700&display=swap';
+        link.href = 'https://api.fontshare.com/v2/css?f[]=' + encodeURIComponent(fontFamily || cleanFont) + '@300,400,500,600,700&display=swap';
         document.head.appendChild(link);
         console.log('[iframe] Fontshare font injected:', cleanFont);
         return;
@@ -526,14 +636,25 @@ export function generateEditModeScript(componentId: string): string {
         return;
       }
 
-      if (fontSource === 'designer' && fontId) {
-        // Designer font - load via API endpoint
+      if ((fontSource === 'designer' || fontSource === 'pixelbuddha') && fontId) {
+        // Designer/PixelBuddha font - load via API endpoint
         var style = document.createElement('style');
         style.setAttribute('data-font', cleanFont);
-        var apiUrl = '/api/fonts/' + fontId + '/file?style=regular';
+        var apiUrl = '/api/fonts/file/' + encodeURIComponent(fontId) + '?style=regular';
         style.textContent = '@font-face { font-family: "' + fontFamily + '"; src: url("' + apiUrl + '"); font-display: swap; }';
         document.head.appendChild(style);
-        console.log('[iframe] Designer font injected:', cleanFont, 'via', apiUrl);
+        console.log('[iframe] Font injected:', cleanFont, 'via', apiUrl);
+        return;
+      }
+
+      if (fontId) {
+        // Unknown source but has an ID - try the generic file endpoint
+        var fallbackStyle = document.createElement('style');
+        fallbackStyle.setAttribute('data-font', cleanFont);
+        var fallbackUrl = '/api/fonts/file/' + encodeURIComponent(fontId) + '?style=regular';
+        fallbackStyle.textContent = '@font-face { font-family: "' + fontFamily + '"; src: url("' + fallbackUrl + '"); font-display: swap; }';
+        document.head.appendChild(fallbackStyle);
+        console.log('[iframe] Font injected (fallback):', cleanFont, 'via', fallbackUrl);
         return;
       }
 
@@ -541,7 +662,7 @@ export function generateEditModeScript(componentId: string): string {
       var link = document.createElement('link');
       link.rel = 'stylesheet';
       link.setAttribute('data-font', cleanFont);
-      link.href = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(cleanFont) + ':wght@300;400;500;600;700;800&display=swap';
+      link.href = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(fontFamily || cleanFont) + ':wght@300;400;500;600;700;800&display=swap';
       document.head.appendChild(link);
       console.log('[iframe] Google font injected:', cleanFont);
     }
@@ -805,8 +926,18 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           }
         }
 
+        const filteredElements = (data.elements as any[]).filter((el: any) => {
+          const iframeBounds = el?.iframeBounds;
+          if (!iframeBounds || el?.type !== 'container') return true;
+          if (!containerWidth || !containerHeight) return true;
+          const isCanvas =
+            iframeBounds.width >= containerWidth * 0.98 &&
+            iframeBounds.height >= containerHeight * 0.98;
+          return !isCanvas;
+        });
+
         // Convert iframe bounds to parent viewport bounds
-        const elements: VirtualElement[] = data.elements.map((el: any) => ({
+        const elements: VirtualElement[] = filteredElements.map((el: any) => ({
           ...el,
           bounds: coordinatorRef.current
             ? coordinatorRef.current.iframeToParent(el.iframeBounds)
@@ -1212,7 +1343,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
             width: iframeBounds.width,
             height: iframeBounds.height,
             pointerEvents: 'auto',
-            cursor: 'default',
+            cursor: selectedElementId ? 'default' : 'crosshair',
             zIndex: 1, // Lower than hit areas (10000+) so elements are clickable
           }}
           onClick={(e) => {

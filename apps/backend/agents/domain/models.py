@@ -140,16 +140,25 @@ class SlideGenerationContext:
         return self.slide_index == 0
     
     @property
-    def has_chart_data(self) -> bool:
-        """Check if slide has chart data."""
-        if not self.slide_outline.extractedData:
+    def has_extracted_data(self) -> bool:
+        """Check if slide has extractedData with usable points."""
+        if not getattr(self.slide_outline, "extractedData", None):
             return False
-        # Check if extractedData has valid data array with actual data points
         extracted = self.slide_outline.extractedData
-        if hasattr(extracted, 'data') and extracted.data:
-            # Ensure data is a list with at least one valid data point
+        if hasattr(extracted, "data") and extracted.data:
             return isinstance(extracted.data, list) and len(extracted.data) > 0
         return False
+
+    @property
+    def has_manual_charts(self) -> bool:
+        """Check if slide has user-provided manualCharts."""
+        manual_charts = getattr(self.slide_outline, "manualCharts", None)
+        return isinstance(manual_charts, list) and len(manual_charts) > 0
+
+    @property
+    def has_chart_data(self) -> bool:
+        """Check if slide has any chart data (extracted or manual)."""
+        return self.has_extracted_data or self.has_manual_charts
 
     @property
     def has_tabular_data(self) -> bool:

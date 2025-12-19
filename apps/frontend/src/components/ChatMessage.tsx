@@ -598,7 +598,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                   <div className="flex flex-col gap-2">
                     <TypewriterText
                       text={primaryMessage}
-                      delay={18}
+                      delay={12}
                       uppercase={false}
                       fontSizePx={12}
                       fontWeight={400}
@@ -618,16 +618,20 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                     </div>
                   </div>
                 ) : type === 'ai' ? (
-                  <TypewriterText
-                    text={primaryMessage}
-                    delay={18}
-                    uppercase={false}
-                    fontSizePx={12}
-                    fontWeight={400}
-                    fontFamily="inherit"
-                    cursorColor={COLORS.SUGGESTION_PINK}
-                    renderMarkdown={true}
-                  />
+                  metadata?.streamed ? (
+                    <>{renderMarkdown(primaryMessage)}</>
+                  ) : (
+                    <TypewriterText
+                      text={primaryMessage}
+                      delay={18}
+                      uppercase={false}
+                      fontSizePx={12}
+                      fontWeight={400}
+                      fontFamily="inherit"
+                      cursorColor={COLORS.SUGGESTION_PINK}
+                      renderMarkdown={true}
+                    />
+                  )
                 ) : (
                   <>{renderMarkdown(primaryMessage)}</>
                 )}

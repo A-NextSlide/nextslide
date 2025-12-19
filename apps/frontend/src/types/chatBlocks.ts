@@ -4,6 +4,7 @@
  */
 
 import type { ThinkingStep } from './agentEvents';
+import type { AssignedVideo, TaggedMedia } from './SlideTypes';
 
 /**
  * Color palette structure matching backend color_palette
@@ -40,6 +41,8 @@ export interface ThemeBranding {
   logoUrl?: string;
   brandName?: string;
   brandDomain?: string;
+  brandDomainCandidates?: string[];
+  needsBrandDomainConfirmation?: boolean;
 }
 
 /**
@@ -66,6 +69,9 @@ export interface OutlineSlidePreview {
   subtitle?: string;
   keyPoints?: string[];
   content?: string;
+  isContentLoaded?: boolean;
+  assignedVideo?: AssignedVideo;
+  taggedMedia?: TaggedMedia[];
 }
 
 /**

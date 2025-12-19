@@ -63,7 +63,7 @@ TASK_MODELS = {
     "slide_generate": MODEL_HARD,
     "component_create": MODEL_HARD,
     "component_edit": MODEL_HARD,
-    "custom_component_rewrite": GEMINI_3_PRO,
+    "custom_component_rewrite": GEMINI_3_FLASH,
     "theme_generate": MODEL_HARD,
     "slide_style": MODEL_HARD,
 
@@ -113,7 +113,7 @@ CUSTOM_COMPONENT_FALLBACK = MODEL_FALLBACK
 # Prefer Gemini 3 Pro for CustomComponentGenerator (raw HTML generation works well even when structured output is finicky)
 CUSTOM_COMPONENT_MODEL = GEMINI_3_PRO
 CUSTOM_COMPONENT_FALLBACK_MODEL = MODEL_FALLBACK
-CUSTOM_COMPONENT_EDIT_MODEL = MODEL_HARD
+CUSTOM_COMPONENT_EDIT_MODEL = GEMINI_3_FLASH
 CUSTOM_COMPONENT_SIMPLE_MODEL = MODEL_EASY
 CUSTOM_COMPONENT_TEMPERATURE = 0.8
 

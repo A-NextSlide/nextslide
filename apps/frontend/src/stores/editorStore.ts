@@ -11,8 +11,88 @@ import {
 import { slideSyncService } from '../lib/slideSyncService';
 import { toast } from '@/hooks/use-toast';
 import { useEditModeTransitionStore } from './editModeTransitionStore';
+import { autoGroupComponents, calculateGroupBounds } from '@/utils/groupingUtils';
 
 // No longer need HistoryEntry here
+
+const isBackgroundComponent = (component: ComponentInstance): boolean =>
+  component.type === 'Background' || (component.id && component.id.toLowerCase().includes('background'));
+
+const isGroupComponent = (component: ComponentInstance): boolean => component.type === 'Group';
+
+const getComponentZIndex = (component: ComponentInstance): number => {
+  const zIndex = component.props?.zIndex;
+  return typeof zIndex === 'number' ? zIndex : Number(zIndex) || 0;
+};
+
+const getParentId = (component: ComponentInstance): string | null =>
+  (component.props?.parentId as string | null) || null;
+
+const updateGroupFromChildren = (components: ComponentInstance[], groupId: string): ComponentInstance[] => {
+  const groupIndex = components.findIndex((component) => component.id === groupId && isGroupComponent(component));
+  if (groupIndex === -1) return components;
+
+  const childIds = components
+    .filter((component) => getParentId(component) === groupId)
+    .map((component) => component.id);
+
+  const bounds = calculateGroupBounds(components, childIds);
+  const group = components[groupIndex];
+  const nextProps = {
+    ...group.props,
+    children: childIds,
+  };
+
+  if (bounds) {
+    nextProps.position = { x: bounds.x, y: bounds.y };
+    nextProps.width = bounds.width;
+    nextProps.height = bounds.height;
+    nextProps.size = { width: bounds.width, height: bounds.height };
+  }
+
+  const updated = components.slice();
+  updated[groupIndex] = { ...group, props: nextProps };
+  return updated;
+};
+
+const updateGroupsForIds = (components: ComponentInstance[], groupIds: Array<string | null | undefined>): ComponentInstance[] => {
+  let nextComponents = components;
+  const seen = new Set<string>();
+  groupIds.forEach((groupId) => {
+    if (!groupId || seen.has(groupId)) return;
+    seen.add(groupId);
+    nextComponents = updateGroupFromChildren(nextComponents, groupId);
+  });
+  return nextComponents;
+};
+
+const sortByZIndexDesc = (a: ComponentInstance, b: ComponentInstance) => {
+  const zDiff = getComponentZIndex(b) - getComponentZIndex(a);
+  if (zDiff !== 0) return zDiff;
+  return 0;
+};
+
+const sortByZIndexAsc = (a: ComponentInstance, b: ComponentInstance) => {
+  const zDiff = getComponentZIndex(a) - getComponentZIndex(b);
+  if (zDiff !== 0) return zDiff;
+  return 0;
+};
+
+const isDescendantOf = (components: ComponentInstance[], ancestorId: string, nodeId: string): boolean => {
+  let currentId: string | null = nodeId;
+  const visited = new Set<string>();
+  while (currentId) {
+    if (visited.has(currentId)) break;
+    visited.add(currentId);
+    const node = components.find((component) => component.id === currentId);
+    if (!node) break;
+    const parentId = getParentId(node);
+    if (!parentId) break;
+    if (parentId === ancestorId) return true;
+    currentId = parentId;
+  }
+  return false;
+};
 
 // Define the store state interface (simplified)
 interface EditorState {
@@ -20,11 +100,17 @@ interface EditorState {
   draftComponents: Record<string, ComponentInstance[]>; // slideId -> components array
   draftComponentsVersion: number; // Incremented on any draft modification to force React re-renders
 
+  // Active slide context (for selection operations)
+  activeSlideId: string | null;
+
   // Selection state
   selectedComponentIds: Set<string>; // Multiple selected components
   isSelectionMode: boolean; // Whether we're in selection mode
   selectionRectangle: { x: number; y: number; width: number; height: number } | null; // Selection rectangle
   editingGroupId: string | null; // ID of the group being edited (for double-click into group)
+  selectionPath: string[]; // Drill-down path from outermost -> innermost
+  selectionPathIndex: number; // Current index within the selection path
+  selectionAnchor: { x: number; y: number; slideId: string } | null; // Last click anchor for cycling
 
   // Sync state (remains)
   isSyncing: boolean;
@@ -59,7 +145,7 @@ interface EditorState {
   removeDraftComponent: (slideId: string, componentId: string, skipHistory?: boolean) => void;
   
   // Selection functions
-  selectComponent: (componentId: string, addToSelection?: boolean) => void;
+  selectComponent: (componentId: string, addToSelection?: boolean, slideId?: string) => void;
   deselectComponent: (componentId: string) => void;
   clearSelection: () => void;
   selectComponents: (componentIds: string[]) => void;
@@ -69,6 +155,14 @@ interface EditorState {
   setSelectionRectangle: (rect: { x: number; y: number; width: number; height: number } | null) => void;
   setEditingGroupId: (groupId: string | null) => void;
   getParentGroup: (slideId: string, componentId: string) => ComponentInstance | null;
+  setActiveSlideId: (slideId: string | null) => void;
+  setSelectionPath: (path: string[], anchor: { x: number; y: number; slideId: string } | null, index?: number) => void;
+  reorderLayers: (
+    slideId: string,
+    draggedId: string,
+    targetId: string,
+    position: 'before' | 'after' | 'inside'
+  ) => void;
   
   // Group operations
   groupSelectedComponents: (slideId: string) => void;
@@ -115,10 +209,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   // Initial state (simplified)
   draftComponents: {},
   draftComponentsVersion: 0,
+  activeSlideId: null,
   selectedComponentIds: new Set<string>(),
   isSelectionMode: false,
   selectionRectangle: null,
   editingGroupId: null,
+  selectionPath: [],
+  selectionPathIndex: 0,
+  selectionAnchor: null,
   isSyncing: false,
   lastSyncTime: null,
   pendingSyncs: {},
@@ -167,6 +265,103 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setLastOperation: (operation: string) => set({ lastOperation: operation }),
   // NEW: Set active TipTap editor
   setActiveTiptapEditor: (editor: any | null) => set({ activeTiptapEditor: editor }),
+  setActiveSlideId: (slideId: string | null) => set({ activeSlideId: slideId }),
+  setSelectionPath: (path, anchor, index = 0) => set({
+    selectionPath: path,
+    selectionPathIndex: index,
+    selectionAnchor: anchor
+  }),
+  reorderLayers: (slideId, draggedId, targetId, position) => {
+    const currentComponents = get().draftComponents[slideId];
+    if (!currentComponents || currentComponents.length === 0) return;
+
+    const dragged = currentComponents.find((component) => component.id === draggedId);
+    const target = currentComponents.find((component) => component.id === targetId);
+    if (!dragged || !target) return;
+    if (isBackgroundComponent(dragged)) return;
+
+    if (isGroupComponent(dragged) && isDescendantOf(currentComponents, draggedId, targetId)) {
+      return;
+    }
+
+    const sourceParentId = getParentId(dragged);
+    const targetParentId = getParentId(target);
+    const nextParentId = position === 'inside' && isGroupComponent(target)
+      ? target.id
+      : targetParentId;
+
+    let updatedComponents = currentComponents.slice();
+
+    if (sourceParentId !== nextParentId) {
+      updatedComponents = updatedComponents.map((component) => {
+        if (component.id !== draggedId) return component;
+        return {
+          ...component,
+          props: {
+            ...component.props,
+            parentId: nextParentId || undefined,
+          },
+        };
+      });
+    }
+
+    const siblings = updatedComponents
+      .filter((component) => !isBackgroundComponent(component) && getParentId(component) === nextParentId);
+    if (siblings.length === 0) return;
+
+    const ordered = siblings.slice().sort(sortByZIndexDesc);
+    const draggedIndex = ordered.findIndex((component) => component.id === draggedId);
+    const targetIndex = ordered.findIndex((component) => component.id === targetId);
+
+    if (targetIndex === -1) return;
+
+    if (draggedIndex !== -1) {
+      ordered.splice(draggedIndex, 1);
+    }
+
+    let insertIndex = targetIndex;
+    if (position === 'after') {
+      insertIndex = targetIndex + (draggedIndex !== -1 && draggedIndex < targetIndex ? 0 : 1);
+    } else if (position === 'before') {
+      insertIndex = targetIndex + (draggedIndex !== -1 && draggedIndex < targetIndex ? -1 : 0);
+    } else if (position === 'inside' && isGroupComponent(target)) {
+      insertIndex = 0;
+    }
+
+    insertIndex = Math.max(0, Math.min(ordered.length, insertIndex));
+    ordered.splice(insertIndex, 0, dragged);
+
+    const reorderedBottomFirst = ordered.slice().reverse();
+    const zIndexMap = new Map<string, number>();
+    reorderedBottomFirst.forEach((component, index) => {
+      zIndexMap.set(component.id, index + 1);
+    });
+
+    updatedComponents = updatedComponents.map((component) => {
+      const zIndex = zIndexMap.get(component.id);
+      if (zIndex === undefined) return component;
+      return {
+        ...component,
+        props: {
+          ...component.props,
+          zIndex,
+        },
+      };
+    });
+
+    updatedComponents = updateGroupsForIds(updatedComponents, [sourceParentId, nextParentId]);
+
+    set(state => ({
+      draftComponents: {
+        ...state.draftComponents,
+        [slideId]: updatedComponents
+      }
+    }));
+
+    get().markSlideAsChanged(slideId);
+    get().setLastOperation(`reorder-${draggedId}-${Date.now()}`);
+    set(state => ({ draftComponentsVersion: state.draftComponentsVersion + 1 }));
+  },
 
 
   // --- REMOVED: Settings toggle functions ---
@@ -328,11 +523,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const updatedComponents = currentComponents.slice();
     updatedComponents[componentIndex] = updatedComponent;
 
+    const previousParentId = getParentId(originalComponent);
+    const nextParentId = getParentId(updatedComponent);
+    const shouldUpdateGroups = !skipHistory || previousParentId !== nextParentId;
+    const finalComponents = shouldUpdateGroups
+      ? updateGroupsForIds(updatedComponents, [previousParentId, nextParentId])
+      : updatedComponents;
+
     // PERFORMANCE: Update directly without additional cloning
     set(state => ({
       draftComponents: {
         ...state.draftComponents,
-        [slideId]: updatedComponents
+        [slideId]: finalComponents
       }
     }));
 
@@ -417,9 +619,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const finalComponent = clonedComponent.type === 'Chart' ? prepareChartForDraft(clonedComponent) : clonedComponent;
 
     const updatedComponents = [...currentComponents, finalComponent];
+    const parentId = getParentId(finalComponent);
+    const finalComponents = parentId
+      ? updateGroupsForIds(updatedComponents, [parentId])
+      : updatedComponents;
 
     // Update the draft state for the specific slide
-    get().setDraftComponentsForSlide(slideId, updatedComponents);
+    get().setDraftComponentsForSlide(slideId, finalComponents);
 
     // Mark slide as changed (handled by historyStore.addToHistory or manually if skipped)
     if (skipHistory) {
@@ -484,10 +690,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       cleanupChartOnRemove(componentId);
     }
 
-    // Filter out the removed component
-    const updatedComponents = currentComponents.filter(comp => comp.id !== componentId);
+    const removedParentId = getParentId(componentToRemove);
+    let updatedComponents = currentComponents.filter(comp => comp.id !== componentId);
+
+    if (isGroupComponent(componentToRemove)) {
+      const childIds = (componentToRemove.props.children as string[]) || [];
+      updatedComponents = updatedComponents.map((component) => {
+        if (!childIds.includes(component.id)) return component;
+        return {
+          ...component,
+          props: {
+            ...component.props,
+            parentId: undefined,
+            autoGroupDisabled: true,
+          },
+        };
+      });
+    }
 
     // Update the draft state for the specific slide
+    updatedComponents = updateGroupsForIds(updatedComponents, [removedParentId]);
     get().setDraftComponentsForSlide(slideId, updatedComponents);
 
     // Mark slide as changed (handled by historyStore.addToHistory or manually if skipped)
@@ -542,7 +764,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       
       // 4. PERFORMANCE OPTIMIZATION: Use shallow copy with lazy deep cloning
       const seenChartIds = new Set<string>();
-      const preparedComponents = (slide.components || []).map(comp => {
+      let preparedComponents = (slide.components || []).map(comp => {
         if (comp.type === 'Chart') {
           seenChartIds.add(comp.id);
           return prepareChartForDraft(comp); // Use util
@@ -557,6 +779,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
       });
 
+      const autoGroupResult = autoGroupComponents(preparedComponents);
+      preparedComponents = autoGroupResult.components;
+
       // 5. Clean up tracking for charts no longer present
       cleanupStaleChartTracking(seenChartIds);
 
@@ -570,6 +795,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       // 7. Add the initial state to the history store
       useHistoryStore.getState().addToHistory(currentSlideId, preparedComponents);
+
+      if (autoGroupResult.createdGroupIds.length > 0) {
+        get().markSlideAsChanged(currentSlideId);
+      }
 
       // 8. Initialize global chart utilities (like clearing transition flags)
       initializeGlobalChartUtils();
@@ -696,30 +925,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   // Selection functions
-  selectComponent: (componentId: string, addToSelection?: boolean) => {
+  selectComponent: (componentId: string, addToSelection?: boolean, slideId?: string) => {
     set(state => {
       const newSelection = new Set(state.selectedComponentIds);
-      
-      // Check if this component is part of a group and we're not editing within the group
-      const components = state.draftComponents[Object.keys(state.draftComponents)[0]] || [];
-      const component = components.find(c => c.id === componentId);
-      
-      if (component?.props.parentId && state.editingGroupId !== component.props.parentId) {
-        // Select the parent group instead
-        if (addToSelection) {
-          newSelection.add(component.props.parentId);
-        } else {
-          newSelection.clear();
-          newSelection.add(component.props.parentId);
-        }
+      if (addToSelection) {
+        newSelection.add(componentId);
       } else {
-        // Normal selection
-        if (addToSelection) {
-          newSelection.add(componentId);
-        } else {
-          newSelection.clear();
-          newSelection.add(componentId);
-        }
+        newSelection.clear();
+        newSelection.add(componentId);
       }
       
       return { 
@@ -743,14 +956,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   clearSelection: () => {
     set({ 
       selectedComponentIds: new Set<string>(),
-      lastOperation: `clear-selection-${Date.now()}`
+      lastOperation: `clear-selection-${Date.now()}`,
+      selectionPath: [],
+      selectionPathIndex: 0,
+      selectionAnchor: null,
+      editingGroupId: null
     });
   },
   
   selectComponents: (componentIds: string[]) => {
     set({ 
       selectedComponentIds: new Set(componentIds),
-      lastOperation: `select-multiple-${Date.now()}`
+      lastOperation: `select-multiple-${Date.now()}`,
+      selectionPath: [],
+      selectionPathIndex: 0,
+      selectionAnchor: null
     });
   },
   
@@ -824,6 +1044,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     
     // Get all components that will be in the new group
     const componentsToGroup = allComponents.filter(c => allComponentIds.has(c.id));
+    const orderedChildIds = componentsToGroup
+      .slice()
+      .sort(sortByZIndexAsc)
+      .map(comp => comp.id);
     
     // Calculate bounding box for the group
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -856,9 +1080,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         size: { width: maxX - minX, height: maxY - minY },
         width: maxX - minX,
         height: maxY - minY,
-        children: Array.from(allComponentIds),
+        children: orderedChildIds,
         locked: false,
-        visible: true
+        visible: true,
+        groupKind: 'manual'
       }
     };
     
@@ -871,6 +1096,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         props: {
           ...comp.props,
           parentId: groupId,
+          autoGroupDisabled: undefined,
           // Keep the same absolute position
           position: {
             x: comp.props.position?.x || 0,
@@ -900,6 +1126,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           props: {
             ...child.props,
             parentId: undefined,
+            autoGroupDisabled: true,
             // Keep the same position since we're storing absolute positions
             position: {
               x: child.props.position?.x || 0,

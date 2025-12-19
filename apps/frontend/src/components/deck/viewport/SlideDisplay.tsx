@@ -109,7 +109,7 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   const slideContainerRef = useRef<HTMLDivElement>(null);
   const { selectionRectangle, selectedComponentIds, isSelecting, suppressNextClickRef } = useMultiSelection({
     slideId: currentSlide?.id || '',
-    components: currentSlide?.components || [],
+    components: isEditing ? activeComponents : (currentSlide?.components || []),
     containerRef: slideContainerRef,
     isEditing,
     slideSize: { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT }

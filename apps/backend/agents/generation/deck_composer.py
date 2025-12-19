@@ -27,7 +27,6 @@ async def compose_deck_stream(
     This function uses the refactored architecture with:
     - Clean separation of concerns
     - Event-driven architecture
-    - RAG-based slide generation
     - Optional visual analysis
     
     Args:

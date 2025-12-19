@@ -253,38 +253,4 @@ class StyleManifestoBuilder:
         Returns:
             DesignTokens appropriate for the theme
         """
-        # Default tokens
-        tokens = DesignTokens()
-
-        if not theme:
-            return tokens
-
-        try:
-            # Check visual_style for hints
-            visual_style = None
-            if hasattr(theme, 'visual_style'):
-                visual_style = theme.visual_style
-            elif hasattr(theme, 'to_dict'):
-                visual_style = theme.to_dict().get('visual_style', {})
-
-            if visual_style:
-                style_keywords = visual_style.get('style_keywords', [])
-
-                # Adjust tokens based on style keywords
-                if any(kw in style_keywords for kw in ['modern', 'minimal', 'clean']):
-                    tokens.corner_radius = "12px"
-                    tokens.shadow_style = "minimal"
-
-                if any(kw in style_keywords for kw in ['playful', 'fun', 'vibrant']):
-                    tokens.corner_radius = "16px"
-                    tokens.animation_style = "energetic"
-
-                if any(kw in style_keywords for kw in ['corporate', 'professional', 'business']):
-                    tokens.corner_radius = "4px"
-                    tokens.shadow_style = "subtle"
-                    tokens.spacing_scale = "standard"
-
-        except Exception as e:
-            logger.warning(f"[MANIFESTO BUILDER] Error creating design tokens: {e}")
-
-        return tokens
+        return DesignTokens()

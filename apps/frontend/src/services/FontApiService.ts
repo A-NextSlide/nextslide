@@ -1,6 +1,6 @@
 import { API_CONFIG } from '@/config/environment';
 
-type FontSource = 'pixelbuddha' | 'designer';
+type FontSource = 'pixelbuddha' | 'designer' | 'google' | 'system' | 'fontshare' | 'cdn' | 'local' | 'unknown';
 
 interface ListedFont {
   id: string;
@@ -57,13 +57,57 @@ function pickStyleKey(weightHint?: string | number): string[] {
   return ['regular', 'normal', '400', 'book', 'medium', '500'];
 }
 
-async function listFonts(source?: FontSource, search?: string, limit = 10, offset = 0): Promise<ListedFont[]> {
+function parseWeightList(weightHint?: string | number): string[] {
+  const raw = String(weightHint || '400')
+    .split(/[,\s]+/)
+    .map(token => token.trim())
+    .filter(Boolean);
+  const numeric = raw.filter(token => /^\d+$/.test(token));
+  if (numeric.length) return Array.from(new Set(numeric));
+  return ['400'];
+}
+
+function ensureStylesheetLink(href: string): void {
+  if (typeof document === 'undefined') return;
+  if (document.querySelector(`link[href="${href}"]`)) return;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  document.head.appendChild(link);
+}
+
+async function waitForFont(family: string, weight: string | number = '400'): Promise<boolean> {
+  if (typeof document === 'undefined' || !('fonts' in document)) return true;
+  try {
+    await (document as any).fonts.load(`normal ${weight} 1em "${family}"`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function loadGoogleFont(family: string, weightHint: string | number = '400'): Promise<boolean> {
+  const weights = parseWeightList(weightHint);
+  const url = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@${weights.join(';')}&display=swap`;
+  ensureStylesheetLink(url);
+  return waitForFont(family, weights[0] || '400');
+}
+
+async function loadFontshareFont(family: string, weightHint: string | number = '400'): Promise<boolean> {
+  const weights = parseWeightList(weightHint);
+  const url = `https://api.fontshare.com/v2/css?f[]=${encodeURIComponent(family)}@${weights.join(',')}&display=swap`;
+  ensureStylesheetLink(url);
+  return waitForFont(family, weights[0] || '400');
+}
+
+async function listFonts(source?: FontSource, search?: string, limit = 10, offset = 0, availableOnly: boolean = true): Promise<ListedFont[]> {
   const base = getApiBase();
   const params = new URLSearchParams();
   if (source) params.set('source', source);
   if (search) params.set('search', search);
   if (limit) params.set('limit', String(limit));
   if (offset) params.set('offset', String(offset));
+  if (availableOnly !== undefined) params.set('available_only', String(availableOnly));
   const url = `${base}/fonts/list?${params.toString()}`;  // BASE_URL already includes /api
   const res = await fetch(url, { credentials: 'omit' });
   if (!res.ok) return [];
@@ -117,6 +161,37 @@ export const FontApiService = {
   listFonts,
   getFontMeta,
 
+  recommend: async (payload: {
+    deck_title: string;
+    vibe: string;
+    content_keywords?: string[];
+    target_audience?: string;
+  }): Promise<any> => {
+    const base = getApiBase();
+    const res = await fetch(`${base}/fonts/recommend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      credentials: 'omit'
+    });
+    if (!res.ok) {
+      throw new Error(`Font recommendation failed: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  loadFontById: async (fontId: string, family: string, weightHint: string | number = '400'): Promise<boolean> => {
+    if (!fontId || !family) return false;
+    const stylesToTry = pickStyleKey(weightHint);
+    for (const styleKey of stylesToTry) {
+      const url = buildSimpleFileUrl(fontId, styleKey);
+      try { injectPreload(url, family, weightHint); } catch { }
+      const ok = await loadWithFontFace(family, url, weightHint, 'normal');
+      if (ok) return true;
+    }
+    return false;
+  },
+
   findAndLoadByFamily: async (family: string, weightHint: string | number = '400'): Promise<boolean> => {
     const name = normalizeFamily(family);
     if (!name) {
@@ -126,14 +201,14 @@ export const FontApiService = {
 
     console.log(`[FontApiService] Searching for font: ${name}`);
 
-    // DISABLED: PixelBuddha fonts disabled (using only Designer fonts)
-    // Search only designer fonts
-    const designer = await listFonts('designer', name, 8, 0);
-    const candidates = [...designer];
+    let candidates = await listFonts(undefined, name, 20, 0, true);
+    if (!candidates.length) {
+      candidates = await listFonts(undefined, name, 20, 0, false);
+    }
 
     if (!candidates.length) {
-      console.warn(`[FontApiService] No fonts found matching: ${name}`);
-      return false;
+      console.warn(`[FontApiService] No backend fonts found matching: ${name}. Trying web font fallback.`);
+      return loadGoogleFont(name, weightHint);
     }
 
     console.log(`[FontApiService] Found ${candidates.length} candidates:`, candidates.map(c => c.name));
@@ -150,14 +225,19 @@ export const FontApiService = {
 
     console.log(`[FontApiService] Selected font: ${chosen.name} (ID: ${chosen.id}, Source: ${(chosen as any).source})`);
 
-    // Try simple endpoint with style keys (PixelBuddha disabled)
-    const stylesToTry = pickStyleKey(weightHint);
-    for (const styleKey of stylesToTry) {
-      const url = buildSimpleFileUrl(chosen.id, styleKey);
-      try { injectPreload(url, name, weightHint); } catch { }
-      const ok = await loadWithFontFace(name, url, weightHint, 'normal');
-      if (ok) return true;
+    const source = (chosen as any).source as FontSource | undefined;
+    if (source === 'system') {
+      return true;
     }
+    if (source === 'google') {
+      return loadGoogleFont(name, weightHint);
+    }
+    if (source === 'fontshare') {
+      return loadFontshareFont(name, weightHint);
+    }
+
+    const loadedById = await FontApiService.loadFontById(chosen.id, name, weightHint);
+    if (loadedById) return true;
 
     // Fallback: query meta and try the best format via direct endpoints
     try {
@@ -192,8 +272,15 @@ export const FontApiService = {
       if (best) {
         const base = getApiBase();
         const pathOnly = (best.path || best.url || best.filename || '').toString();
-        // Only Designer fonts now (PixelBuddha disabled)
-        const directUrl = `${base}/fonts/designer/${encodeURIComponent(meta.id)}/${encodeURIComponent(best.filename || pathOnly.split('/').pop() || pathOnly)}`;
+        let directUrl = '';
+        if ((meta as any).source === 'pixelbuddha') {
+          const prefix = 'assets/fonts/pixelbuddha/';
+          const normalized = pathOnly.startsWith(prefix) ? pathOnly.slice(prefix.length) : pathOnly;
+          directUrl = `${base}/fonts/pixelbuddha/${encodeURIComponent(meta.id)}/${encodePathSegments(normalized)}`;
+        } else {
+          const filename = best.filename || pathOnly.split('/').pop() || pathOnly;
+          directUrl = `${base}/fonts/designer/${encodeURIComponent(meta.id)}/${encodeURIComponent(filename)}`;
+        }
 
         console.log(`[FontApiService] Trying direct URL: ${directUrl}`);
         try { injectPreload(directUrl, name, weightHint); } catch { }
@@ -215,5 +302,3 @@ export const FontApiService = {
     return false;
   }
 };
-
-

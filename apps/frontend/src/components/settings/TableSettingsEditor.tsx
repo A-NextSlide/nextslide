@@ -26,8 +26,8 @@ import { getComponentDefinition } from '@/registry';
 import PropertyControlRenderer from './PropertyControlRenderer';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
 import GroupedDropdown from './GroupedDropdown';
-import { FONT_CATEGORIES } from '@/registry/library/fonts';
 import { FontLoadingService } from '@/services/FontLoadingService';
+import { useFontCatalog } from '@/hooks/useFontCatalog';
 
 interface TableSettingsEditorProps {
   component: ComponentInstance;
@@ -102,18 +102,7 @@ const TableSettingsEditorContent: React.FC<SpecificEditorProps> = ({
   
   const cellStyles = component.props.cellStyles || [];
 
-  // Ensure backend fonts are synced for font dropdowns
-  const [dynamicFontGroups, setDynamicFontGroups] = useState<Record<string, string[]> | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try { await FontLoadingService.syncDesignerFonts?.(); } catch {}
-      if (!cancelled) {
-        try { setDynamicFontGroups(FontLoadingService.getDedupedFontGroups?.() || null); } catch {}
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  const { groups: dynamicFontGroups } = useFontCatalog();
   
   // Helper functions
   const addRow = () => {
@@ -478,12 +467,8 @@ const TableSettingsEditorContent: React.FC<SpecificEditorProps> = ({
         <Label className="text-xs">Font Family</Label>
         <GroupedDropdown
           value={tableStyles.fontFamily || "Inter"}
-          options={[]}
-          groups={dynamicFontGroups || Object.fromEntries(
-            Object.entries(FONT_CATEGORIES).map(([category, fonts]) => 
-              [category, fonts.map(font => font.name)]
-            )
-          )}
+          options={FontLoadingService.getAllFontNames()}
+          groups={dynamicFontGroups || FontLoadingService.getFontCategories()}
           onChange={(value) => {
             saveComponentToHistory("Before changing font family");
             onUpdate({ 

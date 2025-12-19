@@ -21,8 +21,8 @@ import {
 } from '@/charts/config/chartTypeSettings';
 import { FontLoadingService } from '@/services/FontLoadingService';
 import { notifyChartPropertyChanged } from '@/charts/utils/ThemeUtils';
-import { FONT_CATEGORIES } from '@/registry/library/fonts';
 import GroupedDropdown from '@/components/settings/GroupedDropdown';
+import { useFontCatalog } from '@/hooks/useFontCatalog';
 
 interface ChartSettingsEditorProps {
   component: ComponentInstance;
@@ -71,18 +71,8 @@ const ChartSettingsEditor: React.FC<ChartSettingsEditorProps> = ({
     }
   };
 
-  // Ensure backend fonts are synced for grouped dropdowns
-  const [fontGroups, setFontGroups] = React.useState<Record<string, string[]>>({});
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try { await FontLoadingService.syncDesignerFonts?.(); } catch {}
-      if (!cancelled) {
-        try { setFontGroups(FontLoadingService.getDedupedFontGroups?.() || {}); } catch {}
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  const { groups: fontGroups } = useFontCatalog();
+  const fontOptions = React.useMemo(() => FontLoadingService.getAllFontNames(), [fontGroups]);
 
   // Helper to get property configuration
   const getPropertyConfig = (propId: string): ChartSettingProperty | null => {
@@ -222,16 +212,11 @@ const ChartSettingsEditor: React.FC<ChartSettingsEditorProps> = ({
               <Label className="text-xs">{propConfig.label}</Label>
               <GroupedDropdown
                 value={value === 'default' ? 'Inter' : value || 'Inter'}
-                options={[]}
-                groups={Object.keys(fontGroups).length ? fontGroups : Object.fromEntries(
-                  Object.entries(FONT_CATEGORIES).map(([category, fonts]) => 
-                    [category, fonts.map(font => font.name)]
-                  )
-                )}
+                options={fontOptions}
+                groups={fontGroups}
                 onChange={async (fontName) => {
                   // Load the font first
                   try {
-                    await FontLoadingService.syncDesignerFonts?.();
                     await FontLoadingService.loadFonts([fontName]);
                   } catch (error) {
                     console.error('Failed to load font:', fontName, error);
