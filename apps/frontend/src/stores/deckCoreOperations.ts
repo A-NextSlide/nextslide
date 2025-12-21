@@ -80,8 +80,12 @@ export const createCoreDeckOperations = (set, get) => {
     const statusState = typeof deckStatus === 'string' ? deckStatus : deckStatus?.state;
     const isGenerating = statusState === 'generating' || statusState === 'creating' || statusState === 'pending';
     if (isGenerating) {
-      logger.debug('[Store] Skipping save - AI is generating slides');
-      return;
+      const activeGenerationDeckId = typeof window !== 'undefined' ? (window as any).__activeGenerationDeckId : null;
+      const shouldBlockSave = !!activeGenerationDeckId && activeGenerationDeckId === cleanForBackend.uuid;
+      if (shouldBlockSave) {
+        logger.debug('[Store] Skipping save - AI is generating slides');
+        return;
+      }
     }
 
     // Save to backend with the cleaned object

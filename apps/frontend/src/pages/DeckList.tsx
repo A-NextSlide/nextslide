@@ -48,6 +48,7 @@ import { useSlideResearch } from '@/hooks/useSlideResearch';
 import { useOutlineChat } from '@/hooks/useOutlineChat';
 import { cn } from '@/lib/utils';
 import { normalizeReferenceImages } from '@/utils/referenceImages';
+import { normalizeDeckTitle } from '@/utils/normalizeDeckTitle';
 import { outlineApi } from '@/services/outlineApi';
 import { deckSyncService } from '@/lib/deckSyncService';
 import { useSlideGeneration } from '@/hooks/useSlideGeneration';
@@ -390,6 +391,8 @@ const DeckList: React.FC = () => {
   }, [onboardingLoading, isAuthenticated, loadDecks]);
 
   const [heroInput, setHeroInput] = useState('');
+  const [onboardingSeedPrompt, setOnboardingSeedPrompt] = useState('');
+  const [onboardingSessionId, setOnboardingSessionId] = useState(0);
   const [isUserTyping, setIsUserTyping] = useState(false);
 
   // Debounce typing state
@@ -421,6 +424,17 @@ const DeckList: React.FC = () => {
   const heroTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [isLinkPopoverOpen, setIsLinkPopoverOpen] = useState(false);
   const [linkInput, setLinkInput] = useState('');
+
+  const openConversationalOnboarding = useCallback((prompt?: string) => {
+    const trimmedPrompt = prompt?.trim() || '';
+    setOnboardingSeedPrompt(trimmedPrompt);
+    setOnboardingSessionId((prev) => prev + 1);
+    setShowConversationalOnboarding(true);
+    setHeroInput('');
+    if (heroTextareaRef.current) {
+      heroTextareaRef.current.style.height = '48px';
+    }
+  }, [setHeroInput, setOnboardingSeedPrompt, setOnboardingSessionId, setShowConversationalOnboarding]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -587,12 +601,13 @@ const DeckList: React.FC = () => {
       url?: string;
       size?: number;
     }>;
+    use_uploaded_images?: boolean;
   } | null>(null);
 
   // Handle "Create with AI" - show conversational onboarding
   const handleCreateWithAI = useCallback(() => {
-    setShowConversationalOnboarding(true);
-  }, []);
+    openConversationalOnboarding(heroInput);
+  }, [heroInput, openConversationalOnboarding]);
 
   // Handle completion of conversational onboarding
   const handleConversationalComplete = useCallback(async (data: {
@@ -628,6 +643,7 @@ const DeckList: React.FC = () => {
       source_type?: string;
       embed_url?: string;
     }>;
+    use_uploaded_images?: boolean;
   }) => {
     console.log('[DeckList] Conversational onboarding complete:', data);
     console.log('[DeckList] Uploaded files count:', data.uploadedFiles?.length || 0);
@@ -733,7 +749,7 @@ const DeckList: React.FC = () => {
 
       const newOutline: FrontendDeckOutline & { notes?: { theme?: any; videos?: any[] } } = {
         id: newOutlineId,
-        title: data.topic || 'New Presentation',
+        title: normalizeDeckTitle(data.topic) || 'New Presentation',
         stylePreferences: {
           initialIdea: data.topic,
           vibeContext: vibeContext,
@@ -746,6 +762,7 @@ const DeckList: React.FC = () => {
           logoUrl: parsedStylePrefs?.logoUrl,  // CRITICAL: Include logo URL for brand slides
         },
         uploadedMedia: normalizedUploadedMedia,
+        use_uploaded_images: data.use_uploaded_images,
         slides: outlineSlides,
         // CRITICAL: Embed theme and videos in notes so backend finds them
         notes: Object.keys(notesPayload).length > 0 ? notesPayload : undefined,
@@ -883,7 +900,7 @@ const DeckList: React.FC = () => {
     const newOutlineId = uuidv4();
     const placeholderOutline: FrontendDeckOutline = {
       id: newOutlineId,
-      title: data.topic || 'Generating Presentation...',
+      title: normalizeDeckTitle(data.topic) || 'Generating Presentation...',
       slides: []
     };
 
@@ -913,6 +930,7 @@ const DeckList: React.FC = () => {
         slides: outlineFlow?.slides,
         uploadedMedia: outlineFlow?.uploadedMedia,
         slideScreenshots: outlineFlow?.slide_screenshots,
+        use_uploaded_images: outlineFlow?.use_uploaded_images,
       };
 
       console.log('[DeckList] Calling handleConversationalComplete with:', resumeData);
@@ -1636,7 +1654,8 @@ const DeckList: React.FC = () => {
                 // Show conversational onboarding
                 <div className="w-full h-full">
                   <ConversationalOnboarding
-                    initialMessage={heroInput}
+                    key={`onboarding-${onboardingSessionId}`}
+                    initialMessage={onboardingSeedPrompt}
                     slideCount={slideCount}
                     initialUploadedFiles={uploadedFiles}
                     onComplete={(data) => {
@@ -1856,7 +1875,7 @@ const DeckList: React.FC = () => {
                                 if (!prev) return prev;
                                 return {
                                   ...prev,
-                                  title: params.topic || prev.title,
+                                  title: normalizeDeckTitle(params.topic) || prev.title,
                                   stylePreferences: params.stylePreferences ? {
                                     ...prev.stylePreferences,
                                     ...params.stylePreferences
@@ -1922,9 +1941,10 @@ const DeckList: React.FC = () => {
 
                             const newOutline: FrontendDeckOutline = {
                               id: currentOutline?.id || uuidv4(), // Preserve ID if updating placeholder
-                              title: params.topic || currentOutline?.title || 'Presentation',
+                              title: normalizeDeckTitle(params.topic) || currentOutline?.title || 'Presentation',
                               slides: initialSlides,
                               uploadedMedia: normalizedUploadedMedia || currentOutline?.uploadedMedia,
+                              use_uploaded_images: params.use_uploaded_images ?? currentOutline?.use_uploaded_images,
                               // CRITICAL: Persist stylePreferences so theme tab can load them on revisit
                               stylePreferences: {
                                 ...currentOutline?.stylePreferences,
@@ -2115,7 +2135,7 @@ const DeckList: React.FC = () => {
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter' && !e.shiftKey && (heroInput.trim() || uploadedFiles.length > 0)) {
                                         e.preventDefault();
-                                        setShowConversationalOnboarding(true);
+                                        openConversationalOnboarding(heroInput);
                                       }
                                     }}
                                     rows={1}
@@ -2223,7 +2243,7 @@ const DeckList: React.FC = () => {
                                     className="h-12 w-12 ml-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95"
                                     onClick={() => {
                                       if (heroInput.trim() || uploadedFiles.length > 0) {
-                                        setShowConversationalOnboarding(true);
+                                        openConversationalOnboarding(heroInput);
                                       }
                                     }}
                                   >

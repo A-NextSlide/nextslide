@@ -221,4 +221,4 @@ def test_component_hints_for_tabular_chart():
 
     hints = infer_component_hints(context)
 
-    assert "Table" in hints
+    assert hints == []

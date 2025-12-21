@@ -1,6 +1,6 @@
 """Refactored slide generator with clear separation of concerns."""
 
-from typing import Dict, Any, List, Optional, AsyncIterator
+from typing import Dict, Any, Optional, AsyncIterator
 from datetime import datetime
 import logging
 
@@ -12,7 +12,6 @@ from agents.generation.components.component_validator import ComponentValidator
 from agents.application.event_bus import get_event_bus, Events
 from models.slide_minimal import MinimalSlide
 from setup_logging_optimized import get_logger
-from agents.generation.component_hints import infer_component_hints
 from agents.generation.custom_component_generator import CustomComponentGenerator
 from agents.generation.custom_component_enhancer import CustomComponentEnhancer
 from agents.generation.slide_post_processor import SlidePostProcessor
@@ -66,8 +65,6 @@ class SlideGeneratorV2(ISlideGenerator):
         })
         
         try:
-            component_hints = infer_component_hints(context)
-
             # Step 1: Build prompts
             substep_event = {
                 'type': 'slide_substep',
@@ -78,7 +75,7 @@ class SlideGeneratorV2(ISlideGenerator):
             await self.event_bus.emit(Events.SLIDE_SUBSTEP, substep_event)
             yield substep_event
             
-            system_prompt, user_prompt = await self._build_prompts(context, component_hints)
+            system_prompt, user_prompt = await self._build_prompts(context)
             
             # Step 2: Generate with AI
             substep_event = {
@@ -91,7 +88,7 @@ class SlideGeneratorV2(ISlideGenerator):
             yield substep_event
             
             slide_data = await self._generate_with_ai(
-                system_prompt, user_prompt, context, component_hints
+                system_prompt, user_prompt, context
             )
 
             # Step 3.5: Enhance CustomComponents with Gemini 3 Pro if enabled
@@ -161,7 +158,6 @@ class SlideGeneratorV2(ISlideGenerator):
     async def _build_prompts(
         self,
         context: SlideGenerationContext,
-        component_hints: Optional[List[str]],
     ) -> tuple[str, str]:
         """Build system and user prompts."""
         logger.debug(f"  Building prompts for slide {context.slide_index + 1}...")
@@ -177,7 +173,6 @@ class SlideGeneratorV2(ISlideGenerator):
         try:
             static_block, slide_block = self.prompt_builder.build_user_prompt_blocks(
                 context,
-                component_hints,
                 brand_logo_url=brand_logo_url
             )
             # Insert an Anthropic cache breakpoint delimiter so the client can convert to content blocks
@@ -186,7 +181,6 @@ class SlideGeneratorV2(ISlideGenerator):
             # Fallback to original single-block prompt
             user_prompt = self.prompt_builder.build_user_prompt(
                 context,
-                component_hints,
                 brand_logo_url=brand_logo_url
             )
 
@@ -230,20 +224,16 @@ class SlideGeneratorV2(ISlideGenerator):
         system_prompt: str,
         user_prompt: str,
         context: SlideGenerationContext,
-        component_hints: Optional[List[str]],
     ) -> Dict[str, Any]:
         """Generate slide with AI."""
         logger.debug(f"  Calling AI for slide {context.slide_index + 1}...")
         ai_start = datetime.now()
-        
-        predicted_components = component_hints or []
-        
+
         slide_data = await self.ai_generator.generate(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             response_model=MinimalSlide,
             context=context,
-            predicted_components=predicted_components
         )
         
         ai_elapsed = (datetime.now() - ai_start).total_seconds()

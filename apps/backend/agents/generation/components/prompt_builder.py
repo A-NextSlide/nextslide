@@ -23,18 +23,18 @@ class SlidePromptBuilder:
         """Build a minimal system prompt."""
         return (
             "You are a presentation slide generator. Use the provided content and theme. "
+            "Follow MODE for motion/interaction (interactive may use subtle motion or micro-interactions when helpful). "
             "Return ONLY valid JSON matching the slide schema."
         )
 
     def build_user_prompt(
         self,
         context: SlideGenerationContext,
-        component_hints: Optional[List[str]] = None,
         brand_logo_url: Optional[str] = None,
     ) -> str:
         """Build a minimal user prompt."""
         static_block, slide_block = self.build_user_prompt_blocks(
-            context, component_hints, brand_logo_url
+            context, brand_logo_url
         )
         prompt = f"{static_block}\n<<<CACHE_BREAKPOINT>>>\n{slide_block}"
         if len(prompt) > self.MAX_CONTEXT_CHARS:
@@ -48,7 +48,6 @@ class SlidePromptBuilder:
     def build_user_prompt_blocks(
         self,
         context: SlideGenerationContext,
-        component_hints: Optional[List[str]] = None,
         brand_logo_url: Optional[str] = None,
     ) -> Tuple[str, str]:
         """Build deck-static and per-slide prompt blocks separately."""
@@ -58,7 +57,7 @@ class SlidePromptBuilder:
             static_block = self._build_static_block(context, brand_logo_url)
             self._static_block_cache[cache_key] = static_block
 
-        slide_block = self._build_slide_block(context, component_hints)
+        slide_block = self._build_slide_block(context)
         return static_block, slide_block
 
     def _build_static_block(
@@ -110,6 +109,7 @@ class SlidePromptBuilder:
 
         sections.extend(
             [
+                "DESIGN: Premium slide layout with clear hierarchy, clean grid, and balanced whitespace. Avoid webpage UI elements.",
                 "CANVAS: 1920x1080.",
                 "OUTPUT: JSON with fields {id, title, components}.",
                 "Each component must include {id, type, props}.",
@@ -123,7 +123,6 @@ class SlidePromptBuilder:
     def _build_slide_block(
         self,
         context: SlideGenerationContext,
-        component_hints: Optional[List[str]],
     ) -> str:
         """Build per-slide prompt content."""
         sections: List[str] = []
@@ -134,6 +133,16 @@ class SlidePromptBuilder:
         sections.append(f"TITLE: {context.slide_outline.title}")
         sections.append("CONTENT:")
         sections.append(context.slide_outline.content or "")
+
+        slide_mode = None
+        style_prefs = getattr(context.deck_outline, "stylePreferences", None)
+        if style_prefs:
+            if isinstance(style_prefs, dict):
+                slide_mode = style_prefs.get("slideMode")
+            else:
+                slide_mode = getattr(style_prefs, "slideMode", None)
+        if slide_mode:
+            sections.append(f"MODE: {slide_mode}")
 
         if context.presentation_context:
             sections.append(
@@ -162,24 +171,31 @@ class SlidePromptBuilder:
             if names:
                 sections.append("TAGGED MEDIA:")
                 sections.append("- " + ", ".join(names[:8]))
+            use_uploaded_images = bool(getattr(context.deck_outline, "use_uploaded_images", False))
+            if use_uploaded_images:
+                sections.append(
+                    "MEDIA INSTRUCTIONS: Use these tagged images in the slide. "
+                    "Include Image components or <img src=\"placeholder\" alt=\"...\"> "
+                    "so the system can auto-apply the uploaded assets."
+                )
 
         if context.available_videos:
             sections.append("AVAILABLE VIDEOS:")
             sections.append(
                 "- "
                 + ", ".join(
-                    v.get("title") or v.get("url") or "video"
+                    (
+                        f"{(v.get('title') or 'video')} ({v.get('embed_url') or v.get('url')})"
+                        if (v.get("embed_url") or v.get("url"))
+                        else (v.get("title") or "video")
+                    )
                     for v in context.available_videos[:5]
                 )
             )
-
-        if component_hints:
-            filtered = [
-                comp for comp in component_hints
-                if str(comp).strip().lower() != "chart"
-            ]
-            if filtered:
-                sections.append("SUGGESTED COMPONENTS: " + ", ".join(filtered))
+            sections.append(
+                "VIDEO USE: A video has been assigned to this slide. Embed the first available video "
+                "(Video component or <video>/<iframe> inside a CustomComponent)."
+            )
 
         return "\n".join(sections)
 

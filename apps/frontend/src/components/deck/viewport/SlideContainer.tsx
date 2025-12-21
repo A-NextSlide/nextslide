@@ -25,6 +25,8 @@ interface SlideContainerProps {
   onComponentDeselect: () => void;
   updateSlide: (id: string, data: Partial<SlideData>) => void;
   zoomLevel?: number;
+  slideWidth?: number;
+  slideHeight?: number;
   deckStatus?: DeckStatus;
   isNewDeck?: boolean;
 }
@@ -39,6 +41,8 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
   onComponentDeselect,
   updateSlide,
   zoomLevel = 100,
+  slideWidth,
+  slideHeight,
   deckStatus,
   isNewDeck
 }) => {
@@ -73,6 +77,12 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
     slide.components && slide.components.length > 0 && slide.status === 'completed'
   );
   const isGenerating = !hasSlideContent && (deckStatus?.state === 'generating' || deckStatus?.state === 'creating');
+
+  const baseSlideWidth = slideWidth ?? DEFAULT_SLIDE_WIDTH;
+  const baseSlideHeight = slideHeight ?? DEFAULT_SLIDE_HEIGHT;
+  const zoomScale = zoomLevel / 100;
+  const scaledSlideWidth = Math.max(1, Math.round(baseSlideWidth * zoomScale));
+  const scaledSlideHeight = Math.max(1, Math.round(baseSlideHeight * zoomScale));
   
   // Use image options hook
   const {
@@ -814,31 +824,48 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
         transition: 'transform 0.3s ease-in-out',
         position: 'relative',
         width: '100%',
-        // Responsive maxWidth for different screen sizes
-        maxWidth: 'min(95vw, 1600px)',
+        maxWidth: '100%',
         marginLeft: 'auto',
         marginRight: 'auto'
       }}>
-        <SlideDisplay 
-          slides={slides}
-          currentSlideIndex={currentSlideIndex}
-          direction={direction}
-          isEditing={isEditing}
-          selectedComponentId={selectedComponentId}
-          onComponentSelect={onComponentSelect}
-          onComponentDeselect={onComponentDeselect}
-          updateSlide={updateSlide}
-          zoomLevel={100} // Pass 100 so inner components don't scale
-          deckStatus={deckStatus}
-          isNewDeck={isNewDeck}
-        />
+        <div
+          style={{
+            width: `${scaledSlideWidth}px`,
+            height: `${scaledSlideHeight}px`
+          }}
+        >
+          <div
+            style={{
+              width: `${baseSlideWidth}px`,
+              height: `${baseSlideHeight}px`,
+              transform: `scale(${zoomScale})`,
+              transformOrigin: 'top left',
+              willChange: 'transform'
+            }}
+          >
+            <SlideDisplay 
+              slides={slides}
+              currentSlideIndex={currentSlideIndex}
+              direction={direction}
+              isEditing={isEditing}
+              selectedComponentId={selectedComponentId}
+              onComponentSelect={onComponentSelect}
+              onComponentDeselect={onComponentDeselect}
+              updateSlide={updateSlide}
+              slideWidth={baseSlideWidth}
+              slideHeight={baseSlideHeight}
+              deckStatus={deckStatus}
+              isNewDeck={isNewDeck}
+            />
+          </div>
+        </div>
         
         {/* Control bar is rendered inside the SlideContainer for better alignment */}
         {slides.length > 0 && (
           <div className="w-full flex justify-center" style={{ 
             marginTop: '10px',
             width: '100%',
-            maxWidth: '1400px',
+            maxWidth: '100%',
             marginLeft: 'auto',
             marginRight: 'auto',
             transition: 'none'
@@ -866,7 +893,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
                   window.dispatchEvent(event);
                 }
               }}
-              zoomLevel={100}
             />
           </div>
         )}

@@ -33,6 +33,19 @@ export function useMultiSelection({
   const startPointRef = useRef({ x: 0, y: 0 });
   const isOverComponentRef = useRef(false);
   const suppressNextClickRef = useRef(false);
+  const clearTextEditing = useCallback(() => {
+    const settings = useEditorSettingsStore.getState();
+    if (!settings.isTextEditing) return;
+
+    const activeEditor: any = useEditorStore.getState().activeTiptapEditor;
+    try {
+      activeEditor?.commands?.blur?.();
+    } catch {}
+    try {
+      (activeEditor?.view?.dom as HTMLElement | undefined)?.blur?.();
+    } catch {}
+    settings.setTextEditing(false);
+  }, []);
 
   // Check if a point is inside a rectangle
   const isPointInRect = useCallback((
@@ -181,6 +194,9 @@ export function useMultiSelection({
 
     // We're clicking on empty space (or background) - start selection rectangle
     isOverComponentRef.current = false;
+
+    // Exit text edit mode when starting a marquee selection
+    clearTextEditing();
     
     // Use the containerRef directly - it's already the slide-display-container
     const containerRect = containerRef.current.getBoundingClientRect();
@@ -219,7 +235,7 @@ export function useMultiSelection({
     // Prevent text selection
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
-  }, [isEditing, containerRef, clearSelection, setSelectionMode, setSelectionRectangle, components]);
+  }, [isEditing, containerRef, clearSelection, setSelectionMode, setSelectionRectangle, components, clearTextEditing]);
 
   // Handle mouse move
   const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -302,9 +318,10 @@ export function useMultiSelection({
 
     // Deselect all (Escape)
     if (e.key === 'Escape') {
+      clearTextEditing();
       clearSelection();
     }
-  }, [isEditing, isTextEditing, components, selectComponents, clearSelection]);
+  }, [isEditing, isTextEditing, components, selectComponents, clearSelection, clearTextEditing]);
 
   // Set up event listeners
   useEffect(() => {
@@ -314,13 +331,13 @@ export function useMultiSelection({
     if (!container) return;
 
     // Add event listeners
-    container.addEventListener('mousedown', handleMouseDown);
+    container.addEventListener('mousedown', handleMouseDown, true);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      container.removeEventListener('mousedown', handleMouseDown);
+      container.removeEventListener('mousedown', handleMouseDown, true);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('keydown', handleKeyDown);

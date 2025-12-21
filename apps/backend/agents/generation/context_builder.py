@@ -73,6 +73,12 @@ def _collect_reference_images(theme: Any, style_refs: List[str]) -> List[str]:
     for ref in reference_images:
         if not isinstance(ref, str):
             continue
+        ref = ref.strip()
+        if not ref:
+            continue
+        # Skip data URLs or oversized blobs to avoid prompt bloat
+        if ref.startswith("data:") or len(ref) > 2048:
+            continue
         if ref in seen:
             continue
         deduped.append(ref)
@@ -112,6 +118,7 @@ def build_slide_context(
     available_images: Optional[List[Any]] = None,
     user_id: Optional[str] = None,
     visual_density: Optional[str] = None,
+    conversation_history: Optional[Dict[str, Any]] = None,
 ) -> SlideGenerationContext:
     """Create SlideGenerationContext with consistent deck/slide metadata."""
     theme_obj = _normalize_theme(theme)
@@ -119,9 +126,13 @@ def build_slide_context(
     presentation_context, style_refs = _collect_presentation_context(deck_outline)
     reference_images = _collect_reference_images(theme_obj, style_refs)
 
+    if conversation_history is None:
+        conversation_history = getattr(deck_outline, "conversation_history", None)
+
     merged_available_images: List[Any] = list(available_images or [])
+    use_uploaded_images = bool(getattr(deck_outline, "use_uploaded_images", False))
     extracted_images = getattr(deck_outline, "extractedImages", None) or []
-    if isinstance(extracted_images, list):
+    if use_uploaded_images and isinstance(extracted_images, list):
         merged_available_images.extend(extracted_images)
 
     tagged_media = _collect_tagged_media(slide_outline)
@@ -131,6 +142,7 @@ def build_slide_context(
         slide_outline=slide_outline,
         slide_index=slide_index,
         deck_outline=deck_outline,
+        conversation_history=conversation_history,
         theme=theme_obj,
         palette=palette or {},
         style_manifesto=style_manifesto or "",

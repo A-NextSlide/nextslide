@@ -133,7 +133,7 @@ class CustomComponentHtmlProcessor:
             logger.info(f"[IMAGE_INJECT] Replaced JS props.{prop_name} with {url[:50]}...")
             return f"{decl} {var_name} = '{url}';"
 
-        js_prop_default_pattern = r'(const|let|var)\s+(\w+)\s*=\s*props\.(\w+)\s*\|\|\s*[\'"][^\'"]*[\'"]\s*;'
+        js_prop_default_pattern = r'(const|let|var)\s+(\w+)\s*=\s*props\.(\w+)\s*(?:\|\||\?\?)\s*[\'"][^\'"]*[\'"]\s*;'
         result = re.sub(js_prop_default_pattern, replace_js_prop_default, result, flags=re.IGNORECASE)
 
         def replace_variable_src(match):
@@ -179,7 +179,30 @@ class CustomComponentHtmlProcessor:
         props_ref_pattern = r'<img\s+([^>]*?)src=["\']props\.(\w+)["\']([^>]*?)>'
         result = re.sub(props_ref_pattern, replace_props_reference, result, flags=re.IGNORECASE)
 
-        def replace_placeholder_src(match):
+        def replace_placeholder_src_quoted(match):
+            nonlocal images_injected, image_index
+            before = match.group(1)
+            after = match.group(3)
+
+            if image_index < len(image_urls):
+                url = image_urls[image_index]
+                image_index += 1
+            else:
+                url = image_urls[images_injected % len(image_urls)]
+
+            images_injected += 1
+            logger.info(f"[IMAGE_INJECT] Replaced placeholder with {url[:50]}...")
+            return f'<img {before}src="{url}"{after}>'
+
+        quoted_placeholder_pattern = r'<img\s+([^>]*?)src=(["\'])(?:placeholder)?\2([^>]*?)>'
+        result = re.sub(
+            quoted_placeholder_pattern,
+            replace_placeholder_src_quoted,
+            result,
+            flags=re.IGNORECASE,
+        )
+
+        def replace_placeholder_src_unquoted(match):
             nonlocal images_injected, image_index
             before = match.group(1)
             after = match.group(2)
@@ -194,8 +217,13 @@ class CustomComponentHtmlProcessor:
             logger.info(f"[IMAGE_INJECT] Replaced placeholder with {url[:50]}...")
             return f'<img {before}src="{url}"{after}>'
 
-        placeholder_pattern = r'<img\s+([^>]*?)src=["\'](?:placeholder|)["\']([^>]*?)>'
-        result = re.sub(placeholder_pattern, replace_placeholder_src, result, flags=re.IGNORECASE)
+        unquoted_placeholder_pattern = r'<img\s+([^>]*?)src=(?:placeholder)?(?=[\s>])([^>]*?)>'
+        result = re.sub(
+            unquoted_placeholder_pattern,
+            replace_placeholder_src_unquoted,
+            result,
+            flags=re.IGNORECASE,
+        )
 
         def replace_local_file_src(match):
             nonlocal images_injected, image_index
@@ -288,6 +316,35 @@ class CustomComponentHtmlProcessor:
         external_url_pattern = r'<img\s+([^>]*?)src=["\'](https?://[^"\']+)["\']([^>]*?)>'
         result = re.sub(external_url_pattern, replace_external_img_src, result, flags=re.IGNORECASE)
 
+        def replace_background_image_url(match):
+            nonlocal images_injected, image_index
+            before = match.group(1)
+            external_url = match.group(2)
+            after = match.group(3)
+
+            if is_our_url(external_url):
+                return match.group(0)
+            if external_url.startswith('data:') or external_url.startswith('linear') or external_url.startswith('radial'):
+                return match.group(0)
+            if not image_urls:
+                return match.group(0)
+
+            if image_index < len(image_urls):
+                url = image_urls[image_index]
+                image_index += 1
+            else:
+                url = image_urls[images_injected % len(image_urls)]
+
+            images_injected += 1
+            logger.info("[IMAGE_INJECT] Replaced background-image URL %s... with %s...", external_url[:40], url[:40])
+            return f'{before}{url}{after}'
+
+        bg_image_pattern = r'(background-image:\s*url\([\'"]?)(https?://[^\'")\s]+)([\'"]?\))'
+        result = re.sub(bg_image_pattern, replace_background_image_url, result, flags=re.IGNORECASE)
+
+        inline_bg_pattern = r'(style=["\'][^"\']*background-image:\s*url\([\'"]?)(https?://[^\'")\s]+)([\'"]?\)[^"\']*["\'])'
+        result = re.sub(inline_bg_pattern, replace_background_image_url, result, flags=re.IGNORECASE)
+
         external_matches = re.findall(r'<img[^>]+src=["\']?(https?://[^\s"\'>]+)["\']?', result, flags=re.IGNORECASE)
         if external_matches:
             logger.warning(f"[IMAGE_INJECT] {len(external_matches)} external URLs remain after replacement")
@@ -312,8 +369,26 @@ class CustomComponentHtmlProcessor:
         html = re.sub(r'\r\n', '\n', html)
         html = re.sub(r'\n{3,}', '\n\n', html)
         html = re.sub(r'(<!DOCTYPE html>)(<html)', r'\1\n\2', html, flags=re.IGNORECASE)
+        html = self._inject_base_styles(html)
         html = self._prettify_css_in_html(html)
         return html
+
+    def _inject_base_styles(self, html: str) -> str:
+        if not html:
+            return html
+        if re.search(r'html\s*,\s*body\s*\{[^}]*margin\s*:\s*0', html, re.IGNORECASE):
+            return html
+        base_style = (
+            "<style>"
+            "html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 100%; }"
+            "*, *::before, *::after { box-sizing: border-box; }"
+            "</style>"
+        )
+        if re.search(r'<head[^>]*>', html, re.IGNORECASE):
+            return re.sub(r'(<head[^>]*>)', r'\1\n' + base_style, html, count=1, flags=re.IGNORECASE)
+        if re.search(r'<html[^>]*>', html, re.IGNORECASE):
+            return re.sub(r'(<html[^>]*>)', r'\1\n<head>' + base_style + '</head>', html, count=1, flags=re.IGNORECASE)
+        return base_style + html
 
     def _prettify_css_in_html(self, html: str) -> str:
         if '<style' not in html:
@@ -321,7 +396,18 @@ class CustomComponentHtmlProcessor:
         try:
             style_blocks = re.findall(r'<style[^>]*>([\s\S]*?)</style>', html, re.IGNORECASE)
             for style in style_blocks:
-                pretty = style.replace(';', ';\n').replace('{', '{\n').replace('}', '\n}\n')
+                # Extract @import statements first (they contain ; inside URLs that shouldn't be split)
+                # Match @import url('...') or @import url("...") including content with semicolons
+                imports = re.findall(r'@import\s+url\s*\(\s*[\'"][^\'"]*[\'"]\s*\)\s*;', style)
+                # Replace imports with placeholders
+                temp_style = style
+                for i, imp in enumerate(imports):
+                    temp_style = temp_style.replace(imp, f'__IMPORT_{i}__')
+                # Prettify the rest
+                pretty = temp_style.replace(';', ';\n').replace('{', '{\n').replace('}', '\n}\n')
+                # Restore imports (without adding newlines inside them)
+                for i, imp in enumerate(imports):
+                    pretty = pretty.replace(f'__IMPORT_{i}__', imp + '\n')
                 html = html.replace(style, pretty)
         except Exception:
             pass

@@ -14,6 +14,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _clean_logo_url(url: Optional[str]) -> Optional[str]:
+    if not url or not isinstance(url, str):
+        return None
+    cleaned = url.strip()
+    if cleaned.endswith("?"):
+        cleaned = cleaned[:-1]
+    return cleaned or None
+
+
 def extract_logo_from_theme(theme: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
     """
     Extract logo URLs from a theme dictionary.
@@ -60,7 +69,7 @@ def extract_logo_from_theme(theme: Dict[str, Any]) -> Tuple[Optional[str], Optio
             logo_url = metadata.get('logo_url') or metadata.get('logo_url_light')
             logo_url_dark = metadata.get('logo_url_dark')
 
-    return logo_url, logo_url_dark
+    return _clean_logo_url(logo_url), _clean_logo_url(logo_url_dark)
 
 
 def extract_logo_from_style_preferences(style_prefs: Any) -> Tuple[Optional[str], Optional[str]]:
@@ -99,7 +108,7 @@ def extract_logo_from_style_preferences(style_prefs: Any) -> Tuple[Optional[str]
         if not logo_url and deck_theme:
             logo_url, logo_url_dark = extract_logo_from_theme(deck_theme)
 
-    return logo_url, logo_url_dark
+    return _clean_logo_url(logo_url), _clean_logo_url(logo_url_dark)
 
 
 def extract_logo_from_palette(palette: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
@@ -128,7 +137,7 @@ def extract_logo_from_palette(palette: Dict[str, Any]) -> Tuple[Optional[str], O
             logo_url = metadata.get('logo_url') or metadata.get('logo_url_light')
             logo_url_dark = metadata.get('logo_url_dark')
 
-    return logo_url, logo_url_dark
+    return _clean_logo_url(logo_url), _clean_logo_url(logo_url_dark)
 
 
 def extract_logo_from_deck_outline(deck_outline: Any) -> Tuple[Optional[str], Optional[str]]:
@@ -379,4 +388,4 @@ def get_logo_with_inversion(
         elif isinstance(logo, str) and logo.startswith('http'):
             logo_url = logo
 
-    return logo_url, False
+    return _clean_logo_url(logo_url), False

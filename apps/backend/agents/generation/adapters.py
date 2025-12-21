@@ -2,6 +2,8 @@
 Adapters to connect refactored components with the existing system.
 """
 
+from __future__ import annotations
+
 from typing import Dict, Any, List, Optional, AsyncIterator
 import os
 
@@ -13,6 +15,7 @@ from agents.generation.html_inspired_generator import HTMLInspiredSlideGenerator
 from agents.generation.components.ai_generator import AISlideGenerator
 from agents.generation.components.component_validator import ComponentValidator
 from agents.persistence.deck_persistence import DeckPersistence
+from models.requests import DeckOutline
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
@@ -32,6 +35,8 @@ class SlideGeneratorAdapter:
             component_validator=self.component_validator,
             registry=registry,
         )
+        self.base_generator = base_generator
+        self.prompt_builder = base_generator.prompt_builder
         
         # Wrap with HTML-inspired prompting (enabled by default, can disable with env var)
         use_html_inspired = os.getenv('USE_HTML_INSPIRED', 'true').lower() == 'true'
@@ -51,16 +56,13 @@ class SlideGeneratorAdapter:
     
     async def generate_slide(self, *args, **kwargs) -> AsyncIterator[Dict[str, Any]]:
         """Generate a slide - handles both old and new interfaces."""
-        
+        context: Optional[SlideGenerationContext]
+
         # Check if called with new interface (single SlideGenerationContext argument)
         if len(args) == 1 and isinstance(args[0], SlideGenerationContext):
             context = args[0]
-            # Generate using new system directly
-            async for update in self.generator.generate_slide(context):
-                yield update
         else:
             # Old interface with multiple parameters
-            # Extract parameters
             if len(args) >= 6:
                 slide_outline = args[0]
                 slide_index = args[1]
@@ -71,6 +73,7 @@ class SlideGeneratorAdapter:
                 available_images = args[6] if len(args) > 6 else kwargs.get('available_images', None)
                 async_images = args[7] if len(args) > 7 else kwargs.get('async_images', False)
                 deck_uuid = args[8] if len(args) > 8 else kwargs.get('deck_uuid', None)
+                user_id = args[9] if len(args) > 9 else kwargs.get('user_id', None)
             else:
                 # Use kwargs
                 slide_outline = kwargs['slide_outline']
@@ -82,7 +85,8 @@ class SlideGeneratorAdapter:
                 available_images = kwargs.get('available_images', None)
                 async_images = kwargs.get('async_images', False)
                 deck_uuid = kwargs.get('deck_uuid', None)
-            
+                user_id = kwargs.get('user_id', None)
+
             # Create context
             tagged_media_for_context = [
                 # Convert to dict if it's a Pydantic model
@@ -101,7 +105,6 @@ class SlideGeneratorAdapter:
             if tagged_media_for_context:
                 logger.info(f"   - First tagged_media URL: {tagged_media_for_context[0].get('previewUrl', 'none')[:100]}")
 
-            user_id = kwargs.get("user_id") if isinstance(kwargs, dict) else None
             context = build_slide_context(
                 deck_outline=deck_outline,
                 slide_outline=slide_outline,
@@ -114,10 +117,26 @@ class SlideGeneratorAdapter:
                 available_images=available_images,
                 user_id=user_id,
             )
-            
-            # Generate using new system
-            async for update in self.generator.generate_slide(context):
-                yield update
+
+        # Generate using new system
+        async for update in self.generator.generate_slide(context):
+            yield update
+
+    async def _build_prompts(self, context: SlideGenerationContext) -> tuple[str, str]:
+        """Expose prompt building for prewarm cache paths."""
+        if hasattr(self.generator, "_build_prompts"):
+            return await self.generator._build_prompts(context)
+        if hasattr(self.base_generator, "_build_prompts"):
+            return await self.base_generator._build_prompts(context)
+        if getattr(self, "prompt_builder", None):
+            system_prompt = self.prompt_builder.build_system_prompt()
+            try:
+                static_block, slide_block = self.prompt_builder.build_user_prompt_blocks(context)
+                user_prompt = f"{static_block}\n<<<CACHE_BREAKPOINT>>>\n{slide_block}"
+            except Exception:
+                user_prompt = self.prompt_builder.build_user_prompt(context)
+            return system_prompt, user_prompt
+        raise AttributeError("Prompt builder is not available on slide generator")
 
 
 class ThemeManagerAdapter(IThemeManager):

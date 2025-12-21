@@ -271,16 +271,25 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
     { id: 'source' as TabType, label: 'URL', icon: Link2 },
   ];
 
+  const quickEdits = [
+    { label: 'Enhance', prompt: 'Enhance lighting, contrast, and clarity' },
+    { label: 'BG Remove', prompt: 'Remove the background and keep the subject clean' },
+    { label: 'Cinematic', prompt: 'Add cinematic lighting and shallow depth of field' },
+    { label: 'B&W', prompt: 'Convert to a clean black and white look' },
+    { label: 'Warm', prompt: 'Warm the tones and add a soft glow' },
+    { label: 'Minimal', prompt: 'Simplify the image with a clean, minimal style' },
+  ];
+
   return (
     <div
-      className="rounded-lg border bg-card overflow-hidden"
+      className="rounded-md border bg-card/80 overflow-hidden"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       style={{ position: 'relative', zIndex: 20000 }}
     >
       {/* Header with label */}
-      <div className="px-3 py-2 border-b bg-muted/30 flex items-center gap-2">
-        <span className="text-xs font-medium truncate flex-1">{label}</span>
+      <div className="px-2.5 py-1.5 border-b bg-muted/20 flex items-center gap-2">
+        <span className="text-[11px] font-medium truncate flex-1">{label}</span>
         {onObjectFitChange && (
           <Select value={localFit} onValueChange={handleFitChange}>
             <SelectTrigger className="h-5 w-auto gap-1 px-1.5 text-[9px] border-0 bg-transparent text-muted-foreground hover:text-foreground">
@@ -302,7 +311,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
         trigger={
           <div
             className={cn(
-              "relative w-full h-28 cursor-pointer group",
+              "relative w-full h-24 cursor-pointer group",
               "bg-[repeating-conic-gradient(#f0f0f0_0_90deg,#fafafa_90deg_180deg)_0_0/16px_16px]",
               isProcessingAi && "pointer-events-none"
             )}
@@ -310,7 +319,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
             {isProcessingAi ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 z-10">
                 <Loader2 className="w-6 h-6 animate-spin text-white" />
-                <span className="text-white text-[10px] mt-2 font-medium">Processing...</span>
+                <span className="text-white text-[10px] mt-1.5 font-medium">Processing...</span>
               </div>
             ) : null}
             {isLoading ? (
@@ -369,7 +378,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-medium transition-colors",
+              "flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[9px] font-medium transition-colors",
               activeTab === tab.id
                 ? "text-orange-600 border-b-2 border-orange-500 bg-orange-50/50"
                 : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
@@ -382,10 +391,10 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
       </div>
 
       {/* Tab Content */}
-      <div className="p-3">
+      <div className="p-2">
         {/* Source Tab */}
         {activeTab === 'source' && (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <div className="flex gap-2">
               <Input
                 value={localUrl}
@@ -393,7 +402,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
                 onBlur={handleUrlBlur}
                 onKeyDown={handleUrlKeyDown}
                 placeholder="https://..."
-                className="h-8 text-xs flex-1"
+                className="h-7 text-[11px] flex-1"
               />
             </div>
             <p className="text-[10px] text-muted-foreground">
@@ -404,7 +413,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
 
         {/* AI Edit Tab */}
         {activeTab === 'edit' && (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {isPlaceholder ? (
               <p className="text-xs text-muted-foreground text-center py-4">
                 Select an image first to use AI editing
@@ -416,12 +425,36 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
                     value={aiPrompt}
                     onChange={(e) => setAiPrompt(e.target.value)}
                     placeholder="Make any change to this image..."
-                    className="min-h-[60px] text-xs resize-none"
+                    className="min-h-[52px] text-[11px] resize-none"
                     disabled={isProcessingAi}
                   />
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground">Quick edits</span>
+                    <div className="flex flex-wrap gap-1">
+                      {quickEdits.map((edit) => (
+                        <button
+                          key={edit.label}
+                          type="button"
+                          className={cn(
+                            "px-2 py-1 rounded-md border text-[9px] font-medium transition-colors",
+                            "bg-muted/30 border-muted-foreground/20 hover:bg-muted/60 hover:border-muted-foreground/40",
+                            isProcessingAi && "opacity-50 pointer-events-none"
+                          )}
+                          onClick={() => {
+                            setAiPrompt(edit.prompt);
+                            if (!isProcessingAi) {
+                              callEditApi(edit.prompt);
+                            }
+                          }}
+                        >
+                          {edit.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <Button
                     size="sm"
-                    className="w-full h-7 text-xs bg-orange-500 hover:bg-orange-600"
+                    className="w-full h-6 text-[11px] bg-orange-500 hover:bg-orange-600"
                     disabled={isProcessingAi || !aiPrompt.trim()}
                     onClick={() => callEditApi(aiPrompt)}
                   >
@@ -445,12 +478,12 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
 
         {/* Fuse Tab */}
         {activeTab === 'fuse' && (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {/* Current + Fuse Images Preview */}
             <div className="flex gap-2 flex-wrap">
               {/* Current image thumbnail */}
               {!isPlaceholder && (
-                <div className="relative w-12 h-12 rounded border overflow-hidden bg-muted/30">
+                <div className="relative w-10 h-10 rounded border overflow-hidden bg-muted/30">
                   <img src={localUrl} alt="Current" className="w-full h-full object-cover" />
                   <div className="absolute inset-0 flex items-center justify-center bg-black/40">
                     <span className="text-[8px] text-white font-medium">Base</span>
@@ -460,7 +493,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
 
               {/* Fuse images */}
               {fuseImages.map((img, idx) => (
-                <div key={idx} className="relative w-12 h-12 rounded border overflow-hidden bg-muted/30 group">
+                <div key={idx} className="relative w-10 h-10 rounded border overflow-hidden bg-muted/30 group">
                   <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
                   <button
                     onClick={() => removeFuseImage(idx)}
@@ -476,7 +509,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
                 <button
                   onClick={() => fuseInputRef.current?.click()}
                   className={cn(
-                    "w-12 h-12 rounded border-2 border-dashed flex items-center justify-center transition-colors",
+                    "w-10 h-10 rounded border-2 border-dashed flex items-center justify-center transition-colors",
                     "hover:border-orange-300 hover:bg-orange-50/30 text-muted-foreground hover:text-orange-500"
                   )}
                 >
@@ -491,7 +524,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
               className={cn(
-                "border-2 border-dashed rounded-lg p-3 text-center transition-colors",
+                "border-2 border-dashed rounded-md p-2 text-center transition-colors",
                 isDragging ? "border-orange-400 bg-orange-50/50" : "border-muted-foreground/20"
               )}
             >
@@ -506,14 +539,14 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
               placeholder="How to combine? (optional)"
-              className="min-h-[50px] text-xs resize-none"
+              className="min-h-[46px] text-[11px] resize-none"
               disabled={isProcessingAi}
             />
 
             {/* Fuse button */}
             <Button
               size="sm"
-              className="w-full h-7 text-xs bg-orange-500 hover:bg-orange-600"
+              className="w-full h-6 text-[11px] bg-orange-500 hover:bg-orange-600"
               disabled={isProcessingAi || (isPlaceholder && fuseImages.length < 2) || (!isPlaceholder && fuseImages.length < 1)}
               onClick={callFuseApi}
             >

@@ -14,6 +14,7 @@ from .models import OutlineRequest, OutlineResponse
 from .utils import _sanitize_request_for_logging
 from .converter import _convert_to_api_format
 from .brand import _hydrate_style_preferences, _guess_brand_identifier, _looks_like_domain, _is_reasonable_brand_term
+from .handlers_outline import process_outline, process_outline_stream
 
 logger = logging.getLogger(__name__)
 

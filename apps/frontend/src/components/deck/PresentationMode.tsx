@@ -56,11 +56,13 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const lastMouseMove = useRef<number>(0);
   const mouseMoveTimeout = useRef<NodeJS.Timeout | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isLandscapeMode, setIsLandscapeMode] = useState(false);
   const thumbnailScrollRef = useRef<HTMLDivElement>(null);
   const slideContainerRef = useRef<HTMLDivElement>(null);
   const presentationRef = useRef<HTMLDivElement>(null);
   const [slideScale, setSlideScale] = useState(0.8); // Start with a conservative scale
   const [isMobile, setIsMobile] = useState(false);
+  const isExpanded = isFullscreen || isLandscapeMode;
 
   // Detect mobile device - improved detection for tablets and touch devices
   useEffect(() => {
@@ -84,7 +86,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   }, []);
 
   // Safe orientation lock/unlock helpers that won't crash on unsupported devices
-  const safeOrientationLock = async (orientation: string) => {
+  const safeOrientationLock = React.useCallback(async (orientation: string) => {
     if (typeof window === 'undefined') return false;
     try {
       const screenApi = window.screen as any;
@@ -96,9 +98,9 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       // Orientation lock not supported - expected on many devices
     }
     return false;
-  };
+  }, []);
 
-  const safeOrientationUnlock = () => {
+  const safeOrientationUnlock = React.useCallback(() => {
     if (typeof window === 'undefined') return;
     try {
       const screenApi = window.screen as any;
@@ -108,39 +110,49 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     } catch {
       // Orientation unlock not supported - expected on many devices
     }
-  };
+  }, []);
 
   // Handle fullscreen/landscape toggle
-  const toggleFullscreen = async () => {
-    try {
-      const elem = presentationRef.current || document.documentElement;
+  const toggleFullscreen = React.useCallback(async () => {
+    const elem = presentationRef.current || document.documentElement;
 
-      if (isFullscreen) {
-        // Exit fullscreen
+    if (isExpanded) {
+      try {
         if (document.exitFullscreen) {
           await document.exitFullscreen();
         } else if ((document as any).webkitExitFullscreen) {
           (document as any).webkitExitFullscreen();
         }
-        // Unlock orientation
-        safeOrientationUnlock();
-      } else {
-        // Enter fullscreen
-        if (elem.requestFullscreen) {
-          await elem.requestFullscreen();
-        } else if ((elem as any).webkitRequestFullscreen) {
-          (elem as any).webkitRequestFullscreen();
-        }
-        // Lock to landscape on mobile
-        await safeOrientationLock('landscape');
+      } catch {
+        // Ignore exit fullscreen errors - still unlock orientation below
       }
-    } catch (err) {
+      safeOrientationUnlock();
+      setIsLandscapeMode(false);
+      return;
+    }
+
+    try {
+      if (elem.requestFullscreen) {
+        await elem.requestFullscreen();
+      } else if ((elem as any).webkitRequestFullscreen) {
+        (elem as any).webkitRequestFullscreen();
+      }
+      const locked = await safeOrientationLock('landscape');
+      if (locked) setIsLandscapeMode(true);
+    } catch {
       // Fullscreen failed, try just landscape lock on mobile
       if (isMobile) {
-        await safeOrientationLock('landscape');
+        const locked = await safeOrientationLock('landscape');
+        if (locked) setIsLandscapeMode(true);
       }
     }
-  };
+  }, [isExpanded, isMobile, safeOrientationLock, safeOrientationUnlock]);
+
+  const handleExitPresentation = React.useCallback(() => {
+    safeOrientationUnlock();
+    setIsLandscapeMode(false);
+    exitPresentation();
+  }, [exitPresentation, safeOrientationUnlock]);
   
   // Dispatch slidechange event when slide changes in presentation mode
   // This ensures chart animations are triggered properly
@@ -188,8 +200,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
       // Use try-catch for extra safety during orientation changes
       try {
-        const containerWidth = container.clientWidth;
-        const containerHeight = container.clientHeight;
+        const containerWidth = container.clientWidth || window.innerWidth;
+        const containerHeight = container.clientHeight || window.innerHeight;
 
         // Skip if container has no dimensions yet
         if (!containerWidth || !containerHeight || containerWidth === 0 || containerHeight === 0) return;
@@ -198,6 +210,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
         const scaleX = containerWidth / DEFAULT_SLIDE_WIDTH;
         const scaleY = containerHeight / DEFAULT_SLIDE_HEIGHT;
         const scale = Math.min(scaleX, scaleY);
+        if (!Number.isFinite(scale) || scale <= 0) return;
 
         setSlideScale(scale);
       } catch (error) {
@@ -232,7 +245,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       }
       window.removeEventListener('resize', calculateScale);
     };
-  }, [isPresenting]);
+  }, [isPresenting, isFullscreen, isMobile]);
   
   // Scroll current slide into view when thumbnails open
   useEffect(() => {
@@ -328,7 +341,11 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
       switch (e.key) {
         case 'Escape':
-          exitPresentation();
+          if (isExpanded) {
+            toggleFullscreen();
+          } else {
+            handleExitPresentation();
+          }
           break;
         case 'ArrowRight':
         case ' ':
@@ -350,6 +367,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     // Handle fullscreen changes (including webkit prefix for Safari)
     const handleFullscreenChange = () => {
       const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
+      if (!isFS) {
+        safeOrientationUnlock();
+        setIsLandscapeMode(false);
+      }
       setIsFullscreen(isFS);
     };
 
@@ -368,13 +389,17 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
     };
-  }, [isPresenting, showThumbnails, setShowControls, exitPresentation, goToNextSlide, goToPrevSlide]);
+  }, [isPresenting, showThumbnails, setShowControls, handleExitPresentation, goToNextSlide, goToPrevSlide, isExpanded, toggleFullscreen, safeOrientationUnlock]);
 
   if (!isPresenting) return null;
 
   // Defensive: ensure currentSlideIndex is valid
   const validIndex = Math.max(0, Math.min(currentSlideIndex, slides.length - 1));
   const currentSlide = slides[validIndex];
+  const viewportClamp = isMobile ? 100 : 95;
+  const progressTotal = Math.max(1, slides.length);
+  const maxWidth = `min(${viewportClamp}vw, calc(${viewportClamp}dvh * ${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}))`;
+  const minHeight = `min(calc(${viewportClamp}vw * ${DEFAULT_SLIDE_HEIGHT} / ${DEFAULT_SLIDE_WIDTH}), ${viewportClamp}dvh)`;
 
   return (
     <motion.div
@@ -386,16 +411,19 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       style={{ height: '100dvh' }} // Use dvh for mobile Safari compatibility
     >
       {/* Main slide display */}
-      <div className="relative w-full h-full flex items-center justify-center p-4">
+      <div className={cn(
+        "relative w-full h-full flex items-center justify-center",
+        isMobile ? "p-2" : "p-4"
+      )}>
         <div
           ref={slideContainerRef}
           className="relative rounded-lg overflow-hidden"
           style={{
             width: '100%',
-            maxWidth: `min(95vw, calc(95dvh * ${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}))`,
+            maxWidth,
             aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`,
             // Fallback height for browsers that don't support aspect-ratio
-            minHeight: `min(calc(95vw * ${DEFAULT_SLIDE_HEIGHT} / ${DEFAULT_SLIDE_WIDTH}), 95dvh)`
+            minHeight
           }}
         >
           {currentSlide && (
@@ -451,11 +479,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                       e.stopPropagation();
                       setShowThumbnails(true);
                     }}
-                    onTouchEnd={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setShowThumbnails(true);
-                    }}
                     className={cn(
                       "bg-black/60 rounded-full text-white/90 hover:bg-black/80 active:bg-black/90 transition-colors border border-white/20 touch-manipulation",
                       isMobile ? "p-3 min-w-[48px] min-h-[48px]" : "p-2"
@@ -476,19 +499,14 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                       e.stopPropagation();
                       toggleFullscreen();
                     }}
-                    onTouchEnd={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      toggleFullscreen();
-                    }}
                     className={cn(
                       "bg-black/60 rounded-full text-white/90 hover:bg-black/80 active:bg-black/90 transition-colors border border-white/20 touch-manipulation",
                       isMobile ? "p-3 min-w-[48px] min-h-[48px]" : "p-2"
                     )}
                     style={{ WebkitTapHighlightColor: 'transparent' }}
-                    title={isFullscreen ? "Exit Full Screen" : "Full Screen"}
+                    title={isExpanded ? "Exit Full Screen" : "Full Screen"}
                   >
-                    {isFullscreen ? <Minimize2 size={isMobile ? 22 : 18} /> : <Maximize2 size={isMobile ? 22 : 18} />}
+                    {isExpanded ? <Minimize2 size={isMobile ? 22 : 18} /> : <Maximize2 size={isMobile ? 22 : 18} />}
                   </motion.button>
 
                   {/* Exit button - with touch support for mobile */}
@@ -499,19 +517,18 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      exitPresentation();
-                    }}
-                    onTouchEnd={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      exitPresentation();
+                      if (isExpanded) {
+                        toggleFullscreen();
+                      } else {
+                        handleExitPresentation();
+                      }
                     }}
                     className={cn(
                       "bg-black/60 rounded-full text-white/90 hover:bg-black/80 active:bg-black/90 transition-colors border border-white/20 touch-manipulation",
                       isMobile ? "p-3 min-w-[48px] min-h-[48px]" : "p-2"
                     )}
                     style={{ WebkitTapHighlightColor: 'transparent' }}
-                    title="Exit presentation (ESC)"
+                    title={isExpanded ? "Exit landscape" : "Exit presentation (ESC)"}
                   >
                     <X size={isMobile ? 22 : 18} />
                   </motion.button>
@@ -529,12 +546,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.1 }}
                 onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  goToPrevSlide();
-                }}
-                onTouchEnd={(e) => {
-                  if (validIndex === 0) return;
                   e.preventDefault();
                   e.stopPropagation();
                   goToPrevSlide();
@@ -557,12 +568,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.1 }}
                 onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  goToNextSlide();
-                }}
-                onTouchEnd={(e) => {
-                  if (validIndex === slides.length - 1) return;
                   e.preventDefault();
                   e.stopPropagation();
                   goToNextSlide();
@@ -592,7 +597,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
               <div className="bg-black/40 rounded-full h-1 overflow-hidden">
                 <motion.div
                   className="bg-white/80 h-full rounded-full"
-                  animate={{ width: `${((validIndex + 1) / slides.length) * 100}%` }}
+                  animate={{ width: `${((validIndex + 1) / progressTotal) * 100}%` }}
                   transition={{ duration: 0.3, ease: "easeInOut" }}
                 />
               </div>

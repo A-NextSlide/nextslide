@@ -354,7 +354,7 @@ async def call_model_with_tools(
                         tool_result = sr["result"]["content"]
                         if len(tool_result) > 2500:
                             tool_result = tool_result[:2500] + "\n\n[Truncated for brevity - use key facts above]"
-                        yield f"data: {json.dumps({'type': 'research', 'content': sr['result']['content'][:500] + '...', 'citations': sr['result']['citations'][:5], 'query': sr['query']})}\n\n"
+                        yield f"data: {json.dumps({'type': 'research', 'content': tool_result, 'citations': sr['result']['citations'][:5], 'query': sr['query']})}\n\n"
                     else:
                         tool_result = f"Search failed: {sr['result'].get('error', 'Unknown error')}"
                         yield f"data: {json.dumps({'type': 'status', 'status': 'research_failed', 'message': sr['result'].get('error'), 'query': sr['query']})}\n\n"

@@ -110,99 +110,13 @@ async def edit_outline_chat(
         context_prompt = _build_context_prompt(request)
         
         # Create the AI prompt
-        system_prompt = """You are an expert presentation outline editor. Your job is to modify presentation outlines based on user requests while maintaining quality and coherence.
-
-When editing outlines:
-1. Make specific changes requested by the user
-2. Maintain consistency in tone and style
-3. Preserve the overall flow and structure unless asked to change it
-4. Keep content concise and impactful
-5. Ensure each slide has a clear purpose
-6. IMPORTANT: Apply edits to the ORIGINAL content. Do not rewrite slides from scratch when the user asks to "make more detailed", "remove this", or "change this" — modify the existing content in place.
-
-CRITICAL RULE: When instructed to edit a specific slide number, you MUST:
-- ONLY modify the specified slide
-- Keep ALL other slides EXACTLY as they are
-- Do NOT make any changes to slides that are not targeted
-- Return ALL slides in the outline (both modified and unmodified)
-
-You must respond with a valid JSON object containing:
-- updatedOutline: The modified outline with all slides (including ALL original fields)
-- changes: Summary of what was changed
-
-The updatedOutline must include ALL slides from the original outline, not just the modified ones.
-Each slide MUST have ALL these fields:
-- id: string (use the original slide ID)
-- title: string
-- content: string (formatted with bullet points or paragraphs)
-- slide_type: string (preserve original or use "content")
-- narrative_role: string (preserve original or use "supporting")
-- speaker_notes: string (preserve original or use empty string)
-- deepResearch: boolean (preserve original or false)
-- taggedMedia: array (preserve original or empty array)
-Optional (when adding charts):
-- extractedData: object with keys { source, chartType, title, data, metadata }
-
-The outline must also include:
-- id: string (MUST preserve the original outline ID from the input - DO NOT use example IDs)
-- title: string
-- topic: string (preserve original)
-- tone: string (preserve original)
-- narrative_arc: string (preserve original)
-- metadata: object (preserve original)
-
-Example response format (NOTE: this is just an example - use the actual IDs from the input):
-{
-  "updatedOutline": {
-    "id": "outline-1234567890",  // <-- This is an EXAMPLE - use the actual ID from input
-    "title": "Presentation Title",
-    "topic": "Topic",
-    "tone": "professional",
-    "narrative_arc": "standard",
-    "slides": [
-      {
-        "id": "slide-0",
-        "title": "Updated Slide Title",
-        "content": "• Point 1\\n• Point 2\\n• Point 3",
-        "slide_type": "content",
-        "narrative_role": "supporting",
-        "speaker_notes": "",
-        "deepResearch": false,
-        "taggedMedia": []
-      }
-    ],
-    "metadata": {
-      "depth": "standard",
-      "generation_time": "2024-01-09T12:34:56.789Z",
-      "slide_count": 1
-    }
-  },
-  "changes": {
-    "summary": "Made the content more concise",
-    "modifiedSlides": ["slide-0"]
-  }
-}
-
-Important: Return ONLY the JSON response, no additional text.
-
-ADDITIONAL CHART RULES:
-When the user requests a chart (keywords: chart, graph, visualize, visualization), you MUST add an 'extractedData' object to the relevant slide(s) with this exact shape:
-
-extractedData: {
-  "source": "outline_edit",
-  "chartType": "bar" | "column" | "pie" | "line" | "area" | "waterfall" | "radar" | "treemap" | "sankey" | "gauge",
-  "title": "Descriptive chart title",
-  "data": [ { "name": string, "value": number }, ... ],
-  "metadata": {}
-}
-
-DATA REQUIREMENTS:
-- Use REAL numeric values extracted from the slide's existing content when possible (percentages, counts, currency, etc.).
-- NEVER use placeholders like "Category A" or 0 values.
-- Keep one consistent unit of measure across all points; if using percentages, they MUST sum to 100 (adjust last value if needed).
-- 5-12 data points preferred where appropriate; labels must be contextual (non-generic).
-- If the content has no comparable metrics to visualize, omit extractedData rather than inventing arbitrary data.
-"""
+        system_prompt = (
+            "You edit presentation outlines. Return ONLY JSON with {updatedOutline, changes}. "
+            "Preserve IDs and fields from the input; apply edits in place and keep tone/structure unless asked to change. "
+            "If target_slide_index is provided, only modify that slide and leave all others unchanged. "
+            "Each slide must include id, title, content, slide_type, narrative_role, speaker_notes, deepResearch, taggedMedia. "
+            "If you add chart data, include extractedData with {chartType, title, data, metadata} using real numbers when available."
+        )
 
         # Build a compact chat history block to provide original message context
         history_lines: List[str] = []
@@ -217,6 +131,11 @@ DATA REQUIREMENTS:
             pass
         chat_history_block = ("\n\nChat history (most recent last):\n" + "\n".join(history_lines)) if history_lines else ""
 
+        target_label = (
+            f"Slide {request.target_slide_index + 1} only"
+            if request.target_slide_index is not None
+            else "Any relevant slides"
+        )
         user_prompt = f"""Current outline:
 {_format_outline_for_prompt(request.outline)}
 
@@ -225,19 +144,9 @@ User request: "{request.message}"
 
 {context_prompt}
 
-{"=" * 80}
-CRITICAL INSTRUCTION - TARGET SLIDE ENFORCEMENT:
-{f'''You are ONLY allowed to edit Slide {request.target_slide_index + 1} (index {request.target_slide_index}).
-- DO NOT modify ANY other slide
-- Return ALL slides in their ORIGINAL form except Slide {request.target_slide_index + 1}
-- Even if the request sounds global (e.g., "make all bullet points concise"), apply it ONLY to Slide {request.target_slide_index + 1}
-- Ignore the word "all" if a specific slide is targeted
-- This is MANDATORY - edits to other slides will be rejected''' if request.target_slide_index is not None else "Edit any relevant slides as needed based on the user's request."}
-{"=" * 80}
+Target: {target_label}
 
-Target slide: {f"Slide {request.target_slide_index + 1} ONLY - NO EXCEPTIONS" if request.target_slide_index is not None else "Any relevant slides"}
-
-Please apply the requested changes and return the updated outline with ALL slides (both modified and unmodified)."""
+Return updatedOutline and changes JSON only."""
 
         # Tool-powered outline editing
         from pydantic import create_model

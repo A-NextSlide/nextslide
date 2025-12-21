@@ -18,81 +18,124 @@ from .media import scrape_reference_links
 logger = get_logger(__name__)
 
 URL_PATTERN = re.compile(
-    r'https?://[^\s<>"{}|\\^`\[\]]+|(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*\.(?:life|com|co|io|org|net|ai|app|xyz|dev)(?:/[^\s]*)?)',
+    r'(?:https?://[^\s<>"{}|\\^`\[\]]+|(?:www\.)?[a-zA-Z0-9][-a-zA-Z0-9]*\.(?:life|com|co|io|org|net|ai|app|xyz|dev)(?:/[^\s]*)?)',
     re.IGNORECASE,
 )
 DOMAIN_PATTERN = re.compile(
     r'\b([a-zA-Z0-9][-a-zA-Z0-9]*\.(?:life|com|co|io|org|net|ai|app|xyz|dev))\b',
     re.IGNORECASE,
 )
-
-PREFETCH_KEYWORDS = (
-    "pitch deck",
-    "investor",
-    "funding",
-    "series",
-    "market",
-    "tam",
-    "sam",
-    "som",
-    "competitor",
-    "competitive",
-    "analysis",
-    "go in depth",
-    "extremely detailed",
-    "due diligence",
-    "valuation",
-    "unit economics",
+EXPLICIT_RESEARCH_PATTERN = re.compile(
+    r'\b(search|research|crawl|scrape|lookup|look up|find|investigate|verify|diligence|due diligence)\b',
+    re.IGNORECASE,
+)
+DEPTH_RESEARCH_PATTERN = re.compile(
+    r'\b(pitch deck|series [a-d]|investor|funding|analytical|in-depth|deep dive|market|competitive|data-driven)\b',
+    re.IGNORECASE,
 )
 
 
-def build_prefetch_research_query(message: str, urls: List[str]) -> Optional[str]:
-    text = (message or "").strip()
-    if not text and not urls:
-        return None
+def is_explicit_research_request(message: str) -> bool:
+    if not message:
+        return False
+    return bool(EXPLICIT_RESEARCH_PATTERN.search(message))
 
-    lower = text.lower()
-    has_signal = any(keyword in lower for keyword in PREFETCH_KEYWORDS) or bool(urls)
-    if not has_signal:
-        return None
+def extract_domains_from_message(message: str) -> List[str]:
+    """Extract explicit domains from the current user message."""
+    if not message:
+        return []
 
-    base = ""
-    if urls:
-        url = urls[0]
-        if not url.startswith("http"):
-            url = f"https://{url}"
+    detected_urls = URL_PATTERN.findall(message)
+    detected_domains = DOMAIN_PATTERN.findall(message)
+    candidates = []
+
+    for raw in detected_urls:
+        url = raw if raw.startswith("http") else f"https://{raw}"
         try:
             parsed = urlparse(url)
             host = parsed.hostname or ""
-            base = host.replace("www.", "") or url
         except Exception:
-            base = url
+            host = ""
+        if host:
+            candidates.append(host)
 
-    if not base:
-        base = text
+    candidates.extend(detected_domains)
 
-    topics = []
-    if "market" in lower or "tam" in lower:
-        topics.append("market size")
-    if "competitor" in lower or "competitive" in lower:
-        topics.append("competitors")
-    if "investor" in lower or "funding" in lower or "series" in lower:
-        topics.append("funding")
-    if not topics:
-        topics = ["company overview", "business model", "market size", "competitors", "recent news"]
+    cleaned = []
+    for host in candidates:
+        normalized = host.strip().lower().lstrip("www.")
+        if normalized and normalized not in cleaned:
+            cleaned.append(normalized)
 
-    query = f"{base} " + ", ".join(topics)
-    return query[:300]
+    return cleaned
+
+def build_prefetch_research_query(
+    message: str,
+    urls: List[str],
+    context: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    if context:
+        query = context.get("prefetch_research_query") or context.get("prefetchResearchQuery")
+        if isinstance(query, str) and query.strip():
+            return query.strip()[:300]
+
+        queries = context.get("prefetch_research_queries") or context.get("prefetchResearchQueries")
+        if isinstance(queries, list):
+            for item in queries:
+                if isinstance(item, str) and item.strip():
+                    return item.strip()[:300]
+
+    message = (message or "").strip()
+    domain_hint = None
+    if urls:
+        candidate = urls[0]
+        try:
+            parsed = urlparse(candidate)
+            host = parsed.hostname or candidate
+        except Exception:
+            host = candidate
+        domain_hint = host.lstrip("www.").lower()
+    if not domain_hint and message:
+        domains = extract_domains_from_message(message)
+        if domains:
+            domain_hint = domains[0]
+
+    explicit_request = is_explicit_research_request(message)
+    depth_request = bool(DEPTH_RESEARCH_PATTERN.search(message))
+    if not (explicit_request or domain_hint):
+        return None
+
+    if domain_hint:
+        query_parts = [
+            domain_hint,
+            "company overview",
+            "product",
+            "business model",
+            "traction",
+            "funding",
+        ]
+        if depth_request:
+            query_parts.append("Series A pitch deck")
+        query = " ".join(query_parts)
+        return query.strip()[:300]
+
+    if explicit_request and message:
+        return message[:300]
+
+    return None
 
 
 @dataclass
 class FileAnalysisPayload:
     file_context: str = ""
+    content_context: str = ""
     detected_intent: Optional[str] = None
     detected_slide_style: Optional[str] = None
     extracted_design_context: Optional[Dict[str, Any]] = None
     extracted_file_images: List[Any] = field(default_factory=list)
     extracted_slide_screenshots: List[Any] = field(default_factory=list)
+    analysis_by_id: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    analysis_by_name: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     events: List[Dict[str, Any]] = field(default_factory=list)
 
 
@@ -132,29 +175,54 @@ async def analyze_request_files(request: OutlineAgentRequest) -> FileAnalysisPay
 
     payload = FileAnalysisPayload(events=events)
 
+    analyses = file_analysis.get("analyses") or []
+    if isinstance(analyses, list):
+        for analysis in analyses:
+            if not isinstance(analysis, dict):
+                continue
+            file_id = analysis.get("file_id")
+            filename = analysis.get("filename")
+            if file_id:
+                payload.analysis_by_id[file_id] = analysis
+            if filename:
+                payload.analysis_by_name[filename] = analysis
+
     if enhanced_result.get("success"):
         payload.detected_intent = enhanced_result.get("intent")
         payload.detected_slide_style = enhanced_result.get("slide_style")
         payload.extracted_design_context = enhanced_result.get("design_context")
         payload.extracted_file_images = enhanced_result.get("extracted_images", [])
         payload.extracted_slide_screenshots = enhanced_result.get("slide_screenshots", [])
+        payload.content_context = enhanced_result.get("content_context") or ""
 
+    file_context_parts = []
     if file_analysis.get("success") and file_analysis.get("combined_context"):
         intent_info = _format_intent_info(payload.detected_intent)
         style_info = _format_style_info(payload.detected_slide_style)
         design_info = _format_design_info(payload.extracted_design_context)
 
-        payload.file_context = (
+        analysis_block = (
             f"\n\n[UPLOADED FILES ANALYSIS]{intent_info}{style_info}{design_info}\n"
             f"{file_analysis['combined_context']}\n[END FILES ANALYSIS]\n"
         )
-        file_count = file_analysis.get('file_count', len(request.files))
+        file_context_parts.append(analysis_block)
 
+    if payload.content_context:
+        file_context_parts.append(
+            "\n\n[EXTRACTED FILE CONTENT]\n"
+            f"{payload.content_context}\n[END EXTRACTED FILE CONTENT]\n"
+        )
+
+    if file_context_parts:
+        payload.file_context = "\n".join(file_context_parts)
+        file_count = file_analysis.get('file_count', len(request.files))
         events.append({
             'type': 'status',
             'status': 'files_analyzed',
             'message': f'Analyzed {file_count} file(s)',
             'analyses': file_analysis.get('analyses', []),
+            'file_context': payload.file_context,
+            'content_context': payload.content_context,
             'detected_intent': payload.detected_intent,
             'detected_slide_style': payload.detected_slide_style,
             'has_design': payload.extracted_design_context is not None,
@@ -189,16 +257,58 @@ def collect_urls_to_scrape(message: str, context: Optional[Dict[str, Any]] = Non
         if url not in urls_to_scrape:
             urls_to_scrape.append(url)
 
-    reference_links = []
+    def _add_candidate(candidate: str) -> None:
+        if not isinstance(candidate, str):
+            return
+        candidate = candidate.strip()
+        if not candidate:
+            return
+        matches = URL_PATTERN.findall(candidate)
+        if matches:
+            for match in matches:
+                url = match if match.startswith('http') else f'https://{match}'
+                if url not in urls_to_scrape:
+                    urls_to_scrape.append(url)
+            return
+        if DOMAIN_PATTERN.search(candidate):
+            url = f'https://{candidate}'
+            if url not in urls_to_scrape:
+                urls_to_scrape.append(url)
+
     if context:
         reference_links = context.get('reference_links') or context.get('referenceLinks') or []
-    urls_to_scrape.extend(reference_links)
+        if isinstance(reference_links, str):
+            reference_links = [reference_links]
+        for link in reference_links or []:
+            _add_candidate(link)
+
+        style_prefs = context.get('stylePreferences') or context.get('style_preferences')
+        if isinstance(style_prefs, str):
+            try:
+                style_prefs = json.loads(style_prefs)
+            except Exception:
+                _add_candidate(style_prefs)
+                style_prefs = None
+        if isinstance(style_prefs, dict):
+            _add_candidate(style_prefs.get('brandDomain') or style_prefs.get('brand_domain') or '')
+            brand_candidates = style_prefs.get('brandDomainCandidates') or style_prefs.get('brand_domain_candidates') or []
+            if isinstance(brand_candidates, str):
+                brand_candidates = [brand_candidates]
+            for candidate in brand_candidates:
+                _add_candidate(candidate)
+            style_reference_links = style_prefs.get('referenceLinks') or style_prefs.get('reference_links') or []
+            if isinstance(style_reference_links, str):
+                style_reference_links = [style_reference_links]
+            for link in style_reference_links or []:
+                _add_candidate(link)
+
+        _add_candidate(context.get('brandDomain') or context.get('brand_domain') or '')
 
     deduped = list(dict.fromkeys(urls_to_scrape))
     return deduped[:3]
 
 
-async def scrape_reference_content(urls: List[str]) -> ScrapePayload:
+async def scrape_reference_content(urls: List[str], include_videos: bool = True) -> ScrapePayload:
     if not urls:
         return ScrapePayload()
 
@@ -210,7 +320,7 @@ async def scrape_reference_content(urls: List[str]) -> ScrapePayload:
         }
     ]
 
-    scrape_result = await scrape_reference_links(urls)
+    scrape_result = await scrape_reference_links(urls, include_videos=include_videos)
     scraped_context = ""
 
     if scrape_result.get('success') and scrape_result.get('scraped_content'):
@@ -263,6 +373,12 @@ def build_messages(
             messages.append({"role": msg.role, "content": msg.content})
 
     user_content = request.message + scraped_context + file_context
+    if request.context and request.context.get("force_outline"):
+        user_content = (
+            f"{user_content}\n\n[CLARIFICATION_ANSWERED]\n"
+            "Use the provided answers to finalize the outline now. "
+            "If a CURRENT OUTLINE is provided, update it instead of regenerating."
+        )
 
     if request.context and "current_outline" in request.context:
         outline = request.context["current_outline"]
@@ -295,7 +411,7 @@ def build_messages(
 def extract_json_blocks(full_response: str) -> List[Dict[str, Any]]:
     blocks: List[Dict[str, Any]] = []
 
-    for match in re.finditer(r'```json\s*(\{[\s\S]*?\})\s*```', full_response):
+    for match in re.finditer(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', full_response):
         try:
             data = json.loads(match.group(1))
             blocks.append({'data': data, 'end_index': match.end()})
@@ -303,8 +419,19 @@ def extract_json_blocks(full_response: str) -> List[Dict[str, Any]]:
             continue
 
     if not blocks:
-        action_indices = [m.start() for m in re.finditer(r'"action"', full_response)]
-        for action_idx in action_indices:
+        tokens = [
+            '"action"',
+            '"generate_outline"',
+            '"update_outline"',
+            '"update_slides"',
+            '"update_theme"',
+            '"scrape_media"',
+            '"clarify"',
+        ]
+        token_indices: List[int] = []
+        for token in tokens:
+            token_indices.extend([m.start() for m in re.finditer(re.escape(token), full_response)])
+        for action_idx in sorted(set(token_indices)):
             start = full_response.rfind('{', 0, action_idx)
             if start == -1:
                 continue
@@ -350,7 +477,7 @@ def _get_block_action(block: Dict[str, Any]) -> Optional[str]:
         action = data.get('action')
         if action:
             return action
-        for key in ('generate_outline', 'update_outline', 'update_slides', 'update_theme', 'scrape_media'):
+        for key in ('generate_outline', 'update_outline', 'update_slides', 'update_theme', 'scrape_media', 'clarify'):
             if key in data:
                 return key
     return None
@@ -366,12 +493,13 @@ def select_action_block(
     if has_existing_outline:
         for block in blocks:
             action = _get_block_action(block)
-            if action in ('update_theme', 'update_slides', 'update_outline', 'scrape_media'):
+            if action in ('update_theme', 'update_slides', 'update_outline', 'scrape_media', 'clarify'):
                 return block
         return blocks[0]
 
     for block in blocks:
-        if _get_block_action(block) == 'generate_outline':
+        action = _get_block_action(block)
+        if action in ('generate_outline', 'clarify'):
             return block
 
     return blocks[0]
@@ -380,9 +508,13 @@ def select_action_block(
 def normalize_action_payload(data: Any) -> Any:
     if not isinstance(data, dict):
         return data
+    if 'action' in data and isinstance(data.get('action_input'), dict):
+        normalized = dict(data['action_input'])
+        normalized['action'] = data.get('action')
+        return normalized
     if 'action' in data:
         return data
-    for key in ('generate_outline', 'update_outline', 'update_slides', 'update_theme', 'scrape_media'):
+    for key in ('generate_outline', 'update_outline', 'update_slides', 'update_theme', 'scrape_media', 'clarify'):
         nested = data.get(key)
         if isinstance(nested, dict):
             normalized = dict(nested)

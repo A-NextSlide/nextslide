@@ -7,6 +7,7 @@ import { useEditorStore } from '../stores/editorStore';
 import { useHistoryStore } from '../stores/historyStore';
 import { useNavigation } from './NavigationContext';
 import { useEditModeTransitionStore } from '@/stores/editModeTransitionStore';
+import { FontLoadingService } from '@/services/FontLoadingService';
 
 type ActiveSlideContextType = {
   // Currently active slide data (either from draft or main store)
@@ -163,7 +164,29 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
   // Update a component in the active slide
   const updateComponent = (componentId: string, updates: Partial<ComponentInstance>, skipHistory?: boolean) => {
     if (!currentSlide) return;
-    
+
+    const props = updates.props || {};
+    const fontCandidates = new Set<string>();
+    const enqueueFont = (value: unknown) => {
+      if (typeof value === 'string' && value.trim()) {
+        fontCandidates.add(value);
+      }
+    };
+    enqueueFont((props as any).fontFamily);
+    enqueueFont((props as any).bodyFont);
+    enqueueFont((props as any).headingFont);
+    enqueueFont((props as any).tableStyles?.fontFamily);
+    if (props && typeof (props as any).props === 'object') {
+      enqueueFont((props as any).props.fontFamily);
+      enqueueFont((props as any).props.bodyFont);
+      enqueueFont((props as any).props.headingFont);
+    }
+    if (fontCandidates.size) {
+      fontCandidates.forEach((font) => {
+        FontLoadingService.loadFont(font).catch(() => {});
+      });
+    }
+
     if (isEditing) {
       // When editing, update the draft component
       updateDraftComponent(currentSlide.id, componentId, updates, skipHistory);

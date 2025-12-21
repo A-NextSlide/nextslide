@@ -7,7 +7,6 @@ This endpoint handles the entire flow:
 """
 
 import asyncio
-import json
 import logging
 import uuid
 from typing import Dict, Any, AsyncIterator, Optional, List
@@ -16,18 +15,24 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from models.requests import DeckOutline
 from models.registry import ComponentRegistry
-from models.deck import DeckBase
 from utils.supabase import upload_deck, get_deck
-from services.outline.chart_normalization import normalize_slide_chart_fields
 from agents.generation.events import sse_encode
+from api.requests.deck_create import (
+    build_initial_deck_payload,
+    ensure_deck_title,
+    initialize_conversation_history,
+    assign_uploaded_media_to_slides_with_ai,
+    broadcast_uploaded_media_to_slide_models,
+    log_tagged_media_summary,
+    prepare_outline_dict,
+    start_narrative_flow_task,
+)
 
 # Import new deck composition method
 from agents.generation.deck_composer import compose_deck_stream, SCHEMA_VERSION
-from agents.domain.models import SlideStatus
 from agents.config import COMPOSER_MODEL, MAX_PARALLEL_SLIDES, DELAY_BETWEEN_SLIDES
 
 import sentry_sdk
-from sentry_sdk import start_transaction, start_span
 
 import weakref
 
@@ -49,59 +54,6 @@ class CreateDeckFromOutlineRequest(BaseModel):
     async_images: bool = Field(True, description="If False, images are auto-applied synchronously; if True, images are searched asynchronously and user selects manually (default: True = placeholders)")
 
 
-def merge_style_preferences_into_outline(outline_dict: Dict[str, Any], request_style: Optional[Dict[str, Any]]) -> None:
-    if not request_style:
-        return
-    if 'stylePreferences' not in outline_dict:
-        outline_dict['stylePreferences'] = request_style
-        return
-
-    outline_style = outline_dict.get('stylePreferences') or {}
-
-    def is_missing_style_value(key: str, value: Any) -> bool:
-        if value is None:
-            return True
-        if key in ('autoSelectImages',):
-            return False
-        if isinstance(value, (str, list, dict)) and len(value) == 0:
-            return True
-        return False
-
-    def merge_if_missing(key: str) -> None:
-        incoming = request_style.get(key)
-        if incoming is None:
-            return
-        if key not in outline_style or is_missing_style_value(key, outline_style.get(key)):
-            outline_style[key] = incoming
-
-    # Merge common style preferences when missing
-    for style_key in (
-        'initialIdea',
-        'vibeContext',
-        'font',
-        'bodyFont',
-        'colors',
-        'autoSelectImages',
-        'slideMode',
-        'referenceImages',
-        'referenceLinks',
-        'enableResearch'
-    ):
-        merge_if_missing(style_key)
-
-    # CRITICAL: Merge logo fields and deck_theme when missing (may come from separate style_preferences)
-    if request_style.get('logoUrl') and not outline_style.get('logoUrl'):
-        outline_style['logoUrl'] = request_style['logoUrl']
-        logger.info(f"[DECK_CREATE] 🖼️ Merged logoUrl from request into outline: {request_style['logoUrl'][:60]}...")
-    if request_style.get('logoUrlDark') and not outline_style.get('logoUrlDark'):
-        outline_style['logoUrlDark'] = request_style['logoUrlDark']
-    if request_style.get('deck_theme') and not outline_style.get('deck_theme'):
-        outline_style['deck_theme'] = request_style['deck_theme']
-        logger.info("[DECK_CREATE] 🎨 Merged deck_theme from request into outline")
-
-    outline_dict['stylePreferences'] = outline_style
-
-
 def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: ComponentRegistry) -> AsyncIterator[str]:
     """
     Stream the creation and composition of a deck from an outline using the new structured approach.
@@ -117,7 +69,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
     Yields:
         Server-sent event formatted strings with progress updates
     """
-    print(f"[TOP LEVEL] stream_deck_creation called")
+    logger.info("[DECK_CREATE] stream_deck_creation called")
 
     # Get settings from request - use config for max parallelism (Gemini Tier 3 = no limits)
     from agents import config
@@ -134,14 +86,21 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
     
     async def generate():
         # Emit bytes for SSE and always close with an explicit end marker
+        deck_uuid: Optional[str] = None
+        sequence = 0
+
         def _sse(event: Dict[str, Any]) -> bytes:
+            nonlocal sequence, deck_uuid
+            sequence += 1
+            event.setdefault("sequence", sequence)
+            if deck_uuid and "deck_uuid" not in event and "deck_id" not in event:
+                event["deck_uuid"] = deck_uuid
+                event["deck_id"] = deck_uuid
             try:
                 return sse_encode(event)
             except Exception:
                 return sse_encode({"type": "error", "error": "serialization_failed"})
-        # Start Sentry transaction for deck creation
-        print(f"[DEBUG] stream_deck_creation generate() called")
-        logger.info(f"[DEBUG] stream_deck_creation generate() called")
+        logger.info("[DECK_CREATE] generate() called")
         # Proactively open the SSE stream for proxies and clients
         try:
             yield _sse({'type': 'connection_established', 'message': 'SSE stream open'})
@@ -151,133 +110,20 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
         
         with sentry_sdk.start_transaction(op="deck.create", name="Create Deck from Outline") as transaction:
             try:
-                # Initialize outline_dict here where it's used
                 outline_dict = request.outline
-
-                # CRITICAL: NEVER generate a new UUID if one exists in the outline
-                # The outline.id is the source of truth for the deck UUID
-                if 'id' not in outline_dict or not outline_dict['id']:
-                    logger.error("[UUID_FIX] ERROR: Outline is missing 'id' field! This should never happen.")
-                    raise ValueError("Outline must have an 'id' field. This ID should be generated when the outline is created.")
-
-                deck_uuid = outline_dict['id']
-                logger.info(f"[UUID_FIX] Using outline.id as deck UUID: {deck_uuid}")
-
-                if 'title' not in outline_dict:
-                    outline_dict['title'] = 'Untitled Presentation'
-                merge_style_preferences_into_outline(outline_dict, request.stylePreferences)
-
-                # Filter out any legacy upgrade slides (no longer used, popup shown instead)
-                outline_dict['slides'] = [
-                    slide for slide in outline_dict.get('slides', [])
-                    if not slide.get('is_upgrade_slide') and slide.get('type') != 'upgrade_paywall'
-                ]
-
-                for i, slide in enumerate(outline_dict.get('slides', [])):
-                    if 'id' not in slide: slide['id'] = f"slide-{deck_uuid}-{i}"
-                    # Ensure other essential slide fields have defaults if missing
-                    slide.setdefault('title', f"Slide {i + 1}")
-                    slide.setdefault('content', "")
-                    slide.setdefault('uploadedMedia', None)
-                    slide.setdefault('extractedData', None)  # ✅ FIXED: Use camelCase to match frontend
-                    slide.setdefault('manualCharts', None)  # ✅ Support multiple charts per slide
-                    slide.setdefault('speaker_notes', "")
-                    slide.setdefault('media_items', [])
-                    normalize_slide_chart_fields(slide)
-
-                # ✅ CRITICAL: Distribute uploadedMedia from outline to slides as taggedMedia
-                # This ensures images uploaded through chat are available for slide generation
-                uploaded_media = outline_dict.get('uploadedMedia', [])
-                if uploaded_media:
-                    logger.info(f"[DECK_CREATE] 📎 Found {len(uploaded_media)} uploadedMedia items at outline level")
-                    # Convert to TaggedMediaItem format and distribute to all slides
-                    for i, slide in enumerate(outline_dict.get('slides', [])):
-                        # Only add to slides that don't already have taggedMedia
-                        if not slide.get('taggedMedia'):
-                            slide['taggedMedia'] = []
-
-                        # Add all uploaded images to this slide's taggedMedia
-                        for media in uploaded_media:
-                            if isinstance(media, dict):
-                                # Get MIME type and base64 content
-                                mime_type = media.get('type', 'image/png')
-                                content_b64 = media.get('content', '')
-
-                                # Create a data URL for preview if we have base64 content
-                                preview_url = media.get('url') or media.get('previewUrl')
-                                if not preview_url and content_b64:
-                                    # Create a data URL from base64 content
-                                    preview_url = f"data:{mime_type};base64,{content_b64}"
-
-                                # Convert uploadedMedia format to TaggedMediaItem format
-                                tagged_item = {
-                                    'id': media.get('id', str(uuid.uuid4())),
-                                    'filename': media.get('name', media.get('filename', 'uploaded_file')),
-                                    'type': 'image' if mime_type.startswith('image/') else 'other',
-                                    'content': content_b64,  # Base64 content
-                                    'previewUrl': preview_url,  # Data URL for frontend rendering
-                                    'interpretation': None,
-                                    'status': 'processed',
-                                    'metadata': {'source': 'user_upload', 'originalType': mime_type}
-                                }
-                                slide['taggedMedia'].append(tagged_item)
-
-                        logger.info(f"[DECK_CREATE] 📎 Slide {i+1} now has {len(slide['taggedMedia'])} taggedMedia items")
-
+                deck_uuid, outline_dict = prepare_outline_dict(
+                    outline_dict, request.stylePreferences
+                )
                 deck_outline = DeckOutline(**outline_dict)
-                
-                # Debug logging for taggedMedia
-                logger.info(f"[DECK_CREATE] Parsed deck outline: {deck_outline.title}")
-                
-                # Fix "Untitled Deck" issue
-                logger.info(f"[DECK_TITLE_DEBUG] Title from outline: '{deck_outline.title}'")
-                if deck_outline.title == "Untitled Deck" or not deck_outline.title.strip():
-                    logger.warning(f"[DECK_TITLE_DEBUG] Deck is using default/empty title: '{deck_outline.title}'")
-                    
-                    # Try to generate a better title from available data
-                    new_title = None
-                    
-                    # Option 1: Use the first slide title
-                    if deck_outline.slides and len(deck_outline.slides) > 0:
-                        first_slide_title = deck_outline.slides[0].title
-                        if first_slide_title and first_slide_title.strip() and first_slide_title != "Untitled Slide":
-                            new_title = first_slide_title
-                            logger.info(f"[DECK_TITLE_DEBUG] Using first slide title: '{new_title}'")
-                    
-                    # Option 2: Use context from style preferences if available
-                    if not new_title and hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
-                        if hasattr(deck_outline.stylePreferences, 'vibeContext') and deck_outline.stylePreferences.vibeContext:
-                            # Extract a title from the vibe context (first sentence or phrase)
-                            vibe = deck_outline.stylePreferences.vibeContext
-                            if len(vibe) > 50:
-                                # Take first 50 chars and try to end at a word boundary
-                                new_title = vibe[:50].rsplit(' ', 1)[0] + "..."
-                            else:
-                                new_title = vibe
-                            logger.info(f"[DECK_TITLE_DEBUG] Using vibe context as title: '{new_title}'")
-                    
-                    # Option 3: Generate from date/time
-                    if not new_title:
-                        new_title = f"Presentation {datetime.now().strftime('%B %d, %Y')}"
-                        logger.info(f"[DECK_TITLE_DEBUG] Using date-based title: '{new_title}'")
-                    
-                    # Update the deck outline title
-                    deck_outline.title = new_title
-                
-                # Check if notes are present in the outline
-                if hasattr(deck_outline, 'notes') and deck_outline.notes:
-                    logger.info(f"[DECK_CREATE] ✅ Outline has narrative flow notes")
-                else:
-                    logger.warning(f"[DECK_CREATE] ⚠️ Outline is missing narrative flow notes")
-                
-                for i, slide in enumerate(deck_outline.slides):
-                    tm_count = len(slide.taggedMedia) if slide.taggedMedia else 0
-                    logger.info(f"[DECK_CREATE] Slide {i+1} '{slide.title}' has {tm_count} taggedMedia items")
-                    if tm_count > 0 and slide.taggedMedia:
-                        for j, media in enumerate(slide.taggedMedia[:2]):  # First 2 media items
-                            media_dict = media.model_dump() if hasattr(media, 'model_dump') else media
-                            logger.info(f"[DECK_CREATE]   Media {j+1}: {media_dict.get('filename', 'unknown')} - URL: {media_dict.get('previewUrl', 'none')[:100]}")
-                            
+                ensure_deck_title(deck_outline)
+                try:
+                    assigned = await assign_uploaded_media_to_slides_with_ai(deck_outline)
+                    if not assigned:
+                        broadcast_uploaded_media_to_slide_models(deck_outline)
+                except Exception as exc:
+                    logger.warning("[DECK_CREATE] Uploaded media assignment failed: %s", exc)
+                    broadcast_uploaded_media_to_slide_models(deck_outline)
+                log_tagged_media_summary(deck_outline)
             except Exception as e:
                 logger.error(f"Error parsing outline: {e}", exc_info=True)
                 # Try to get deck_uuid from request if possible
@@ -322,7 +168,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
             from utils.supabase import get_deck
             existing_deck = get_deck(deck_uuid)
             if existing_deck:
-                logger.warning(f"🚨 DECK ALREADY EXISTS - UUID: {deck_uuid}")
+                logger.warning(f"DECK ALREADY EXISTS - UUID: {deck_uuid}")
                 existing_status = existing_deck.get('status') or {}
                 logger.warning(f"  - Existing deck status: {existing_status.get('state', 'unknown')}")
                 logger.warning(f"  - Existing deck created: {existing_deck.get('created_at', 'unknown')}")
@@ -357,7 +203,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
             # First check if deck already exists and is completed
             existing_deck = get_deck(deck_uuid)
             if existing_deck and existing_deck.get('status') == 'completed':
-                logger.warning(f"❌ Deck {deck_uuid} already exists and is completed - rejecting duplicate request")
+                logger.warning(f"Deck {deck_uuid} already exists and is completed - rejecting duplicate request")
                 # Send deck_created first for navigation
                 yield _sse({
                     'type': 'deck_created',
@@ -370,9 +216,9 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 yield _sse({'type': 'error', 'error': 'DECK_ALREADY_COMPLETED', 'message': 'This deck has already been generated. Refresh the page to see the results.', 'deck_uuid': deck_uuid})
                 return
             
-            logger.info(f"🔍 Checking if deck {deck_uuid} is already being generated...")
+            logger.info(f"Checking if deck {deck_uuid} is already being generated...")
             if concurrency_manager.is_deck_generating(deck_uuid):
-                logger.warning(f"❌ Deck {deck_uuid} is already being generated - rejecting duplicate request")
+                logger.warning(f"Deck {deck_uuid} is already being generated - rejecting duplicate request")
                 # Send deck_created first for navigation
                 yield _sse({
                     'type': 'deck_created',
@@ -388,7 +234,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
             # Try to acquire deck lock
             deck_lock_acquired = await concurrency_manager.acquire_deck_lock(deck_uuid)
             if not deck_lock_acquired:
-                logger.warning(f"❌ Failed to acquire lock for deck {deck_uuid}")
+                logger.warning(f"Failed to acquire lock for deck {deck_uuid}")
                 # Send deck_created first for navigation
                 yield _sse({
                     'type': 'deck_created',
@@ -401,10 +247,10 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 yield _sse({'type': 'error', 'error': 'DECK_GENERATION_IN_PROGRESS', 'message': 'This deck is already being generated by another process.', 'deck_uuid': deck_uuid})
                 return
             
-            logger.info(f"✅ Acquired deck lock for {deck_uuid}")
+            logger.info(f"Acquired deck lock for {deck_uuid}")
             
             # Log to detect duplicate creation attempts
-            logger.warning(f"🔍 DECK CREATION ATTEMPT - UUID: {deck_uuid}, Title: '{deck_outline.title}', User: {user_id or 'anonymous'}")
+            logger.warning(f"DECK CREATION ATTEMPT - UUID: {deck_uuid}, Title: '{deck_outline.title}', User: {user_id or 'anonymous'}")
             
             # Build response data separately to avoid multi-line f-string issues
             response_data = {
@@ -423,186 +269,14 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
             }
             yield _sse(outline_structure_data)
             
-            initial_slides = [
-                {
-                    "id": so.id, 
-                    "title": so.title, 
-                    "components": [], 
-                    "status": SlideStatus.PENDING,
-                    "extractedData": so.extractedData.model_dump() if so.extractedData else None,
-                    "manualCharts": [c.model_dump() for c in so.manualCharts] if so.manualCharts else None  # ✅ Preserve multiple charts
-                }
-                for so in deck_outline.slides
-            ]
-            
-            initial_deck_status = {
-                "state": "creating", 
-                "currentSlide": 0, 
-                "totalSlides": len(deck_outline.slides),
-                "message": "Deck structure created, preparing for composition.",
-                "startedAt": datetime.now(timezone.utc).isoformat(), 
-                "progress": 5,
-                "phase": "initialization"
-            }
-            initial_deck = DeckBase(
-                uuid=deck_uuid, name=deck_outline.title, slides=initial_slides,
-                size={"width": 1920, "height": 1080}, status=initial_deck_status
+            deck_data_with_outline = build_initial_deck_payload(
+                deck_outline, deck_uuid
             )
             
-            # Add the outline to the deck data before uploading
-            deck_data_with_outline = initial_deck.model_dump()
-            deck_data_with_outline["outline"] = deck_outline.model_dump()
-            
-            # Include notes (narrative flow) if present in the outline
-            outline_dict = deck_outline.model_dump()
-            if 'notes' in outline_dict and outline_dict['notes']:
-                deck_data_with_outline["notes"] = outline_dict['notes']
-                logger.info(f"Including narrative flow notes in deck creation")
-                logger.info(f"Notes data: {json.dumps(outline_dict['notes'])[:200]}...")  # Log first 200 chars
-            else:
-                logger.warning(f"No notes found in outline. Outline keys: {list(outline_dict.keys())}")
-                if 'notes' in outline_dict:
-                    logger.warning(f"Notes field exists but is empty/None: {outline_dict['notes']}")
-
-            # If an embedded theme exists in outline notes or stylePreferences, persist it now
-            # so the composer can reuse it and skip re-generating via ThemeDirector
-            try:
-                provided_theme = None
-                # 1) Prefer outline.notes.theme
-                if isinstance(outline_dict.get('notes'), dict):
-                    provided_theme = outline_dict['notes'].get('theme') or outline_dict['notes'].get('Theme')
-                # 2) Fallback to stylePreferences.theme (supports dict or pydantic model)
-                if not provided_theme and hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
-                    sp = deck_outline.stylePreferences
-                    if isinstance(sp, dict):
-                        provided_theme = sp.get('theme')
-                    else:
-                        provided_theme = getattr(sp, 'theme', None)
-                if isinstance(provided_theme, dict) and provided_theme:
-                    deck_data_with_outline['theme'] = provided_theme
-                    logger.info("[DECK_CREATE] ✅ Embedded theme found in outline and will be persisted to deck data")
-                    # Also mirror into data field for immediate availability
-                    try:
-                        deck_data_with_outline.setdefault('data', {})
-                        if isinstance(deck_data_with_outline['data'], dict):
-                            deck_data_with_outline['data']['theme'] = provided_theme
-                    except Exception:
-                        pass
-                else:
-                    logger.info("[DECK_CREATE] No embedded theme found in outline to persist")
-            except Exception as _embed_err:
-                logger.warning(f"[DECK_CREATE] Skipped embedded theme persistence due to error: {_embed_err}")
-            
-            # ALWAYS generate narrative flow in background
-            # This ensures it's created even when users interrupt outline generation
-            print(f"[NARRATIVE FLOW] Starting background generation for deck {deck_uuid}")
-            logger.info(f"[NARRATIVE FLOW] Starting background generation for deck {deck_uuid}")
-            logger.info(f"[NARRATIVE FLOW] Outline title: {deck_outline.title}")
-            logger.info(f"[NARRATIVE FLOW] Number of slides: {len(deck_outline.slides)}")
-            
-            # Start narrative flow generation immediately in background
-            async def generate_and_save_narrative_flow_background():
-                """Generate narrative flow in background and update deck when ready"""
-                print(f"[NARRATIVE FLOW DEBUG] Function called for deck {deck_uuid}")
-                logger.info(f"[NARRATIVE FLOW DEBUG] Function called for deck {deck_uuid}")
-                await asyncio.sleep(0.1)  # Small delay to ensure deck is created
-                
-                try:
-                    logger.info(f"[NARRATIVE FLOW DEBUG] Starting import and initialization")
-                    from services.narrative_flow_analyzer import NarrativeFlowAnalyzer
-                    flow_analyzer = NarrativeFlowAnalyzer()
-                    logger.info(f"[NARRATIVE FLOW DEBUG] NarrativeFlowAnalyzer initialized")
-                    
-                    # Create outline dict for analysis
-                    analysis_outline = {
-                        "id": deck_outline.id,
-                        "title": deck_outline.title,
-                        "slides": [
-                            {
-                                "id": slide.id,
-                                "title": slide.title,
-                                "content": slide.content,
-                                "speaker_notes": getattr(slide, 'speaker_notes', '')
-                            }
-                            for slide in deck_outline.slides
-                        ]
-                    }
-                    
-                    logger.info(f"[NARRATIVE FLOW] Generating narrative flow for {len(analysis_outline['slides'])} slides...")
-                    
-                    # Generate narrative flow
-                    narrative_flow = await flow_analyzer.analyze_narrative_flow(
-                        analysis_outline,
-                        context=deck_outline.title  # Use title as context
-                    )
-                    
-                    if narrative_flow:
-                        logger.info(f"[NARRATIVE FLOW] Generation successful, saving to deck {deck_uuid}")
-                        
-                        # Save to deck immediately
-                        from utils.supabase import update_deck_notes
-                        
-                        # Try multiple times to ensure deck exists
-                        for attempt in range(3):
-                            success = update_deck_notes(deck_uuid, narrative_flow.model_dump())
-                            if success:
-                                logger.info(f"[NARRATIVE FLOW] Successfully saved narrative flow for deck {deck_uuid} on attempt {attempt + 1}")
-                                return narrative_flow
-                            else:
-                                logger.warning(f"[NARRATIVE FLOW] Failed to save on attempt {attempt + 1}, retrying in 2 seconds...")
-                                await asyncio.sleep(2)
-                        
-                        logger.error(f"[NARRATIVE FLOW] Failed to save after 3 attempts for deck {deck_uuid}")
-                    else:
-                        logger.warning(f"[NARRATIVE FLOW] Generation returned None for deck {deck_uuid}")
-                    
-                    return None
-                except Exception as e:
-                    logger.error(f"[NARRATIVE FLOW] Failed to generate narrative flow for deck {deck_uuid}: {e}", exc_info=True)
-                    return None
-            
-            # Start the background task immediately
-            narrative_flow_task = asyncio.create_task(generate_and_save_narrative_flow_background())
-            # Keep a reference to prevent garbage collection
-            _background_tasks.add(narrative_flow_task)
-            
-            # Also ensure it runs even if we don't await it
-            def task_done_callback(task):
-                try:
-                    result = task.result()
-                    if result:
-                        logger.info(f"[NARRATIVE FLOW] Background task completed successfully for deck {deck_uuid}")
-                    else:
-                        logger.warning(f"[NARRATIVE FLOW] Background task completed but returned None for deck {deck_uuid}")
-                except Exception as e:
-                    logger.error(f"[NARRATIVE FLOW] Background task failed for deck {deck_uuid}: {e}")
-            
-            narrative_flow_task.add_done_callback(task_done_callback)
-            logger.info(f"[NARRATIVE FLOW] Background generation task started and tracked for deck {deck_uuid}")
-            
-            # Initialize conversation_history with the initial request
-            try:
-                initial_request = None
-                # Try to get the initial user prompt from stylePreferences.vibeContext or outline.topic
-                if hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
-                    sp = deck_outline.stylePreferences
-                    if hasattr(sp, 'vibeContext') and sp.vibeContext:
-                        initial_request = sp.vibeContext
-                    elif isinstance(sp, dict) and sp.get('vibeContext'):
-                        initial_request = sp.get('vibeContext')
-
-                # Fallback to outline title if no vibeContext
-                if not initial_request and deck_outline.title:
-                    initial_request = f"Create a presentation about: {deck_outline.title}"
-
-                deck_data_with_outline["conversation_history"] = {
-                    "initial_request": initial_request,
-                    "messages": []
-                }
-                logger.info(f"[DECK_CREATE] Initialized conversation_history with initial_request: {initial_request[:100] if initial_request else 'None'}...")
-            except Exception as conv_err:
-                logger.warning(f"[DECK_CREATE] Failed to initialize conversation_history: {conv_err}")
-                deck_data_with_outline["conversation_history"] = {"initial_request": None, "messages": []}
+            start_narrative_flow_task(
+                deck_outline, deck_uuid, _background_tasks
+            )
+            initialize_conversation_history(deck_data_with_outline, deck_outline)
 
             # CRITICAL: Save deck to database BEFORE sending deck_created event
             try:
@@ -639,13 +313,14 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 composition_completed = False
                 emitted_error = False
                 slides_complete = False
-                print(f"\n🟡🟡🟡 [API] About to start composition for deck {deck_uuid}")
-                logger.info(f"Starting composition for deck {deck_uuid} with new structured approach")
+                logger.info(
+                    "Starting composition for deck %s with new structured approach",
+                    deck_uuid,
+                )
 
                 # Track composition phase
                 with sentry_sdk.start_span(op="deck.compose", description="Compose deck"):
                     # Use new compose_deck_stream with structured three-phase approach
-                    print(f"🟡🟡🟡 [API] Calling compose_deck_stream")
                     async for update in compose_deck_stream(
                         deck_outline, registry, deck_uuid,
                         max_parallel=max_parallel_val, delay_between_slides=delay_val,
@@ -658,10 +333,10 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                             utype = update.get('type')
                             if utype in ('deck_complete', 'composition_complete', 'complete'):
                                 composition_completed = True
-                                print(f"✅ [API] Received completion event: {utype}")
+                                logger.info("Received completion event: %s", utype)
                             elif utype == 'slides_generation_complete':
                                 slides_complete = True
-                                print(f"✅ [API] Slides generation complete, waiting for finalization...")
+                                logger.info("Slides generation complete, waiting for finalization...")
                             elif utype == 'progress':
                                 data = update.get('data') or {}
                                 phase = (data.get('phase') or update.get('phase'))
@@ -679,7 +354,11 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                         yield _sse(update)
                         await asyncio.sleep(0.01)
 
-                print(f"🟢 [API] compose_deck_stream loop exited. composition_completed={composition_completed}, slides_complete={slides_complete}")
+                logger.info(
+                    "compose_deck_stream loop exited. composition_completed=%s, slides_complete=%s",
+                    composition_completed,
+                    slides_complete,
+                )
 
                 # CRITICAL: Release the deck lock BEFORE sending completion event
                 # This prevents 409 errors when frontend tries to save after receiving completion
@@ -687,8 +366,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                     from agents.generation.concurrency_manager import concurrency_manager
                     concurrency_manager.release_deck_lock(deck_uuid)
                     deck_lock_acquired = False  # Mark as released so finally block doesn't double-release
-                    logger.info(f"✅ Released deck lock for {deck_uuid} (before completion event)")
-                    print(f"✅ [API] Released deck lock for {deck_uuid} (before completion event)")
+                    logger.info("Released deck lock for %s (before completion event)", deck_uuid)
 
                 # Send a final summary event without duplicating the 'deck_complete' event
                 response_data = {
@@ -698,7 +376,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 }
                 yield _sse(response_data)
                 composition_completed = True
-                print(f"✅ [API] Sent composition_complete event for deck {deck_uuid}")
+                logger.info("Sent composition_complete event for deck %s", deck_uuid)
                 
             except asyncio.CancelledError:
                 # Client likely disconnected or server is shutting down; just log and exit quietly
@@ -720,7 +398,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 emitted_error = True
             
             finally:
-                print(f"🔵 [API] Entering finally block for deck {deck_uuid}")
+                logger.info("Entering finally block for deck %s", deck_uuid)
                 # Always release the deck lock FIRST before sending any events
                 # This prevents 409 errors when frontend tries to save after receiving events
                 lock_was_held = 'deck_lock_acquired' in locals() and deck_lock_acquired
@@ -728,13 +406,15 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                     from agents.generation.concurrency_manager import concurrency_manager
                     concurrency_manager.release_deck_lock(deck_uuid)
                     deck_lock_acquired = False
-                    logger.info(f"✅ Released deck lock for {deck_uuid} (in finally)")
-                    print(f"✅ [API] Released deck lock for {deck_uuid} (in finally)")
+                    logger.info("Released deck lock for %s (in finally)", deck_uuid)
                 # If we reached here without a completion or error, emit an explicit incomplete signal
                 if not emitted_error:
                     try:
                         if not locals().get('composition_completed', False):
-                            print(f"⚠️ [API] Stream ended before composition completed for deck {deck_uuid}")
+                            logger.warning(
+                                "Stream ended before composition completed for deck %s",
+                                deck_uuid,
+                            )
                             yield _sse({'type': 'error', 'error': 'stream_incomplete', 'message': 'Stream ended before composition completed', 'deck_uuid': deck_uuid})
                             # Also send a fallback composition_complete so frontend can proceed
                             yield _sse({
@@ -743,17 +423,20 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                                 'version': SCHEMA_VERSION,
                                 'warning': 'Finalization may be incomplete'
                             })
-                            print(f"⚠️ [API] Sent fallback composition_complete for deck {deck_uuid}")
+                            logger.warning(
+                                "Sent fallback composition_complete for deck %s",
+                                deck_uuid,
+                            )
                     except Exception as e:
-                        print(f"❌ [API] Error in finally block: {e}")
+                        logger.warning("Error in finally block: %s", e)
                         pass
                 # Emit an explicit end-of-stream marker to close SSE cleanly
                 try:
                     yield _sse({'type': 'end', 'message': 'Stream complete'})
-                    print(f"🏁 [API] Stream ended for deck {deck_uuid}")
+                    logger.info("Stream ended for deck %s", deck_uuid)
                 except Exception:
                     # If client disconnected, just return
-                    print(f"❌ [API] Client disconnected, cannot send end event")
+                    logger.info("Client disconnected, cannot send end event")
                     return
     
     return generate() 
@@ -779,14 +462,26 @@ def stream_image_review(request: ReviewImagesRequest, registry: ComponentRegistr
     """
     
     async def generate():
+        sequence = 0
+
+        def _sse(event: Dict[str, Any]) -> bytes:
+            nonlocal sequence
+            sequence += 1
+            event.setdefault("sequence", sequence)
+            event.setdefault("deck_uuid", request.deck_uuid)
+            event.setdefault("deck_id", request.deck_uuid)
+            try:
+                return sse_encode(event)
+            except Exception:
+                return sse_encode({"type": "error", "error": "serialization_failed"})
         try:
             # TODO: Implement image review in refactored version
             # The old DeckComposerV2 had review_and_assign_images method
             # This needs to be implemented in the new architecture if needed
-            yield f"data: {json.dumps({'type': 'error', 'error': 'Image review not implemented in refactored version'})}\n\n"
+            yield _sse({'type': 'error', 'error': 'Image review not implemented in refactored version'})
                 
         except Exception as e:
             logger.error(f"Error during image review for {request.deck_uuid}: {e}", exc_info=True)
-            yield f"data: {json.dumps({'type': 'error', 'error': f'Image review failed: {str(e)}'})}\n\n"
+            yield _sse({'type': 'error', 'error': f'Image review failed: {str(e)}'})
     
     return generate() 

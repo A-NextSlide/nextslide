@@ -29,9 +29,12 @@ class ImageManager:
         deck_uuid: str,
         callback=None,
         max_images_per_slide: int = 6,
-        search_queries: Optional[Dict] = None
+        search_queries: Optional[Dict] = None,
+        slides: Optional[List[Any]] = None,
+        **_unused_kwargs
     ) -> asyncio.Task:
         """Start background image search."""
+        # `slides` is accepted for backward compatibility but unused (deck_outline is authoritative).
         logger.debug(f"IMAGE MANAGER: Starting background search for deck {deck_uuid}")
         logger.debug(f"Deck title: {deck_outline.title if hasattr(deck_outline, 'title') else 'Unknown'}")
         logger.debug(f"Number of slides: {len(deck_outline.slides) if hasattr(deck_outline, 'slides') else 0}")

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from typing import Dict, Any, List
@@ -136,7 +137,10 @@ async def assign_videos_to_slides(slides: List[Dict], videos: List[Dict], presen
 
     # Create the prompt for video evaluation AND assignment (single call for efficiency)
     prompt = (
-        "Assign up to two relevant videos to slides if they add value. "
+        "Assign at most two videos total, only when the match is obvious. "
+        "Prefer a hero/title or product/demo slide. "
+        "If nothing is clearly relevant, set use_videos=false. "
+        "Never assign a video just to fill space. "
         "Return JSON: {\"use_videos\": bool, \"assignments\": {slide_index: video_index}, "
         "\"reasoning\": \"...\"}.\\n\\n"
         f"Topic: {presentation_topic}\\n\\n"
@@ -218,7 +222,7 @@ async def assign_videos_to_slides(slides: List[Dict], videos: List[Dict], presen
         # On failure, don't assign any videos (conservative approach)
         return slides
 
-async def scrape_reference_links(urls: List[str]) -> Dict[str, Any]:
+async def scrape_reference_links(urls: List[str], include_videos: bool = True) -> Dict[str, Any]:
     """
     Scrape content from reference links using Firecrawl and video scraper.
     Also extracts videos from the websites.
@@ -245,7 +249,19 @@ async def scrape_reference_links(urls: List[str]) -> Dict[str, Any]:
         for url in urls[:3]:  # Limit to 3 URLs
             try:
                 logger.info(f"[OutlineAgent] Scraping URL: {url}")
-                res = svc.scrape(url, formats=["markdown"])
+                video_task = None
+                if include_videos:
+                    try:
+                        from services.video_scraper_service import scrape_website_videos
+                        video_task = asyncio.create_task(scrape_website_videos(url, max_videos=5, use_browser=True))
+                    except Exception as video_err:
+                        logger.warning(f"[OutlineAgent] Video scraping init failed for {url}: {video_err}")
+
+                try:
+                    res = await asyncio.to_thread(svc.scrape, url, formats=["markdown"])
+                except Exception as scrape_err:
+                    logger.warning(f"[OutlineAgent] Firecrawl scrape failed for {url}: {scrape_err}")
+                    res = {"success": False, "error": str(scrape_err)}
 
                 if res.get("success"):
                     data = res.get("data") or res
@@ -266,15 +282,15 @@ async def scrape_reference_links(urls: List[str]) -> Dict[str, Any]:
                     logger.info(f"[OutlineAgent] Scraped {url}: {len(markdown_content) if markdown_content else 0} chars")
 
                 # Also scrape videos from the URL (use browser for JS-rendered sites)
-                try:
-                    from services.video_scraper_service import scrape_website_videos
-                    video_result = await scrape_website_videos(url, max_videos=5, use_browser=True)
-                    if video_result.success and video_result.videos:
-                        for video in video_result.videos:
-                            all_videos.append(video.to_dict())
-                        logger.info(f"[OutlineAgent] 🎬 Found {len(video_result.videos)} videos from {url}")
-                except Exception as video_err:
-                    logger.warning(f"[OutlineAgent] Video scraping failed for {url}: {video_err}")
+                if include_videos and video_task is not None:
+                    try:
+                        video_result = await video_task
+                        if video_result.success and video_result.videos:
+                            for video in video_result.videos:
+                                all_videos.append(video.to_dict())
+                            logger.info(f"[OutlineAgent] 🎬 Found {len(video_result.videos)} videos from {url}")
+                    except Exception as video_err:
+                        logger.warning(f"[OutlineAgent] Video scraping failed for {url}: {video_err}")
 
             except Exception as e:
                 logger.warning(f"[OutlineAgent] Failed to scrape {url}: {e}")
@@ -291,5 +307,45 @@ async def scrape_reference_links(urls: List[str]) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"[OutlineAgent] URL scraping failed: {e}")
         results["error"] = str(e)
+
+    return results
+
+
+async def scrape_reference_videos(urls: List[str]) -> Dict[str, Any]:
+    """
+    Scrape videos from reference URLs using the Playwright-based video scraper.
+    Returns a dict with success flag and collected videos.
+    """
+    results = {
+        "success": False,
+        "videos": [],
+        "error": None,
+    }
+
+    if not urls:
+        return results
+
+    all_videos: List[Dict[str, Any]] = []
+
+    for url in urls[:3]:
+        try:
+            from services.video_scraper_service import scrape_website_videos
+            logger.info(f"[OutlineAgent] 🎬 Scraping videos from: {url}")
+            video_result = await scrape_website_videos(url, max_videos=5, use_browser=True)
+            if video_result.success and video_result.videos:
+                for video in video_result.videos:
+                    all_videos.append(video.to_dict())
+                logger.info(f"[OutlineAgent] 🎬 Found {len(video_result.videos)} videos from {url}")
+        except Exception as video_err:
+            logger.warning(f"[OutlineAgent] Video scraping failed for {url}: {video_err}")
+
+    if all_videos:
+        results["success"] = True
+        deduped: Dict[str, Dict[str, Any]] = {}
+        for video in all_videos:
+            key = video.get("url") or video.get("embed_url") or str(len(deduped))
+            if key not in deduped:
+                deduped[key] = video
+        results["videos"] = list(deduped.values())
 
     return results

@@ -113,3 +113,19 @@ class SlideGeneratorOutputMixin:
             comparison=comparison,
             suggestedImagePrompt=suggested_image_prompt,
         )
+
+    def _build_annotations_payload(
+        self,
+        slide_title: str,
+        citations: List[Dict[str, Any]],
+        footnotes: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if not citations:
+            return None
+        return {
+            "chartType": "annotations",
+            "title": slide_title,
+            "data": [],
+            "metadata": {"citations": citations, "footnotes": footnotes},
+            "source": "Research citations",
+        }

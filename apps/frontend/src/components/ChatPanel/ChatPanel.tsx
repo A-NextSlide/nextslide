@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useDeckStore } from '../../stores/deckStore';
 import { useNavigation } from '@/context/NavigationContext';
 import { useOutlineAgent as useOutlineAgentHook } from '@/hooks/useOutlineAgent';
@@ -8,6 +8,7 @@ import {
   ExtendedChatMessageProps,
   ChatPanelProps,
 } from '../chat';
+import { cn } from '@/lib/utils';
 import { ChatInputArea, ChatMessageList } from './components';
 import {
   useAgentEvents,
@@ -30,6 +31,7 @@ import {
   useThemePreviewState,
 } from './hooks';
 import { useIntegrationMentions } from '@/hooks/useIntegrationMentions';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 // Re-export types for consumers of this file
 export type { ExtendedChatMessageProps, ChatPanelProps };
@@ -41,6 +43,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   onCollapseChange,
   opacity = 1,
   newSystemMessage,
+  enableResponseTabs = false,
   outline,
   deckId,
   isExistingDeck = false,
@@ -135,14 +138,20 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   } = useChatPendingMessages();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  // Track if generation ever started - used to suppress suggestions after generation
+  const hasEverGeneratedRef = useRef(isExistingDeck);
   // Old chat history - hidden by default, shown when user clicks "Load older messages"
   const [oldMessages, setOldMessages] = useState<ExtendedChatMessageProps[]>([]);
   const [showOldMessages, setShowOldMessages] = useState(false);
   const hasOldMessages = oldMessages.length > 0;
   const [outlineSlideTarget, setOutlineSlideTarget] = useState<number | 'all'>('all');
+  const [activeTab, setActiveTab] = useState<'chat' | 'response'>('chat');
+  const [lastSeenResponseId, setLastSeenResponseId] = useState<string | null>(null);
+  const isMobileView = useIsMobile();
+  const showResponseTabs = enableResponseTabs && isMobileView;
 
   // Ref to hold sendMessage function for continuation trigger
-  const sendMessageRef = useRef<(() => void) | null>(null);
+  const sendMessageRef = useRef<((message?: string) => void) | null>(null);
 
   const {
     selectedLinkedInProfile,
@@ -267,11 +276,37 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     setMessages,
   });
 
+  const responseMessages = useMemo(() => (
+    messages.filter((msg) => msg.type !== 'user' || msg.metadata?.type === 'edit_applied')
+  ), [messages]);
+  const responseOldMessages = useMemo(() => (
+    oldMessages.filter((msg) => msg.type !== 'user' || msg.metadata?.type === 'edit_applied')
+  ), [oldMessages]);
+  const responseNonUserMessages = useMemo(() => (
+    responseMessages.filter((msg) => msg.type !== 'user')
+  ), [responseMessages]);
+
+  const unseenResponseCount = useMemo(() => {
+    if (responseNonUserMessages.length === 0) return 0;
+    if (!lastSeenResponseId) return responseNonUserMessages.length;
+    const lastSeenIndex = responseNonUserMessages.findIndex((msg) => msg.id === lastSeenResponseId);
+    if (lastSeenIndex === -1) return responseNonUserMessages.length;
+    return responseNonUserMessages.length - lastSeenIndex - 1;
+  }, [responseNonUserMessages, lastSeenResponseId]);
+
+  const displayMessages = showResponseTabs && activeTab === 'response' ? responseMessages : messages;
+  const displayOldMessages = showResponseTabs && activeTab === 'response' ? responseOldMessages : oldMessages;
+  const displayHasOldMessages = showResponseTabs && activeTab === 'response' ? responseOldMessages.length > 0 : hasOldMessages;
+  const displayShowOldMessages = showResponseTabs && activeTab === 'response'
+    ? showOldMessages && responseOldMessages.length > 0
+    : showOldMessages;
+
   const {
     messagesEndRef,
     scrollContainerRef,
     handleLoadOlderMessages,
-  } = useChatScroll({ messages, showOldMessages, setShowOldMessages });
+    scrollToBottom,
+  } = useChatScroll({ messages: displayMessages, showOldMessages: displayShowOldMessages, setShowOldMessages });
 
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -314,6 +349,42 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     applyDeckDiffRespectingEditMode,
   });
 
+  const handleSend = useCallback((overrideMessage?: string) => {
+    const messageText = (overrideMessage ?? input).trim();
+    if (!messageText) return;
+    if (showResponseTabs) {
+      setActiveTab('response');
+    }
+    sendMessage(overrideMessage);
+  }, [input, sendMessage, showResponseTabs]);
+
+  useEffect(() => {
+    if (activeTab !== 'response') return;
+    const lastResponseId = responseNonUserMessages[responseNonUserMessages.length - 1]?.id || null;
+    if (lastResponseId && lastResponseId !== lastSeenResponseId) {
+      setLastSeenResponseId(lastResponseId);
+    }
+  }, [activeTab, responseNonUserMessages, lastSeenResponseId]);
+
+  useEffect(() => {
+    scrollToBottom('auto');
+  }, [activeTab, scrollToBottom]);
+
+  useEffect(() => {
+    if (!showResponseTabs && activeTab !== 'chat') {
+      setActiveTab('chat');
+    }
+  }, [activeTab, showResponseTabs]);
+
+  const handleClarificationConfirm = useCallback((text: string) => {
+    handleSend(text);
+  }, [handleSend]);
+
+  const handleClarificationEdit = useCallback((text: string) => {
+    setInput(text);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, [setInput]);
+
   const { handleMessageFeedback } = useChatMessageFeedback({ messages, setMessages });
 
   useChatSystemMessages({
@@ -346,6 +417,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     setMessages,
   });
 
+  // Track if generation ever started - once true, never show suggestions again
+  useEffect(() => {
+    if (isGenerating) {
+      hasEverGeneratedRef.current = true;
+    }
+  }, [isGenerating]);
+
   // Sync local collapse state with parent component
   useEffect(() => {
     // When the collapse change handler exists, notify parent of local state changes
@@ -355,7 +433,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   }, [isCollapsed, onCollapseChange]);
 
   // Keep ref updated so continuation trigger can call sendMessage
-  sendMessageRef.current = sendMessage;
+  sendMessageRef.current = handleSend;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Handle integration @ mention keyboard navigation
@@ -365,7 +443,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      handleSend();
     }
   };
 
@@ -414,11 +492,46 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     >
       {!isCollapsed && (
         <>
+          {showResponseTabs && (
+            <div className="flex items-center justify-between px-3 py-2 border-b border-border/60 bg-background/70">
+              <div className="flex items-center gap-1 rounded-full bg-muted/30 p-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('chat')}
+                  className={cn(
+                    "px-3 py-1 text-xs font-medium rounded-full transition-colors",
+                    activeTab === 'chat'
+                      ? "bg-white text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Chat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('response')}
+                  className={cn(
+                    "px-3 py-1 text-xs font-medium rounded-full transition-colors flex items-center gap-1.5",
+                    activeTab === 'response'
+                      ? "bg-white text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Response
+                  {unseenResponseCount > 0 && activeTab !== 'response' && (
+                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#FF4301] text-white text-[10px] leading-[18px] text-center">
+                      {unseenResponseCount > 9 ? '9+' : unseenResponseCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
           <ChatMessageList
-            messages={messages}
-            oldMessages={oldMessages}
-            showOldMessages={showOldMessages}
-            hasOldMessages={hasOldMessages}
+            messages={displayMessages}
+            oldMessages={displayOldMessages}
+            showOldMessages={displayShowOldMessages}
+            hasOldMessages={displayHasOldMessages}
             onLoadOlderMessages={handleLoadOlderMessages}
             scrollContainerRef={scrollContainerRef}
             messagesEndRef={messagesEndRef}
@@ -433,46 +546,50 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             showFallbackGenerate={showFallbackGenerate}
             onFallbackGenerate={handleFallbackGenerate}
             isLoading={isLoading}
+            onClarificationConfirm={handleClarificationConfirm}
+            onClarificationEdit={handleClarificationEdit}
           />
-          <ChatInputArea
-            input={input}
-            onInputChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            inputRef={inputRef}
-            isDraggingOver={isDraggingOver}
-            isVoiceRecording={isVoiceRecording}
-            selectedElements={selectedElements}
-            onRemoveSelection={removeSelection}
-            attachments={attachments}
-            onRemoveAttachment={handleRemoveAttachment}
-            onDragEnter={onDragEnterPanel}
-            onDragOver={onDragOverPanel}
-            onDragLeave={onDragLeavePanel}
-            onDrop={onDropPanel}
-            onUploadClick={handleUploadClick}
-            onFileChange={handleFileChange}
-            fileInputRef={fileInputRef}
-            outlineMode={outlineMode}
-            useOutlineAgent={useOutlineAgent}
-            outlineSlideTarget={outlineSlideTarget}
-            onOutlineSlideTargetChange={setOutlineSlideTarget}
-            deckSlides={deckData?.slides}
-            isLoading={isLoading}
-            onSend={sendMessage}
-            suggestions={suggestions}
-            showSuggestions={!isLoading && messages.length <= 1}
-            onSuggestionSelect={handleSuggestedPrompt}
-            mentionState={mentionState}
-            selectedMentions={selectedMentions}
-            onSelectMention={(integration) => selectMention(integration, input, setInput)}
-            onCloseMentionPopover={closeMentionPopover}
-            onRemoveMention={removeMention}
-            onVoiceTranscript={handleVoiceTranscript}
-            onVoiceStart={() => setIsVoiceRecording(true)}
-            onVoiceEnd={() => setIsVoiceRecording(false)}
-            onVoiceError={handleVoiceError}
-            deckData={deckData}
-          />
+          {(!showResponseTabs || activeTab === 'chat') && (
+            <ChatInputArea
+              input={input}
+              onInputChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              inputRef={inputRef}
+              isDraggingOver={isDraggingOver}
+              isVoiceRecording={isVoiceRecording}
+              selectedElements={selectedElements}
+              onRemoveSelection={removeSelection}
+              attachments={attachments}
+              onRemoveAttachment={handleRemoveAttachment}
+              onDragEnter={onDragEnterPanel}
+              onDragOver={onDragOverPanel}
+              onDragLeave={onDragLeavePanel}
+              onDrop={onDropPanel}
+              onUploadClick={handleUploadClick}
+              onFileChange={handleFileChange}
+              fileInputRef={fileInputRef}
+              outlineMode={outlineMode}
+              useOutlineAgent={useOutlineAgent}
+              outlineSlideTarget={outlineSlideTarget}
+              onOutlineSlideTargetChange={setOutlineSlideTarget}
+              deckSlides={deckData?.slides}
+              isLoading={isLoading}
+              onSend={handleSend}
+              suggestions={suggestions}
+              showSuggestions={!isLoading && messages.length <= 1 && !hasEverGeneratedRef.current}
+              onSuggestionSelect={handleSuggestedPrompt}
+              mentionState={mentionState}
+              selectedMentions={selectedMentions}
+              onSelectMention={(integration) => selectMention(integration, input, setInput)}
+              onCloseMentionPopover={closeMentionPopover}
+              onRemoveMention={removeMention}
+              onVoiceTranscript={handleVoiceTranscript}
+              onVoiceStart={() => setIsVoiceRecording(true)}
+              onVoiceEnd={() => setIsVoiceRecording(false)}
+              onVoiceError={handleVoiceError}
+              deckData={deckData}
+            />
+          )}
         </>
       )}
     </div>

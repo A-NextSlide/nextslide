@@ -10,6 +10,7 @@ import { streamOutlineAgentChat } from '@/services/outlineApi';
 import { convertMessagesToApiFormat } from '@/components/chat';
 import { captureTinySlideScreenshot, shouldCaptureScreenshotForEdit } from '@/utils/slideScreenshot';
 import { revokeImagePreview } from '@/services/fileAnalysisService';
+import { normalizeDeckTitle } from '@/utils/normalizeDeckTitle';
 import type { ExtendedChatMessageProps } from '@/components/chat';
 import type AgentChatClient from '@/services/agentChat';
 import type { Attachment, PendingAttachment, RegisteredAttachment, SelectedElement } from '../types';
@@ -182,11 +183,12 @@ export function useSendMessage({
     }
   }, [messages, onOutlineAgentToolCall, onOutlineChatGeneratingChange, setIsGenerating, setMessages]);
 
-  const sendMessage = useCallback(async () => {
-    if (!input.trim()) return;
+  const sendMessage = useCallback(async (overrideMessage?: string) => {
+    const messageText = (overrideMessage ?? input).trim();
+    if (!messageText) return;
 
-    if (input.toLowerCase().includes('@linkedin')) {
-      originalLinkedInRequestRef.current = input;
+    if (messageText.toLowerCase().includes('@linkedin')) {
+      originalLinkedInRequestRef.current = messageText;
     }
 
     const timestamp = new Date();
@@ -210,7 +212,7 @@ export function useSendMessage({
     }
 
     if (outlineMode && useOutlineAgent && onOutlineAgentToolCall) {
-      const currentInput = input;
+      const currentInput = messageText;
 
       const userMessageId = `user-${Date.now()}`;
       setMessages(prev => [...prev, {
@@ -472,6 +474,29 @@ export function useSendMessage({
         ));
 
         if (outlineData) {
+          if (outlineData.action === 'clarify') {
+            const clarificationMessage = outlineData.message || outlineData.clarification?.message || 'Quick check before I build the deck.';
+            const draftResponse = outlineData.draft_response || outlineData.clarification?.draft_response || '';
+            const clarificationDraft = (draftResponse || clarificationMessage || '').trim() ||
+              'Provide the missing detail: [[details]].';
+            setMessages(prev => prev.map(m =>
+              m.id === aiMessageId
+                ? {
+                  ...m,
+                  message: clarificationMessage,
+                  metadata: {
+                    ...m.metadata,
+                    isTyping: false,
+                    clarification: { draft: clarificationDraft, fields: outlineData.clarification?.fields }
+                  }
+                }
+                : m
+            ));
+
+            setIsGenerating(false);
+            return;
+          }
+
           if (outlineData.action === 'update_theme' && outline && outlineData.theme_changes) {
             try {
               const response = await fetch(`${API_CONFIG.AGENT_BASE_URL}/api/outline-theme/apply`, {
@@ -682,7 +707,7 @@ export function useSendMessage({
 
             const newOutline = {
               id: outline?.id || uuidv4(),
-              title: outlineData.topic || 'Presentation',
+              title: normalizeDeckTitle(outlineData.title || outlineData.topic) || 'Presentation',
               slides: outlineData.slides.map((slide: any) => ({
                 id: uuidv4(),
                 title: slide.title || '',
@@ -748,7 +773,7 @@ export function useSendMessage({
       setMessages(prev => [...prev, {
         id: outlineMsgId,
         type: 'user',
-        message: input,
+        message: messageText,
         timestamp: new Date(),
         feedback: null
       }]);
@@ -757,7 +782,7 @@ export function useSendMessage({
       addPendingMessage(outlineMsgId);
 
       try {
-        await onOutlineGenerate(input, {});
+        await onOutlineGenerate(messageText, {});
         removePendingMessage(outlineMsgId);
       } catch (error) {
         console.error('Error generating outline:', error);
@@ -779,7 +804,7 @@ export function useSendMessage({
       setMessages(prev => [...prev, {
         id: userMsgId,
         type: 'user',
-        message: input,
+        message: messageText,
         timestamp,
         feedback: null,
         metadata: {
@@ -839,7 +864,7 @@ export function useSendMessage({
       const shouldCaptureVisualContext = effectiveSelections.some(
         s => s.elementType === 'CustomComponent' || s.elementType === 'Slide'
       );
-      if (shouldCaptureVisualContext && shouldCaptureScreenshotForEdit(input, true)) {
+      if (shouldCaptureVisualContext && shouldCaptureScreenshotForEdit(messageText, true)) {
         try {
           const slideViewport = document.querySelector('[data-slide-viewport]') as HTMLElement;
           if (slideViewport) {
@@ -902,7 +927,7 @@ export function useSendMessage({
       if (hasSession && agentClientRef.current) {
         data = await agentClientRef.current.sendMessage({
           role: 'user',
-          text: input,
+          text: messageText,
           stream: true,
           selections: effectiveSelections,
           attachments: attachmentMeta,
@@ -918,7 +943,7 @@ export function useSendMessage({
         selectedProfileForContinuationRef.current = null;
       } else {
         data = await sendChatToApi(
-          input,
+          messageText,
           slideId,
           currentSlideIndex,
           deckData,

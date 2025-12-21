@@ -1,39 +1,9 @@
 import asyncio
-import json
-import time
-import uuid
-import os
-import re
-from typing import Dict, Any, Optional, List, AsyncGenerator, Tuple
+from typing import Optional
 
-from dotenv import load_dotenv
+from agents.config import OUTLINE_CONTENT_MODEL, OUTLINE_PLANNING_MODEL, OUTLINE_RESEARCH_MODEL
 
-from .models import (
-    OutlineOptions, OutlineResult, SlideContent,
-    ProgressUpdate, ChartData
-)
-from .planner import OutlinePlanner
-from .slide_generator import SlideGenerator
-from .chart_generator import ChartGenerator
-from .media_manager import MediaManager
-from .chart_normalization import normalize_slide_chart_fields
-from agents.ai.clients import get_client, invoke
-from agents.config import (
-    OUTLINE_PLANNING_MODEL, OUTLINE_CONTENT_MODEL,
-    OUTLINE_RESEARCH_MODEL,
-    USE_PERPLEXITY_FOR_OUTLINE, PERPLEXITY_OUTLINE_MODEL,
-    PRESENTATION_OUTLINE_MODEL, USE_HYBRID_RESEARCH_MODE
-)
-from agents.research import OutlineResearchAgent
-from agents import config as agents_config
-from agents.ai.clients import get_max_tokens_for_model
-from services.openai_service import OpenAIService
-from agents.generation.file_processor import create_file_processor
-from setup_logging_optimized import get_logger
-from services.pptx_text_extractor import extract_pptx_text_from_bytes
-from .generator_utils import extract_image_prompt_from_content
-
-logger = get_logger(__name__)
+from .models import OutlineOptions, SlideContent
 
 
 class OutlineGeneratorValidationMixin:
@@ -73,10 +43,6 @@ class OutlineGeneratorValidationMixin:
             "research": OUTLINE_RESEARCH_MODEL
         }
         return models.get(task, OUTLINE_CONTENT_MODEL)
-
-    def _slide_needs_data(self, title: str, content: str) -> bool:
-        """Defer data/graph detection to the model instead of keyword rules."""
-        return False
 
     def _enforce_word_limits_presentation(self, content: str, slide_title: str, slide_type: str = 'content') -> str:
         """No code-based word trimming; defer to the model."""

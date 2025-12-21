@@ -7,6 +7,7 @@ Analyzes uploaded files (PPTX, PDF, images) to extract:
 """
 
 import os
+import re
 import base64
 import asyncio
 import logging
@@ -87,7 +88,7 @@ class FileAnalysis:
     confidence: float = 0.8
     analysis_notes: str = ""
     extracted_images: List[str] = field(default_factory=list)  # Uploaded image URLs from the file
-    slide_screenshots: List[str] = field(default_factory=list)  # Base64 screenshots of slides for visual design reference
+    slide_screenshots: List[str] = field(default_factory=list)  # Stored screenshot URLs for visual design reference
 
 
 class FileDesignExtractor:
@@ -143,31 +144,25 @@ class FileDesignExtractor:
 
         logger.info(f"[FileExtractor] Converted to {len(images)} images")
 
-        # Extract design, content, and images in parallel
+        # Extract design, content, images, and reference screenshots in parallel
         design_task = self._extract_design(images[:5])  # First 5 slides for design analysis
         content_task = self._extract_content(images, file_content, filename, file_type)
         images_task = self._extract_and_upload_images(file_content, filename, file_type)
+        screenshots_task = self._upload_reference_screenshots(images, intent, filename)
 
-        design, content, extracted_images = await asyncio.gather(design_task, content_task, images_task)
+        design, content, extracted_images, slide_screenshots = await asyncio.gather(
+            design_task,
+            content_task,
+            images_task,
+            screenshots_task,
+        )
 
         logger.info(f"[FileExtractor] Extracted {len(extracted_images)} images from file")
 
-        # Store slide screenshots for visual design reference
-        # For recreate/remake requests, store ALL slides so AI can replicate each one
-        # For other intents, store up to 10 slides (first 5 + sample from rest)
-        if intent == FileIntent.RECREATE_EXACT:
-            # Store ALL slides for exact recreation
-            slide_screenshots = images if images else []
-            logger.info(f"[FileExtractor] RECREATE mode: Stored ALL {len(slide_screenshots)} slide screenshots")
-        else:
-            # For design inspiration, sample slides: first 5 + middle + last 2
-            if len(images) <= 10:
-                slide_screenshots = images
-            else:
-                # First 5, middle sample, last 2
-                middle_idx = len(images) // 2
-                slide_screenshots = images[:5] + [images[middle_idx]] + images[-2:]
-            logger.info(f"[FileExtractor] Stored {len(slide_screenshots)} slide screenshots for visual reference")
+        if slide_screenshots:
+            logger.info(
+                f"[FileExtractor] Stored {len(slide_screenshots)} reference screenshots (URLs)"
+            )
 
         return FileAnalysis(
             filename=filename,
@@ -455,6 +450,110 @@ class FileDesignExtractor:
             logger.error(f"[FileExtractor] PPTX conversion failed: {e}")
 
         return images
+
+    def _strip_data_url_prefix(self, image_b64: str) -> str:
+        if not isinstance(image_b64, str):
+            return ""
+        if image_b64.startswith("data:"):
+            return image_b64.split(",", 1)[-1]
+        return image_b64
+
+    def _select_reference_indices(self, total: int, intent: FileIntent) -> List[int]:
+        if total <= 0:
+            return []
+
+        if intent == FileIntent.RECREATE_EXACT:
+            max_refs = 12
+            if total <= max_refs:
+                return list(range(total))
+            indices = list(range(0, 5))
+            middle = total // 2
+            indices.extend([max(0, middle - 1), middle])
+            indices.extend(range(total - 5, total))
+        else:
+            max_refs = 6
+            if total <= max_refs:
+                return list(range(total))
+            middle = total // 2
+            indices = [0, 1, 2, middle, total - 2, total - 1]
+
+        deduped = []
+        seen = set()
+        for idx in indices:
+            if 0 <= idx < total and idx not in seen:
+                deduped.append(idx)
+                seen.add(idx)
+        return deduped
+
+    def _downscale_reference_image(self, image_b64: str, max_dim: int = 512) -> str:
+        """Downscale base64 PNG to a small reference thumbnail for storage."""
+        try:
+            from PIL import Image
+        except Exception:
+            return image_b64
+
+        try:
+            raw_data = base64.b64decode(self._strip_data_url_prefix(image_b64))
+            with Image.open(BytesIO(raw_data)) as img:
+                if img.mode not in ("RGB", "RGBA"):
+                    img = img.convert("RGB")
+                img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+                buffer = BytesIO()
+                img.save(buffer, format="PNG", optimize=True)
+            return base64.b64encode(buffer.getvalue()).decode("utf-8")
+        except Exception as e:
+            logger.warning(f"[FileExtractor] Reference image downscale failed: {e}")
+            return image_b64
+
+    async def _upload_reference_screenshots(
+        self,
+        images: List[str],
+        intent: FileIntent,
+        filename: str
+    ) -> List[str]:
+        """Upload a small set of slide screenshots to storage and return URLs."""
+        if not images:
+            return []
+        if intent in (FileIntent.USE_CONTENT_ONLY, FileIntent.REFERENCE_ONLY):
+            return []
+
+        indices = self._select_reference_indices(len(images), intent)
+        if not indices:
+            return []
+
+        try:
+            from services.image_storage_service import ImageStorageService
+        except Exception as e:
+            logger.warning(f"[FileExtractor] Screenshot upload unavailable: {e}")
+            return []
+
+        try:
+            base_name = Path(filename).stem or "slides"
+            base_name = re.sub(r"[^A-Za-z0-9_-]+", "_", base_name)
+        except Exception:
+            base_name = "slides"
+
+        uploaded_urls = []
+        try:
+            async with ImageStorageService() as storage:
+                for idx in indices:
+                    img_b64 = images[idx]
+                    if not img_b64:
+                        continue
+                    thumbnail_b64 = self._downscale_reference_image(img_b64)
+                    upload_filename = f"{base_name}_ref_{idx + 1}.png"
+                    result = await storage.upload_image_from_base64(
+                        thumbnail_b64,
+                        filename=upload_filename,
+                        content_type="image/png",
+                        folder="slide-screenshots"
+                    )
+                    if result and result.get("url"):
+                        uploaded_urls.append(result["url"].split("?")[0])
+        except Exception as e:
+            logger.warning(f"[FileExtractor] Screenshot upload failed: {e}")
+
+        return uploaded_urls
 
     async def _extract_design(self, images: List[str]) -> ExtractedDesign:
         """Extract design elements using vision AI"""
@@ -928,6 +1027,7 @@ def design_to_theme_context(design: ExtractedDesign) -> Dict[str, Any]:
 
 def content_to_outline_context(content: ExtractedContent) -> str:
     """Convert ExtractedContent to context string for outline generation"""
+    max_raw_chars = 40000
     parts = []
 
     if content.title:
@@ -953,5 +1053,15 @@ def content_to_outline_context(content: ExtractedContent) -> str:
         parts.append("DATA/METRICS:")
         for dp in content.data_points:
             parts.append(f"  - {dp.get('label')}: {dp.get('value')} ({dp.get('context', '')})")
+
+    raw_text = (content.raw_text or "").strip()
+    if raw_text:
+        if len(raw_text) > max_raw_chars:
+            parts.append("RAW_TEXT (TRUNCATED):")
+            parts.append(raw_text[:max_raw_chars])
+            parts.append("[TRUNCATED]")
+        else:
+            parts.append("RAW_TEXT:")
+            parts.append(raw_text)
 
     return "\n".join(parts)

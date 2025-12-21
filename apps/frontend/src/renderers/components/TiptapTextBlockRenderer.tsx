@@ -73,6 +73,12 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = m
   const isThisComponentEditingRef = useRef(false);
   const isCurrentlyTextEditing = isTextEditingGlobal && isThisComponentEditingRef.current;
 
+  useEffect(() => {
+    if (!isTextEditingGlobal) {
+      isThisComponentEditingRef.current = false;
+    }
+  }, [isTextEditingGlobal]);
+
   // =================================================================
   // IDENTITY TRACKING - Prevent cross-component/slide writes
   // =================================================================
@@ -359,6 +365,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = m
         if (event.key === 'Escape') {
           isThisComponentEditingRef.current = false;
           setTextEditingGlobal(false);
+          useEditorStore.getState().clearSelection();
           return true;
         }
         return false;
@@ -603,6 +610,12 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = m
     lineHeight: lineHeight || 1.5,
     letterSpacing: `${finalLetterSpacing}px`,
     color: textColor,
+    '--tiptap-font-size': `${finalFontSize}px`,
+    '--tiptap-font-family': getFontFamilyWithFallback(fontFamily || 'Arial'),
+    '--tiptap-font-weight': fontWeight,
+    '--tiptap-line-height': lineHeight || 1.5,
+    '--tiptap-letter-spacing': `${finalLetterSpacing}px`,
+    '--tiptap-text-color': textColor,
     // Remove padding from here - it will be on the content wrapper
     cursor: isCurrentlyTextEditing ? 'text' : (isSelected ? 'text' : 'move'),
   } as React.CSSProperties;
@@ -633,10 +646,15 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = m
         onDoubleClick={(e) => {
           e.stopPropagation();
           e.preventDefault();
-          if (!isCurrentlyTextEditing && isSelected) {
-            isThisComponentEditingRef.current = true;
-            setTextEditingGlobal(true);
+          if (isCurrentlyTextEditing) return;
+
+          const editorStore = useEditorStore.getState();
+          if (!editorStore.isComponentSelected(component.id)) {
+            editorStore.selectComponent(component.id, false, slideId);
           }
+
+          isThisComponentEditingRef.current = true;
+          setTextEditingGlobal(true);
         }}
       >
         <EditorContent editor={editor} className="tiptap-editor-content h-full w-full" />

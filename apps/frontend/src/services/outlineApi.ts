@@ -377,6 +377,14 @@ export class OutlineAPI {
     const jsonUrlBase = API_ENDPOINTS.getFullUrl(API_ENDPOINTS.THEME_FROM_OUTLINE_JSON);
 
     // Sanitize outline to match backend DeckOutline schema and avoid extra fields causing 422
+    const normalizedNotes = (() => {
+      const base = outline?.notes && typeof outline.notes === 'object' ? { ...outline.notes } : {};
+      if (!Object.prototype.hasOwnProperty.call(base, 'videos')) {
+        base.videos = [];
+      }
+      return base;
+    })();
+
     const sanitizedOutline: any = {
       id: outline.id,
       title: outline.title,
@@ -393,6 +401,11 @@ export class OutlineAPI {
           initialIdea: outline.stylePreferences.initialIdea,
           vibeContext: outline.stylePreferences.vibeContext,
           font: outline.stylePreferences.font ?? null,
+          bodyFont: outline.stylePreferences.bodyFont ?? null,
+          brandName: outline.stylePreferences.brandName,
+          brandDomain: outline.stylePreferences.brandDomain,
+          brandDomainCandidates: outline.stylePreferences.brandDomainCandidates,
+          needsBrandDomainConfirmation: outline.stylePreferences.needsBrandDomainConfirmation,
           colors: outline.stylePreferences.colors
             ? {
               type: outline.stylePreferences.colors.type,
@@ -405,12 +418,13 @@ export class OutlineAPI {
             }
             : null,
           logoUrl: (outline.stylePreferences as any)?.logoUrl,
+          logoUrlDark: (outline.stylePreferences as any)?.logoUrlDark,
           slideMode: (outline.stylePreferences as any)?.slideMode,
           // Slide screenshots from uploaded PPT/PDF for visual design reference
           referenceImages: (outline.stylePreferences as any)?.referenceImages,
         }
         : undefined,
-      notes: outline.notes,
+      notes: normalizedNotes,
     };
 
     const sseUrl = deckId

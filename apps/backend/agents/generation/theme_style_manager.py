@@ -24,9 +24,22 @@ class ThemeStyleManager:
         style_prefs = getattr(deck_outline, "stylePreferences", None)
         vibe_context = None
         initial_idea = None
+        brand_domain = None
+        brand_name = None
+        needs_confirmation = None
         if style_prefs is not None:
-            vibe_context = getattr(style_prefs, "vibeContext", None) if hasattr(style_prefs, "vibeContext") else None
-            initial_idea = getattr(style_prefs, "initialIdea", None) if hasattr(style_prefs, "initialIdea") else None
+            if isinstance(style_prefs, dict):
+                vibe_context = style_prefs.get("vibeContext")
+                initial_idea = style_prefs.get("initialIdea")
+                brand_domain = style_prefs.get("brandDomain")
+                brand_name = style_prefs.get("brandName")
+                needs_confirmation = style_prefs.get("needsBrandDomainConfirmation")
+            else:
+                vibe_context = getattr(style_prefs, "vibeContext", None) if hasattr(style_prefs, "vibeContext") else None
+                initial_idea = getattr(style_prefs, "initialIdea", None) if hasattr(style_prefs, "initialIdea") else None
+                brand_domain = getattr(style_prefs, "brandDomain", None) if hasattr(style_prefs, "brandDomain") else None
+                brand_name = getattr(style_prefs, "brandName", None) if hasattr(style_prefs, "brandName") else None
+                needs_confirmation = getattr(style_prefs, "needsBrandDomainConfirmation", None) if hasattr(style_prefs, "needsBrandDomainConfirmation") else None
         context = " | ".join([c for c in [initial_idea, vibe_context] if c])
 
         logger.info("[THEME] Generating theme via ThemeAgent")
@@ -36,6 +49,9 @@ class ThemeStyleManager:
             context=context,
             include_videos=False,
             include_brand_design=False,
+            brand_domain=brand_domain,
+            brand_name=brand_name,
+            domain_confirmed=False if needs_confirmation else None,
         )
 
         theme_dict = self._build_theme_spec(agent_result, style_prefs)
@@ -80,7 +96,7 @@ class ThemeStyleManager:
         colors = agent_result.get("colors", []) or []
         theme = {
             "theme_name": agent_result.get("brand_name") or "Agentic Theme",
-            "design_philosophy": "",  # Keep minimal; prompts carry intent
+            "design_philosophy": "Cohesive, professional slides with clear hierarchy.",
             "color_palette": {
                 "primary_background": agent_result.get("background") or "#FFFFFF",
                 "primary_text": agent_result.get("text") or "#111111",
@@ -105,9 +121,21 @@ class ThemeStyleManager:
             "reference_images": [],
         }
 
+        brand_info: Dict[str, Any] = {}
         logo_url = agent_result.get("logo_url")
         if logo_url:
-            theme["brandInfo"]["logoUrl"] = logo_url
+            brand_info["logoUrl"] = logo_url
+            theme["color_palette"].setdefault("metadata", {})["logo_url"] = logo_url
+        if agent_result.get("brand_name"):
+            brand_info["brandName"] = agent_result.get("brand_name")
+        if agent_result.get("domain"):
+            brand_info["brandDomain"] = agent_result.get("domain")
+        if agent_result.get("brand_domain_candidates"):
+            brand_info["brandDomainCandidates"] = agent_result.get("brand_domain_candidates")
+        if agent_result.get("needs_domain_confirmation"):
+            brand_info["needsBrandDomainConfirmation"] = True
+        if brand_info:
+            theme["brandInfo"] = brand_info
 
         brand_design = agent_result.get("brand_design") or {}
         screenshot = brand_design.get("screenshot")

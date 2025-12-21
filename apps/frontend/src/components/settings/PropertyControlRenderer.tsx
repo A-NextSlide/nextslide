@@ -49,6 +49,11 @@ const PropertyControlRenderer: React.FC<PropertyControlRendererProps> = ({
   const controlType = metadata.control as ControlTypes;
   const controlProps = metadata.controlProps || {};
   const label = schema.title as string || propName;
+  const maybeLoadFont = (value: string) => {
+    if (propName === 'fontFamily' && value) {
+      FontLoadingService.loadFont(value).catch(() => {});
+    }
+  };
 
   // Helper for creating transparency background pattern
   const getTransparencyPattern = () => `
@@ -188,6 +193,7 @@ const PropertyControlRenderer: React.FC<PropertyControlRendererProps> = ({
               saveComponentToHistory(`Change ${label}`);
               // Update with skipHistory=true for real-time update
               onUpdate(propName, value, true);
+              maybeLoadFont(value);
             }}
             placeholder={`Select ${label}`}
             label={label}
@@ -207,6 +213,7 @@ const PropertyControlRenderer: React.FC<PropertyControlRendererProps> = ({
               saveComponentToHistory(`Change ${label}`);
               // Update with skipHistory=true for real-time update
               onUpdate(propName, value, true);
+              maybeLoadFont(String(value));
             }}
             placeholder={`Select or enter ${label}`}
             type={schemaType as 'string' | 'number'}
@@ -249,6 +256,7 @@ const PropertyControlRenderer: React.FC<PropertyControlRendererProps> = ({
             onChange={value => {
               saveComponentToHistory(`Change ${label}`);
               onUpdate(propName, value, true);
+              maybeLoadFont(value);
             }}
             placeholder={`Select ${label}`}
             label={label}
@@ -274,6 +282,9 @@ const PropertyControlRenderer: React.FC<PropertyControlRendererProps> = ({
               }
               // Update with skipHistory=true for real-time update
               onUpdate(propName, finalValue, true);
+              if (isFontFamily) {
+                maybeLoadFont(value);
+              }
             }}
           >
             <SelectTrigger className="w-full h-8 text-xs px-2">

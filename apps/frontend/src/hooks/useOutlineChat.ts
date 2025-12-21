@@ -46,6 +46,17 @@ const extractDomainFromText = (input?: string): string | undefined => {
   }
 };
 
+const PARALLEL_STATUS_EVENTS = new Set([
+  'researching',
+  'scraping',
+  'scraped',
+  'videos_found',
+  'assigning_media',
+  'scraping_media',
+  'media_scraped',
+  'media_scrape_failed',
+]);
+
 export const useOutlineChat = ({
   initialIdea,      // Now a direct prop for the core prompt
   styleVibeText,
@@ -330,6 +341,29 @@ export const useOutlineChat = ({
               }
             }
             break;
+
+          case 'status': {
+            const status = (event as any).status;
+            setLoadingStatus({
+              message: event.message || event.query || 'Processing...',
+              stage: status || 'processing',
+            });
+
+            if (status && PARALLEL_STATUS_EVENTS.has(status)) {
+              setResearchEvents(prev => {
+                const last = prev[prev.length - 1] as any;
+                if (last && last.type === 'status' && last.status === status && last.message === event.message) {
+                  return prev;
+                }
+                const updated = [...prev, { type: 'status', status, message: event.message, query: event.query }];
+                if (typeof window !== 'undefined') {
+                  (window as any).__DEBUG_RESEARCH_EVENTS__ = updated;
+                }
+                return updated;
+              });
+            }
+            break;
+          }
 
           case 'outline_structure':
             console.warn('[useOutlineChat] ========== OUTLINE STRUCTURE RECEIVED ==========');

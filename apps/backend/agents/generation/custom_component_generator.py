@@ -34,6 +34,10 @@ from agents.generation.custom_component_helpers import (
     _reference_images_from_uploaded_media,
     _extract_fonts_from_typography,
 )
+from agents.generation.custom_component_prompts import (
+    build_system_prompt,
+    build_user_prompt,
+)
 from agents.generation.custom_component_html import CustomComponentHtmlProcessor
 
 logger = get_logger(__name__)
@@ -131,8 +135,15 @@ class CustomComponentGenerator:
             if logo_url:
                 logger.info("[CUSTOM_COMPONENT] Logo URL found: %s", logo_url[:60])
 
-            system_prompt = self._build_system_prompt(colors, typography, design_philosophy, logo_url)
-            user_prompt = self._build_user_prompt(
+            slide_mode = slide_context.get("slide_mode") or "interactive"
+            system_prompt = build_system_prompt(
+                colors,
+                typography,
+                design_philosophy,
+                logo_url,
+                slide_mode=slide_mode,
+            )
+            user_prompt = build_user_prompt(
                 content=content,
                 slide_context=slide_context,
                 width=width,
@@ -201,11 +212,13 @@ class CustomComponentGenerator:
             hero_font, body_font = _extract_fonts_from_typography(typography)
             logger.info("[CUSTOM_COMPONENT] Using fonts: hero=%s, body=%s", hero_font, body_font)
 
+            component_position = position or {"x": 0, "y": 0}
             component = {
                 "id": f"custom-{datetime.now().strftime('%H%M%S%f')}",
                 "type": "CustomComponent",
                 "props": {
                     "render": html_content,
+                    "position": component_position,
                     "width": width,
                     "height": height,
                     "primaryColor": colors.get('accent_1', '#6366f1'),
@@ -216,7 +229,7 @@ class CustomComponentGenerator:
                     "logoUrl": logo_url,
                     "props": image_props,
                 },
-                "position": position or {"x": 0, "y": 0},
+                "position": component_position,
                 "width": width,
                 "height": height,
             }
@@ -313,203 +326,4 @@ class CustomComponentGenerator:
             return len(response.strip()) < 100
         return False
 
-    def _build_system_prompt(
-        self,
-        colors: Dict[str, str],
-        typography: Dict[str, str],
-        design_philosophy: str = '',
-        logo_url: Optional[str] = None
-    ) -> str:
-        """Build a minimal system prompt for CustomComponent generation."""
-
-        design_guidance = design_philosophy or "Create a clear, on-brand visual for the slide content."
-
-        accent = colors.get('accent_1', '#6366f1')
-        secondary = colors.get('accent_2', '#8b5cf6')
-        text_color = colors.get('primary_text', '#ffffff')
-        bg_color = colors.get('primary_background', '#0a0e27')
-        hero_font, body_font = _extract_fonts_from_typography(typography)
-
-        logo_info = ""
-        if logo_url:
-            logo_info = f" Logo available at props.logoUrl."
-
-        lines = [
-            f"You generate a CustomComponent as a full HTML document. {design_guidance}",
-            "Interactivity: use simple interactions (click/hover/reveal/animated counters) when it clarifies the story.",
-            f"Theme colors: accent {accent}, secondary {secondary}, text {text_color}, background {bg_color}.",
-            f"Fonts: {hero_font} / {body_font}.{logo_info}",
-            (
-                "Rules: Output a complete HTML document starting with <!DOCTYPE html>. "
-                "Use inline CSS. No external libraries or assets. "
-                "If you use images, use <img src=\"placeholder\" alt=\"descriptive query\">."
-            ),
-        ]
-        return "\n".join(lines)
-
-    def _format_extracted_data_for_prompt(self, extracted_data: Dict[str, Any]) -> str:
-        """Format extractedData payload for prompt readability."""
-        if not isinstance(extracted_data, dict):
-            return ""
-
-        data = extracted_data.get("data") or []
-        data_preview = data
-        truncated = False
-        if isinstance(data, list) and len(data) > 12:
-            data_preview = data[:12]
-            truncated = True
-
-        payload = {
-            "chartType": extracted_data.get("chartType") or extracted_data.get("chart_type"),
-            "title": extracted_data.get("title"),
-            "data": data_preview,
-        }
-        metadata = extracted_data.get("metadata")
-        if metadata:
-            payload["metadata"] = metadata
-
-        import json
-        text = json.dumps(payload, ensure_ascii=True, indent=2)
-        if truncated:
-            text += "\n... data truncated after 12 points"
-        return text
-
-    def _format_manual_charts_for_prompt(self, manual_charts: List[Any]) -> str:
-        """Format manualCharts payload for prompt readability."""
-        if not isinstance(manual_charts, list):
-            return ""
-
-        import json
-        blocks = []
-        for idx, chart in enumerate(manual_charts[:3]):
-            chart_dict = chart.model_dump() if hasattr(chart, "model_dump") else chart
-            if not isinstance(chart_dict, dict):
-                continue
-            data = chart_dict.get("data") or []
-            data_preview = data
-            truncated = False
-            if isinstance(data, list) and len(data) > 12:
-                data_preview = data[:12]
-                truncated = True
-            payload = {
-                "id": chart_dict.get("id"),
-                "chartType": chart_dict.get("chartType"),
-                "title": chart_dict.get("title"),
-                "data": data_preview,
-            }
-            text = json.dumps(payload, ensure_ascii=True, indent=2)
-            if truncated:
-                text += "\n... data truncated after 12 points"
-            blocks.append(f"Chart {idx + 1}:\n{text}")
-        return "\n\n".join(blocks)
-
-    def _build_user_prompt(
-        self,
-        content: str,
-        slide_context: Dict[str, Any],
-        width: int,
-        height: int,
-        component_purpose: str = "visualize",
-        external_media: Optional[Dict[str, Any]] = None,
-        uploaded_media: Optional[list] = None,
-        prefetched_images: Optional[Dict[str, str]] = None,
-        reference_images: Optional[List[str]] = None,
-        logo_url: Optional[str] = None,
-        available_videos: Optional[List[Dict[str, Any]]] = None,
-    ) -> str:
-        """Build a minimal user prompt with relevant context."""
-
-        slide_title = slide_context.get("title", "Slide")
-        slide_index = slide_context.get("slide_index", 0) + 1
-        total_slides = slide_context.get("total_slides", 1)
-        is_full_slide = slide_context.get("is_full_slide", False)
-
-        sections: List[str] = [
-            f'SLIDE: \"{slide_title}\" (Slide {slide_index} of {total_slides})',
-            f"SIZE: {width}x{height}px",
-        ]
-        if component_purpose:
-            sections.append(f"PURPOSE: {component_purpose}")
-
-        if is_full_slide:
-            sections.append("FULL SLIDE: You control the entire canvas.")
-
-        presentation_context = slide_context.get("presentation_context")
-        vibe_context = slide_context.get("vibe_context") or slide_context.get("initial_idea")
-        deck_title = slide_context.get("deck_title")
-        context_parts = [p for p in [presentation_context, vibe_context, deck_title] if p]
-        if context_parts:
-            sections.append("CONTEXT: " + " | ".join(context_parts))
-
-        extracted_data = slide_context.get("extracted_data") or slide_context.get("extractedData")
-        manual_charts = slide_context.get("manual_charts") or slide_context.get("manualCharts")
-        if manual_charts:
-            formatted_manual = self._format_manual_charts_for_prompt(manual_charts)
-            if formatted_manual:
-                sections.append("MANUAL DATA:")
-                sections.append(formatted_manual)
-        if extracted_data:
-            formatted_extracted = self._format_extracted_data_for_prompt(extracted_data)
-            if formatted_extracted:
-                sections.append("EXTRACTED DATA:")
-                sections.append(formatted_extracted)
-        if manual_charts or extracted_data:
-            sections.append("DATA USE: Use any subset (none/some/all) if useful.")
-
-        if reference_images:
-            refs = "\n".join(f"- {url}" for url in reference_images[:5])
-            sections.append("REFERENCE IMAGES (style only):")
-            sections.append(refs)
-
-        if external_media:
-            media_list = []
-            gifs = external_media.get("gifs") or []
-            images = external_media.get("images") or []
-            if gifs:
-                media_list.append("GIFs: " + ", ".join(gifs[:5]))
-            if images:
-                media_list.append("Images: " + ", ".join(images[:5]))
-            if media_list:
-                sections.append("EXTERNAL MEDIA:")
-                sections.append("\n".join(media_list))
-
-        if uploaded_media:
-            filenames = [
-                m.get("filename") or m.get("name")
-                for m in uploaded_media
-                if isinstance(m, dict)
-            ]
-            filenames = [n for n in filenames if n]
-            if filenames:
-                sections.append("USER UPLOADS:")
-                sections.append("- " + ", ".join(filenames[:8]))
-
-        if prefetched_images:
-            image_props = {
-                k: v
-                for k, v in prefetched_images.items()
-                if not k.endswith("_query")
-            }
-            if image_props:
-                entries = [f"{k}: {v}" for k, v in sorted(image_props.items())]
-                sections.append("AVAILABLE IMAGES:")
-                sections.append("\n".join(entries[:6]))
-
-        if available_videos:
-            entries = []
-            for video in available_videos[:5]:
-                title = video.get("title") or video.get("url") or "video"
-                entries.append(str(title))
-            if entries:
-                sections.append("AVAILABLE VIDEOS:")
-                sections.append("- " + ", ".join(entries))
-
-        if logo_url:
-            sections.append(f"LOGO URL: {logo_url}")
-
-        if content:
-            sections.append("CONTENT:")
-            sections.append(content)
-
-        sections.append("OUTPUT: Complete HTML starting with <!DOCTYPE html>.")
-        return "\n".join(sections)
+    # Prompt construction now lives in custom_component_prompts.py

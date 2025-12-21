@@ -1,36 +1,17 @@
-import asyncio
-import json
-import time
 import uuid
-import os
-from typing import Dict, Any, Optional, List, AsyncGenerator, Tuple
+from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv
-
-from .models import (
-    OutlineOptions, OutlineResult, SlideContent,
-    ProgressUpdate, ChartData
-)
-from .planner import OutlinePlanner
-from .slide_generator import SlideGenerator
-from .chart_generator import ChartGenerator
-from .media_manager import MediaManager
-from .chart_normalization import normalize_slide_chart_fields
-from agents.ai.clients import get_client, invoke
+from agents.ai.clients import get_client, get_max_tokens_for_model, invoke
 from agents.config import (
-    OUTLINE_PLANNING_MODEL, OUTLINE_CONTENT_MODEL,
-    OUTLINE_RESEARCH_MODEL,
-    USE_PERPLEXITY_FOR_OUTLINE, PERPLEXITY_OUTLINE_MODEL,
-    PRESENTATION_OUTLINE_MODEL, USE_HYBRID_RESEARCH_MODE
+    OUTLINE_CONTENT_MODEL,
+    PERPLEXITY_OUTLINE_MODEL,
+    PRESENTATION_OUTLINE_MODEL,
+    USE_HYBRID_RESEARCH_MODE,
+    USE_PERPLEXITY_FOR_OUTLINE,
 )
-from agents.research import OutlineResearchAgent
-from agents import config as agents_config
-from agents.ai.clients import get_max_tokens_for_model
-from services.openai_service import OpenAIService
-from agents.generation.file_processor import create_file_processor
 from setup_logging_optimized import get_logger
-from services.pptx_text_extractor import extract_pptx_text_from_bytes
-from .generator_utils import extract_image_prompt_from_content
+
+from .models import ChartData, OutlineOptions, OutlineResult, SlideContent
 
 logger = get_logger(__name__)
 

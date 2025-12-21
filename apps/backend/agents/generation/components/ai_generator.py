@@ -29,14 +29,11 @@ class AISlideGenerator:
         user_prompt: str,
         response_model: Type,
         context: SlideGenerationContext,
-        predicted_components: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Generate slide data using AI."""
-        components_count = len(predicted_components or [])
         logger.info(
-            "Using %s model with schema injection for %s components",
+            "Using %s model with schema injection",
             response_model.__name__,
-            components_count,
         )
         
         # Get client

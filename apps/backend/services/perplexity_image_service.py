@@ -154,7 +154,7 @@ class PerplexityImageService:
         search_query: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Slide-aware image search using richer context sent to Perplexity."""
-        query = (search_query or self._simple_keyword_extraction(slide_title, slide_content) or slide_title or "").strip()
+        query = (search_query or slide_title or slide_content or "").strip()
         if not query:
             return []
 
@@ -352,15 +352,3 @@ class PerplexityImageService:
             return host.replace("www.", "")
         except Exception:
             return ""
-
-    def _simple_keyword_extraction(self, title: str, content: str) -> str:
-        stop_words = {
-            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-            'of', 'with', 'by', 'is', 'are', 'was', 'were', 'been', 'being', 'have',
-            'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
-        }
-        words = (title or "").split()
-        keywords = [w for w in words if w.lower() not in stop_words and len(w) > 2]
-        return ' '.join(keywords[:3]) if keywords else (title or "")[:30]
-
-

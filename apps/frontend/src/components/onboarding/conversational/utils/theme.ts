@@ -1,17 +1,10 @@
 import type { OutlineData } from '@/services/outlineAgentService';
 import type { ThemeEditorData } from '@/types/chatBlocks';
 
-const PLAYFUL_KEYWORDS = ['pikachu', 'pokemon', 'game', 'cartoon', 'fun', 'kids'];
-
 export const buildThemeBlockFromOutline = (outlineData: OutlineData): ThemeEditorData => {
   const stylePrefs = outlineData.stylePreferences || {};
   const colors = stylePrefs.colors || {};
-  const topic = (outlineData.topic || '').toLowerCase();
-  const isPlayful = PLAYFUL_KEYWORDS.some((keyword) => topic.includes(keyword));
-
-  const defaultColors = isPlayful
-    ? { bg: '#FFDC00', text: '#1A1A1A', accent1: '#FF4301', accent2: '#3B4CCA' }
-    : { bg: '#FFFFFF', text: '#1F2937', accent1: '#FF4301', accent2: '#3B82F6' };
+  const defaultColors = { bg: '#FFFFFF', text: '#1F2937', accent1: '#FF4301', accent2: '#3B82F6' };
 
   return {
     themeId: `theme-${Date.now()}`,
@@ -24,16 +17,18 @@ export const buildThemeBlockFromOutline = (outlineData: OutlineData): ThemeEdito
       backgrounds: [colors.background].filter(Boolean) as string[] || [defaultColors.bg],
     },
     typography: {
-      headingFont: stylePrefs.font || (isPlayful ? 'Fredoka' : 'Inter'),
-      bodyFont: stylePrefs.bodyFont || (isPlayful ? 'Nunito' : 'Inter'),
+      headingFont: stylePrefs.font || 'Inter',
+      bodyFont: stylePrefs.bodyFont || 'Inter',
     },
     branding: {
       logoUrl: stylePrefs.logoUrl,
-      brandName: outlineData.brandContext,
-      brandDomain: outlineData.brandContext,
+      brandName: stylePrefs.brandName || outlineData.brandContext,
+      brandDomain: stylePrefs.brandDomain,
+      brandDomainCandidates: stylePrefs.brandDomainCandidates,
+      needsBrandDomainConfirmation: stylePrefs.needsBrandDomainConfirmation,
     },
-    designStyle: outlineData.style || (isPlayful ? 'playful' : 'modern'),
-    vibeContext: outlineData.brandContext || outlineData.style || outlineData.topic,
+    designStyle: outlineData.style || 'modern',
+    vibeContext: stylePrefs.vibeContext || outlineData.brandContext || outlineData.style || outlineData.topic,
     isEditable: true,
   };
 };
@@ -73,6 +68,10 @@ export const buildStylePreferencesFromTheme = (themeBlock: ThemeEditorData) => (
   font: themeBlock.typography.headingFont,
   bodyFont: themeBlock.typography.bodyFont,
   logoUrl: themeBlock.branding?.logoUrl,
+  brandName: themeBlock.branding?.brandName,
+  brandDomain: themeBlock.branding?.brandDomain,
+  brandDomainCandidates: themeBlock.branding?.brandDomainCandidates,
+  needsBrandDomainConfirmation: themeBlock.branding?.needsBrandDomainConfirmation,
   vibeContext: themeBlock.vibeContext,
 });
 
@@ -90,6 +89,7 @@ export const resolveThemeLogoUrl = (theme: any) => {
 
 export const mergeThemeBlockWithGenerated = (prev: ThemeEditorData, theme: any): ThemeEditorData => {
   const colorPalette = theme?.color_palette || {};
+  const brandInfo = theme?.brandInfo || {};
   return {
     ...prev,
     colors: {
@@ -107,6 +107,10 @@ export const mergeThemeBlockWithGenerated = (prev: ThemeEditorData, theme: any):
     branding: {
       ...prev.branding,
       logoUrl: resolveThemeLogoUrl(theme) || prev.branding?.logoUrl,
+      brandName: brandInfo.brandName || prev.branding?.brandName,
+      brandDomain: brandInfo.brandDomain || prev.branding?.brandDomain,
+      brandDomainCandidates: brandInfo.brandDomainCandidates || prev.branding?.brandDomainCandidates,
+      needsBrandDomainConfirmation: brandInfo.needsBrandDomainConfirmation ?? prev.branding?.needsBrandDomainConfirmation,
     },
   };
 };

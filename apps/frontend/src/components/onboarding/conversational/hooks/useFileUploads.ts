@@ -28,7 +28,7 @@ export const useFileUploads = ({
 
   const handleOversizedFiles = useCallback((oversized: string[]) => {
     if (oversized.length === 0) return;
-    const message = `⚠️ ${oversized.join(', ')} ${oversized.length > 1 ? 'are' : 'is'} too large (max 30MB). Please use smaller files or compress them.`;
+    const message = `Warning: ${oversized.join(', ')} ${oversized.length > 1 ? 'are' : 'is'} too large (max 30MB). Please use smaller files or compress them.`;
     onOversizedFiles?.(message);
   }, [onOversizedFiles]);
 

@@ -10,7 +10,6 @@ interface SlideControlBarProps {
   isEditing?: boolean;
   goToPrevSlide: () => void;
   goToNextSlide: () => void;
-  zoomLevel?: number;
 }
 
 const SlideControlBar: React.FC<SlideControlBarProps> = ({
@@ -19,15 +18,13 @@ const SlideControlBar: React.FC<SlideControlBarProps> = ({
   isTransitioning,
   isEditing = false,
   goToPrevSlide,
-  goToNextSlide,
-  zoomLevel = 100
+  goToNextSlide
 }) => {
   return (
     <div 
       className="flex flex-col items-center z-10" 
       style={{
         width: '100%',
-        maxWidth: '1400px', // Match the slide width
         marginTop: '10px',
         transition: 'all 0.3s ease-in-out'
       }}

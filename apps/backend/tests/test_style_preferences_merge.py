@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from api.requests.api_deck_create_stream import merge_style_preferences_into_outline
+from api.requests.deck_create import merge_style_preferences_into_outline
 
 
 def test_merge_sets_style_preferences_when_missing():

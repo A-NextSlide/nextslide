@@ -245,6 +245,7 @@ def deep_extract(
             "query": query,
             "route": result.route,
         }],
+        "videos": result.videos or [],
         "query": query,
         "source": result.route,
     }

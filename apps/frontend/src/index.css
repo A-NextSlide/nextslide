@@ -1244,6 +1244,12 @@ body {
   }
 }
 
+@keyframes cursorFadeOut {
+  to {
+    opacity: 0;
+  }
+}
+
 .typing-animation {
   display: inline-block;
   overflow: hidden;
@@ -1277,6 +1283,11 @@ body {
   animation: cursorBlink 1s infinite;
   color: currentColor;
   margin-left: 1px;
+}
+
+.typing-cursor-fade {
+  animation: cursorBlink 1s infinite,
+    cursorFadeOut 0.3s ease-out var(--cursor-hide-delay, 1200ms) forwards;
 }
 
 /* Ensure the animation runs smoothly even under heavy load */

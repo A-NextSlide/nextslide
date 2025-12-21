@@ -20,12 +20,13 @@ interface DeckPanelProps {
   isNewDeck?: boolean;
   slides?: SlideData[];
   currentSlideIndex?: number;
+  hideThumbnails?: boolean;
 }
 
 /**
  * DeckPanel component that displays the slide deck
  */
-const DeckPanel: React.FC<DeckPanelProps> = ({ deckStatus, isNewDeck }) => {
+const DeckPanel: React.FC<DeckPanelProps> = ({ deckStatus, isNewDeck, hideThumbnails = false }) => {
   const { 
     goToNextSlide, 
     goToPrevSlide, 
@@ -249,17 +250,19 @@ const DeckPanel: React.FC<DeckPanelProps> = ({ deckStatus, isNewDeck }) => {
         </div>
         
         {/* Thumbnail navigation section - Add ref */}
-        <div ref={thumbsRef} className="p-2 pt-0">
-          <ThumbnailNavigator 
-            slides={displaySlides}
-            currentSlideIndex={currentSlideIndex}
-            onThumbnailClick={handleThumbnailClick}
-            isTransitioning={isTransitioning}
-            onSlideDelete={handleSlideDelete}
-            deckStatus={deckStatus}
-            isNewDeck={isNewDeck}
-          />
-        </div>
+        {!hideThumbnails && (
+          <div ref={thumbsRef} className="p-2 pt-0">
+            <ThumbnailNavigator 
+              slides={displaySlides}
+              currentSlideIndex={currentSlideIndex}
+              onThumbnailClick={handleThumbnailClick}
+              isTransitioning={isTransitioning}
+              onSlideDelete={handleSlideDelete}
+              deckStatus={deckStatus}
+              isNewDeck={isNewDeck}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

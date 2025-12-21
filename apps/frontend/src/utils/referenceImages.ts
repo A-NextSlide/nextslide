@@ -3,7 +3,10 @@ export const normalizeReferenceImages = (images?: string[]): string[] | undefine
   const normalized = images
     .map((img) => {
       if (typeof img !== 'string' || img.trim() === '') return null;
-      return img.startsWith('data:') ? img : `data:image/png;base64,${img}`;
+      const trimmed = img.trim();
+      if (trimmed.startsWith('data:')) return trimmed;
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      return `data:image/png;base64,${trimmed}`;
     })
     .filter(Boolean) as string[];
   return normalized.length > 0 ? normalized : undefined;

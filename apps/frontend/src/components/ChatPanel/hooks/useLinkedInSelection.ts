@@ -12,7 +12,7 @@ interface LinkedInProfile {
 interface UseLinkedInSelectionOptions {
   input: string;
   setInput: React.Dispatch<React.SetStateAction<string>>;
-  sendMessageRef: React.MutableRefObject<(() => void) | null>;
+  sendMessageRef: React.MutableRefObject<((message?: string) => void) | null>;
 }
 
 export function useLinkedInSelection({

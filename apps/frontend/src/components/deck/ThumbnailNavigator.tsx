@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { DeckStatus } from '@/types/DeckTypes';
 import { cn } from '@/lib/utils';
 import MiniSlide from './MiniSlide';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 // ThumbnailItem component
 interface ThumbnailItemProps {
@@ -28,7 +29,49 @@ interface ThumbnailItemProps {
   onDragLeave: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent, destinationIndex: number) => void;
   onDragEnd: () => void;
+  renderSimple?: boolean;
 }
+
+const getSlideFallbackBackground = (slide: SlideData): string | undefined => {
+  const comps = slide?.components || [];
+  const bg = comps.find(
+    (comp) => comp.type === 'Background' || (comp.id && comp.id.toLowerCase().includes('background'))
+  );
+  if (!bg) return undefined;
+
+  const props: any = bg.props || {};
+  const gradient = props.gradient || props.style?.background || (props.background && props.background.color ? props.background : null);
+
+  try {
+    if (typeof gradient === 'string' && gradient) return gradient;
+    if (gradient && typeof gradient === 'object' && (Array.isArray((gradient as any).stops) || Array.isArray((gradient as any).colors))) {
+      const rawStops = Array.isArray((gradient as any).stops) ? (gradient as any).stops : (gradient as any).colors;
+      const stops = rawStops
+        .filter((s: any) => s && s.color)
+        .map((s: any, idx: number) => {
+          let position = s.position;
+          if (position === undefined || position === null || Number.isNaN(position)) {
+            position = (idx / Math.max(1, rawStops.length - 1)) * 100;
+          }
+          if (position <= 1 && rawStops.every((stop: any) => (stop.position ?? 0) <= 1)) {
+            position = position * 100;
+          }
+          return `${s.color}${typeof position === 'number' ? ` ${position}%` : ''}`;
+        })
+        .join(', ');
+      if (!stops) return undefined;
+      if (gradient.type === 'radial') {
+        return `radial-gradient(circle, ${stops})`;
+      }
+      const angle = typeof gradient.angle === 'number' ? gradient.angle : 180;
+      return `linear-gradient(${angle}deg, ${stops})`;
+    }
+  } catch {}
+
+  const directColor = props.backgroundColor || props.color || props.page?.backgroundColor;
+  if (typeof directColor === 'string' && directColor) return directColor;
+  return undefined;
+};
 
 const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
   slide,
@@ -43,6 +86,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
   onDragLeave,
   onDrop,
   onDragEnd,
+  renderSimple = false,
 }) => {
   // Check if slide has real content (not just background)
   const hasRealContent = useMemo(() => {
@@ -50,6 +94,9 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
       (c) => c.type !== 'Background' && !c.id?.toLowerCase().includes('background')
     );
   }, [slide?.components]);
+  const fallbackBackground = useMemo(() => (
+    renderSimple ? getSlideFallbackBackground(slide) : undefined
+  ), [renderSimple, slide]);
 
   return (
     <ContextMenu>
@@ -61,7 +108,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
               ? 'border-2 border-primary shadow-sm'
               : 'border border-border hover:border-primary/50'
           )}
-          draggable={true}
+          draggable={!renderSimple}
           onDragStart={() => onDragStart(index)}
           onDragOver={(e) => onDragOver(e, index)}
           onDragLeave={onDragLeave}
@@ -89,7 +136,16 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
 
           {/* Main thumbnail content */}
           <div className="w-full h-full flex items-center justify-center overflow-hidden rounded-sm">
-            {hasRealContent ? (
+            {renderSimple ? (
+              <div
+                className="w-full h-full rounded-sm overflow-hidden flex items-center justify-center"
+                style={fallbackBackground ? { background: fallbackBackground } : { background: '#f5f5f5' }}
+              >
+                <div className="text-[10px] font-medium text-zinc-600">
+                  Slide {index + 1}
+                </div>
+              </div>
+            ) : hasRealContent ? (
               <MiniSlide
                 slide={slide}
                 width={160}
@@ -176,6 +232,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
   onSlideDelete,
   deckStatus,
 }) => {
+  const isMobile = useIsMobile();
   // Check if deck is generating
   const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating' || deckStatus?.state === 'pending';
   const totalExpectedSlides = deckStatus?.totalSlides || 0;
@@ -514,6 +571,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     onDragEnd={handleDragEnd}
+                    renderSimple={isMobile}
                   />
                 </motion.div>
 

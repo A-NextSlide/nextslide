@@ -169,3 +169,51 @@ def _build_chat_context(chat_history: List[Dict], max_messages: int = 10) -> Tup
 
     context = "\n\nCONVERSATION HISTORY (chronological - oldest first, newest last):\n" + "\n---\n".join(chat_lines)
     return context, len(recent)
+
+
+_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")
+
+
+def _is_image_attachment(att: Dict[str, Any]) -> bool:
+    if not isinstance(att, dict):
+        return False
+    mime = (att.get("mimeType") or att.get("type") or "").lower()
+    if mime.startswith("image/"):
+        return True
+    name = (att.get("name") or att.get("fileName") or att.get("filename") or "").lower()
+    return name.endswith(_IMAGE_EXTENSIONS)
+
+
+def _build_uploaded_media_from_attachments(attachments: List[Dict]) -> List[Dict[str, Any]]:
+    uploads: List[Dict[str, Any]] = []
+    for att in attachments or []:
+        if not _is_image_attachment(att):
+            continue
+        url = att.get("url") or att.get("publicUrl")
+        if not url:
+            continue
+        name = att.get("name") or att.get("fileName") or att.get("filename") or "image"
+        mime = att.get("mimeType") or att.get("type") or "image"
+        uploads.append({
+            "id": att.get("attachmentId") or url,
+            "name": name,
+            "filename": name,
+            "type": mime,
+            "url": url,
+            "previewUrl": url,
+            "interpretation": name,
+        })
+    return uploads
+
+
+def _build_tagged_media_from_attachments(attachments: List[Dict]) -> List[Dict[str, Any]]:
+    tagged: List[Dict[str, Any]] = []
+    for upload in _build_uploaded_media_from_attachments(attachments):
+        tagged.append({
+            "id": upload.get("id") or upload.get("url"),
+            "filename": upload.get("filename") or upload.get("name"),
+            "type": "image",
+            "previewUrl": upload.get("previewUrl") or upload.get("url"),
+            "interpretation": upload.get("interpretation") or upload.get("filename") or upload.get("name"),
+        })
+    return tagged

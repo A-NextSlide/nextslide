@@ -165,7 +165,7 @@ class ThemeResolver:
             if colors_config:
                 theme_data = {
                     "theme_name": "StylePreferences",
-                    "design_philosophy": "",
+                    "design_philosophy": "Cohesive, professional slides with clear hierarchy.",
                     "color_palette": {
                         "primary_background": getattr(colors_config, "background", None),
                         "primary_text": getattr(colors_config, "text", None),

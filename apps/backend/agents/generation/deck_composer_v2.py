@@ -18,13 +18,14 @@ from datetime import datetime
 import sentry_sdk
 
 from agents.core import IDeckComposer
-from agents.domain.models import ThemeSpec, DeckState, GenerationEvent, CompositionOptions
+from agents.domain.models import ThemeSpec, DeckState, GenerationEvent, CompositionOptions, SlideStatus
 from agents.generation.theme_resolver import ThemeResolver, ThemeResolutionResult
 from agents.generation.color_palette_manager import ColorPaletteManager
 from agents.generation.image_orchestrator import ImageOrchestrator, ImageEventMerger
 from agents.generation.style_manifesto_builder import StyleManifestoBuilder
 from agents.generation.orchestration.parallel_slide_orchestrator import ParallelSlideOrchestrator
 from agents.generation.concurrency_manager import concurrency_manager
+from agents.generation.progress_manager import create_progress_manager, GenerationPhase
 from models.requests import DeckOutline
 from setup_logging_optimized import get_logger
 
@@ -109,10 +110,12 @@ class DeckComposerV2(IDeckComposer):
         title = deck_outline.title or 'Untitled'
 
         try:
+            total_slides = len(deck_outline.slides) if hasattr(deck_outline, 'slides') else 0
+            progress = create_progress_manager()
             # ============================================================
             # PHASE 1: INITIALIZATION
             # ============================================================
-            yield self._progress_event('initializing', 'Starting deck composition')
+            yield progress.start_phase(GenerationPhase.INITIALIZATION, total_slides=total_slides)
 
             # Acquire concurrency slot
             if user_id:
@@ -123,12 +126,22 @@ class DeckComposerV2(IDeckComposer):
 
             # Create empty deck skeleton
             await self._create_deck_skeleton(deck_uuid, deck_outline)
-            yield self._progress_event('initialized', 'Deck skeleton created')
+            yield progress.update_phase_progress(
+                GenerationPhase.INITIALIZATION,
+                0.7,
+                message='Deck skeleton created'
+            )
+
+            conversation_history = await asyncio.to_thread(
+                self._load_conversation_history, deck_uuid, deck_outline
+            )
+            if conversation_history:
+                deck_outline.conversation_history = conversation_history
 
             # ============================================================
             # PHASE 2: THEME RESOLUTION
             # ============================================================
-            yield self._progress_event('theme_generation', 'Resolving theme')
+            yield progress.start_phase(GenerationPhase.THEME_GENERATION)
 
             theme, palette, search_terms = await self._resolve_theme(
                 deck_outline, deck_uuid
@@ -149,13 +162,30 @@ class DeckComposerV2(IDeckComposer):
                 "palette": palette_dict
             }
 
+            yield progress.update_phase_progress(
+                GenerationPhase.THEME_GENERATION,
+                1.0,
+                message='Theme resolved'
+            )
+            yield progress.start_phase(GenerationPhase.LAYOUT_DESIGN)
+            yield progress.update_phase_progress(
+                GenerationPhase.LAYOUT_DESIGN,
+                1.0,
+                message='Layout blueprint ready'
+            )
+
             # ============================================================
             # PHASE 3: IMAGE PREPARATION
             # ============================================================
-            yield self._progress_event('image_preparation', 'Preparing images')
+            yield progress.start_phase(GenerationPhase.IMAGE_COLLECTION)
 
             # Process tagged media first
             await self.image_orchestrator.process_tagged_media(deck_outline, deck_uuid)
+            yield progress.update_phase_progress(
+                GenerationPhase.IMAGE_COLLECTION,
+                0.3,
+                message='Preparing image search'
+            )
 
             # Configure and start background search
             self.image_orchestrator.config.async_images = async_images
@@ -176,21 +206,27 @@ class DeckComposerV2(IDeckComposer):
                 # Give image search a head start
                 await self.image_orchestrator.wait_for_head_start()
 
-            yield self._progress_event('images_ready', 'Image search started')
+            yield progress.update_phase_progress(
+                GenerationPhase.IMAGE_COLLECTION,
+                1.0,
+                message='Image search started'
+            )
 
             # ============================================================
             # PHASE 4: SLIDE GENERATION
             # ============================================================
-            yield self._progress_event('slide_generation', 'Generating slides')
+            yield progress.start_phase(GenerationPhase.SLIDE_GENERATION, total_slides=total_slides)
 
             # Create deck state (includes deck_outline)
+            slide_placeholders = self._build_slide_placeholders(deck_outline, deck_uuid)
             deck_state = DeckState(
                 deck_uuid=deck_uuid,
                 deck_outline=deck_outline,
+                conversation_history=conversation_history,
                 theme=theme,
                 palette=palette_dict,
                 style_manifesto=style_manifesto,
-                slides=[],
+                slides=slide_placeholders,
                 status={'state': 'generating', 'progress': 0, 'message': 'Generating slides...'}
             )
 
@@ -204,24 +240,63 @@ class DeckComposerV2(IDeckComposer):
 
             # Generate slides in parallel
             slides = []
+            completed_count = 0
             async for event in self.slide_orchestrator.generate_slides_parallel(
                 deck_state=deck_state,
                 options=options
             ):
-                # Forward progress events
-                if event.get('type') in ['slide_started', 'slide_progress', 'slide_generated']:
+                event_type = event.get('type')
+                # Forward slide events for frontend rendering
+                if event_type in ['slide_started', 'slide_progress', 'slide_generated', 'slide_error']:
                     yield event
 
-                # Collect completed slides
-                if event.get('type') == 'slide_generated' and event.get('slide'):
-                    slides.append(event['slide'])
+                if event_type == 'slide_started':
+                    slide_index = event.get('slide_index', 0)
+                    yield progress.update_slide_progress(
+                        current_slide=slide_index + 1,
+                        substep='preparing_context',
+                        message=event.get('message') or f'Generating slide {slide_index + 1}'
+                    )
 
-            yield self._progress_event('slides_complete', f'Generated {len(slides)} slides')
+                if event_type == 'slide_generated':
+                    completed_count += 1
+                    slide_index = event.get('slide_index', 0)
+                    yield progress.update_slide_progress(
+                        current_slide=completed_count,
+                        is_complete=True,
+                        message=event.get('message') or f'Slide {slide_index + 1} generated'
+                    )
+
+                if event_type == 'slide_error':
+                    completed_count += 1
+                    slide_index = event.get('slide_index', 0)
+                    yield progress.update_slide_progress(
+                        current_slide=completed_count,
+                        is_complete=True,
+                        message=event.get('message') or f'Slide {slide_index + 1} failed'
+                    )
+
+                # Collect completed slides
+                if event_type == 'slide_generated':
+                    slide_payload = event.get('slide_data') or event.get('slide')
+                    if slide_payload:
+                        slides.append(slide_payload)
+
+            yield progress.update_phase_progress(
+                GenerationPhase.SLIDE_GENERATION,
+                1.0,
+                message=f'Generated {len(slides)} slides'
+            )
 
             # ============================================================
             # PHASE 5: FINALIZATION
             # ============================================================
-            yield self._progress_event('finalizing', 'Saving deck')
+            yield progress.start_phase(GenerationPhase.FINALIZATION)
+            yield progress.update_phase_progress(
+                GenerationPhase.FINALIZATION,
+                0.4,
+                message='Saving deck'
+            )
 
             # Build final deck data
             final_deck = await self._build_final_deck(
@@ -235,7 +310,11 @@ class DeckComposerV2(IDeckComposer):
             # Save to database
             await self.persistence.save_deck(final_deck)
 
-            yield self._progress_event('completed', 'Deck generation complete')
+            yield progress.update_phase_progress(
+                GenerationPhase.FINALIZATION,
+                1.0,
+                message='Deck generation complete'
+            )
 
             # Yield final deck
             yield {
@@ -254,7 +333,7 @@ class DeckComposerV2(IDeckComposer):
             await self.image_orchestrator.cancel_search()
 
             if concurrency_slot and user_id:
-                await concurrency_manager.release_slot(user_id)
+                await concurrency_manager.release_slot(user_id, concurrency_slot)
 
             self.persistence.end_composition(deck_uuid)
 
@@ -329,7 +408,7 @@ class DeckComposerV2(IDeckComposer):
             'uuid': deck_uuid,
             'name': deck_outline.title or 'Untitled',
             'status': 'generating',
-            'slides': [],
+            'slides': self._build_slide_placeholders(deck_outline, deck_uuid),
             'data': {
                 'outline_id': getattr(deck_outline, 'id', None)
             }
@@ -340,6 +419,24 @@ class DeckComposerV2(IDeckComposer):
             self.persistence.start_composition(deck_uuid)
         except Exception as e:
             logger.warning(f"[COMPOSER V2] Failed to create skeleton: {e}")
+
+    def _load_conversation_history(
+        self,
+        deck_uuid: str,
+        deck_outline: DeckOutline
+    ) -> Optional[Dict[str, Any]]:
+        history = getattr(deck_outline, "conversation_history", None)
+        if history:
+            return history
+        try:
+            from utils.supabase import get_deck
+
+            existing_deck = get_deck(deck_uuid)
+            if existing_deck and isinstance(existing_deck.get("conversation_history"), dict):
+                return existing_deck["conversation_history"]
+        except Exception as exc:
+            logger.debug("[COMPOSER V2] Conversation history load failed: %s", exc)
+        return None
 
     async def _build_final_deck(
         self,
@@ -371,6 +468,27 @@ class DeckComposerV2(IDeckComposer):
                 }
             }
         }
+
+    def _build_slide_placeholders(
+        self,
+        deck_outline: DeckOutline,
+        deck_uuid: str
+    ) -> list[Dict[str, Any]]:
+        """Create placeholder slides to avoid zero-length slide arrays."""
+        placeholders = []
+        slides = deck_outline.slides if hasattr(deck_outline, 'slides') else []
+        for index, slide in enumerate(slides):
+            slide_id = getattr(slide, 'id', None) or f"{deck_uuid}-slide-{index}"
+            title = getattr(slide, 'title', None) or f"Slide {index + 1}"
+            placeholders.append({
+                'id': slide_id,
+                'deckId': deck_uuid,
+                'title': title,
+                'order': index,
+                'components': [],
+                'status': SlideStatus.PENDING.value
+            })
+        return placeholders
 
     def _create_default_theme(self) -> ThemeSpec:
         """Create default fallback theme."""

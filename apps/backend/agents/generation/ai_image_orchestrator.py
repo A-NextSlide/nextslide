@@ -404,19 +404,15 @@ class AIImageOrchestrator:
 
     def _extract_search_query_from_prop_name(self, prop_name: str) -> str:
         """Convert a prop name like 'elonMuskImage' to a search query 'elon musk'."""
-        # Remove common image suffixes
-        query = re.sub(r'(Image|Photo|Picture|Src|Url|Img|Thumbnail|Avatar|Icon|Logo|Banner)$', '', prop_name, flags=re.IGNORECASE)
-        # Remove common prefixes
-        query = re.sub(r'^(hero|feature|background|banner|main|primary|secondary)', '', query, flags=re.IGNORECASE)
-        # Convert camelCase to spaces
+        query = re.sub(
+            r'(Image|Photo|Picture|Src|Url|Img|Thumbnail|Avatar|Icon|Logo|Banner)$',
+            '',
+            prop_name,
+            flags=re.IGNORECASE,
+        )
         query = re.sub(r'([a-z])([A-Z])', r'\1 \2', query)
         query = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', query)
-        query = query.lower().strip()
-        # Filter out generic terms
-        generic_terms = {'hero', 'feature', 'background', 'banner', 'main', 'primary', 'secondary', 'image', 'photo', ''}
-        if query in generic_terms:
-            return ''
-        return query
+        return query.strip().lower()
 
     def _extract_placeholder_images_from_html(self, html: str) -> List[Dict[str, str]]:
         """Extract placeholder images from CustomComponent HTML/JS and generate search queries."""
@@ -431,7 +427,7 @@ class AIImageOrchestrator:
         for match in prop_pattern.finditer(html):
             prop_name = match.group(2)
             search_query = self._extract_search_query_from_prop_name(prop_name)
-            if search_query and len(search_query) > 2:
+            if search_query:
                 prop_names_found[prop_name] = search_query
                 logger.info("[AIImageOrchestrator] Found image prop from JS: %s -> '%s'", prop_name, search_query)
 
@@ -474,7 +470,7 @@ class AIImageOrchestrator:
                 # FIRST: Try to extract search query directly from the variable name
                 # e.g., googleCampusImage -> "google campus"
                 direct_query = self._extract_search_query_from_prop_name(var_name)
-                if direct_query and len(direct_query) > 2:
+                if direct_query:
                     search_query = direct_query
                     matched_prop = var_name
                     logger.info("[AIImageOrchestrator] Extracted query from var name: %s -> '%s'", var_name, search_query)
@@ -488,13 +484,8 @@ class AIImageOrchestrator:
 
             # Fallback to alt text if we still don't have a search query
             if not search_query and alt:
-                # Clean alt text and use as search query
-                search_query = re.sub(r'[^a-zA-Z0-9\s]', ' ', alt).strip().lower()
-                # Check if it's too generic
-                generic_terms = {'image', 'photo', 'picture', 'icon', 'logo', 'placeholder', 'img', 'figure', 'background'}
-                if search_query in generic_terms or len(search_query) < 3:
-                    search_query = ''
-                else:
+                search_query = alt.strip()
+                if search_query:
                     logger.info("[AIImageOrchestrator] Using alt text as search query: '%s'", search_query)
 
             # If still no search query, try to use any unused prop
@@ -625,12 +616,19 @@ class AIImageOrchestrator:
                 if original_src:
                     # Escape special regex characters in the original src
                     escaped_src = re.escape(original_src)
-                    # Replace in img tags
-                    pattern = f'(src=["\']){escaped_src}(["\'])'
-                    old_html_len = len(current_html)
-                    current_html = re.sub(pattern, f'\\1{image_url}\\2', current_html, flags=re.IGNORECASE)
-                    new_html_len = len(current_html)
-                    if old_html_len != new_html_len:
+                    pattern = rf'(src=)(["\']?){escaped_src}\2'
+
+                    def replace_src(match):
+                        quote = match.group(2) or '"'
+                        return f'src={quote}{image_url}{quote}'
+
+                    current_html, replace_count = re.subn(
+                        pattern,
+                        replace_src,
+                        current_html,
+                        flags=re.IGNORECASE,
+                    )
+                    if replace_count:
                         logger.info("[AIImageOrchestrator] HTML replacement SUCCESS: %s -> %s", original_src[:30], image_url[:60])
                         updated = True
                     else:
@@ -794,4 +792,3 @@ class AIImageOrchestrator:
         return None
 
     # _try_nudge_image_box removed - AI model handles image positioning directly
-

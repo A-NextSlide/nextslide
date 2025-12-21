@@ -473,6 +473,8 @@ const SimpleCursors: React.FC<SimpleCursorsProps> = ({
   
   // Get container dimensions for rendering coordinates
   const containerRect = slideContainer.getBoundingClientRect();
+  const scaleX = slideWidth > 0 ? containerRect.width / slideWidth : 1;
+  const scaleY = slideHeight > 0 ? containerRect.height / slideHeight : 1;
   
   return (
     <div 
@@ -494,13 +496,15 @@ const SimpleCursors: React.FC<SimpleCursorsProps> = ({
         // Use the denormalization utility to properly convert from slide coordinates to screen coordinates
         // The cursor.position contains normalized coordinates (in slide space 1920x1080)
         // We need to convert those back to screen coordinates considering the container size and zoom
-        const { x: adjustedX, y: adjustedY } = denormalizeCursorCoordinates(
+        const { x: baseX, y: baseY } = denormalizeCursorCoordinates(
           cursor.position.x,
           cursor.position.y, 
-          containerRect.width, 
-          containerRect.height,
-          zoomLevel // Zoom is applied during rendering, not during normalization
+          slideWidth,
+          slideHeight,
+          100
         );
+        const adjustedX = baseX * scaleX;
+        const adjustedY = baseY * scaleY;
         
         return (
           <div

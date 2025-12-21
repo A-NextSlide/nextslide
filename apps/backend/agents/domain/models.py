@@ -126,6 +126,8 @@ class SlideGenerationContext:
     user_id: Optional[str] = None
     # Presentation context from user's initial request (for design context only)
     presentation_context: Optional[str] = None
+    # Conversation history with user customization details
+    conversation_history: Optional[Dict[str, Any]] = None
     # Design reference images (e.g., PPT screenshots) for AI to match style from
     reference_images: List[str] = field(default_factory=list)
     
@@ -211,6 +213,7 @@ class DeckState:
     """Represents the current state of a deck being generated."""
     deck_uuid: str
     deck_outline: DeckOutline
+    conversation_history: Optional[Dict[str, Any]] = None
     theme: Optional[Union[ThemeSpec, ThemeDocument]] = None
     palette: Optional[Dict[str, Any]] = None
     style_manifesto: Optional[str] = None

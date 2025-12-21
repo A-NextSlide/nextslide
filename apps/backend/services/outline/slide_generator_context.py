@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from setup_logging_optimized import get_logger
 
-from .models import SlideContent
+from .models import OutlineOptions, SlideContent
 
 logger = get_logger(__name__)
 
@@ -80,6 +80,84 @@ class SlideGeneratorContextMixin:
         
         for data_file in processed_files.get('data_files', []):
             context['suggested_data'].append(data_file)
+
+    def _resolve_slide_title(self, slide_title: Any) -> str:
+        if isinstance(slide_title, dict):
+            return slide_title.get("title", str(slide_title))
+        return str(slide_title)
+
+    def _extract_title_struct_context(self, slide_title: Any) -> Dict[str, Any]:
+        if not isinstance(slide_title, dict):
+            return {}
+        elements = slide_title.get("elements") or []
+        title_elements: List[str] = []
+        title_outline_texts: List[str] = []
+        if isinstance(elements, list):
+            for el in elements:
+                if not isinstance(el, dict):
+                    continue
+                el_type = el.get("type")
+                if isinstance(el_type, str):
+                    title_elements.append(el_type)
+                text_val = el.get("text")
+                if isinstance(text_val, str) and text_val.strip():
+                    title_outline_texts.append(text_val.strip())
+        return {
+            "title_elements": title_elements,
+            "title_outline_texts": title_outline_texts,
+            "outline_title_struct": slide_title,
+        }
+
+    def _get_pptx_source_context(self, processed_files: Optional[Dict[str, Any]], index: int) -> Optional[Dict[str, str]]:
+        if not processed_files:
+            return None
+        pptx_outlines = processed_files.get("pptx_outlines") or []
+        if not pptx_outlines:
+            return None
+        ppt = pptx_outlines[0]
+        slides_meta = ppt.get("slides", [])
+        if 0 <= index < len(slides_meta):
+            pptx_slide = slides_meta[index]
+            return {
+                "title": pptx_slide.get("title", ""),
+                "text": pptx_slide.get("text", ""),
+                "notes": pptx_slide.get("notes", ""),
+            }
+        return None
+
+    def _build_parallel_context(
+        self,
+        slide_title: Any,
+        slide_type: str,
+        index: int,
+        total_slides: int,
+        presentation_context: str,
+        options: OutlineOptions,
+        processed_files: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        context: Dict[str, Any] = {
+            "is_continuation": False,
+            "previous_slides": [],
+            "used_charts": [],
+            "part_number": None,
+            "presentation_context": presentation_context,
+            "detail_level": options.detail_level,
+            "total_slides": total_slides,
+            "slide_index": index,
+        }
+        context.update(self._extract_title_struct_context(slide_title))
+        if processed_files:
+            context["processed_files"] = processed_files
+            pptx_source = self._get_pptx_source_context(processed_files, index)
+            if pptx_source:
+                context["pptx_source"] = pptx_source
+            try:
+                self._add_file_suggestions_to_context(
+                    context, processed_files, slide_type, self._resolve_slide_title(slide_title)
+                )
+            except Exception as exc:
+                logger.warning("Failed adding file suggestions for slide %s: %s", index + 1, exc)
+        return context
 
     def _build_image_search_terms(self, slide_title: str, slide_type: str, context: Dict[str, Any]) -> str:
         """Create concise, high-signal search terms for image providers.

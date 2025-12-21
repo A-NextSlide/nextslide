@@ -40,6 +40,7 @@ import { NavigationProvider } from '@/context/NavigationContext';
 import { ComponentRenderer } from '@/renderers/ComponentRenderer';
 import { ActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { EditorStateProvider } from '@/context/EditorStateContext';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 // Error boundary to catch component rendering errors and prevent page crashes
 interface ErrorBoundaryProps {
@@ -117,6 +118,7 @@ const SharedDeckView: React.FC = () => {
   const [deck, setDeck] = useState<any>(null);
   const [canEdit, setCanEdit] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const isMobileView = useIsMobile();
 
   // Email gate state
   const [requiresEmail, setRequiresEmail] = useState(false);
@@ -364,15 +366,20 @@ const SharedDeckView: React.FC = () => {
         console.log('[SharedDeckView] Setting canEdit:', is_editable);
         setCanEdit(is_editable);
 
+        const cleanedSlides = Array.isArray(deckData?.slides)
+          ? deckData.slides.filter((s: any) => s && s.id && !s.id.startsWith('placeholder-'))
+          : [];
+        const cleanedDeckData = { ...deckData, slides: cleanedSlides };
+
         // Set the deck data locally
         console.log('[SharedDeckView] Setting deck state...');
-        setDeck(deckData);
+        setDeck(cleanedDeckData);
 
         // Also load into the deckStore so navigation works (without saving to backend)
         console.log('[SharedDeckView] Updating deckStore...');
         try {
           const { updateDeckData } = useDeckStore.getState();
-          updateDeckData(deckData, { skipBackend: true });
+          updateDeckData(cleanedDeckData, { skipBackend: true });
           console.log('[SharedDeckView] deckStore updated successfully');
         } catch (e) {
           console.error('[SharedDeckView] deckStore update failed:', e);
@@ -547,13 +554,16 @@ const SharedDeckView: React.FC = () => {
   const renderSlide = React.useCallback((slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
     const fallbackBackground = getSlideBackground(slide);
     const components = Array.isArray(slide.components) ? slide.components : [];
+    const useLiteRenderer = isMobileView && !canEdit;
 
     // For thumbnails, use a much simpler rendering approach to avoid crashes on mobile
     if (isThumbnail) {
+      const isImageBackground = typeof fallbackBackground === 'string' && fallbackBackground.includes('url(');
+      const thumbnailBackground = isImageBackground ? undefined : fallbackBackground;
       return (
         <div
           className="w-full h-full relative overflow-hidden"
-          style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: '#f0f0f0' }}
+          style={thumbnailBackground ? { background: thumbnailBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: '#f0f0f0' }}
         >
           {/* Simple thumbnail - just show background and slide number */}
           <div className="absolute inset-0 flex items-center justify-center">
@@ -579,7 +589,7 @@ const SharedDeckView: React.FC = () => {
       >
         <div className="w-full h-full relative overflow-hidden" style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
           <div
-            className="absolute top-0 left-0 origin-top-left"
+            className="absolute top-0 left-0 origin-top-left slide-container"
             style={{
               width: `${DEFAULT_SLIDE_WIDTH}px`,
               height: `${DEFAULT_SLIDE_HEIGHT}px`,
@@ -589,6 +599,9 @@ const SharedDeckView: React.FC = () => {
               willChange: 'transform',
               ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
             }}
+            data-slide-id={slide.id}
+            data-slide-width={DEFAULT_SLIDE_WIDTH}
+            data-slide-height={DEFAULT_SLIDE_HEIGHT}
           >
             {/* Render components - providers are at the top level now */}
             {/* isEditing and slideId come from context (EditorStateProvider/ActiveSlideProvider) */}
@@ -602,7 +615,7 @@ const SharedDeckView: React.FC = () => {
                     isSelected={false}
                     onSelect={() => {}}
                     allComponents={components}
-                    isThumbnail={false}
+                    isThumbnail={useLiteRenderer}
                   />
                 );
               } catch (err) {
@@ -624,7 +637,7 @@ const SharedDeckView: React.FC = () => {
         </div>
       </SlideErrorBoundary>
     );
-  }, [canEdit]);
+  }, [canEdit, isMobileView]);
 
   // Debug: Log render state
   console.log('[SharedDeckView] Rendering...', {
@@ -837,7 +850,7 @@ const SharedDeckView: React.FC = () => {
         <EditorStateProvider initialEditingState={false}>
           <ActiveSlideProvider>
             <PresentationMode
-              slides={deck.slides.filter(s => s && s.id && !s.id.startsWith('placeholder-'))}
+              slides={deck.slides}
               currentSlideIndex={currentSlideIndex}
               renderSlide={renderSlide}
               isViewOnly={!canEdit}

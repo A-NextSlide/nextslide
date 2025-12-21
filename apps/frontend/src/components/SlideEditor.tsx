@@ -36,6 +36,7 @@ import GuidedTour from './common/GuidedTour';
 import DeckNotes from './deck/DeckNotes';
 import { debugSlideImages } from '@/utils/debugSlideImages';
 import { useOnboarding } from '@/context/OnboardingContext';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 /**
  * SlideEditor content component that assumes all context providers are in place
@@ -112,6 +113,19 @@ const SlideEditorContent: React.FC = () => {
 
   // Editor controls (moved up so effects below can reference setIsEditing safely)
   const { isEditing, setIsEditing, undo, redo, canUndo, canRedo } = useEditor();
+  const isMobile = useIsMobile();
+
+  useEffect(() => {
+    if (isMobile && isEditing) {
+      setIsEditing(false);
+    }
+  }, [isMobile, isEditing, setIsEditing]);
+
+  useEffect(() => {
+    if (isMobile && isChatCollapsed) {
+      setIsChatCollapsed(false);
+    }
+  }, [isMobile, isChatCollapsed]);
 
   // Allow starting the tour manually via header trigger
   useEffect(() => {
@@ -543,6 +557,7 @@ const SlideEditorContent: React.FC = () => {
 
   const handleEditToggle = () => {
     // Simply toggle edit mode without updating slide data
+    if (isMobile) return;
     setIsEditing(!isEditing);
   };
 
@@ -601,7 +616,7 @@ const SlideEditorContent: React.FC = () => {
   };
 
   // Function to render slides for presentation mode
-  const renderSlide = (slide: SlideData, index: number, scale: number = 1) => {
+  const renderSlide = (slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
     // Compute a defensive fallback background so presentation mode shows slide backgrounds
     const fallbackBackground = (() => {
       const normalizeHex = (hex: string) => {
@@ -668,6 +683,21 @@ const SlideEditorContent: React.FC = () => {
       } catch {}
       return undefined as string | undefined;
     })();
+
+    if (isThumbnail) {
+      const isImageBackground = typeof fallbackBackground === 'string' && fallbackBackground.includes('url(');
+      const thumbnailBackground = isImageBackground ? undefined : fallbackBackground;
+      return (
+        <div
+          className="w-full h-full relative overflow-hidden"
+          style={thumbnailBackground ? { background: thumbnailBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: '#f0f0f0' }}
+        >
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-4xl font-bold text-black/20">{index + 1}</span>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="w-full h-full relative overflow-hidden" style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
@@ -873,11 +903,33 @@ const SlideEditorContent: React.FC = () => {
               // Don't send "Your presentation is ready!" message for existing decks
               // ChatPanel handles the appropriate welcome message based on isExistingDeck prop
             }
-          } else if (isNewDeck && deckData) {
-            // If deck exists but no status, just set a simple generating status
+          } else if (deckData) {
+            // If deck exists but no status, check if it already has generated content
             const slides = deckData.slides || [];
-            if (slides.length > 0) {
+            const hasGeneratedContent = slides.some((slide: any) =>
+              slide.components && slide.components.length > 0
+            );
 
+            if (hasGeneratedContent) {
+              // Deck already has content - treat as completed
+              setDeckStatus({
+                state: 'completed',
+                currentSlide: slides.length,
+                totalSlides: slides.length,
+                message: '',
+                progress: 100,
+                startedAt: new Date().toISOString()
+              });
+
+              // Clean up URL if it still has ?new=true
+              if (searchParams.get('new') === 'true') {
+                const newSearchParams = new URLSearchParams(searchParams);
+                newSearchParams.delete('new');
+                setSearchParams(newSearchParams, { replace: true });
+                console.log('[SlideEditor] Removed ?new=true parameter for deck with generated content');
+              }
+            } else if (isNewDeck && slides.length > 0) {
+              // New deck with slides but no content yet - still generating
               setDeckStatus({
                 state: 'generating',
                 currentSlide: 1,
@@ -1577,71 +1629,98 @@ const SlideEditorContent: React.FC = () => {
       {/* Removed DeckGenerationProgress - using orange animated loading only */}
       
       <div className="flex-1 overflow-hidden pt-14">
-        <ResizablePanelGroup
-          direction="horizontal"
-          className="h-full bg-transparent"
-          onLayout={handleLayout}
-        >
-          <ResizablePanel
-            defaultSize={CHAT_MIN_SIZE}
-            minSize={CHAT_MIN_SIZE}
-            maxSize={40}
-            className={`p-4 ${isChatCollapsed ? 'min-w-0' : 'min-w-[320px]'}`}
-            style={{ flexShrink: 0 }}
-            collapsible={true}
-            collapsedSize={0}
-            onCollapse={() => setIsChatCollapsed(true)}
-            onExpand={() => setIsChatCollapsed(false)}
-          >
-            <div className="flex flex-col gap-4 h-full min-w-0 overflow-y-auto">
+        {isMobile ? (
+          <div className="flex h-full flex-col">
+            <div className="flex-1 min-h-0 p-2">
+              <DeckPanel 
+                deckStatus={deckStatus} 
+                isNewDeck={isNewDeck} 
+                slides={deckData.slides}
+                currentSlideIndex={currentSlideIndex}
+                hideThumbnails
+              />
+            </div>
+            <div
+              className="border-t border-border p-3"
+              style={{ height: 'clamp(180px, 38vh, 320px)' }}
+            >
               <ChatPanel
                 onCollapseChange={handleCollapseChange}
-                opacity={chatOpacity}
+                opacity={1}
                 newSystemMessage={lastSystemMessageForChat}
                 isExistingDeck={!isNewDeck || deckStatus?.state === 'completed'}
+                enableResponseTabs={true}
               />
             </div>
-          </ResizablePanel>
-          
-          <ResizableHandle withHandle />
-          
-          <ResizablePanel
-            defaultSize={100 - CHAT_MIN_SIZE}
-            minSize={60}
-            className="relative flex flex-col bg-transparent min-w-0"
-            style={{ minWidth: 0 }}
-            collapsible={false}
+          </div>
+        ) : (
+          <ResizablePanelGroup
+            direction="horizontal"
+            className="h-full bg-transparent"
+            onLayout={handleLayout}
           >
-            <DeckPanel 
-              deckStatus={deckStatus} 
-              isNewDeck={isNewDeck} 
-              slides={deckData.slides}
-              currentSlideIndex={currentSlideIndex}
-            />
-            
-            <div 
-              className="absolute top-0 right-0 bottom-0 z-10 bg-background border-l border-border"
-              style={{ 
-                width: '350px',
-                transform: isHistoryPanelOpen ? 'translateX(0)' : 'translateX(100%)',
-                opacity: isHistoryPanelOpen ? 1 : 0,
-                transition: 'all 0.3s ease-in-out',
-                boxShadow: isHistoryPanelOpen ? '-5px 0 15px rgba(0, 0, 0, 0.1)' : 'none'
-              }}
+            <ResizablePanel
+              defaultSize={CHAT_MIN_SIZE}
+              minSize={CHAT_MIN_SIZE}
+              maxSize={40}
+              className={`p-4 ${isChatCollapsed ? 'min-w-0' : 'min-w-[320px]'}`}
+              style={{ flexShrink: 0 }}
+              collapsible={true}
+              collapsedSize={0}
+              onCollapse={() => setIsChatCollapsed(true)}
+              onExpand={() => setIsChatCollapsed(false)}
             >
-              {isHistoryPanelOpen && <VersionHistoryPanel />}
-            </div>
+              <div className="flex flex-col gap-4 h-full min-w-0 overflow-y-auto">
+                <ChatPanel
+                  onCollapseChange={handleCollapseChange}
+                  opacity={chatOpacity}
+                  newSystemMessage={lastSystemMessageForChat}
+                  isExistingDeck={!isNewDeck || deckStatus?.state === 'completed'}
+                />
+              </div>
+            </ResizablePanel>
             
-            {/* Presentation Mode Overlay */}
-            {deckData.slides && deckData.slides.length > 0 && (
-              <PresentationMode
-                slides={deckData.slides.filter(s => s && s.id && !s.id.startsWith('placeholder-'))}
+            <ResizableHandle withHandle />
+            
+            <ResizablePanel
+              defaultSize={100 - CHAT_MIN_SIZE}
+              minSize={60}
+              className="relative flex flex-col bg-transparent min-w-0"
+              style={{ minWidth: 0 }}
+              collapsible={false}
+            >
+              <DeckPanel 
+                deckStatus={deckStatus} 
+                isNewDeck={isNewDeck} 
+                slides={deckData.slides}
                 currentSlideIndex={currentSlideIndex}
-                renderSlide={renderSlide}
               />
-            )}
-          </ResizablePanel>
-        </ResizablePanelGroup>
+              
+              <div 
+                className="absolute top-0 right-0 bottom-0 z-10 bg-background border-l border-border"
+                style={{ 
+                  width: '350px',
+                  transform: isHistoryPanelOpen ? 'translateX(0)' : 'translateX(100%)',
+                  opacity: isHistoryPanelOpen ? 1 : 0,
+                  transition: 'all 0.3s ease-in-out',
+                  boxShadow: isHistoryPanelOpen ? '-5px 0 15px rgba(0, 0, 0, 0.1)' : 'none'
+                }}
+              >
+                {isHistoryPanelOpen && <VersionHistoryPanel />}
+              </div>
+              
+              {/* Presentation Mode Overlay */}
+              {deckData.slides && deckData.slides.length > 0 && (
+                <PresentationMode
+                  slides={deckData.slides.filter(s => s && s.id && !s.id.startsWith('placeholder-'))}
+                  currentSlideIndex={currentSlideIndex}
+                  renderSlide={renderSlide}
+                  alwaysShowControls={isMobile}
+                />
+              )}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        )}
       </div>
       
       {/* Quick tip bubble */}

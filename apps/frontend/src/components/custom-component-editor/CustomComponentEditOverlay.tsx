@@ -133,6 +133,7 @@ export function generateEditModeScript(componentId: string): string {
 
   function normalizeLabel(value) {
     return (value || '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
       .replace(/[_-]+/g, ' ')
       .replace(/\\s+/g, ' ')
       .trim();
@@ -171,6 +172,7 @@ export function generateEditModeScript(componentId: string): string {
 
   function deriveLabel(el, type, style, src) {
     const candidates = [
+      el.getAttribute('data-prop'),
       el.getAttribute('aria-label'),
       el.getAttribute('title'),
       el.getAttribute('alt'),
@@ -309,11 +311,34 @@ export function generateEditModeScript(componentId: string): string {
       }
     });
 
+    // Handle plain text inside divs (no child elements)
+    document.querySelectorAll('div').forEach((el) => {
+      if (el.dataset.nsId) return;
+      if (el.childElementCount > 0) return;
+      const text = el.textContent?.trim() || '';
+      if (!text) return;
+
+      const parentText = el.parentElement?.textContent?.trim() || '';
+      const isOnlyTextChild = el.parentElement &&
+        el.parentElement.childElementCount === 1 &&
+        parentText === text;
+      if (isOnlyTextChild && el.parentElement?.dataset?.nsId) return;
+
+      el.dataset.nsId = 'text-' + textIndex++;
+      el.classList.add('ns-editable-text');
+    });
+
     // Image elements - include SVGs and background images
     document.querySelectorAll('img, svg, [style*="background-image"]').forEach((el, index) => {
       if (el.dataset.nsId) return;
       const rect = el.getBoundingClientRect();
       if (rect.width < 20 || rect.height < 20) return;
+      const tag = el.tagName ? el.tagName.toLowerCase() : '';
+      const isFullBleedBg = tag !== 'img' &&
+        tag !== 'svg' &&
+        rect.width >= window.innerWidth * 0.98 &&
+        rect.height >= window.innerHeight * 0.98;
+      if (tag === 'body' || tag === 'html' || isFullBleedBg) return;
       el.dataset.nsId = 'img-' + index;
       el.classList.add('ns-editable-image');
     });
@@ -474,28 +499,83 @@ export function generateEditModeScript(componentId: string): string {
       }
     }
 
-    // Update image
+    function applyImageSource(el, newSrc) {
+      if (!el || !newSrc) return false;
+      var tag = el.tagName ? el.tagName.toLowerCase() : '';
+      if (tag === 'img') {
+        el.src = newSrc;
+        return true;
+      }
+      if (tag === 'image') {
+        el.setAttribute('href', newSrc);
+        el.setAttribute('xlink:href', newSrc);
+        return true;
+      }
+      if (tag === 'svg') {
+        var inner = el.querySelector('image, img');
+        if (inner) {
+          if (inner.tagName.toLowerCase() === 'img') {
+            inner.src = newSrc;
+          } else {
+            inner.setAttribute('href', newSrc);
+            inner.setAttribute('xlink:href', newSrc);
+          }
+          return true;
+        }
+      }
+      if (el.style) {
+        el.style.backgroundImage = 'url("' + newSrc + '")';
+        return true;
+      }
+      return false;
+    }
+
+    function setLoadingState(el, isLoading) {
+      if (!el) return;
+      if (isLoading) {
+        el.classList.add('ns-image-loading');
+      } else {
+        el.classList.remove('ns-image-loading');
+      }
+    }
+
+    // Update image (img, svg image, or background)
     if (e.data.type === 'update-image') {
-      const img = document.querySelector('img[data-ns-id="' + e.data.elementId + '"]');
-      if (img) {
-        img.src = e.data.newSrc;
+      const el = document.querySelector('[data-ns-id="' + e.data.elementId + '"]');
+      if (el && applyImageSource(el, e.data.newSrc)) {
         sendToParent('image-updated', { elementId: e.data.elementId, newSrc: e.data.newSrc });
       }
     }
 
-    // Update image with loading state
+    // Update image with loading state (supports background images)
     if (e.data.type === 'update-image-with-placeholder') {
-      const img = document.querySelector('img[data-ns-id="' + e.data.elementId + '"]');
-      if (img) {
-        img.classList.add('ns-image-loading');
-        img.src = e.data.newSrc;
-        img.onload = function() {
-          img.classList.remove('ns-image-loading');
-          sendToParent('image-loaded', { elementId: e.data.elementId, newSrc: e.data.newSrc });
-        };
-        img.onerror = function() {
-          img.classList.remove('ns-image-loading');
-        };
+      const el = document.querySelector('[data-ns-id="' + e.data.elementId + '"]');
+      if (el) {
+        setLoadingState(el, true);
+        const didUpdate = applyImageSource(el, e.data.newSrc);
+        if (didUpdate) {
+          if (el.tagName && el.tagName.toLowerCase() === 'img') {
+            el.onload = function() {
+              setLoadingState(el, false);
+              sendToParent('image-loaded', { elementId: e.data.elementId, newSrc: e.data.newSrc });
+            };
+            el.onerror = function() {
+              setLoadingState(el, false);
+            };
+          } else {
+            var preloader = new Image();
+            preloader.onload = function() {
+              setLoadingState(el, false);
+              sendToParent('image-loaded', { elementId: e.data.elementId, newSrc: e.data.newSrc });
+            };
+            preloader.onerror = function() {
+              setLoadingState(el, false);
+            };
+            preloader.src = e.data.newSrc;
+          }
+        } else {
+          setLoadingState(el, false);
+        }
       }
     }
 
@@ -559,6 +639,21 @@ export function generateEditModeScript(componentId: string): string {
       document.querySelectorAll('.ns-selected').forEach(el => {
         el.classList.remove('ns-selected');
       });
+    }
+
+    // Reparent element (move to new container)
+    if (e.data.type === 'reparent-element') {
+      var moveEl = document.querySelector('[data-ns-id="' + e.data.elementId + '"]');
+      var nextParent = null;
+      if (e.data.parentId) {
+        nextParent = document.querySelector('[data-ns-id="' + e.data.parentId + '"]');
+      }
+      if (!nextParent) {
+        nextParent = document.body;
+      }
+      if (moveEl && nextParent && moveEl !== nextParent) {
+        nextParent.appendChild(moveEl);
+      }
     }
 
     // Delete element
@@ -784,17 +879,25 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 }) => {
   // State
   const [virtualElements, setVirtualElements] = useState<VirtualElement[]>([]);
-  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [iframeBounds, setIframeBounds] = useState<DOMRect | null>(null);
+  const [selectionPath, setSelectionPath] = useState<string[]>([]);
+  const [selectionPathIndex, setSelectionPathIndex] = useState(0);
+  const selectionAnchorRef = useRef<{ x: number; y: number } | null>(null);
+  const skipNextSelectionNotifyRef = useRef(false);
+  const [selectionRect, setSelectionRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [isBoxSelecting, setIsBoxSelecting] = useState(false);
+  const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
 
   // Global store for sharing with settings panel
   const {
+    selectedElementId,
     setActiveComponent,
     setDetectedElements,
-    setSelectedElement: setStoreSelectedElement,
+    setSelectedElementId,
     setIframeRef: setStoreIframeRef,
+    clearSelection,
   } = useCustomComponentEditStore();
 
   // Refs
@@ -812,6 +915,234 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     () => virtualElements.find(e => e.id === selectedElementId) || null,
     [virtualElements, selectedElementId]
   );
+
+  useEffect(() => {
+    if (skipNextSelectionNotifyRef.current) {
+      skipNextSelectionNotifyRef.current = false;
+      return;
+    }
+    if (!selectedElementId) {
+      onElementSelect(null);
+      return;
+    }
+    if (selectedElement) {
+      onElementSelect(toDetectedElement(selectedElement));
+    }
+  }, [selectedElementId, selectedElement, onElementSelect]);
+
+  const elementMap = useMemo(() => {
+    const map = new Map<string, VirtualElement>();
+    virtualElements.forEach((element) => map.set(element.id, element));
+    return map;
+  }, [virtualElements]);
+
+  const getElementDepth = useCallback((elementId: string): number => {
+    let depth = 0;
+    let current = elementMap.get(elementId) || null;
+    while (current?.parentId) {
+      depth += 1;
+      current = current.parentId ? elementMap.get(current.parentId) || null : null;
+    }
+    return depth;
+  }, [elementMap]);
+
+  const isDescendantOf = useCallback((ancestorId: string, nodeId: string): boolean => {
+    let current = elementMap.get(nodeId) || null;
+    while (current?.parentId) {
+      if (current.parentId === ancestorId) return true;
+      current = current.parentId ? elementMap.get(current.parentId) || null : null;
+    }
+    return false;
+  }, [elementMap]);
+
+  const getSelectionPathForElement = useCallback((elementId: string): string[] => {
+    const path: string[] = [];
+    let currentId: string | null = elementId;
+    while (currentId) {
+      const current = elementMap.get(currentId);
+      if (!current) break;
+      path.push(currentId);
+      currentId = current.parentId || null;
+    }
+    return path.reverse();
+  }, [elementMap]);
+
+  const getSelectionPathAtPoint = useCallback((point: { x: number; y: number }): string[] => {
+    const hits = virtualElements
+      .map((element) => {
+        const bounds = element.bounds;
+        if (!bounds) return null;
+        const within =
+          point.x >= bounds.x &&
+          point.x <= bounds.x + bounds.width &&
+          point.y >= bounds.y &&
+          point.y <= bounds.y + bounds.height;
+        if (!within) return null;
+        const area = Math.max(1, bounds.width * bounds.height);
+        const zRaw = element.computedStyle?.zIndex;
+        const zIndex = zRaw && zRaw !== 'auto' ? (parseInt(zRaw, 10) || 0) : null;
+        const domIndex = typeof element.domIndex === 'number' ? element.domIndex : 0;
+        return { element, area, zIndex, domIndex };
+      })
+      .filter((hit): hit is NonNullable<typeof hit> => Boolean(hit));
+
+    if (hits.length === 0) return [];
+
+    const useZIndex = hits.some((hit) => hit.zIndex !== null);
+    hits.sort((a, b) => {
+      if (useZIndex) {
+        const aZ = a.zIndex ?? 0;
+        const bZ = b.zIndex ?? 0;
+        if (aZ !== bZ) return bZ - aZ;
+      } else if (a.domIndex !== b.domIndex) {
+        return b.domIndex - a.domIndex;
+      }
+      return a.area - b.area;
+    });
+
+    const topHit = hits[0];
+    if (!topHit) return [];
+
+    const branchHits = hits.filter((hit) =>
+      hit.element.id === topHit.element.id || isDescendantOf(topHit.element.id, hit.element.id)
+    );
+
+    const targetHit = branchHits.reduce((best, current) => {
+      if (!best) return current;
+      const bestDepth = getElementDepth(best.element.id);
+      const currentDepth = getElementDepth(current.element.id);
+      if (currentDepth !== bestDepth) {
+        return currentDepth > bestDepth ? current : best;
+      }
+      return current.area < best.area ? current : best;
+    }, branchHits[0] || topHit);
+
+    return getSelectionPathForElement(targetHit.element.id);
+  }, [virtualElements, getSelectionPathForElement, getElementDepth, isDescendantOf]);
+
+  const getSelectionPathForRect = useCallback((rect: { x: number; y: number; width: number; height: number }): string[] => {
+    const hits = virtualElements
+      .map((element) => {
+        const bounds = element.bounds;
+        if (!bounds) return null;
+        const intersects =
+          rect.x <= bounds.x + bounds.width &&
+          rect.x + rect.width >= bounds.x &&
+          rect.y <= bounds.y + bounds.height &&
+          rect.y + rect.height >= bounds.y;
+        if (!intersects) return null;
+        const area = Math.max(1, bounds.width * bounds.height);
+        const zRaw = element.computedStyle?.zIndex;
+        const zIndex = zRaw && zRaw !== 'auto' ? (parseInt(zRaw, 10) || 0) : null;
+        const domIndex = typeof element.domIndex === 'number' ? element.domIndex : 0;
+        return { element, area, zIndex, domIndex };
+      })
+      .filter((hit): hit is NonNullable<typeof hit> => Boolean(hit));
+
+    if (hits.length === 0) return [];
+
+    const useZIndex = hits.some((hit) => hit.zIndex !== null);
+    hits.sort((a, b) => {
+      if (useZIndex) {
+        const aZ = a.zIndex ?? 0;
+        const bZ = b.zIndex ?? 0;
+        if (aZ !== bZ) return bZ - aZ;
+      } else if (a.domIndex !== b.domIndex) {
+        return b.domIndex - a.domIndex;
+      }
+      return a.area - b.area;
+    });
+
+    const topHit = hits[0];
+    if (!topHit) return [];
+
+    const branchHits = hits.filter((hit) =>
+      hit.element.id === topHit.element.id || isDescendantOf(topHit.element.id, hit.element.id)
+    );
+
+    const targetHit = branchHits.reduce((best, current) => {
+      if (!best) return current;
+      const bestDepth = getElementDepth(best.element.id);
+      const currentDepth = getElementDepth(current.element.id);
+      if (currentDepth !== bestDepth) {
+        return currentDepth > bestDepth ? current : best;
+      }
+      return current.area < best.area ? current : best;
+    }, branchHits[0] || topHit);
+
+    return getSelectionPathForElement(targetHit.element.id);
+  }, [virtualElements, getSelectionPathForElement, getElementDepth, isDescendantOf]);
+
+  const applySelectionPath = useCallback((path: string[], anchor: { x: number; y: number } | null, index: number) => {
+    if (path.length === 0) {
+      clearSelection();
+      setSelectionPath([]);
+      setSelectionPathIndex(0);
+      selectionAnchorRef.current = null;
+      return null;
+    }
+
+    const clampedIndex = Math.max(0, Math.min(index, path.length - 1));
+    const nextId = path[clampedIndex] || null;
+    setSelectionPath(path);
+    setSelectionPathIndex(clampedIndex);
+    selectionAnchorRef.current = anchor;
+    setSelectedElementId(nextId);
+    return nextId;
+  }, [clearSelection, setSelectedElementId]);
+
+  const selectAtPoint = useCallback((point: { x: number; y: number }) => {
+    const nextPath = getSelectionPathAtPoint(point);
+    if (nextPath.length === 0) {
+      applySelectionPath([], null, 0);
+      return null;
+    }
+
+    const lastAnchor = selectionAnchorRef.current;
+    const currentPath = selectionPath;
+    const currentIndex = selectionPathIndex;
+    const deepestIndex = nextPath.length - 1;
+
+    const isSameRoot = currentPath.length > 0 && nextPath.length > 0 && currentPath[0] === nextPath[0];
+    const isSamePath = isSameRoot &&
+      nextPath.length === currentPath.length &&
+      nextPath.every((id, idx) => id === currentPath[idx]);
+    const isSameAnchor = !!(lastAnchor &&
+      Math.hypot(lastAnchor.x - point.x, lastAnchor.y - point.y) <= 8);
+
+    let nextIndex = 0;
+    if (isSamePath && isSameAnchor) {
+      nextIndex = Math.min(currentIndex + 1, deepestIndex);
+    } else if (isSameRoot && currentIndex > 0) {
+      nextIndex = Math.min(currentIndex, deepestIndex);
+    } else if (isSameRoot && currentIndex === 0) {
+      nextIndex = Math.min(1, deepestIndex);
+    } else {
+      nextIndex = 0;
+    }
+
+    const selectedId = applySelectionPath(nextPath, point, nextIndex);
+    if (!selectedId) return null;
+    return virtualElements.find((element) => element.id === selectedId) || null;
+  }, [applySelectionPath, getSelectionPathAtPoint, selectionPath, selectionPathIndex, virtualElements]);
+
+  useEffect(() => {
+    if (!selectedElementId) {
+      setSelectionPath([]);
+      setSelectionPathIndex(0);
+      selectionAnchorRef.current = null;
+      return;
+    }
+    const path = getSelectionPathForElement(selectedElementId);
+    if (path.length === 0) return;
+    const pathChanged = selectionPath.length !== path.length || !path.every((id, idx) => id === selectionPath[idx]);
+    const currentSelected = selectionPath[selectionPathIndex];
+    if (pathChanged || currentSelected !== selectedElementId) {
+      setSelectionPath(path);
+      setSelectionPathIndex(path.length - 1);
+      selectionAnchorRef.current = null;
+    }
+  }, [selectedElementId, getSelectionPathForElement, selectionPath, selectionPathIndex]);
 
   // Initialize/update coordinator
   useEffect(() => {
@@ -875,14 +1206,9 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       // Only clear if this component was the active one
       setActiveComponent(null);
       setDetectedElements([]);
-      setStoreSelectedElement(null);
+      clearSelection();
     };
-  }, [setActiveComponent, setDetectedElements, setStoreSelectedElement]);
-
-  // Sync selected element to global store
-  useEffect(() => {
-    setStoreSelectedElement(selectedElement);
-  }, [selectedElement, setStoreSelectedElement]);
+  }, [setActiveComponent, setDetectedElements, clearSelection]);
 
   // Request elements from iframe when ready
   const requestElements = useCallback(() => {
@@ -981,8 +1307,13 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           }
 
           if (closestElement) {
-            setSelectedElementId(closestElement.id);
-            onElementSelect(toDetectedElement(closestElement), cursorX, cursorY);
+            const path = getSelectionPathForElement(closestElement.id);
+            applySelectionPath(path, { x: cursorX, y: cursorY }, 0);
+            const selected = path.length > 0 ? elements.find(el => el.id === path[0]) : closestElement;
+            if (selected) {
+              skipNextSelectionNotifyRef.current = true;
+              onElementSelect(toDetectedElement(selected), cursorX, cursorY);
+            }
           }
         }
       }
@@ -991,7 +1322,12 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       if (data.type === 'image-selected') {
         const el = virtualElements.find(e => e.id === data.element?.id);
         if (el) {
-          setSelectedElementId(el.id);
+          const path = getSelectionPathForElement(el.id);
+          applySelectionPath(path, {
+            x: el.bounds.x + el.bounds.width / 2,
+            y: el.bounds.y + el.bounds.height / 2,
+          }, Math.max(0, path.length - 1));
+          skipNextSelectionNotifyRef.current = true;
           onElementSelect(toDetectedElement(el));
         }
       }
@@ -1028,11 +1364,20 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       if (data.type === 'html-response' && data.html) {
         onHtmlUpdate(data.html);
       }
+
+      if (data.type === 'get-html-request') {
+        if (iframeRef.current?.contentWindow) {
+          iframeRef.current.contentWindow.postMessage({
+            target: 'ns-custom-component-edit',
+            type: 'get-html',
+          }, '*');
+        }
+      }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [isEditing, isSelected, componentId, iframeRef, requestElements, virtualElements, onElementSelect, onHtmlUpdate]);
+  }, [isEditing, isSelected, componentId, iframeRef, requestElements, virtualElements, onElementSelect, onHtmlUpdate, getSelectionPathForElement, applySelectionPath]);
 
   // Re-extract elements when srcDoc changes
   useEffect(() => {
@@ -1073,7 +1418,11 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
           // Remove from local state
           setVirtualElements(prev => prev.filter(e => e.id !== selectedElementId));
-          setSelectedElementId(null);
+          clearSelection();
+          setSelectionPath([]);
+          setSelectionPathIndex(0);
+          selectionAnchorRef.current = null;
+          skipNextSelectionNotifyRef.current = true;
           onElementSelect(null);
 
           // Request HTML update for persistence
@@ -1092,7 +1441,46 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     // Use capture phase to intercept before other handlers
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isEditing, isSelected, selectedElementId, editingTextId, virtualElements, iframeRef, onElementSelect]);
+  }, [isEditing, isSelected, selectedElementId, editingTextId, virtualElements, iframeRef, onElementSelect, clearSelection]);
+
+  // Handle deselect
+  const handleDeselect = useCallback(() => {
+    clearSelection();
+    setSelectionPath([]);
+    setSelectionPathIndex(0);
+    selectionAnchorRef.current = null;
+    setEditingTextId(null);
+
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'deselect',
+      }, '*');
+    }
+  }, [iframeRef, clearSelection]);
+
+  // Handle Escape to clear selection while editing a custom component
+  useEffect(() => {
+    if (!isEditing || !isSelected) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+      if (editingTextId) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      handleDeselect();
+      skipNextSelectionNotifyRef.current = true;
+      onElementSelect(null);
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isEditing, isSelected, editingTextId, handleDeselect, onElementSelect]);
 
   // Handle element selection - single click selects (for drag), double-click edits (for text)
   const handleSelectElement = useCallback((elementId: string, cursorX?: number, cursorY?: number) => {
@@ -1101,11 +1489,22 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       return;
     }
 
+    const point = {
+      x: cursorX ?? (element.bounds.x + element.bounds.width / 2),
+      y: cursorY ?? (element.bounds.y + element.bounds.height / 2),
+    };
+
     // For ALL elements (including TEXT): show selection overlay on single click
     // This allows dragging text elements. Double-click will enter edit mode.
-    setSelectedElementId(elementId);
+    const selected = selectAtPoint(point);
     setEditingTextId(null);
-    onElementSelect(toDetectedElement(element), cursorX, cursorY);
+    if (selected) {
+      skipNextSelectionNotifyRef.current = true;
+      onElementSelect(toDetectedElement(selected), point.x, point.y);
+    } else {
+      skipNextSelectionNotifyRef.current = true;
+      onElementSelect(null);
+    }
 
     // Notify iframe to clear any previous selection styling
     if (iframeRef.current?.contentWindow) {
@@ -1114,7 +1513,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         type: 'deselect',
       }, '*');
     }
-  }, [iframeRef, virtualElements, onElementSelect]);
+  }, [iframeRef, virtualElements, onElementSelect, selectAtPoint]);
 
   // Handle text edit - starts inline editing in the iframe
   const handleStartTextEdit = useCallback((element: VirtualElement) => {
@@ -1128,10 +1527,14 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       }, '*');
     }
     // Hide selection overlay while editing text
-    setSelectedElementId(null);
+    clearSelection();
+    setSelectionPath([]);
+    setSelectionPathIndex(0);
+    selectionAnchorRef.current = null;
     setEditingTextId(element.id);
+    skipNextSelectionNotifyRef.current = true;
     onElementSelect(null);
-  }, [iframeRef, onElementSelect]);
+  }, [iframeRef, onElementSelect, clearSelection]);
 
   // Handle double-click - for TEXT: enter edit mode, for IMAGE: open settings
   const handleDoubleClick = useCallback((element: VirtualElement) => {
@@ -1139,40 +1542,19 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       handleStartTextEdit(element);
     } else if (element.type === 'image') {
       // Could open image settings or similar
+      skipNextSelectionNotifyRef.current = true;
       onElementSelect(toDetectedElement(element));
     }
   }, [handleStartTextEdit, onElementSelect]);
 
   // Handle click on nested element (when clicking inside selected element's bounds)
   const handleClickNested = useCallback((x: number, y: number) => {
-    if (!selectedElement) return;
-
-    // Find the smallest element at this position that's inside the selected element
-    const selectedArea = selectedElement.bounds.width * selectedElement.bounds.height;
-
-    let smallestElement: VirtualElement | null = null;
-    let smallestArea = selectedArea;
-
-    for (const el of virtualElements) {
-      if (el.id === selectedElement.id) continue;
-
-      // Check if click is inside this element's bounds
-      const b = el.bounds;
-      if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
-        const area = b.width * b.height;
-        // Only select if it's smaller than current selection
-        if (area < smallestArea) {
-          smallestElement = el;
-          smallestArea = area;
-        }
-      }
+    const selected = selectAtPoint({ x, y });
+    if (selected) {
+      skipNextSelectionNotifyRef.current = true;
+      onElementSelect(toDetectedElement(selected), x, y);
     }
-
-    if (smallestElement) {
-      // Select the nested element
-      handleSelectElement(smallestElement.id, x, y);
-    }
-  }, [selectedElement, virtualElements, handleSelectElement]);
+  }, [selectAtPoint, onElementSelect]);
 
   // Handle position change (during drag)
   const handlePositionChange = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
@@ -1311,18 +1693,85 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     setEditingTextId(null);
   }, []);
 
-  // Handle deselect
-  const handleDeselect = useCallback(() => {
-    setSelectedElementId(null);
-    setEditingTextId(null);
+  const handleBackgroundPointerDown = useCallback((e: React.MouseEvent) => {
+    if (!iframeBounds || editingTextId) return;
+    if (e.button !== 0) return;
 
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({
-        target: 'ns-custom-component-edit',
-        type: 'deselect',
-      }, '*');
-    }
-  }, [iframeRef]);
+    e.preventDefault();
+    e.stopPropagation();
+
+    const start = { x: e.clientX, y: e.clientY };
+    selectionStartRef.current = start;
+    setIsBoxSelecting(true);
+    setSelectionRect({
+      x: start.x - iframeBounds.left,
+      y: start.y - iframeBounds.top,
+      width: 0,
+      height: 0,
+    });
+    applySelectionPath([], null, 0);
+    skipNextSelectionNotifyRef.current = true;
+    onElementSelect(null);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!selectionStartRef.current) return;
+      const current = { x: moveEvent.clientX, y: moveEvent.clientY };
+      const minX = Math.min(selectionStartRef.current.x, current.x);
+      const minY = Math.min(selectionStartRef.current.y, current.y);
+      const width = Math.abs(selectionStartRef.current.x - current.x);
+      const height = Math.abs(selectionStartRef.current.y - current.y);
+
+      setSelectionRect({
+        x: minX - iframeBounds.left,
+        y: minY - iframeBounds.top,
+        width,
+        height,
+      });
+    };
+
+    const handleMouseUp = (upEvent: MouseEvent) => {
+      const current = { x: upEvent.clientX, y: upEvent.clientY };
+      const minX = Math.min(start.x, current.x);
+      const minY = Math.min(start.y, current.y);
+      const width = Math.abs(start.x - current.x);
+      const height = Math.abs(start.y - current.y);
+
+      const isClick = width < 3 && height < 3;
+      if (isClick) {
+        applySelectionPath([], null, 0);
+        skipNextSelectionNotifyRef.current = true;
+        onElementSelect(null);
+      } else {
+        const rect = { x: minX, y: minY, width, height };
+        const path = getSelectionPathForRect(rect);
+        const anchor = { x: minX + width / 2, y: minY + height / 2 };
+        const selectedId = applySelectionPath(path, anchor, 0);
+        if (selectedId) {
+          const selected = virtualElements.find(el => el.id === selectedId) || null;
+          if (selected) {
+            skipNextSelectionNotifyRef.current = true;
+            onElementSelect(toDetectedElement(selected), anchor.x, anchor.y);
+          } else {
+            skipNextSelectionNotifyRef.current = true;
+            onElementSelect(null);
+          }
+        } else {
+          skipNextSelectionNotifyRef.current = true;
+          onElementSelect(null);
+        }
+      }
+
+      setSelectionRect(null);
+      setIsBoxSelecting(false);
+      selectionStartRef.current = null;
+
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [iframeBounds, editingTextId, applySelectionPath, getSelectionPathForRect, onElementSelect, virtualElements]);
 
   // Don't render if not in edit mode
   if (!isEditing || !isSelected) return null;
@@ -1346,12 +1795,9 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
             cursor: selectedElementId ? 'default' : 'crosshair',
             zIndex: 1, // Lower than hit areas (10000+) so elements are clickable
           }}
-          onClick={(e) => {
-            // Only deselect if clicking directly on background (not bubbled from children)
+          onMouseDown={(e) => {
             if (e.target === e.currentTarget) {
-              setSelectedElementId(null);
-              setEditingTextId(null);
-              onElementSelect(null);
+              handleBackgroundPointerDown(e);
               if (iframeRef.current?.contentWindow) {
                 iframeRef.current.contentWindow.postMessage({
                   target: 'ns-custom-component-edit',
@@ -1396,10 +1842,25 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
               isSelected={element.id === selectedElementId}
               onSelect={(cursorX, cursorY) => handleSelectElement(element.id, cursorX, cursorY)}
               onDoubleClick={() => handleDoubleClick(element)}
-              disabled={!!editingTextId}
+              disabled={!!editingTextId || isBoxSelecting}
               hideForSelection={element.id === selectedElementId}
             />
           ))}
+          {selectionRect && (
+            <div
+              style={{
+                position: 'absolute',
+                left: selectionRect.x,
+                top: selectionRect.y,
+                width: selectionRect.width,
+                height: selectionRect.height,
+                border: '1px solid rgba(59, 130, 246, 0.9)',
+                background: 'rgba(59, 130, 246, 0.12)',
+                pointerEvents: 'none',
+                zIndex: 35000,
+              }}
+            />
+          )}
         </div>
       )}
 

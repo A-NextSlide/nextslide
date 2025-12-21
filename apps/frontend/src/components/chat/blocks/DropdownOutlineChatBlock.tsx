@@ -21,6 +21,8 @@ const DropdownOutlineChatBlock: React.FC<DropdownOutlineChatBlockProps> = ({
   onSlideReorder,
   onLoadContent,
   isEditable = true,
+  isLoading = false,
+  loadingLabel,
   className,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -65,21 +67,32 @@ const DropdownOutlineChatBlock: React.FC<DropdownOutlineChatBlockProps> = ({
     onSlideDelete?.(slideId);
   }, [onSlideDelete]);
 
+  const overlayLabel = loadingLabel || 'Finalizing outline...';
+  const showLoadingOverlay = Boolean(isLoading);
+
   if (normalizedSlides.length === 0) {
     return (
       <div className={cn(
-        "w-full max-w-[360px] rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4",
+        "w-full max-w-[360px] rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-zinc-900/90 p-4 relative shadow-[0_16px_40px_-32px_rgba(15,23,42,0.35)]",
         className
       )}>
-        <div className="text-sm text-zinc-400 text-center py-4">No slides yet</div>
-        {isEditable && (
-          <button
-            onClick={handleAddSlide}
-            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-sm text-orange-500 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Add first slide
-          </button>
+        {showLoadingOverlay ? (
+          <div className="flex items-center justify-center py-4 text-[11px] text-zinc-500">
+            <span>{overlayLabel}</span>
+          </div>
+        ) : (
+          <>
+            <div className="text-sm text-zinc-400 text-center py-4">No slides yet</div>
+            {isEditable && (
+              <button
+                onClick={handleAddSlide}
+                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-sm text-orange-500 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add first slide
+              </button>
+            )}
+          </>
         )}
       </div>
     );
@@ -89,26 +102,34 @@ const DropdownOutlineChatBlock: React.FC<DropdownOutlineChatBlockProps> = ({
 
   return (
     <div className={cn(
-      "w-full max-w-[360px] rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden",
+      "w-full bg-transparent", // Removed card styling for cleaner look
       className
     )}>
+      {showLoadingOverlay && (
+        <div className="absolute inset-0 z-20 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-[1px] flex items-start justify-center pt-3 text-zinc-600 dark:text-zinc-300">
+          <div className="rounded-full bg-white/95 dark:bg-zinc-900/95 px-3 py-1 text-[11px] shadow-sm">
+            {overlayLabel}
+          </div>
+        </div>
+      )}
       {/* Header */}
-      <div className="px-3 py-1.5 border-b border-zinc-100 dark:border-zinc-800">
+      <div className="px-1 py-2 mb-1">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            Outline
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">
+            Outline Preview
           </span>
-          <span className="text-xs text-zinc-400 dark:text-zinc-500">
-            {normalizedSlides.length} slides
+          <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded-full">
+            {normalizedSlides.length}
           </span>
         </div>
       </div>
 
-      {/* Slide list */}
+      {/* Slide list - Expanding fully for parent scrolling */}
       <div
         ref={scrollContainerRef}
-        onWheel={handleWheel}
-        className="max-h-[360px] overflow-y-auto"
+        // Removed internal scrolling: onWheel={handleWheel}
+        // Removed max-height constraint: className="max-h-[360px] overflow-y-auto"
+        className="flex flex-col"
       >
         {normalizedSlides.map((slide, index) => {
           const isExpanded = state.expandedSlides.has(slide.id);

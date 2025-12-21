@@ -166,9 +166,17 @@ class DeckOutline(BaseModel):
     title: str = Field(description="Title of the presentation deck.")
     slides: List[SlideOutline] = Field(description="Array of slide outlines.")
     uploadedMedia: Optional[List[TaggedMediaItem]] = Field(None, description="All media files that were uploaded for potential use in the deck.")
+    use_uploaded_images: Optional[bool] = Field(
+        None,
+        description="True when uploaded images should be applied to slides; false when uploads are reference-only.",
+    )
     discarded_files: Optional[List[DiscardedFileItem]] = Field(None, description="Files that were uploaded but explicitly discarded or not used.")
     stylePreferences: Optional[StylePreferencesItem] = Field(None, description="User's style preferences for the deck.")
     notes: Optional[Dict[str, Any]] = Field(None, description="Narrative flow analysis including story arc, themes, and presentation tips.")
+    conversation_history: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Conversation history with user customization details.",
+    )
     extractedImages: Optional[List[str]] = Field(None, description="Image URLs extracted from uploaded PPTX/PDF files for use in generated slides.")
 
 class DeckOutlineResponse(BaseModel):

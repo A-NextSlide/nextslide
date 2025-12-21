@@ -138,6 +138,48 @@ export const useSlideGenerationFlow = ({
     hasAttemptedAutoStartRef.current = false;
   }, [deckId]);
 
+  useEffect(() => {
+    if (!deckId || !deckStatus) return;
+    if (!['generating', 'creating', 'pending'].includes(deckStatus.state)) return;
+
+    const coordinator = GenerationCoordinator.getInstance();
+    if (coordinator.isGenerating(deckId)) return;
+
+    const slides = deckData.slides || [];
+    if (slides.length === 0) return;
+
+    const allSlidesReady = slides.every((slide: any) => {
+      if (slide?.status === 'completed') return true;
+      const comps = Array.isArray(slide?.components) ? slide.components : [];
+      return comps.some((comp: any) => comp?.type !== 'Background' && !String(comp?.id || '').toLowerCase().includes('background'));
+    });
+
+    if (!allSlidesReady) return;
+
+    setDeckStatus({
+      ...deckStatus,
+      state: 'completed',
+      progress: 100,
+      message: ''
+    });
+
+    setLastSystemMessageForChat({
+      message: 'Your presentation is ready!',
+      metadata: {
+        type: 'generation_complete',
+        stage: 'generation_complete',
+        progress: 100,
+        isStreamingUpdate: true
+      }
+    });
+
+    if (searchParams.get('new') === 'true') {
+      const newSearchParams = new URLSearchParams(searchParams);
+      newSearchParams.delete('new');
+      setSearchParams(newSearchParams, { replace: true });
+    }
+  }, [deckId, deckStatus, deckData.slides, searchParams, setDeckStatus, setLastSystemMessageForChat, setSearchParams]);
+
   const handleStartGeneration = useCallback(async () => {
     await startGeneration({ auto: true });
   }, [startGeneration]);

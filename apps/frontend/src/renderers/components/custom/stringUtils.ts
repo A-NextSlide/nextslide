@@ -14,6 +14,34 @@ export function ensureHtmlNewlines(html: string): string {
 }
 
 /**
+ * Fix broken CSS @import statements that have newlines inside URL strings.
+ * AI sometimes generates @import url('...') with line breaks inside the URL,
+ * which is invalid CSS and breaks the entire stylesheet.
+ *
+ * Example broken:
+ *   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;
+ *   400&family=Playfair+Display:ital,wght@1,400;
+ *   1,600&display=swap');
+ *
+ * Fixed:
+ *   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400&family=Playfair+Display:ital,wght@1,400;1,600&display=swap');
+ */
+export function fixBrokenCssImports(html: string): string {
+  if (!html || typeof html !== 'string') return html;
+
+  // Match @import url('...') or @import url("...") with potential newlines inside
+  // The regex captures the full @import statement and we clean it up
+  return html.replace(
+    /@import\s+url\s*\(\s*(['"])([\s\S]*?)\1\s*\)\s*;/gi,
+    (match, quote, url) => {
+      // Remove all whitespace (including newlines) from the URL
+      const cleanUrl = url.replace(/\s+/g, '');
+      return `@import url(${quote}${cleanUrl}${quote});`;
+    }
+  );
+}
+
+/**
  * Escape raw newlines that appear inside single/double quoted string literals.
  * This prevents accidental split string literals (e.g., 'Calvin\nCycle' becoming two lines)
  * and keeps generated code valid for parsing.

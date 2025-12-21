@@ -1,5 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, useAnimation, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+
+export type LoaderBrandTheme = {
+  logoUrl?: string;
+  name?: string;
+  accent?: string;
+  accentAlt?: string;
+  background?: string;
+  text?: string;
+};
 
 interface SlideGeneratingUIProps {
   progress?: number;
@@ -9,163 +17,41 @@ interface SlideGeneratingUIProps {
   slidesCompleted?: number;
   slidesInProgress?: number;
   elapsedTime?: number;
+  brand?: LoaderBrandTheme;
+  outlineTitles?: string[];
 }
 
-// Define different slide layout sketches - these will be drawn as if being sketched
-interface SlideSketch {
-  id: string;
-  name: string;
-  viewBox: string;
-  paths: {
-    id: string;
-    d: string;
-    strokeWidth?: number;
-    delay?: number;
-    duration?: number;
-    opacity?: number;
-    strokeDasharray?: string;
-  }[];
-}
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-const slideSketchLayouts: SlideSketch[] = [
-  {
-    id: 'title-slide',
-    name: 'Title Slide',
-    viewBox: '0 0 300 200',
-    paths: [
-      // Frame
-      { id: 'frame', d: 'M20,20 L280,20 L280,180 L20,180 Z', strokeWidth: 2, delay: 0, duration: 1.5 },
-      // Large title box
-      { id: 'title', d: 'M60,70 L240,70 L240,90 L60,90 Z', strokeWidth: 3, delay: 0.5, duration: 0.8 },
-      // Subtitle
-      { id: 'subtitle', d: 'M80,110 L220,110', strokeWidth: 2, delay: 1, duration: 0.6 },
-      // Decorative line
-      { id: 'line', d: 'M100,130 L200,130', strokeWidth: 1, delay: 1.3, duration: 0.4, opacity: 0.6 },
-      // Corner accents
-      { id: 'corner1', d: 'M20,20 L40,20 L40,40', strokeWidth: 1.5, delay: 1.6, duration: 0.3 },
-      { id: 'corner2', d: 'M260,20 L280,20 L280,40', strokeWidth: 1.5, delay: 1.7, duration: 0.3 },
-    ]
-  },
-  {
-    id: 'content-with-image',
-    name: 'Content with Image',
-    viewBox: '0 0 300 200',
-    paths: [
-      // Frame
-      { id: 'frame', d: 'M15,15 L285,15 L285,185 L15,185 Z', strokeWidth: 2, delay: 0, duration: 1.5 },
-      // Title area
-      { id: 'title', d: 'M30,30 L150,30', strokeWidth: 3, delay: 0.5, duration: 0.6 },
-      // Text content area
-      { id: 'text1', d: 'M30,60 L140,60', strokeWidth: 1, delay: 0.8, duration: 0.4 },
-      { id: 'text2', d: 'M30,70 L130,70', strokeWidth: 1, delay: 0.9, duration: 0.4 },
-      { id: 'text3', d: 'M30,80 L135,80', strokeWidth: 1, delay: 1, duration: 0.4 },
-      // Bullet points
-      { id: 'bullet1', d: 'M30,100 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0', strokeWidth: 1, delay: 1.2, duration: 0.2 },
-      { id: 'bullet-text1', d: 'M40,100 L120,100', strokeWidth: 1, delay: 1.3, duration: 0.4 },
-      { id: 'bullet2', d: 'M30,115 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0', strokeWidth: 1, delay: 1.4, duration: 0.2 },
-      { id: 'bullet-text2', d: 'M40,115 L110,115', strokeWidth: 1, delay: 1.5, duration: 0.4 },
-      // Image placeholder
-      { id: 'image-frame', d: 'M170,50 L270,50 L270,150 L170,150 Z', strokeWidth: 1.5, delay: 1.6, duration: 0.8 },
-      // Image diagonal lines
-      { id: 'img-diag1', d: 'M170,50 L270,150', strokeWidth: 0.5, delay: 2, duration: 0.4, opacity: 0.3 },
-      { id: 'img-diag2', d: 'M270,50 L170,150', strokeWidth: 0.5, delay: 2.1, duration: 0.4, opacity: 0.3 },
-    ]
-  },
-  {
-    id: 'comparison-slide',
-    name: 'Comparison Slide',
-    viewBox: '0 0 300 200',
-    paths: [
-      // Frame
-      { id: 'frame', d: 'M10,10 L290,10 L290,190 L10,190 Z', strokeWidth: 2, delay: 0, duration: 1.5 },
-      // Title
-      { id: 'title', d: 'M50,25 L250,25', strokeWidth: 3, delay: 0.5, duration: 0.7 },
-      // Divider
-      { id: 'divider', d: 'M150,50 L150,170', strokeWidth: 1.5, delay: 0.8, duration: 0.6, strokeDasharray: '5 3' },
-      // Left column
-      { id: 'left-header', d: 'M40,60 L130,60', strokeWidth: 2, delay: 1, duration: 0.5 },
-      { id: 'left-box', d: 'M30,80 L140,80 L140,160 L30,160 Z', strokeWidth: 1.5, delay: 1.2, duration: 0.8 },
-      // Left content lines
-      { id: 'left-line1', d: 'M40,95 L120,95', strokeWidth: 1, delay: 1.6, duration: 0.3 },
-      { id: 'left-line2', d: 'M40,110 L115,110', strokeWidth: 1, delay: 1.7, duration: 0.3 },
-      { id: 'left-line3', d: 'M40,125 L125,125', strokeWidth: 1, delay: 1.8, duration: 0.3 },
-      // Right column
-      { id: 'right-header', d: 'M170,60 L260,60', strokeWidth: 2, delay: 1.1, duration: 0.5 },
-      { id: 'right-box', d: 'M160,80 L270,80 L270,160 L160,160 Z', strokeWidth: 1.5, delay: 1.3, duration: 0.8 },
-      // Right content lines
-      { id: 'right-line1', d: 'M170,95 L250,95', strokeWidth: 1, delay: 1.9, duration: 0.3 },
-      { id: 'right-line2', d: 'M170,110 L245,110', strokeWidth: 1, delay: 2, duration: 0.3 },
-      { id: 'right-line3', d: 'M170,125 L255,125', strokeWidth: 1, delay: 2.1, duration: 0.3 },
-    ]
-  },
-  {
-    id: 'chart-slide',
-    name: 'Chart Slide',
-    viewBox: '0 0 300 200',
-    paths: [
-      // Frame
-      { id: 'frame', d: 'M15,15 L285,15 L285,185 L15,185 Z', strokeWidth: 2, delay: 0, duration: 1.5 },
-      // Title
-      { id: 'title', d: 'M30,30 L200,30', strokeWidth: 3, delay: 0.5, duration: 0.6 },
-      // Chart axes
-      { id: 'y-axis', d: 'M60,160 L60,60', strokeWidth: 2, delay: 0.8, duration: 0.5 },
-      { id: 'x-axis', d: 'M60,160 L240,160', strokeWidth: 2, delay: 0.9, duration: 0.5 },
-      // Chart bars
-      { id: 'bar1', d: 'M80,160 L80,120 L100,120 L100,160', strokeWidth: 1.5, delay: 1.2, duration: 0.4 },
-      { id: 'bar2', d: 'M110,160 L110,100 L130,100 L130,160', strokeWidth: 1.5, delay: 1.3, duration: 0.4 },
-      { id: 'bar3', d: 'M140,160 L140,80 L160,80 L160,160', strokeWidth: 1.5, delay: 1.4, duration: 0.4 },
-      { id: 'bar4', d: 'M170,160 L170,90 L190,90 L190,160', strokeWidth: 1.5, delay: 1.5, duration: 0.4 },
-      { id: 'bar5', d: 'M200,160 L200,110 L220,110 L220,160', strokeWidth: 1.5, delay: 1.6, duration: 0.4 },
-      // Trend line
-      { id: 'trend', d: 'M90,140 Q120,110 150,85 T210,95', strokeWidth: 1.5, delay: 1.8, duration: 0.8, strokeDasharray: '3 2', opacity: 0.7 },
-      // Labels
-      { id: 'label1', d: 'M250,90 L270,90', strokeWidth: 1, delay: 2.2, duration: 0.3 },
-      { id: 'label2', d: 'M250,110 L270,110', strokeWidth: 1, delay: 2.3, duration: 0.3 },
-    ]
-  },
-  {
-    id: 'process-flow',
-    name: 'Process Flow',
-    viewBox: '0 0 300 200',
-    paths: [
-      // Frame
-      { id: 'frame', d: 'M10,10 L290,10 L290,190 L10,190 Z', strokeWidth: 2, delay: 0, duration: 1.5 },
-      // Title
-      { id: 'title', d: 'M100,25 L200,25', strokeWidth: 3, delay: 0.5, duration: 0.6 },
-      // Process boxes
-      { id: 'box1', d: 'M30,70 L90,70 L90,110 L30,110 Z', strokeWidth: 1.5, delay: 0.8, duration: 0.5 },
-      { id: 'box2', d: 'M120,70 L180,70 L180,110 L120,110 Z', strokeWidth: 1.5, delay: 1, duration: 0.5 },
-      { id: 'box3', d: 'M210,70 L270,70 L270,110 L210,110 Z', strokeWidth: 1.5, delay: 1.2, duration: 0.5 },
-      // Arrows
-      { id: 'arrow1', d: 'M90,90 L110,90 M110,90 L105,85 M110,90 L105,95', strokeWidth: 1.5, delay: 1.5, duration: 0.4 },
-      { id: 'arrow2', d: 'M180,90 L200,90 M200,90 L195,85 M200,90 L195,95', strokeWidth: 1.5, delay: 1.7, duration: 0.4 },
-      // Bottom text
-      { id: 'desc1', d: 'M40,130 L80,130', strokeWidth: 1, delay: 2, duration: 0.3, opacity: 0.7 },
-      { id: 'desc2', d: 'M130,130 L170,130', strokeWidth: 1, delay: 2.1, duration: 0.3, opacity: 0.7 },
-      { id: 'desc3', d: 'M220,130 L260,130', strokeWidth: 1, delay: 2.2, duration: 0.3, opacity: 0.7 },
-    ]
-  },
-  {
-    id: 'image-grid',
-    name: 'Image Grid',
-    viewBox: '0 0 300 200',
-    paths: [
-      // Frame
-      { id: 'frame', d: 'M20,20 L280,20 L280,180 L20,180 Z', strokeWidth: 2, delay: 0, duration: 1.5 },
-      // Title
-      { id: 'title', d: 'M60,35 L240,35', strokeWidth: 3, delay: 0.5, duration: 0.7 },
-      // Grid images
-      { id: 'img1', d: 'M40,60 L130,60 L130,100 L40,100 Z', strokeWidth: 1.5, delay: 0.8, duration: 0.5 },
-      { id: 'img1-x', d: 'M40,60 L130,100 M130,60 L40,100', strokeWidth: 0.5, delay: 1, duration: 0.3, opacity: 0.3 },
-      { id: 'img2', d: 'M170,60 L260,60 L260,100 L170,100 Z', strokeWidth: 1.5, delay: 1.1, duration: 0.5 },
-      { id: 'img2-x', d: 'M170,60 L260,100 M260,60 L170,100', strokeWidth: 0.5, delay: 1.3, duration: 0.3, opacity: 0.3 },
-      { id: 'img3', d: 'M40,120 L130,120 L130,160 L40,160 Z', strokeWidth: 1.5, delay: 1.4, duration: 0.5 },
-      { id: 'img3-x', d: 'M40,120 L130,160 M130,120 L40,160', strokeWidth: 0.5, delay: 1.6, duration: 0.3, opacity: 0.3 },
-      { id: 'img4', d: 'M170,120 L260,120 L260,160 L170,160 Z', strokeWidth: 1.5, delay: 1.7, duration: 0.5 },
-      { id: 'img4-x', d: 'M170,120 L260,160 M260,120 L170,160', strokeWidth: 0.5, delay: 1.9, duration: 0.3, opacity: 0.3 },
-    ]
+const normalizeHex = (value?: string): string | null => {
+  if (!value || typeof value !== 'string') return null;
+  const raw = value.trim().replace('#', '');
+  if (raw.length === 3) {
+    return `#${raw[0]}${raw[0]}${raw[1]}${raw[1]}${raw[2]}${raw[2]}`;
   }
-];
+  if (raw.length === 6) {
+    return `#${raw}`;
+  }
+  return null;
+};
+
+const hexToRgb = (value?: string): { r: number; g: number; b: number } | null => {
+  const hex = normalizeHex(value);
+  if (!hex) return null;
+  const int = parseInt(hex.slice(1), 16);
+  if (Number.isNaN(int)) return null;
+  return {
+    r: (int >> 16) & 255,
+    g: (int >> 8) & 255,
+    b: int & 255
+  };
+};
+
+const toRgba = (value: string | undefined, alpha: number, fallback: string) => {
+  const rgb = hexToRgb(value);
+  if (!rgb) return fallback;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+};
 
 export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
   progress = 0,
@@ -174,14 +60,14 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
   message,
   slidesCompleted = 0,
   slidesInProgress = 0,
-  elapsedTime = 0
+  elapsedTime = 0,
+  brand,
+  outlineTitles
 }) => {
-  const [currentSketchIndex, setCurrentSketchIndex] = useState(0);
   const [localElapsed, setLocalElapsed] = useState(0);
   const isComponentVisibleRef = useRef(true);
   const startTimeRef = useRef(Date.now());
 
-  // Clean up on unmount
   useEffect(() => {
     isComponentVisibleRef.current = true;
     return () => {
@@ -189,18 +75,6 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
     };
   }, []);
 
-  // Cycle through sketches while generating
-  useEffect(() => {
-    const cycleTime = 4000;
-    const interval = setInterval(() => {
-      if (isComponentVisibleRef.current) {
-        setCurrentSketchIndex((prev) => (prev + 1) % slideSketchLayouts.length);
-      }
-    }, cycleTime);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Track elapsed time locally for smooth updates
   useEffect(() => {
     const interval = setInterval(() => {
       if (isComponentVisibleRef.current) {
@@ -210,7 +84,49 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Format elapsed time
+  const elapsedMs = elapsedTime && elapsedTime > 0 ? elapsedTime : localElapsed;
+
+  const slideTotal = totalSlides && totalSlides > 0
+    ? totalSlides
+    : Math.max(slidesCompleted + slidesInProgress, 6);
+
+  const activeSlideNumber = slideNumber || Math.min(slidesCompleted + 1, slideTotal);
+  const displayProgress = clamp(Math.round(progress > 0 ? progress : ((activeSlideNumber - 1) / slideTotal) * 100), 0, 100);
+
+  const activeTitle = outlineTitles && outlineTitles.length >= activeSlideNumber
+    ? outlineTitles[activeSlideNumber - 1]
+    : undefined;
+
+  const isDarkMode = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+  const brandName = brand?.name || 'Nextslide';
+  const logoUrl = brand?.logoUrl;
+
+  const monogram = useMemo(() => {
+    const words = brandName.split(/\s+/).filter(Boolean);
+    const letters = words.map(word => word[0]).join('');
+    return letters.slice(0, 2).toUpperCase() || 'NS';
+  }, [brandName]);
+
+  const accent = brand?.accent || '#FF4301';
+  const background = brand?.background || (isDarkMode ? '#0B0B0B' : '#FAFAFA');
+  const ink = brand?.text || (isDarkMode ? '#F5F2EC' : '#151413');
+
+  const inkSoftFallback = isDarkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.12)';
+
+  const rootStyle = {
+    ['--accent' as any]: accent,
+    ['--accent-soft' as any]: toRgba(accent, isDarkMode ? 0.15 : 0.08, 'rgba(255,67,1,0.1)'),
+    ['--bg' as any]: background,
+    ['--ink' as any]: ink,
+    ['--ink-soft' as any]: toRgba(ink, isDarkMode ? 0.4 : 0.2, inkSoftFallback),
+    ['--frame-bg' as any]: isDarkMode ? 'rgba(20,20,20,0.6)' : 'rgba(255,255,255,0.9)',
+    ['--frame-stroke' as any]: toRgba(ink, isDarkMode ? 0.2 : 0.1, 'rgba(20,20,20,0.1)')
+  } as React.CSSProperties;
+
+  const statusMessage = message && message.trim().length > 0
+    ? message
+    : (activeTitle ? `Creating: ${activeTitle}` : 'Building your slide...');
+
   const formatElapsed = (ms: number) => {
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
@@ -221,155 +137,299 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
     return `${seconds}s`;
   };
 
-  // Color scheme based on theme
-  const isDarkMode = document.documentElement.classList.contains('dark');
-  const lineColor = '#FF4301'; // Orange from theme generation
-  const textColor = isDarkMode ? '#e0e0e0' : '#333333';
-  const bgColor = isDarkMode ? '#1a1a1a' : '#fafafa';
-
-  // Get current sketch
-  const currentSketch = slideSketchLayouts[currentSketchIndex];
-
   return (
-    <div 
-      className="w-full h-full relative overflow-hidden flex items-center justify-center"
-      style={{ backgroundColor: bgColor }}
-    >
-      {/* Canvas sketch animation */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <svg 
-          viewBox={currentSketch.viewBox} 
-          className="w-full h-full max-w-[800px] max-h-[600px] px-8 py-8"
-          preserveAspectRatio="xMidYMid meet"
-        >
-          <AnimatePresence mode="sync">
-            {currentSketch.paths
-              .filter(path => path.id !== 'frame') // Filter out frame elements
-              .map((path) => (
-              <motion.path
-                key={`${currentSketch.id}-${path.id}`}
-                d={path.d}
-                fill="none"
-                stroke={lineColor}
-                strokeWidth={path.strokeWidth || 1}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeDasharray={path.strokeDasharray}
-                opacity={path.opacity || 1}
-                initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ 
-                  pathLength: 1, 
-                  opacity: path.opacity || 1,
-                }}
-                exit={{ 
-                  opacity: 0,
-          }}
-          transition={{
-                  pathLength: { 
-                    delay: path.delay || 0, 
-                    duration: path.duration || 0.5,
-                    ease: "easeInOut"
-                  },
-                  opacity: { 
-                    delay: path.delay || 0, 
-                    duration: 0.2 
-                  }
-                }}
-                style={{
-                  filter: 'drop-shadow(0 0 8px rgba(255, 67, 1, 0.3))',
-          }}
-              />
-            ))}
-          </AnimatePresence>
-        </svg>
-      </div>
+    <div className="ns-loader" style={rootStyle}>
+      <div className="ns-backdrop" />
 
+      <header className="ns-top">
+        <div className="ns-brand">
+          <div className="ns-logo">
+            {logoUrl ? (
+              <img src={logoUrl} alt="Brand logo" />
+            ) : (
+              <span>{monogram}</span>
+            )}
+          </div>
+          <div className="ns-brand-text">
+            <div className="ns-brand-name">{brandName}</div>
+            <div className="ns-brand-sub">Generating</div>
+          </div>
+        </div>
 
+        <div className="ns-status">
+          <div className="ns-phase-label">Slide {activeSlideNumber} of {slideTotal}</div>
+          <div className="ns-phase-sub">{statusMessage}</div>
+        </div>
+      </header>
 
-      {/* Progress bar - Always visible at bottom, styled like theme generation */}
-      <div className="absolute bottom-4 left-4 right-4">
-        {/* Status line with slide info */}
-        <div className="flex items-center justify-between mb-1">
-          <span
-            className="text-sm font-black tracking-wider"
-            style={{
-              color: textColor,
-              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-              textTransform: 'uppercase',
-              WebkitFontSmoothing: 'antialiased',
-              MozOsxFontSmoothing: 'grayscale'
-            }}
-          >
-            {totalSlides && totalSlides > 0
-              ? slidesCompleted > 0 || slidesInProgress > 0
-                ? `${slidesCompleted}/${totalSlides} slides`
-                : 'Preparing slides'
-              : 'Creating theme'}
-          </span>
-          <span
-            className="text-xs font-medium"
-            style={{
-              color: isDarkMode ? '#888' : '#666',
-              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-            }}
-          >
-            {formatElapsed(localElapsed)}
-          </span>
+      <main className="ns-main">
+        <div className="ns-canvas">
+          {/* Simple slide skeleton */}
+          <div className="ns-skeleton">
+            <div className="ns-skel-title" />
+            <div className="ns-skel-body">
+              <div className="ns-skel-line w-full" />
+              <div className="ns-skel-line w-3/4" />
+              <div className="ns-skel-line w-1/2" />
+            </div>
+            <div className="ns-skel-media" />
+          </div>
+          {/* Shimmer overlay */}
+          <div className="ns-shimmer" />
         </div>
-        {/* Secondary status line */}
-        <div className="flex items-center justify-between mb-2">
-          <span
-            className="text-xs font-medium"
-            style={{
-              color: isDarkMode ? '#888' : '#666',
-              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-            }}
-          >
-            {slidesInProgress > 0
-              ? `${slidesInProgress} generating now`
-              : totalSlides && slidesCompleted === totalSlides
-                ? 'Finalizing'
-                : message || 'Processing'}
-          </span>
-          <span
-            className="text-sm font-bold"
-            style={{
-              color: lineColor,
-              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-            }}
-          >
-            {Math.round(progress)}%
-          </span>
+      </main>
+
+      <footer className="ns-footer">
+        <div className="ns-progress-row">
+          <span className="ns-progress-label">{displayProgress}% Complete</span>
+          <span className="ns-progress-meta">{formatElapsed(elapsedMs)}</span>
         </div>
-        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
-          <motion.div
-            className="h-1.5 rounded-full relative"
-            style={{ backgroundColor: lineColor }}
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-          >
-            {/* Shimmer effect on progress bar */}
-            <div
-              className="absolute inset-0"
-              style={{
-                background: `linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)`,
-                animation: 'shimmer 1.5s infinite'
-              }}
-            />
-          </motion.div>
+        <div className="ns-progress-bar">
+          <div className="ns-progress-fill" style={{ width: `${displayProgress}%` }} />
         </div>
-      </div>
-      
-      {/* Add shimmer animation keyframes */}
-      <style dangerouslySetInnerHTML={{
-        __html: `
-          @keyframes shimmer {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(200%); }
+      </footer>
+
+      <style>{`
+        .ns-loader {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
+          padding: clamp(20px, 3vw, 32px);
+          color: var(--ink);
+          background: var(--bg);
+          overflow: hidden;
+          font-family: "Inter", "Hanken Grotesk", sans-serif;
+        }
+
+        .ns-backdrop {
+          position: absolute;
+          inset: 0;
+          background: radial-gradient(circle at 20% 20%, var(--accent-soft), transparent 50%);
+          opacity: 0.5;
+          z-index: 0;
+        }
+
+        .ns-top {
+          position: relative;
+          z-index: 2;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          margin-bottom: 16px;
+        }
+
+        .ns-brand {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .ns-logo {
+          width: 40px;
+          height: 40px;
+          border-radius: 12px;
+          background: var(--frame-bg);
+          border: 1px solid var(--frame-stroke);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+        }
+
+        .ns-logo img {
+          width: 70%;
+          height: 70%;
+          object-fit: contain;
+        }
+
+        .ns-logo span {
+          font-size: 13px;
+          font-weight: 700;
+          letter-spacing: 1px;
+          color: var(--ink);
+        }
+
+        .ns-brand-text {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .ns-brand-name {
+          font-size: 14px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.6px;
+        }
+
+        .ns-brand-sub {
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 1.4px;
+          text-transform: uppercase;
+          color: var(--accent);
+        }
+
+        .ns-status {
+          text-align: right;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .ns-phase-label {
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+          text-transform: uppercase;
+        }
+
+        .ns-phase-sub {
+          font-size: 11px;
+          color: var(--ink-soft);
+          max-width: 280px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .ns-main {
+          position: relative;
+          z-index: 1;
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .ns-canvas {
+          position: relative;
+          width: clamp(300px, 80%, 800px);
+          aspect-ratio: 16 / 9;
+          background: var(--frame-bg);
+          border-radius: 16px;
+          border: 1px solid var(--frame-stroke);
+          overflow: hidden;
+          box-shadow: 0 12px 30px rgba(0,0,0,0.06);
+        }
+
+        .ns-skeleton {
+          position: absolute;
+          inset: 0;
+          padding: 10%;
+          display: flex;
+          flex-direction: column;
+          gap: 12%;
+        }
+
+        .ns-skel-title {
+          width: 60%;
+          height: 12%;
+          background: var(--ink-soft);
+          border-radius: 8px;
+        }
+
+        .ns-skel-body {
+          display: flex;
+          flex-direction: column;
+          gap: 8%;
+          width: 50%;
+        }
+
+        .ns-skel-line {
+          height: 6%;
+          background: var(--ink-soft);
+          border-radius: 4px;
+          opacity: 0.6;
+        }
+
+        .ns-skel-line.w-full { width: 100%; }
+        .ns-skel-line.w-3\\/4 { width: 75%; }
+        .ns-skel-line.w-1\\/2 { width: 50%; }
+
+        .ns-skel-media {
+          position: absolute;
+          top: 20%;
+          right: 8%;
+          width: 35%;
+          height: 55%;
+          background: var(--accent-soft);
+          border-radius: 12px;
+        }
+
+        .ns-shimmer {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(255,255,255,0.15) 50%,
+            transparent 100%
+          );
+          animation: ns-shimmer 1.8s ease-in-out infinite;
+        }
+
+        @keyframes ns-shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+
+        .ns-footer {
+          position: relative;
+          z-index: 2;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-top: 16px;
+        }
+
+        .ns-progress-row {
+          display: flex;
+          justify-content: space-between;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.8px;
+          color: var(--ink-soft);
+        }
+
+        .ns-progress-label {
+          font-weight: 700;
+          color: var(--ink);
+        }
+
+        .ns-progress-bar {
+          width: 100%;
+          height: 6px;
+          border-radius: 999px;
+          background: var(--ink-soft);
+          overflow: hidden;
+        }
+
+        .ns-progress-fill {
+          height: 100%;
+          background: var(--accent);
+          transition: width 0.5s ease-out;
+          border-radius: 999px;
+        }
+
+        @media (max-width: 600px) {
+          .ns-top {
+            flex-direction: column;
+            align-items: flex-start;
           }
-        `
-      }} />
+
+          .ns-status {
+            text-align: left;
+          }
+
+          .ns-canvas {
+            width: 100%;
+          }
+        }
+      `}</style>
     </div>
   );
 };

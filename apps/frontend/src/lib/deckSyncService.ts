@@ -1,5 +1,5 @@
 import { SlideData } from "@/types/SlideTypes";
-import { CompleteDeckData } from "@/types/DeckTypes";
+import { CompleteDeckData, DeckStatus } from "@/types/DeckTypes";
 import { supabase } from "@/integrations/supabase/client";
 import { v4 as uuidv4 } from 'uuid';
 import { authService } from "@/services/authService";
@@ -521,6 +521,109 @@ export class DeckSyncService {
   }
 
   /**
+   * Normalizes deck status from backend/Supabase into a consistent shape.
+   */
+  private normalizeDeckStatus(rawStatus: any): DeckStatus | undefined {
+    if (!rawStatus) return undefined;
+
+    if (typeof rawStatus === 'string') {
+      const trimmed = rawStatus.trim();
+      if (!trimmed) return undefined;
+      if (trimmed.startsWith('{')) {
+        try {
+          return this.normalizeDeckStatus(JSON.parse(trimmed));
+        } catch {
+          return undefined;
+        }
+      }
+      const normalized = trimmed.toLowerCase();
+      const now = new Date().toISOString();
+      if (normalized === 'completed' || normalized === 'complete' || normalized === 'generation_complete') {
+        return {
+          state: 'completed',
+          progress: 100,
+          message: '',
+          currentSlide: 0,
+          totalSlides: 0,
+          startedAt: now,
+          completedAt: now
+        };
+      }
+      if (normalized === 'error') {
+        return {
+          state: 'error',
+          progress: 0,
+          message: '',
+          currentSlide: 0,
+          totalSlides: 0,
+          startedAt: now,
+          error: 'Unknown error'
+        };
+      }
+      if (normalized === 'generating' || normalized === 'creating' || normalized === 'pending') {
+        return {
+          state: normalized as DeckStatus['state'],
+          progress: 0,
+          message: '',
+          currentSlide: 0,
+          totalSlides: 0,
+          startedAt: now
+        };
+      }
+      return undefined;
+    }
+
+    if (typeof rawStatus === 'object') {
+      const status = rawStatus as Record<string, any>;
+      const rawState = typeof status.state === 'string'
+        ? status.state
+        : (typeof status.status === 'string' ? status.status : 'generating');
+      const normalizedState = rawState.toLowerCase();
+      const mappedState = (normalizedState === 'complete' || normalizedState === 'generation_complete')
+        ? 'completed'
+        : normalizedState;
+      const state = (['completed', 'generating', 'creating', 'pending', 'error'].includes(mappedState)
+        ? mappedState
+        : 'generating') as DeckStatus['state'];
+      let progress = Number.isFinite(status.progress) ? Number(status.progress) : 0;
+      if (state === 'completed' && progress < 100) {
+        progress = 100;
+      }
+      const startedAt = typeof status.startedAt === 'string'
+        ? status.startedAt
+        : (typeof status.started_at === 'string' ? status.started_at : new Date().toISOString());
+
+      return {
+        state,
+        progress,
+        message: typeof status.message === 'string' ? status.message : '',
+        currentSlide: Number.isFinite(status.currentSlide)
+          ? Number(status.currentSlide)
+          : (Number.isFinite(status.current_slide) ? Number(status.current_slide) : 0),
+        totalSlides: Number.isFinite(status.totalSlides)
+          ? Number(status.totalSlides)
+          : (Number.isFinite(status.total_slides) ? Number(status.total_slides) : 0),
+        startedAt,
+        completedAt: typeof status.completedAt === 'string'
+          ? status.completedAt
+          : (typeof status.completed_at === 'string' ? status.completed_at : undefined),
+        currentSlideTitle: typeof status.currentSlideTitle === 'string'
+          ? status.currentSlideTitle
+          : (typeof status.current_slide_title === 'string' ? status.current_slide_title : undefined),
+        lastCompletedSlide: typeof status.lastCompletedSlide === 'string'
+          ? status.lastCompletedSlide
+          : (typeof status.last_completed_slide === 'string' ? status.last_completed_slide : undefined),
+        error: status.error,
+        errorSlide: typeof status.errorSlide === 'string'
+          ? status.errorSlide
+          : (typeof status.error_slide === 'string' ? status.error_slide : undefined)
+      };
+    }
+
+    return undefined;
+  }
+
+  /**
    * Formats a deck from backend API response
    * @param deck The deck data from backend
    * @returns CompleteDeckData object
@@ -558,7 +661,7 @@ export class DeckSyncService {
         tags: deck.tags,
         size: deck.size,
         data: deck.data,
-        status: deck.status,
+        status: this.normalizeDeckStatus(deck.status),
         notes: deck.notes
       };
       
@@ -714,12 +817,7 @@ export class DeckSyncService {
         }
         return record.data || undefined;
       })(),
-      status: (() => {
-        if (typeof record.status === 'string') {
-          try { return JSON.parse(record.status); } catch (e) { return undefined; }
-        }
-        return record.status || undefined;
-      })(),
+      status: this.normalizeDeckStatus(record.status),
       notes: (() => {
         if (typeof record.notes === 'string') {
           try { 

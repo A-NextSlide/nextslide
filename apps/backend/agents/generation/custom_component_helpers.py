@@ -28,10 +28,7 @@ def _extract_search_query_from_prop_name(prop_name: str) -> str:
     spaced = re.sub(r'(\d)([a-zA-Z])', r'\1 \2', spaced)
 
     result = spaced.strip().lower()
-    generic_terms = ['image', 'photo', 'pic', 'picture', 'img', 'src', 'url', 'background', 'bg', 'hero', 'main']
-    words = [w for w in result.split() if w not in generic_terms]
-
-    return ' '.join(words) if words else result
+    return result
 
 
 def _simple_clean_query(query: str) -> str:
@@ -307,12 +304,29 @@ async def _search_images_for_props(
                 if len(words) > 6:
                     search_query = " ".join(words[:6])
 
-                results = serpapi.search_images(search_query)
+                results = await serpapi.search_images(search_query)
+                if asyncio.iscoroutine(results):
+                    results = await results
+                if not isinstance(results, (dict, list)):
+                    logger.warning("[POST_SEARCH] Unexpected results type for '%s': %s", search_query, type(results))
+                    return (prop_name, original_query, None)
                 if not results:
                     logger.warning("[POST_SEARCH] No results for: %s", search_query)
                     return (prop_name, original_query, None)
 
-                valid_urls = [r.get('original') or r.get('thumbnail') for r in results if r]
+                photos = results.get('photos', []) if isinstance(results, dict) else results
+                if not isinstance(photos, list):
+                    logger.warning("[POST_SEARCH] Unexpected photos type for '%s': %s", search_query, type(photos))
+                    return (prop_name, original_query, None)
+                if not photos:
+                    logger.warning("[POST_SEARCH] No image candidates for: %s", search_query)
+                    return (prop_name, original_query, None)
+
+                valid_urls = [
+                    r.get('url') or r.get('original') or r.get('thumbnail')
+                    for r in photos
+                    if isinstance(r, dict)
+                ]
                 valid_urls = [u for u in valid_urls if u]
                 if not valid_urls:
                     logger.warning("[POST_SEARCH] No valid URLs for: %s", search_query)

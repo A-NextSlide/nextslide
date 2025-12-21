@@ -3,7 +3,7 @@ import Slide from '../../Slide';
 import { SlideData } from '@/types/SlideTypes';
 import { ComponentInstance } from '@/types/components';
 import { DeckStatus } from '@/types/DeckTypes';
-import SlideGeneratingUI from '../../common/SlideGeneratingUI';
+import SlideGeneratingUI, { LoaderBrandTheme } from '../../common/SlideGeneratingUI';
 import SelectionRectangle from '@/components/SelectionRectangle';
 import { GenerationProgressTracker, ProgressState } from '@/services/generation/GenerationProgressTracker';
 
@@ -19,6 +19,8 @@ interface SimpleSlideDisplayProps {
   deckStatus?: DeckStatus;
   containerWidth?: number;
   containerHeight?: number;
+  brand?: LoaderBrandTheme;
+  outlineTitles?: string[];
 }
 
 const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
@@ -32,7 +34,9 @@ const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
   updateSlide,
   deckStatus,
   containerWidth,
-  containerHeight
+  containerHeight,
+  brand,
+  outlineTitles
 }) => {
   // Track generation progress from the tracker
   const [progressState, setProgressState] = useState<ProgressState | null>(null);
@@ -73,6 +77,8 @@ const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
           slidesCompleted={slidesCompleted}
           slidesInProgress={slidesInProgress}
           elapsedTime={elapsedTime}
+          brand={brand}
+          outlineTitles={outlineTitles}
         />
       );
     }
@@ -126,6 +132,8 @@ const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
       slidesCompleted={slidesCompleted}
       slidesInProgress={slidesInProgress}
       elapsedTime={elapsedTime}
+      brand={brand}
+      outlineTitles={outlineTitles}
     />
   );
 };

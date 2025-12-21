@@ -15,7 +15,7 @@ interface UseChatPrefillWithComponentOptions {
   setInput: Dispatch<SetStateAction<string>>;
   input: string;
   selectedElements: SelectedElement[];
-  sendMessage: () => void;
+  sendMessage: (message?: string) => void;
   inputRef: RefObject<HTMLTextAreaElement>;
 }
 

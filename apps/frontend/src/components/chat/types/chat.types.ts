@@ -20,6 +20,7 @@ export interface ChatPanelProps {
   onCollapseChange?: (collapsed: boolean) => void;
   opacity?: number;
   isPending?: boolean;
+  enableResponseTabs?: boolean;
   outline?: any;
   deckId?: string;
   isExistingDeck?: boolean; // True if this is an existing/completed deck (not actively generating)

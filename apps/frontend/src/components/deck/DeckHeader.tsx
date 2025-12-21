@@ -5,6 +5,7 @@ import { IconButton } from '../ui/IconButton';
 import { Edit, Plus, ChevronLeft, Undo, Redo, History, ZoomIn, ZoomOut, Search, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileJson, Layers, UploadCloud, Sun, Moon, MessageSquare, Settings, Plug, LogOut } from 'lucide-react';
 import { useVersionHistory } from '@/context/VersionHistoryContext';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
+import { ZOOM_LIMITS, ZOOM_STEP } from '@/utils/zoom';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import SyncIndicator from '../SyncIndicator';
@@ -466,7 +467,9 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
                     size="xs"
                     onClick={() => {
                       const z = useEditorSettingsStore.getState().zoomLevel;
-                      if (z > 65) useEditorSettingsStore.getState().setZoomLevel(Math.max(65, z - 10));
+                      if (z > ZOOM_LIMITS.min) {
+                        useEditorSettingsStore.getState().setZoomLevel(Math.max(ZOOM_LIMITS.min, z - ZOOM_STEP));
+                      }
                     }}
                     aria-label="Zoom Out"
                   >
@@ -474,8 +477,8 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
                   </IconButton>
                   <Slider
                     value={[useEditorSettingsStore.getState().zoomLevel]}
-                    min={65}
-                    max={400}
+                    min={ZOOM_LIMITS.min}
+                    max={ZOOM_LIMITS.max}
                     step={5}
                     onValueChange={(value) => useEditorSettingsStore.getState().setZoomLevel(value[0])}
                     className="flex-1"
@@ -485,7 +488,9 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
                     size="xs"
                     onClick={() => {
                       const z = useEditorSettingsStore.getState().zoomLevel;
-                      if (z < 400) useEditorSettingsStore.getState().setZoomLevel(Math.min(400, z + 10));
+                      if (z < ZOOM_LIMITS.max) {
+                        useEditorSettingsStore.getState().setZoomLevel(Math.min(ZOOM_LIMITS.max, z + ZOOM_STEP));
+                      }
                     }}
                     aria-label="Zoom In"
                   >

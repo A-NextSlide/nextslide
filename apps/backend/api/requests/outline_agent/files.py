@@ -1,6 +1,8 @@
 import asyncio
 from typing import Dict, Any, List, Optional
 
+from agents.ai.clients import get_client
+from agents.config import OUTLINE_AGENT_MODEL
 from services.file_design_extractor import (
     FileDesignExtractor, FileIntent, SlideStyle, FileAnalysis,
     design_to_theme_context, content_to_outline_context
@@ -567,7 +569,7 @@ async def enhanced_file_analysis(
             "content_context": "\n\n".join(content_parts) if content_parts else "",
             "file_analyses": file_analyses,
             "extracted_images": all_extracted_images,  # Images from uploaded PPTX/PDF
-            "slide_screenshots": all_slide_screenshots  # Base64 screenshots for visual design replication
+            "slide_screenshots": all_slide_screenshots  # Stored screenshot URLs for visual design reference
         }
 
     except Exception as e:

@@ -8,6 +8,7 @@ interface AddMessageOptions {
   attachments?: AttachmentPreview[];
   showSlideModeSelection?: boolean;
   skipHistory?: boolean;
+  metadata?: Message['metadata'];
 }
 
 interface UseChatMessagesOptions {
@@ -32,6 +33,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
       buttons: messageOptions.buttons,
       showSlideModeSelection: messageOptions.showSlideModeSelection,
       attachments: messageOptions.attachments,
+      metadata: messageOptions.metadata,
     };
 
     setMessages((prev) => [...prev, newMessage]);

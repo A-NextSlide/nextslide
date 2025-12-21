@@ -42,6 +42,7 @@ export interface DeckOutline {
   title: string;
   slides: SlideOutline[];
   uploadedMedia?: TaggedMedia[]; // All media uploaded for this deck
+  use_uploaded_images?: boolean;
   discarded_files?: DiscardedFile[];
   source_files_used?: Array<{
     file_id: string;

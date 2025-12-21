@@ -35,17 +35,59 @@ function isValidUUID(uuid: string): boolean {
  */
 function normalizeDeckData(deck: any): any {
   if (!deck || !deck.slides) return deck;
+
+  const coerceNumber = (value: any): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const cleaned = value.trim().toLowerCase().replace(/px$/, '');
+      if (!cleaned) return null;
+      const parsed = Number(cleaned);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  };
   
   return {
     ...deck,
     slides: deck.slides.map((slide: any) => ({
       ...slide,
       components: slide.components?.map((component: any) => {
+        const normalizedComponent = { ...component };
+        normalizedComponent.props = { ...(component.props || {}) };
+        const props = normalizedComponent.props as any;
+
+        // Normalize geometry so renderers can rely on props.position/width/height.
+        const posFromProps = props.position && typeof props.position === 'object' ? props.position : null;
+        const posFromComponent = component?.position && typeof component.position === 'object' ? component.position : null;
+        const x = coerceNumber(posFromProps?.x) ?? coerceNumber(props.x) ?? coerceNumber(posFromComponent?.x) ?? coerceNumber(component?.x);
+        const y = coerceNumber(posFromProps?.y) ?? coerceNumber(props.y) ?? coerceNumber(posFromComponent?.y) ?? coerceNumber(component?.y);
+        if (x !== null || y !== null) {
+          props.position = { x: x ?? 0, y: y ?? 0 };
+        }
+
+        const sizeFromProps = props.size && typeof props.size === 'object' ? props.size : null;
+        const sizeFromComponent = component?.size && typeof component.size === 'object' ? component.size : null;
+        const width = coerceNumber(props.width)
+          ?? (sizeFromProps ? coerceNumber(sizeFromProps.width) : null)
+          ?? coerceNumber(component?.width)
+          ?? (sizeFromComponent ? coerceNumber(sizeFromComponent.width) : null);
+        if (width !== null) props.width = width;
+        const height = coerceNumber(props.height)
+          ?? (sizeFromProps ? coerceNumber(sizeFromProps.height) : null)
+          ?? coerceNumber(component?.height)
+          ?? (sizeFromComponent ? coerceNumber(sizeFromComponent.height) : null);
+        if (height !== null) props.height = height;
+        if (!props.size && width !== null && height !== null) {
+          props.size = { width, height };
+        }
+
         // Normalize Background component props from various backend shapes
         try {
-          if (component?.type === 'Background') {
-            const next = { ...component };
-            next.props = { ...(component.props || {}) };
+          if (normalizedComponent?.type === 'Background') {
+            const next = { ...normalizedComponent };
+            next.props = { ...(normalizedComponent.props || {}) };
             const styles = component.styles || component.style || {};
             const nestedBg = (component.props && component.props.background) || {};
             const colorCandidate =
@@ -73,15 +115,15 @@ function normalizeDeckData(deck: any): any {
         } catch {}
         
         // Only process TiptapTextBlock components for text normalization
-        if (component.type !== 'TiptapTextBlock' || !component.props?.texts) {
-          return component;
+        if (normalizedComponent.type !== 'TiptapTextBlock' || !normalizedComponent.props?.texts) {
+          return normalizedComponent;
         }
         
-        const texts = component.props.texts;
+        const texts = normalizedComponent.props.texts;
         
         // Already in correct format
         if (texts && texts.type === 'doc' && texts.content) {
-          return component;
+          return normalizedComponent;
         }
         
         // Debug logging removed for performance
@@ -213,9 +255,9 @@ function normalizeDeckData(deck: any): any {
         }
         
         return {
-          ...component,
+          ...normalizedComponent,
           props: {
-            ...component.props,
+            ...normalizedComponent.props,
             texts: normalizedTexts
           }
         };

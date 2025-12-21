@@ -1,37 +1,13 @@
 import asyncio
-import json
-import time
-import uuid
-import os
 import re
-from typing import Dict, Any, Optional, List, AsyncGenerator, Tuple
+import time
+from typing import Any, AsyncGenerator, Dict, Optional
 
-from dotenv import load_dotenv
-
-from .models import (
-    OutlineOptions, OutlineResult, SlideContent,
-    ProgressUpdate, ChartData
-)
-from .planner import OutlinePlanner
-from .slide_generator import SlideGenerator
-from .chart_generator import ChartGenerator
-from .media_manager import MediaManager
-from .chart_normalization import normalize_slide_chart_fields
-from agents.ai.clients import get_client, invoke
-from agents.config import (
-    OUTLINE_PLANNING_MODEL, OUTLINE_CONTENT_MODEL,
-    OUTLINE_RESEARCH_MODEL,
-    USE_PERPLEXITY_FOR_OUTLINE, PERPLEXITY_OUTLINE_MODEL,
-    PRESENTATION_OUTLINE_MODEL, USE_HYBRID_RESEARCH_MODE
-)
+from agents.config import USE_PERPLEXITY_FOR_OUTLINE
 from agents.research import OutlineResearchAgent
-from agents import config as agents_config
-from agents.ai.clients import get_max_tokens_for_model
-from services.openai_service import OpenAIService
-from agents.generation.file_processor import create_file_processor
 from setup_logging_optimized import get_logger
-from services.pptx_text_extractor import extract_pptx_text_from_bytes
-from .generator_utils import extract_image_prompt_from_content
+
+from .models import OutlineOptions, OutlineResult, ProgressUpdate
 
 logger = get_logger(__name__)
 
@@ -101,7 +77,6 @@ class OutlineGeneratorFlowMixin:
         if getattr(options, "enable_research", False):
             try:
                 # Extract any URLs from the user prompt to prioritize
-                import re
                 seed_urls = re.findall(r"https?://[^\s)]+", options.prompt or "")
                 # If the prompt contains explicit domains, pass them along as allowed domains
                 allowed_domains = []
@@ -173,8 +148,6 @@ class OutlineGeneratorFlowMixin:
             pass
         
         # Rely on prompt-level enforcement only; do not mutate counts in code
-        outline_plan = outline_plan
-        
         # Phase 2: Generate slides
         if progress_callback:
             await self._call_progress(progress_callback, ProgressUpdate(
@@ -516,21 +489,7 @@ class OutlineGeneratorFlowMixin:
                     yield slide_update
             
             # Process media and charts after all slides are generated
-            logger.debug(f"[DEBUG] Before process_media_and_charts:")
-            for i, slide in enumerate(slides):
-                has_extracted = slide.extractedData is not None
-                logger.debug(f"[DEBUG] Slide {i+1} '{slide.title}' - extractedData: {has_extracted}")
-                if has_extracted:
-                    logger.debug(f"[DEBUG]   Chart type: {slide.extractedData.get('chart_type', 'unknown')}")
-            
             slides = await self._process_media_and_charts(slides, processed_files, options)
-            
-            logger.debug(f"[DEBUG] After process_media_and_charts:")
-            for i, slide in enumerate(slides):
-                has_extracted = slide.extractedData is not None
-                logger.debug(f"[DEBUG] Slide {i+1} '{slide.title}' - extractedData: {has_extracted}")
-                if has_extracted:
-                    logger.debug(f"[DEBUG]   Chart type: {slide.extractedData.get('chart_type', 'unknown')}")
             
             # Research enhancement
             if options.enable_research:
@@ -552,15 +511,6 @@ class OutlineGeneratorFlowMixin:
             
             # Convert slides and debug the result
             slides_dict = [self._slide_to_dict(slide) for slide in result.slides]
-            
-            # Debug: Print taggedMedia in final output
-            print(f"[FINAL OUTLINE] Sending {len(slides_dict)} slides to frontend")
-            for i, slide_dict in enumerate(slides_dict):
-                tm_count = len(slide_dict.get('taggedMedia', []))
-                print(f"[FINAL OUTLINE] Slide {i+1} has {tm_count} taggedMedia items")
-                if tm_count > 0:
-                    for j, media in enumerate(slide_dict['taggedMedia'][:2]):
-                        print(f"[FINAL OUTLINE]   Media {j+1}: {media.get('filename', 'unknown')} - URL: {media.get('url', media.get('previewUrl', 'NO URL'))}")
             
             yield ProgressUpdate(
                 stage="complete",

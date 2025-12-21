@@ -6,6 +6,7 @@
  */
 
 import { API_CONFIG } from '@/config/environment';
+import type { AssignedVideo, TaggedMedia } from '@/types/SlideTypes';
 
 const AGENT_URL = `${API_CONFIG.AGENT_BASE_URL}/api/outline-agent/chat`;
 
@@ -42,6 +43,8 @@ export interface OutlineSlide {
   subtitle?: string;
   key_points?: string[];
   content?: string;  // Narrative/detailed content for the slide
+  assignedVideo?: AssignedVideo;
+  taggedMedia?: TaggedMedia[];
 }
 
 export interface ThemeChanges {
@@ -67,7 +70,10 @@ export interface UploadedMedia {
   type: string;
   content?: string;  // Base64 encoded
   url?: string;
+  previewUrl?: string;
+  filename?: string;
   size?: number;
+  metadata?: Record<string, any>;
 }
 
 export interface ScrapedVideo {
@@ -78,8 +84,27 @@ export interface ScrapedVideo {
   embed_url?: string;
 }
 
+export interface ReferenceSource {
+  url?: string;
+  title?: string;
+}
+
+export interface ClarificationField {
+  key: string;
+  label: string;
+  type?: 'text' | 'number' | 'choice' | 'boolean';
+  value?: string | number | boolean;
+  options?: string[];
+}
+
+export interface OutlineClarification {
+  message: string;
+  draft_response?: string;
+  fields?: ClarificationField[];
+}
+
 export interface OutlineData {
-  action: 'generate_outline' | 'update_outline' | 'update_slides' | 'update_theme' | 'generate_theme';
+  action: 'generate_outline' | 'update_outline' | 'update_slides' | 'update_theme' | 'generate_theme' | 'clarify';
   slide_count?: number;
   topic?: string;
   detail_level?: 'quick' | 'standard' | 'detailed';
@@ -95,6 +120,14 @@ export interface OutlineData {
   uploadedMedia?: UploadedMedia[];  // Files uploaded through chat that should be used in slides
   // Videos scraped from website URLs for embedding in the deck (snake_case matches backend payload)
   scraped_videos?: ScrapedVideo[];
+  use_uploaded_images?: boolean;
+  extracted_images?: string[];
+  // Reference content scraped from URLs
+  scraped_context?: string;
+  reference_sources?: ReferenceSource[];
+  // Research context for downstream slide generation
+  research_context?: string;
+  research_citations?: string[];
   // Style/theme preferences from the agent
   stylePreferences?: {
     colors?: {
@@ -126,6 +159,9 @@ export interface OutlineData {
     brandDomain?: string;
     mood?: string;
   };
+  message?: string;
+  draft_response?: string;
+  clarification?: OutlineClarification;
 }
 
 export interface AgentOutlineEvent {
@@ -154,7 +190,7 @@ export interface FileAnalysis {
 
 export interface AgentStatusEvent {
   type: 'status';
-  status: 'researching' | 'thinking' | 'scraping' | 'scraped' | 'research_failed' | 'analyzing_file' | 'files_analyzed' | 'file_analysis_error';
+  status: 'researching' | 'thinking' | 'scraping' | 'scraped' | 'research_failed' | 'analyzing_file' | 'files_analyzed' | 'file_analysis_error' | 'extracting' | 'extracted' | 'extract_failed' | 'videos_found' | 'compiling';
   query?: string;
   message?: string;
   file_index?: number;
@@ -167,6 +203,26 @@ export interface AgentResearchEvent {
   type: 'research';
   content: string;
   citations: string[];
+  query?: string;
+}
+
+export interface AgentResearchResultsEvent {
+  type: 'research_results';
+  content: string;
+  citations: string[];
+  query?: string;
+}
+
+export interface AgentResearchErrorEvent {
+  type: 'research_error';
+  message: string;
+  query?: string;
+}
+
+export interface AgentReferenceContentEvent {
+  type: 'reference_content';
+  content: string;
+  sources?: ReferenceSource[];
 }
 
 // NEW: Thinking step event for granular progress tracking
@@ -233,6 +289,9 @@ export type AgentEvent =
   | AgentDoneEvent
   | AgentStatusEvent
   | AgentResearchEvent
+  | AgentResearchResultsEvent
+  | AgentResearchErrorEvent
+  | AgentReferenceContentEvent
   | AgentThinkingStepEvent
   | AgentChatBlockEvent;
 
@@ -394,8 +453,9 @@ function isValidOutlineData(parsed: any): boolean {
   const hasUpdatedSlides = parsed.updated_slides && Array.isArray(parsed.updated_slides);
   const hasThemeChanges = parsed.theme_changes && typeof parsed.theme_changes === 'object';
   const isGenerateTheme = parsed.action === 'generate_theme' && parsed.context;
+  const isClarify = parsed.action === 'clarify' && (parsed.message || parsed.draft_response || parsed.clarification);
 
-  return hasSlides || hasUpdatedSlides || hasThemeChanges || isGenerateTheme;
+  return hasSlides || hasUpdatedSlides || hasThemeChanges || isGenerateTheme || isClarify;
 }
 
 /**

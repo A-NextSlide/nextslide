@@ -777,6 +777,8 @@ const DirectCursors: React.FC<DirectCursorsProps> = ({
   
   // Get container dimensions for denormalizing coordinates
   const containerRect = slideContainer.getBoundingClientRect();
+  const scaleX = slideWidth > 0 ? containerRect.width / slideWidth : 1;
+  const scaleY = slideHeight > 0 ? containerRect.height / slideHeight : 1;
   
   return (
     <div 
@@ -798,13 +800,15 @@ const DirectCursors: React.FC<DirectCursorsProps> = ({
         // Use the denormalization utility to properly convert from slide coordinates to screen coordinates
         // The cursor position contains normalized coordinates (in slide space 1920x1080)
         // We need to convert those back to screen coordinates considering the container size and zoom
-        const { x: adjustedX, y: adjustedY } = denormalizeCursorCoordinates(
+        const { x: baseX, y: baseY } = denormalizeCursorCoordinates(
           cursor.x,
           cursor.y, 
-          containerRect.width, 
-          containerRect.height,
-          zoomLevel // Apply zoom during rendering (denormalization)
+          slideWidth,
+          slideHeight,
+          100
         );
+        const adjustedX = baseX * scaleX;
+        const adjustedY = baseY * scaleY;
         
         return (
           <div

@@ -19,7 +19,9 @@ type ThemeEvent =
   | { type: 'palette_search'; query: string; count?: number }
   | { type: 'vector_search'; query: string; matches?: number };
 
-type ProcessEvent = ResearchEvent | ThemeEvent;
+type StatusEvent = { type: 'status'; status?: string; message?: string; query?: string };
+
+type ProcessEvent = ResearchEvent | ThemeEvent | StatusEvent;
 
 interface ThinkingProcessProps {
   events: ProcessEvent[];
@@ -235,6 +237,12 @@ const ThinkingProcess: React.FC<ThinkingProcessProps> = ({ events, isVisible, cl
           ? `🔍 Found ${vectorSearch.matches} semantic matches`
           : `🔍 Searching with embeddings...`;
         icon = <Search className="w-4 h-4 text-indigo-600 animate-pulse" />;
+        break;
+
+      case 'status':
+        const statusEvent = latestEvent as StatusEvent;
+        message = statusEvent.message || statusEvent.query || statusEvent.status || 'Processing...';
+        icon = getIconForEventType('status', statusEvent.status);
         break;
         
       default:
@@ -461,7 +469,7 @@ const ThinkingProcess: React.FC<ThinkingProcessProps> = ({ events, isVisible, cl
             <div ref={historyRef} className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700 space-y-2 max-h-72 overflow-y-auto">
               {events.map((event, i) => (
                 <div key={i} className="flex items-start gap-2 text-xs">
-                  <div className="mt-0.5">{getIconForEventType(event.type)}</div>
+                  <div className="mt-0.5">{getIconForEventType(event.type, (event as any).status)}</div>
                   <div className="flex-1">
                     <p className="font-medium text-neutral-700 dark:text-neutral-300">
                       {getMessageForEvent(event)}
@@ -585,12 +593,41 @@ const ThinkingProcess: React.FC<ThinkingProcessProps> = ({ events, isVisible, cl
         return vectorSearch.matches 
           ? `🔍 Found ${vectorSearch.matches} semantic matches`
           : `🔍 Searching with embeddings`;
+      case 'status':
+        const statusEvent = event as StatusEvent;
+        if (statusEvent.message) return statusEvent.message;
+        if (statusEvent.query) return statusEvent.query;
+        if (statusEvent.status) return statusEvent.status.replace(/_/g, ' ');
+        return 'Processing...';
       default:
         return 'Processing...';
     }
   }
 
-  function getIconForEventType(type?: string) {
+  function getIconForEventType(type?: string, status?: string) {
+    if (type === 'status') {
+      const statusKey = (status || '').toLowerCase();
+      if (statusKey === 'scraping' || statusKey === 'scraping_media') {
+        return <Globe className="w-4 h-4 text-purple-600 animate-pulse" />;
+      }
+      if (statusKey === 'assigning_media') {
+        return <Wand2 className="w-4 h-4 text-indigo-600 animate-pulse" />;
+      }
+      if (statusKey === 'videos_found') {
+        return <Sparkles className="w-4 h-4 text-pink-600" />;
+      }
+      if (statusKey === 'scraped' || statusKey === 'media_scraped') {
+        return <CheckCircle2 className="w-4 h-4 text-green-600" />;
+      }
+      if (statusKey === 'media_scrape_failed') {
+        return <AlertCircle className="w-4 h-4 text-red-600" />;
+      }
+      if (statusKey === 'researching') {
+        return <Search className="w-4 h-4 text-blue-600 animate-pulse" />;
+      }
+      return <Brain className="w-4 h-4 text-neutral-600 animate-pulse" />;
+    }
+
     switch (type) {
       case 'research_started':
         return <Brain className="w-4 h-4 text-orange-600 animate-pulse" />;

@@ -10,7 +10,7 @@ export const useAgentStatus = () => {
 
   const addThinkingStep = useCallback((status: string, message?: string, query?: string) => {
     const phaseConfig = STATUS_PHASES[status as StatusPhase] || {
-      icon: '⋯',
+      icon: '...',
       label: status,
       color: '#6B7280',
       activeLabel: status,

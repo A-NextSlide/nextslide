@@ -43,7 +43,7 @@ interface ChatInputAreaProps {
   onOutlineSlideTargetChange: (target: number | 'all') => void;
   deckSlides?: any[];
   isLoading: boolean;
-  onSend: () => void;
+  onSend: (message?: string) => void;
   suggestions: Array<{ label: string; prompt: string }>;
   showSuggestions: boolean;
   onSuggestionSelect: (prompt: string) => void;

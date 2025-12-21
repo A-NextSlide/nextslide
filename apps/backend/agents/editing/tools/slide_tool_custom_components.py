@@ -17,6 +17,7 @@ from agents.editing.tools.slide_tool_helpers import (
     _detect_slide_mode_from_html,
     _extract_slide_content_for_redesign,
     _gather_reference_images,
+    _build_uploaded_media_from_attachments,
 )
 from agents.editing.tools.slide_tool_models import _ReplacePlan
 from agents.editing.tools.struct_utils import get_attr as _get_attr
@@ -30,6 +31,8 @@ def _generate_full_bleed_custom_component(
     deck_data: Dict,
     current_slide: Dict,
     attachments: List[Dict] = None,
+    use_attachments: bool = False,
+    available_videos: List[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Generate a full-bleed CustomComponent via CustomComponentGenerator (same quality path as generation).
@@ -40,6 +43,7 @@ def _generate_full_bleed_custom_component(
     theme = (deck_data or {}).get("theme") or {}
     colors = theme.get("color_palette") or theme.get("colors") or {}
     reference_images = _gather_reference_images("", attachments)
+    uploaded_media = _build_uploaded_media_from_attachments(attachments or []) if use_attachments else None
 
     gen = CustomComponentGenerator(model=CUSTOM_COMPONENT_EDIT_MODEL)
     slide_context = {
@@ -50,14 +54,19 @@ def _generate_full_bleed_custom_component(
         "is_full_slide": True,
         "presentation_context": (deck_data or {}).get("name") or "",
         "background_color": (colors.get("primary_background") if isinstance(colors, dict) else None),
+        "use_uploaded_images": use_attachments,
     }
 
     # Extract actual slide content - DO NOT pass user instructions as content
     actual_content = _extract_slide_content_for_redesign(current_slide)
 
-    generated = run_async(
-        gen.generate(
-            content=f"""REDESIGN REQUEST: {instruction}
+    uploads_note = ""
+    if use_attachments and attachments:
+        uploads_note = "\n\nUPLOADS: Use the attached images as real assets in this redesign."
+
+        generated = run_async(
+            gen.generate(
+                content=f"""REDESIGN REQUEST: {instruction}{uploads_note}
 
 EXISTING SLIDE CONTENT TO REDESIGN:
 {actual_content}
@@ -66,7 +75,7 @@ IMPORTANT:
 - Fill the entire 1920x1080 canvas.
 - If reference images are provided, match their layout/style and transcribe any visible text the user asks to use exactly.
 - DO NOT display the redesign request text in the slide. Use it only to guide your design approach.
-- The slide content should be based on the EXISTING SLIDE CONTENT above, not the redesign instructions.""",
+- Base the slide content on the EXISTING SLIDE CONTENT above, but DO honor explicit user requests to add/remove elements (e.g., add a video, remove cards).""",
             theme=theme if isinstance(theme, dict) else {},
             slide_context=slide_context,
             component_purpose="visualize",
@@ -74,6 +83,8 @@ IMPORTANT:
             height=1080,
             position={"x": 0, "y": 0},
             reference_images=reference_images or None,
+            uploaded_media=uploaded_media,
+            available_videos=available_videos,
         )
     )
     html = ((generated or {}).get("props") or {}).get("render") or ""
@@ -222,6 +233,10 @@ def custom_component_rewrite(
     slide_id = args.get("slide_id") or _get_attr(current_slide, "id")
     component_id = args.get("component_id")
     instruction = args.get("instruction", "")
+    use_attachments = bool(args.get("use_attachments"))
+    available_videos = args.get("available_videos")
+    if not isinstance(available_videos, list):
+        available_videos = None
 
     components = _get_attr(current_slide, "components", []) or []
     custom_component = next((c for c in components if _get_attr(c, "id") == component_id), None)
@@ -249,6 +264,7 @@ def custom_component_rewrite(
 
     # Gather ALL reference images (we embed a few as multimodal, but include all URLs in text context)
     reference_images = _gather_reference_images(current_html, attachments)
+    uploaded_media = _build_uploaded_media_from_attachments(attachments or []) if use_attachments else None
 
     try:
         from agents.generation.custom_component_generator import CustomComponentGenerator
@@ -269,6 +285,7 @@ def custom_component_rewrite(
             "presentation_context": (deck_data or {}).get("name") or "",
             "background_color": (colors.get("primary_background") if isinstance(colors, dict) else None),
             "chat_history": chat_history,  # Pass full chat history for context
+            "use_uploaded_images": use_attachments,
         }
         theme_for_gen = theme if isinstance(theme, dict) else {}
         # Include all attachment URLs in the prompt text so the model can infer intent without UI buttons.
@@ -287,9 +304,13 @@ def custom_component_rewrite(
         # Extract actual content from existing HTML - DO NOT pass user instructions as content
         actual_content = _extract_slide_content_for_redesign(current_slide, current_html)
 
+        uploads_note = ""
+        if use_attachments and attachments:
+            uploads_note = "\n\nUPLOADS: Use the attached images as real assets in this redesign."
+
         generated = run_async(
             gen.generate(
-                content=f"""REDESIGN REQUEST: {instruction}{attachment_context}{chat_context}
+                content=f"""REDESIGN REQUEST: {instruction}{attachment_context}{chat_context}{uploads_note}
 
 EXISTING SLIDE CONTENT TO REDESIGN:
 {actual_content}
@@ -299,7 +320,7 @@ IMPORTANT:
 - If reference images are provided, match their layout and style.
 - Use the conversation context above to understand what the user wants and any preferences they discussed.
 - DO NOT display the redesign request text in the slide. Use it only to guide your design approach.
-- The slide content should be based on the EXISTING SLIDE CONTENT above, not the redesign instructions.""",
+- Base the slide content on the EXISTING SLIDE CONTENT above, but DO honor explicit user requests to add/remove elements (e.g., add a video, remove cards).""",
                 theme=theme_for_gen,
                 slide_context=slide_context,
                 component_purpose="visualize",
@@ -307,6 +328,8 @@ IMPORTANT:
                 height=1080,
                 position={"x": 0, "y": 0},
                 reference_images=reference_images or None,
+                uploaded_media=uploaded_media,
+                available_videos=available_videos,
             )
         )
         new_html = ((generated or {}).get("props") or {}).get("render") or ""
@@ -371,6 +394,7 @@ IMPORTANT:
 - Do not use max-width containers (no max-w-7xl).
 - DO NOT include the user request text as visible content in the slide.
 - The slide content should be based on the CURRENT CUSTOMCOMPONENT HTML above, redesigned according to the user request.
+- If the user explicitly requests new elements (e.g., a video), include them in the redesign.
 
 Return ONLY the complete updated HTML (starting with <!DOCTYPE html>)."""
 

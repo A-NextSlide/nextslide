@@ -210,6 +210,12 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
   // to prevent premature exit when selection changes during text editing.
   const isThisComponentEditingRef = useRef(false);
   const isCurrentlyTextEditing = isTextEditingGlobal && isThisComponentEditingRef.current && hasText;
+
+  useEffect(() => {
+    if (!isTextEditingGlobal) {
+      isThisComponentEditingRef.current = false;
+    }
+  }, [isTextEditingGlobal]);
   
   // CRITICAL: Lock slideId at mount to prevent cross-slide writes after navigation
   const slideIdRef = useRef(slideId);
@@ -382,6 +388,7 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
         if (event.key === 'Escape') {
           isThisComponentEditingRef.current = false;
           setTextEditingGlobal(false);
+          useEditorStore.getState().clearSelection();
           return true;
         }
         return false;
@@ -611,10 +618,15 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    if (isEditing && isSelected && !isCurrentlyTextEditing && !isUpdatingRef.current) {
+    if (isEditing && !isCurrentlyTextEditing && !isUpdatingRef.current) {
       isUpdatingRef.current = true;
       
       try {
+        const editorStore = useEditorStore.getState();
+        if (!editorStore.isComponentSelected(component.id)) {
+          editorStore.selectComponent(component.id, false, slideId);
+        }
+
         // Enable text editing on the shape
         if (!hasText) {
           // Enable text for the first time

@@ -69,7 +69,9 @@ export interface OutlineSlidePreview {
   subtitle?: string;
   keyPoints?: string[];
   content?: string;
+  generationContext?: string;
   isContentLoaded?: boolean;
+  isContentEdited?: boolean;
   assignedVideo?: AssignedVideo;
   taggedMedia?: TaggedMedia[];
 }

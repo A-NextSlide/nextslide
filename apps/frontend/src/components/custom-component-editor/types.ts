@@ -150,10 +150,12 @@ export type ParentToIframeMessageType =
   | 'apply-style-mutation'
   | 'update-element-html'
   | 'update-image'
+  | 'update-image-with-placeholder'
   | 'update-text'
   | 'hide-element'
   | 'show-element'
   | 'deselect'
+  | 'reparent-element'
   | 'trigger-element-select';
 
 /**
@@ -179,6 +181,7 @@ export interface ParentMessage {
   type: ParentToIframeMessageType;
   selector?: string;
   elementId?: string;
+  parentId?: string | null;
   styles?: Record<string, string>;
   html?: string;
   newText?: string;

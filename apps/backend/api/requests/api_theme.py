@@ -148,14 +148,8 @@ async def stream_theme_from_outline(
 
             # Check if colors are just defaults (not real brand colors)
             is_default_colors = brand_colors and all(c in DEFAULT_PLACEHOLDER_COLORS for c in brand_colors)
-
-            # Also check if vibe suggests we need AI color generation (playful, colorful, vibrant, etc.)
-            vibe_needs_ai_colors = vibe_context and any(kw in (vibe_context or '').lower() for kw in [
-                'playful', 'colorful', 'vibrant', 'fun', 'candy', 'bright', 'neon', 'rainbow'
-            ])
-
-            if is_default_colors and vibe_needs_ai_colors:
-                logger.info(f"[THEME API] 🎨 Skipping fast path - default colors + playful vibe needs AI generation")
+            if is_default_colors:
+                logger.info("[THEME API] Skipping fast path - default placeholder colors detected")
                 brand_colors = []  # Clear to trigger ThemeDirector path
 
             if style_prefs and brand_colors:
@@ -175,54 +169,25 @@ async def stream_theme_from_outline(
                 body_font_from_prefs = getattr(style_prefs, 'bodyFont', None)
                 body_font = body_font_from_prefs if body_font_from_prefs else brand_fonts
 
-                # If no fonts set, select appropriate fallback based on topic or brand
+                # If no fonts set, use neutral defaults
                 if not brand_fonts:
-                    # Check if this is a fun/playful topic
-                    title_lower = (outline.title or '').lower()
-                    vibe_lower = (vibe_context or '').lower()
-                    combined_context = f"{title_lower} {vibe_lower}"
+                    hero_font = 'Montserrat'
+                    body_font = 'Open Sans'
+                    logger.info("[THEME API] Using default fonts: %s/%s", hero_font, body_font)
 
-                    # Use word boundary matching to avoid false positives like "fun" in "fundraising"
-                    import re
-                    fun_keywords = [
-                        'pikachu', 'pokemon', 'pokémon', 'game', 'games', 'gaming', 'kids', 'children',
-                        'fun', 'play', 'cartoon', 'toy', 'party', 'birthday', 'arcade', 'retro',
-                        'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite',
-                        'candy', 'sweets', 'colorful', 'vibrant', 'playful', 'bright', 'neon', 'rainbow'
-                    ]
-                    is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', combined_context) for kw in fun_keywords)
+                brand_domain = getattr(style_prefs, 'brandDomain', None)
+                brand_name = getattr(style_prefs, 'brandName', None)
+                needs_confirmation = getattr(style_prefs, 'needsBrandDomainConfirmation', None)
 
-                    if is_fun_topic:
-                        # Use playful fonts for fun topics
-                        import hashlib
-                        seed_hash = int(hashlib.md5((outline.title or 'fun').encode()).hexdigest(), 16)
-                        playful_combos = [
-                            ('Bebas Neue', 'Nunito'),
-                            ('Fredoka', 'Quicksand'),
-                            ('Righteous', 'Poppins'),
-                            ('Bungee', 'Asap'),
-                            ('Bangers', 'Rubik'),
-                        ]
-                        combo = playful_combos[seed_hash % len(playful_combos)]
-                        hero_font, body_font = combo
-                        logger.info(f"[THEME API] 🎮 Fun topic detected! Using playful fonts: {hero_font}/{body_font}")
-                    elif vibe_context and ('.' in vibe_context or len(vibe_context.split()) <= 2):
-                        # Looks like a brand domain or short brand name - let ThemeDirector handle it
-                        # Don't use generic fonts; fall through to ThemeDirector for better selection
-                        logger.info(f"[THEME API] 🏷️ Brand context detected ({vibe_context}), will use ThemeDirector for font selection")
-                        # Set temporary fonts but prefer ThemeDirector path
-                        hero_font = 'Montserrat'
-                        body_font = 'Roboto'
-                    else:
-                        # Use professional fonts for business topics
-                        hero_font = 'Montserrat'
-                        body_font = 'Roboto'
-                        logger.info(f"[THEME API] 📊 Business topic - using professional fonts: {hero_font}/{body_font}")
-
-                # Ensure hero and body are different
-                if hero_font and body_font and hero_font.lower() == body_font.lower():
-                    body_font = 'Roboto' if hero_font != 'Roboto' else 'Open Sans'
-                    logger.info(f"[THEME API] 🔄 Ensured different fonts: hero={hero_font}, body={body_font}")
+                brand_info = {}
+                if logo_url:
+                    brand_info["logoUrl"] = logo_url
+                if brand_name:
+                    brand_info["brandName"] = brand_name
+                if brand_domain:
+                    brand_info["brandDomain"] = brand_domain
+                if needs_confirmation:
+                    brand_info["needsBrandDomainConfirmation"] = True
 
                 reconstructed_theme = {
                     "theme_name": f"{vibe_context.replace('.com', '').replace('www.', '').title()} Brand Theme" if vibe_context else "Brand Theme",
@@ -247,9 +212,7 @@ async def stream_theme_from_outline(
                         "hero_title": {"family": hero_font},
                         "body_text": {"family": body_font}
                     },
-                    "brandInfo": {
-                        "logoUrl": logo_url
-                    } if logo_url else {},
+                    "brandInfo": brand_info,
                     "visual_style": {}
                 }
 
@@ -390,30 +353,31 @@ async def stream_theme_from_outline(
 
             # Optionally persist theme to deck (only by the owner to avoid duplicate writes)
             if is_owner and store and deck_id and isinstance(deck_theme, dict):
-                try:
-                    from utils.supabase import get_deck, upload_deck
+                is_temp_uuid = deck_id.startswith('temp-') if deck_id else True
+                if is_temp_uuid:
+                    logger.info(
+                        "[THEME API] Skipping persistence for temp UUID: %s - theme will be passed via stylePreferences",
+                        deck_id,
+                    )
+                else:
+                    try:
+                        from utils.supabase import get_deck, upload_deck
 
-                    existing = get_deck(deck_id) or {}
-                    data_field = existing.get("data", {}) if isinstance(existing.get("data"), dict) else {}
-                    data_field["theme"] = deck_theme
+                        existing = get_deck(deck_id) or {}
+                        data_field = existing.get("data", {}) if isinstance(existing.get("data"), dict) else {}
+                        data_field["theme"] = deck_theme
 
-                    # CRITICAL: Store search_terms for image search during deck generation
-                    if search_terms and len(search_terms) > 0:
-                        data_field["search_terms"] = search_terms
-                        logger.info(f"[THEME API] Persisting {len(search_terms)} search terms to deck data")
+                        # CRITICAL: Store search_terms for image search during deck generation
+                        if search_terms and len(search_terms) > 0:
+                            data_field["search_terms"] = search_terms
+                            logger.info(f"[THEME API] Persisting {len(search_terms)} search terms to deck data")
 
-                    # Also store palette under style_spec if available
-                    if isinstance(palette, dict):
-                        data_field.setdefault("style_spec", {})
-                        if isinstance(data_field["style_spec"], dict):
-                            data_field["style_spec"]["palette"] = palette
+                        # Also store palette under style_spec if available
+                        if isinstance(palette, dict):
+                            data_field.setdefault("style_spec", {})
+                            if isinstance(data_field["style_spec"], dict):
+                                data_field["style_spec"]["palette"] = palette
 
-                    # IMPORTANT: Persist only theme data to avoid overwriting concurrent slide updates
-                    # Skip persistence for temp UUIDs (e.g., "temp-1234567890") - they're not valid database UUIDs
-                    is_temp_uuid = deck_id.startswith('temp-') if deck_id else True
-                    if is_temp_uuid:
-                        logger.info(f"[THEME API] Skipping persistence for temp UUID: {deck_id} - theme will be passed via stylePreferences")
-                    else:
                         payload = {
                             "uuid": deck_id,
                             "name": outline.title,
@@ -425,8 +389,8 @@ async def stream_theme_from_outline(
                             "timestamp": datetime.now().isoformat(),
                             "deck_id": deck_id,
                         })
-                except Exception as e:
-                    logger.warning(f"Failed to persist theme for deck {deck_id}: {e}")
+                    except Exception as e:
+                        logger.warning(f"Failed to persist theme for deck {deck_id}: {e}")
 
             # Emit final theme payload
             yield _sse({
@@ -559,12 +523,8 @@ async def theme_from_outline_json(
             }
 
             is_default_colors = brand_colors and all(c in DEFAULT_PLACEHOLDER_COLORS for c in brand_colors)
-            vibe_needs_ai_colors = vibe_context and any(kw in (vibe_context or '').lower() for kw in [
-                'playful', 'colorful', 'vibrant', 'fun', 'candy', 'bright', 'neon', 'rainbow'
-            ])
-
-            if is_default_colors and vibe_needs_ai_colors:
-                logger.info(f"[THEME JSON] 🎨 Skipping fast path - default colors + playful vibe needs AI generation")
+            if is_default_colors:
+                logger.info("[THEME JSON] Skipping fast path - default placeholder colors detected")
                 brand_colors = []
 
             if style_prefs and brand_colors:
@@ -584,47 +544,11 @@ async def theme_from_outline_json(
                 body_font_from_prefs = getattr(style_prefs, 'bodyFont', None)
                 body_font = body_font_from_prefs if body_font_from_prefs else brand_fonts
 
-                # If no fonts set, select appropriate fallback based on topic or brand
+                # If no fonts set, use neutral defaults
                 if not brand_fonts:
-                    # Check if this is a fun/playful topic
-                    title_lower = (outline.title or '').lower()
-                    vibe_lower = (vibe_context or '').lower()
-                    combined_context = f"{title_lower} {vibe_lower}"
-
-                    # Use word boundary matching to avoid false positives like "fun" in "fundraising"
-                    import re
-                    fun_keywords = [
-                        'pikachu', 'pokemon', 'pokémon', 'game', 'games', 'gaming', 'kids', 'children',
-                        'fun', 'play', 'cartoon', 'toy', 'party', 'birthday', 'arcade', 'retro',
-                        'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite',
-                        'candy', 'sweets', 'colorful', 'vibrant', 'playful', 'bright', 'neon', 'rainbow'
-                    ]
-                    is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', combined_context) for kw in fun_keywords)
-
-                    if is_fun_topic:
-                        # Use playful fonts for fun topics
-                        import hashlib
-                        seed_hash = int(hashlib.md5((outline.title or 'fun').encode()).hexdigest(), 16)
-                        playful_combos = [
-                            ('Bebas Neue', 'Nunito'),
-                            ('Fredoka', 'Quicksand'),
-                            ('Righteous', 'Poppins'),
-                            ('Bungee', 'Asap'),
-                            ('Bangers', 'Rubik'),
-                        ]
-                        combo = playful_combos[seed_hash % len(playful_combos)]
-                        hero_font, body_font = combo
-                        logger.info(f"[THEME JSON] 🎮 Fun topic detected! Using playful fonts: {hero_font}/{body_font}")
-                    elif vibe_context and ('.' in vibe_context or len(vibe_context.split()) <= 2):
-                        # Looks like a brand domain or short brand name - let ThemeDirector handle it
-                        logger.info(f"[THEME JSON] 🏷️ Brand context detected ({vibe_context}), will use ThemeDirector for font selection")
-                        hero_font = 'Montserrat'
-                        body_font = 'Roboto'
-                    else:
-                        # Use professional fonts for business topics
-                        hero_font = 'Montserrat'
-                        body_font = 'Roboto'
-                        logger.info(f"[THEME JSON] 📊 Business topic - using professional fonts: {hero_font}/{body_font}")
+                    hero_font = 'Montserrat'
+                    body_font = 'Open Sans'
+                    logger.info("[THEME JSON] Using default fonts: %s/%s", hero_font, body_font)
 
                 # Ensure hero and body are different
                 if hero_font and body_font and hero_font.lower() == body_font.lower():
@@ -654,9 +578,7 @@ async def theme_from_outline_json(
                         "hero_title": {"family": hero_font},
                         "body_text": {"family": body_font}
                     },
-                    "brandInfo": {
-                        "logoUrl": logo_url
-                    } if logo_url else {},
+                    "brandInfo": brand_info,
                     "visual_style": {}
                 }
 

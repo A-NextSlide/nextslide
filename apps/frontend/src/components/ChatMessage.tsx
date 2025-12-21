@@ -62,7 +62,7 @@ const KNOWN_INTEGRATIONS: Record<string, string> = {
  */
 const renderMarkdown = (text: string): React.ReactNode[] => {
   // First, split by mentions and bold patterns
-  const mentionBoldRegex = /(@\w+|\*\*.*?\*\*)/g;
+  const mentionBoldRegex = /(@\w+|\*\*.*?\*\*|\[\[.*?\]\])/g;
   const parts = text.split(mentionBoldRegex);
 
   return parts.map((part, index) => {
@@ -89,6 +89,15 @@ const renderMarkdown = (text: string): React.ReactNode[] => {
       }
       // Return as-is if not a known integration
       return <span key={index}>{part}</span>;
+    }
+
+    // Handle inline editable tokens (mad libs style)
+    if (part.startsWith('[[') && part.endsWith(']]')) {
+      return (
+        <span key={index} className="underline underline-offset-4 decoration-2 decoration-orange-400">
+          {part.slice(2, -2)}
+        </span>
+      );
     }
 
     return <span key={index}>{part}</span>;

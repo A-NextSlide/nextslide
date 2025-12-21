@@ -1,37 +1,16 @@
 import asyncio
 import json
+import re
 import time
 import uuid
-import os
-import re
-from typing import Dict, Any, Optional, List, AsyncGenerator, Tuple
+from typing import Any, Dict, AsyncGenerator, List, Optional
 
-from dotenv import load_dotenv
-
-from .models import (
-    OutlineOptions, OutlineResult, SlideContent,
-    ProgressUpdate, ChartData
-)
-from .planner import OutlinePlanner
-from .slide_generator import SlideGenerator
-from .chart_generator import ChartGenerator
-from .media_manager import MediaManager
-from .chart_normalization import normalize_slide_chart_fields
-from agents.ai.clients import get_client, invoke
-from agents.config import (
-    OUTLINE_PLANNING_MODEL, OUTLINE_CONTENT_MODEL,
-    OUTLINE_RESEARCH_MODEL,
-    USE_PERPLEXITY_FOR_OUTLINE, PERPLEXITY_OUTLINE_MODEL,
-    PRESENTATION_OUTLINE_MODEL, USE_HYBRID_RESEARCH_MODE
-)
-from agents.research import OutlineResearchAgent
+from agents.ai.clients import get_client, get_max_tokens_for_model, invoke
+from agents.config import PERPLEXITY_OUTLINE_MODEL, PRESENTATION_OUTLINE_MODEL
 from agents import config as agents_config
-from agents.ai.clients import get_max_tokens_for_model
-from services.openai_service import OpenAIService
-from agents.generation.file_processor import create_file_processor
 from setup_logging_optimized import get_logger
-from services.pptx_text_extractor import extract_pptx_text_from_bytes
-from .generator_utils import extract_image_prompt_from_content
+
+from .models import OutlineOptions, ProgressUpdate, SlideContent
 
 logger = get_logger(__name__)
 
@@ -43,7 +22,6 @@ class OutlineGeneratorStreamingMixin:
     ) -> AsyncGenerator[ProgressUpdate, None]:
         """Generate slides with streaming updates using parallel tasks."""
         model = self.slide_generator._get_model("content", options)
-        from agents.ai.clients import get_client, get_max_tokens_for_model
         client, model_name = get_client(model)
         
         # Get model's max token capability - NO LIMITS for comprehensive analysis
@@ -145,20 +123,6 @@ class OutlineGeneratorStreamingMixin:
                     except Exception as e:
                         logger.warning(f"[STREAMING] Media assignment failed for slide {index+1}: {e}")
                 
-                # Chart generation from extracted data if needed
-                manual_charts = getattr(slide, 'manualCharts', None)
-                has_manual_charts = isinstance(manual_charts, list) and len(manual_charts) > 0
-                if processed_files and processed_files.get('extracted_data') and not getattr(slide, 'extractedData', None) and not has_manual_charts:
-                    try:
-                        chart_data = await self._generate_chart_from_extracted_data(slide, processed_files['extracted_data'])
-                        if chart_data:
-                            chart_obj = ChartData(**chart_data)
-                            slide.extractedData = self.chart_generator.convert_chart_data_to_extracted_data(
-                                chart_obj, slide.title
-                            )
-                    except Exception as e:
-                        logger.warning(f"[STREAMING] Chart generation failed for slide {index+1}: {e}")
-                
                 results[index] = slide
                 completed += 1
                 slide_data = self._slide_to_dict(slide)
@@ -182,14 +146,14 @@ class OutlineGeneratorStreamingMixin:
                     slide_type,
                     outline_plan.get("title", "Presentation")
                 )
-                # Extract [IMAGE: ...] tag if present
-                cleaned_fallback_content, fallback_image_prompt = extract_image_prompt_from_content(fallback_content)
-                fallback_slide = SlideContent(
-                    id=str(uuid.uuid4()),
-                    title=fallback_title if isinstance(fallback_title, str) else fallback_title.get('title', 'Slide'),
-                    content=cleaned_fallback_content,
-                    slide_type=slide_type,
-                    suggestedImagePrompt=fallback_image_prompt
+                cleaned_fallback_content, fallback_image_prompt = (
+                    self.slide_generator._clean_content_and_image_prompt(fallback_content)
+                )
+                fallback_slide = self.slide_generator._build_slide_content(
+                    fallback_title if isinstance(fallback_title, str) else fallback_title.get('title', 'Slide'),
+                    slide_type,
+                    cleaned_fallback_content,
+                    suggested_image_prompt=fallback_image_prompt,
                 )
                 results[index] = fallback_slide
                 completed += 1
@@ -384,8 +348,6 @@ Return JSON:
                 # Import dependencies at function start
                 import asyncio
                 from agents.ai.clients import get_client, invoke
-                from .models import SlideContent
-                import uuid
                 import re
                 
                 # Get event loop for async operations
@@ -488,7 +450,7 @@ RESEARCH DEPTH REQUIREMENTS:
                     ''
                 )
                 if perplexity_research:
-                    slide_prompt = f"{slide_prompt}\n\nResearch notes:\n{perplexity_research}"
+                    slide_prompt = slide_prompt + "\n\nResearch notes:\n" + str(perplexity_research)
 
                 max_tokens_for_slide = 1600 if detail_mode == 'detailed' else 400
                 slide_temperature = 0.3 if detail_mode == 'detailed' else 0.4
@@ -544,95 +506,31 @@ RESEARCH DEPTH REQUIREMENTS:
                     len(citations),
                 )
                 
-                # Extract [IMAGE: ...] tag if present
-                cleaned_content, image_prompt = extract_image_prompt_from_content(slide_content)
-                
-                # Clean up any metadata headers that slipped through
-                cleaned_content = re.sub(r'^Slide\s+\d+:\s*[^\n]+\n*', '', cleaned_content, flags=re.IGNORECASE)
-                cleaned_content = re.sub(r'[\s\n]*---[\s\n]*(?:SPEAKABLE CONTENT|SPEAKER NOTES?|SPEAKING NOTES?):[\s\S]*?(?=\n---|$)', '', cleaned_content, flags=re.IGNORECASE)
-                cleaned_content = re.sub(r'[\s\n]*---[\s\n]*\n*', '\n', cleaned_content)
-                cleaned_content = cleaned_content.strip()
-                
-                slide = SlideContent(
-                    id=str(uuid.uuid4()),
-                    title=slide_title,
-                    content=cleaned_content,
-                    slide_type=slide_type or "content",
-                    suggestedImagePrompt=image_prompt
-                )
-                
-                # Add citations to slide if found
+                cleaned_content, image_prompt = self.slide_generator._clean_content_and_image_prompt(slide_content)
+
+                footnotes = []
                 if citations:
-                    slide.citations = citations
-                    
-                    # Create numbered footnotes for the citation panel
-                    footnotes = []
-                    for i, citation in enumerate(citations):
-                        footnotes.append({
-                            "index": i + 1,  # 1-based numbering for [1], [2], etc.
-                            "label": citation.get("title", citation.get("source", "Unknown Source")),
-                            "url": citation.get("url", "")
-                        })
-                    slide.footnotes = footnotes
-                    
-                    logger.debug(f"[CITATIONS] Added {len(citations)} citations and {len(footnotes)} footnotes to slide {idx+1}")
-                
-                # Check if slide needs data/charts based on title and content  
-                if (slide_type or "content") in ("quote", "stat", "divider", "transition"):
-                    needs_data = False
-                else:
-                    needs_data = self._slide_needs_data(slide_title, slide_content)
-                if needs_data:
-                    try:
-                        logger.debug(f"[DATA] Generating chart data for slide {idx+1}: {slide_title}")
-                        chart_data = await self._generate_chart_data_for_slide(slide_title, slide_content, presentation_title)
-                        if chart_data:
-                            # Add citations to chart metadata for citation panel
-                            if citations:
-                                chart_data.setdefault('metadata', {})
-                                chart_data['metadata']['citations'] = citations
-                                
-                                # Also add footnotes for numbered citations in chart metadata
-                                footnotes = []
-                                for i, citation in enumerate(citations):
-                                    footnotes.append({
-                                        "index": i + 1,  # 1-based numbering for [1], [2], etc.
-                                        "label": citation.get("title", citation.get("source", "Unknown Source")),
-                                        "url": citation.get("url", "")
-                                    })
-                                chart_data['metadata']['footnotes'] = footnotes
-                                
-                                logger.debug(f"[DATA] Added {len(citations)} citations and {len(footnotes)} footnotes to chart metadata for slide {idx+1}")
-                            
-                            slide.extractedData = chart_data
-                            logger.debug(f"[DATA] Added {chart_data['chartType']} chart with {len(chart_data.get('data', []))} data points to slide {idx+1}")
-                    except Exception as e:
-                        logger.warning(f"[DATA] Failed to generate chart data for slide {idx+1}: {e}")
-                elif citations:
-                    # If no chart but has citations, create annotations payload for citation panel
-                    try:
-                        # Create footnotes for the annotations payload too
-                        footnotes = []
-                        for i, citation in enumerate(citations):
-                            footnotes.append({
-                                "index": i + 1,  # 1-based numbering for [1], [2], etc.
-                                "label": citation.get("title", citation.get("source", "Unknown Source")),
-                                "url": citation.get("url", "")
-                            })
-                        
-                        slide.extractedData = {
-                            "chartType": "annotations",
-                            "title": slide_title,
-                            "data": [],
-                            "metadata": {
-                                "citations": citations,
-                                "footnotes": footnotes
-                            },
-                            "source": "Research citations"
-                        }
-                        logger.debug(f"[CITATIONS] Added citations-only payload with {len(footnotes)} footnotes to slide {idx+1} for citation panel")
-                    except Exception as e:
-                        logger.warning(f"[CITATIONS] Failed to add citations payload for slide {idx+1}: {e}")
+                    footnotes = self.slide_generator._build_footnotes(
+                        citations,
+                        slide_title,
+                        log_prefix="STREAMING",
+                    )
+
+                extracted_data = self.slide_generator._build_annotations_payload(
+                    slide_title,
+                    citations,
+                    footnotes,
+                )
+
+                slide = self.slide_generator._build_slide_content(
+                    slide_title,
+                    slide_type or "content",
+                    cleaned_content,
+                    extracted_data=extracted_data,
+                    citations=citations,
+                    footnotes=footnotes,
+                    suggested_image_prompt=image_prompt,
+                )
                 
                 logger.debug(f"[PARALLEL] Completed slide {idx+1}: {slide_title}")
                 return idx, slide
@@ -640,18 +538,15 @@ RESEARCH DEPTH REQUIREMENTS:
             except Exception as e:
                 logger.error(f"[PARALLEL] Failed to generate slide {idx+1}: {e}")
                 # Create fallback slide
-                from .models import SlideContent
-                import uuid
-                
                 fallback_content = f"Content for {slide_title}"
-                # Extract [IMAGE: ...] tag if present
-                cleaned_fallback_content, fallback_image_prompt = extract_image_prompt_from_content(fallback_content)
-                fallback_slide = SlideContent(
-                    id=str(uuid.uuid4()),
-                    title=slide_title,
-                    content=cleaned_fallback_content,
-                    slide_type="content",
-                    suggestedImagePrompt=fallback_image_prompt
+                cleaned_fallback_content, fallback_image_prompt = (
+                    self.slide_generator._clean_content_and_image_prompt(fallback_content)
+                )
+                fallback_slide = self.slide_generator._build_slide_content(
+                    slide_title,
+                    "content",
+                    cleaned_fallback_content,
+                    suggested_image_prompt=fallback_image_prompt,
                 )
                 return idx, fallback_slide
         

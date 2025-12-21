@@ -7,6 +7,7 @@ import type { ExtendedChatMessageProps } from '@/components/chat';
 import type { ThemePreviewState } from '../utils/themePreview';
 import type { LinkedInProfile } from '@/components/chat/blocks';
 import { ThemePreviewPanel } from './ThemePreviewPanel';
+import ClarificationDraftCard from '@/components/chat/blocks/ClarificationDraftCard';
 
 interface ChatMessageListProps {
   messages: ExtendedChatMessageProps[];
@@ -27,6 +28,8 @@ interface ChatMessageListProps {
   showFallbackGenerate: boolean;
   onFallbackGenerate: () => void;
   isLoading: boolean;
+  onClarificationConfirm: (text: string) => void;
+  onClarificationEdit: (text: string) => void;
 }
 
 export function ChatMessageList({
@@ -48,6 +51,8 @@ export function ChatMessageList({
   showFallbackGenerate,
   onFallbackGenerate,
   isLoading,
+  onClarificationConfirm,
+  onClarificationEdit,
 }: ChatMessageListProps) {
   const { sortedMessages, editAppliedMap } = useMemo(() => {
     const editAppliedMap = new Map<string, any>();
@@ -244,7 +249,7 @@ export function ChatMessageList({
           </div>
         )}
 
-        {sortedMessages.map((msg) => {
+        {sortedMessages.map((msg, idx) => {
           const txt = typeof msg.message === 'string' ? msg.message : '';
           if ((msg.type === 'ai' || msg.type === 'system') && /^\s*\d+\s*$/.test(txt)) {
             return null;
@@ -273,18 +278,28 @@ export function ChatMessageList({
             : null;
 
           return (
-            <ChatMessage
-              key={`${msg.id}-${editAppliedData ? 'with-edit' : 'no-edit'}`}
-              {...msg}
-              message={isThinkingStatus && msg.message ? msg.message : msg.message}
-              isLoading={showAsLoading}
-              inlineBelow={inline}
-              onFeedback={(feedback) => onFeedback(msg.id, feedback)}
-              editAppliedData={editAppliedData ? { ...editAppliedData, slideNumber } : undefined}
-              onSelectLinkedInProfile={onSelectLinkedInProfile}
-              onSkipLinkedInSelection={onSkipLinkedInSelection}
-              selectedLinkedInProfileId={selectedLinkedInProfileId}
-            />
+            <div key={`${msg.id}-${editAppliedData ? 'with-edit' : 'no-edit'}`}>
+              <ChatMessage
+                {...msg}
+                message={isThinkingStatus && msg.message ? msg.message : msg.message}
+                isLoading={showAsLoading}
+                inlineBelow={inline}
+                onFeedback={(feedback) => onFeedback(msg.id, feedback)}
+                editAppliedData={editAppliedData ? { ...editAppliedData, slideNumber } : undefined}
+                onSelectLinkedInProfile={onSelectLinkedInProfile}
+                onSkipLinkedInSelection={onSkipLinkedInSelection}
+                selectedLinkedInProfileId={selectedLinkedInProfileId}
+              />
+              {msg.type === 'ai' && (msg.metadata?.clarification?.draft || msg.metadata?.clarification?.fields?.length) && (
+                <ClarificationDraftCard
+                  draft={msg.metadata.clarification.draft}
+                  fields={msg.metadata.clarification.fields}
+                  onConfirm={onClarificationConfirm}
+                  onEdit={onClarificationEdit}
+                  autoFocus={idx === sortedMessages.length - 1}
+                />
+              )}
+            </div>
           );
         })}
 

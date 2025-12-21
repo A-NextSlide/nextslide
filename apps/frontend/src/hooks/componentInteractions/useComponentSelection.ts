@@ -54,10 +54,16 @@ export function useComponentSelection({
     try {
       const editorStoreInst = useEditorStore.getState();
       const activeEditor: any = editorStoreInst.activeTiptapEditor;
-      if (isTextEditingGlobal && activeEditor && activeEditor.view && activeEditor.view.dom) {
-        const currentEditingId = (activeEditor.view.dom as HTMLElement).getAttribute('data-component-id');
-        if (currentEditingId && currentEditingId !== componentId) {
-          try { activeEditor.commands?.blur?.(); } catch {}
+      if (isTextEditingGlobal) {
+        const currentEditingId = activeEditor?.view?.dom
+          ? (activeEditor.view.dom as HTMLElement).getAttribute('data-component-id')
+          : null;
+        const selectedIds = editorStoreInst.selectedComponentIds;
+        const isOnlySelected = selectedIds.size === 1 && selectedIds.has(componentId);
+        const isSameTarget = currentEditingId ? currentEditingId === componentId : isOnlySelected;
+
+        if (!isSameTarget) {
+          try { activeEditor?.commands?.blur?.(); } catch {}
           setTextEditingGlobal(false);
         }
       }

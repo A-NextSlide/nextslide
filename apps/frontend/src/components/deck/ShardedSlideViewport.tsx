@@ -32,6 +32,8 @@ import { DeckStatus } from '@/types/DeckTypes';
 import ThumbnailNavigator from './ThumbnailNavigator';
 import { useGroupKeyboardShortcuts } from '@/hooks/useGroupKeyboardShortcuts';
 import ZoomIndicator from './ZoomIndicator';
+import { clampZoom, ZOOM_LIMITS, ZOOM_STEP } from '@/utils/zoom';
+import { useSlideViewportSize } from './viewport/useSlideViewportSize';
 
 interface ShardedSlideViewportProps {
   slides: SlideData[];
@@ -62,6 +64,7 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
 }) => {
   const [selectedComponentId, setSelectedComponentId] = React.useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const { width: slideWidth, height: slideHeight } = useSlideViewportSize(viewportRef);
   const { toast } = useToast();
   
   // Track visible slides for document sharding
@@ -164,7 +167,7 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
         const newZoom = Math.round(zoomLevel - delta * zoomSpeed);
         
         // Clamp between 50% and 200%
-        const clampedZoom = Math.max(50, Math.min(200, newZoom));
+        const clampedZoom = clampZoom(newZoom);
         
         if (clampedZoom !== zoomLevel) {
           setZoomLevel(clampedZoom);
@@ -201,7 +204,7 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
         const newZoom = Math.round(initialZoom * scale);
         
         // Clamp between 50% and 200%
-        const clampedZoom = Math.max(50, Math.min(200, newZoom));
+        const clampedZoom = clampZoom(newZoom);
         
         if (clampedZoom !== zoomLevel) {
           setZoomLevel(clampedZoom);
@@ -221,7 +224,7 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
       e.preventDefault();
       const scale = e.scale || 1;
       const newZoom = Math.round(gestureInitialZoom * scale);
-      const clampedZoom = Math.max(50, Math.min(200, newZoom));
+      const clampedZoom = clampZoom(newZoom);
       
       if (clampedZoom !== zoomLevel) {
         setZoomLevel(clampedZoom);
@@ -250,7 +253,7 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
       slideContainer.removeEventListener('gesturestart', handleGestureStart);
       slideContainer.removeEventListener('gesturechange', handleGestureChange);
       slideContainer.removeEventListener('gestureend', handleGestureEnd);
-      window.removeEventListener('wheel', preventBrowserZoom);
+      window.removeEventListener('wheel', preventBrowserZoom, { capture: true });
     };
   }, [zoomLevel, setZoomLevel, viewportRef]);
   
@@ -267,11 +270,11 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
       if (e.ctrlKey || e.metaKey) {
         if (e.key === '+' || e.key === '=') {
           e.preventDefault();
-          const newZoom = Math.min(200, zoomLevel + 10);
+          const newZoom = Math.min(ZOOM_LIMITS.max, zoomLevel + ZOOM_STEP);
           setZoomLevel(newZoom);
         } else if (e.key === '-') {
           e.preventDefault();
-          const newZoom = Math.max(50, zoomLevel - 10);
+          const newZoom = Math.max(ZOOM_LIMITS.min, zoomLevel - ZOOM_STEP);
           setZoomLevel(newZoom);
         } else if (e.key === '0') {
           e.preventDefault();
@@ -591,6 +594,8 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
                   onComponentSelect={handleComponentSelect}
                   onComponentDeselect={handleComponentDeselect}
                   updateSlide={updateSlide}
+                  slideWidth={slideWidth}
+                  slideHeight={slideHeight}
                   zoomLevel={100}
                 />
               </div>

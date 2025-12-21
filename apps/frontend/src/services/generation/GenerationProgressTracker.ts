@@ -53,6 +53,14 @@ export class GenerationProgressTracker extends EventEmitter {
   private pendingUpdateTimeout: number | null = null;
   private readonly MIN_PROGRESS_EMIT_INTERVAL_MS = 100; // Throttle UI updates to ~10fps
   private readonly MIN_PROGRESS_DELTA = 1; // Only emit if >=1% change
+  private readonly TICK_INTERVAL_MS = 500;
+  private readonly IN_PROGRESS_WEIGHT = 0.1;
+  private readonly SLIDE_GEN_SOFT_CAP = 93;
+  private readonly SLIDE_GEN_MIN_SECONDS = 30;
+  private readonly SLIDE_GEN_SECONDS_PER_SLIDE = 9;
+  private tickInterval: number | null = null;
+  private slideGenStartTime: number | null = null;
+  private estimatedSlideGenDurationMs: number | null = null;
   private readonly DEBUG_PROGRESS: boolean =
     (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_DEBUG_PROGRESS === 'true') ||
     (typeof window !== 'undefined' && (window as any).__DEBUG_PROGRESS === true);
@@ -126,6 +134,7 @@ export class GenerationProgressTracker extends EventEmitter {
     super();
     this.state = this.getInitialState();
     this.startProgressAnimation();
+    this.startTicker();
   }
   
   static getInstance(): GenerationProgressTracker {
@@ -150,6 +159,106 @@ export class GenerationProgressTracker extends EventEmitter {
       images: {}
     };
   }
+
+  private startTicker() {
+    if (this.tickInterval || typeof window === 'undefined') return;
+    this.tickInterval = window.setInterval(() => {
+      this.updateElapsedAndProgress();
+    }, this.TICK_INTERVAL_MS);
+  }
+
+  private updateElapsedAndProgress() {
+    const now = Date.now();
+    this.state.elapsedTime = now - this.state.startTime;
+
+    const target = this.targetProgress;
+    let nextProgress = this.state.progress;
+
+    if (target > nextProgress) {
+      const delta = target - nextProgress;
+      const step = Math.max(0.2, delta * 0.08);
+      nextProgress = Math.min(target, nextProgress + step);
+    }
+
+    const driftProgress = this.getSlideGenDriftProgress(now);
+    if (driftProgress > nextProgress) {
+      nextProgress = driftProgress;
+    }
+
+    nextProgress = Math.min(100, nextProgress);
+
+    if (nextProgress !== this.state.progress) {
+      this.state.progress = nextProgress;
+      this.state.smoothProgress = nextProgress;
+    }
+
+    this.emitProgressUpdate();
+  }
+
+  private emitProgressUpdate(force = false) {
+    const now = Date.now();
+    const rounded = Math.round(this.state.progress);
+    if (!force) {
+      if (now - this.lastProgressEmitTs < this.MIN_PROGRESS_EMIT_INTERVAL_MS &&
+          Math.abs(rounded - this.lastEmittedProgress) < this.MIN_PROGRESS_DELTA) {
+        return;
+      }
+    }
+    this.lastProgressEmitTs = now;
+    this.lastEmittedProgress = rounded;
+    this.emit('progressUpdate', this.state);
+  }
+
+  private handlePhaseTransition(phase: string) {
+    if (phase === 'slide_generation') {
+      const now = Date.now();
+      this.slideGenStartTime = now;
+      const totalSlides = this.state.totalSlides || this.state.slides.length || 0;
+      if (totalSlides > 0) {
+        this.estimatedSlideGenDurationMs = this.estimateSlideGenDuration(totalSlides);
+        this.state.estimatedTime = this.estimatedSlideGenDurationMs;
+      }
+    }
+  }
+
+  private estimateSlideGenDuration(totalSlides: number) {
+    const seconds = Math.max(
+      this.SLIDE_GEN_MIN_SECONDS,
+      totalSlides * this.SLIDE_GEN_SECONDS_PER_SLIDE
+    );
+    return seconds * 1000;
+  }
+
+  private getSlideGenDriftProgress(now: number) {
+    if (this.state.phase !== 'slide_generation') {
+      return 0;
+    }
+
+    const totalSlides = this.state.totalSlides || this.state.slides.length || 0;
+    if (!totalSlides) {
+      return 0;
+    }
+
+    const inProgress = this.state.slides.filter(s => s.status === 'generating').length;
+    const completed = this.state.slides.filter(s => s.status === 'completed').length;
+    if (inProgress === 0 && completed === 0) {
+      return 0;
+    }
+
+    if (!this.slideGenStartTime) {
+      this.slideGenStartTime = now;
+    }
+
+    if (!this.estimatedSlideGenDurationMs) {
+      this.estimatedSlideGenDurationMs = this.estimateSlideGenDuration(totalSlides);
+      this.state.estimatedTime = this.estimatedSlideGenDurationMs;
+    }
+
+    const elapsed = now - this.slideGenStartTime;
+    const ratio = Math.min(1, elapsed / this.estimatedSlideGenDurationMs);
+    const drift = 55 + (ratio * (this.SLIDE_GEN_SOFT_CAP - 55));
+    return Math.min(this.SLIDE_GEN_SOFT_CAP, drift);
+  }
   
   reset() {
     if (this.DEBUG_PROGRESS) console.log('[GenerationProgressTracker] Resetting progress tracker');
@@ -157,6 +266,8 @@ export class GenerationProgressTracker extends EventEmitter {
     this.state.topicImages = {};
     this.targetProgress = 0;
     this.progressVelocity = 0;
+    this.slideGenStartTime = null;
+    this.estimatedSlideGenDurationMs = null;
     this.emit('reset');
   }
   
@@ -428,7 +539,11 @@ export class GenerationProgressTracker extends EventEmitter {
     const { phase, progress, message, currentSlide, totalSlides, substep } = data;
     
     if (phase && this.phases[phase]) {
+      const previousPhase = this.state.phase;
       this.state.phase = phase;
+      if (previousPhase !== phase) {
+        this.handlePhaseTransition(phase);
+      }
       
       // Calculate progress within phase range
       if (progress !== undefined) {
@@ -454,7 +569,11 @@ export class GenerationProgressTracker extends EventEmitter {
     const { phase, progress, message } = event;
     
     if (phase && this.phases[phase]) {
+      const previousPhase = this.state.phase;
       this.state.phase = phase;
+      if (previousPhase !== phase) {
+        this.handlePhaseTransition(phase);
+      }
       
       // Use phase progress range if no explicit progress
       if (progress === undefined) {
@@ -477,6 +596,14 @@ export class GenerationProgressTracker extends EventEmitter {
     }
     
     if (slide_index !== undefined) {
+      if (!this.slideGenStartTime) {
+        this.slideGenStartTime = Date.now();
+        const total = total_slides || this.state.totalSlides || this.state.slides.length || 0;
+        if (total > 0 && !this.estimatedSlideGenDurationMs) {
+          this.estimatedSlideGenDurationMs = this.estimateSlideGenDuration(total);
+          this.state.estimatedTime = this.estimatedSlideGenDurationMs;
+        }
+      }
       // Ensure the slides array is large enough
       while (this.state.slides.length <= slide_index) {
         this.state.slides.push({
@@ -627,6 +754,8 @@ export class GenerationProgressTracker extends EventEmitter {
     this.setTargetProgress(100);
     this.state.phase = 'finalization';
     this.state.message = 'Your presentation is ready!';
+    this.slideGenStartTime = null;
+    this.estimatedSlideGenDurationMs = null;
 
     // Mark all slides as completed in tracker state
     this.state.slides.forEach(slide => {
@@ -675,6 +804,11 @@ export class GenerationProgressTracker extends EventEmitter {
         hasImages: false
       }));
     }
+
+    if (this.state.phase === 'slide_generation' && count > 0 && !this.estimatedSlideGenDurationMs) {
+      this.estimatedSlideGenDurationMs = this.estimateSlideGenDuration(count);
+      this.state.estimatedTime = this.estimatedSlideGenDurationMs;
+    }
   }
   
   private updateOverallProgress() {
@@ -683,8 +817,8 @@ export class GenerationProgressTracker extends EventEmitter {
 
     const completedSlides = this.state.slides.filter(s => s.status === 'completed').length;
     const inProgressSlides = this.state.slides.filter(s => s.status === 'generating').length;
-    // Count completed slides fully, and in-progress slides as partial (50% each)
-    const effectiveCompleted = completedSlides + (inProgressSlides * 0.5);
+    // Count completed slides fully, and in-progress slides as partial
+    const effectiveCompleted = completedSlides + (inProgressSlides * this.IN_PROGRESS_WEIGHT);
     const slideProgress = (effectiveCompleted / totalSlides) * 40; // Slides are 40% of total (55-95%)
 
     // Calculate minimum progress based on phase
@@ -707,8 +841,8 @@ export class GenerationProgressTracker extends EventEmitter {
       const completedSlides = this.state.slides.filter(s => s.status === 'completed').length;
       const inProgressSlides = this.state.slides.filter(s => s.status === 'generating').length;
       // 55-95% range for slide generation
-      // Count completed slides fully, and in-progress slides as partial (50% each)
-      const effectiveCompleted = completedSlides + (inProgressSlides * 0.5);
+      // Count completed slides fully, and in-progress slides as partial
+      const effectiveCompleted = completedSlides + (inProgressSlides * this.IN_PROGRESS_WEIGHT);
       const slideProgress = 55 + (effectiveCompleted / totalSlides) * 40;
       this.targetProgress = Math.min(95, slideProgress); // Cap at 95% until finalization
     } else {
@@ -836,12 +970,13 @@ export class GenerationProgressTracker extends EventEmitter {
     return { images, imagesByTopic };
   }
   
-  // Direct progress update - no fake animation
+  // Nudge progress immediately to keep UI responsive between ticks
   private startProgressAnimation() {
-    // Just set progress directly from target
-    this.state.progress = Math.round(this.targetProgress);
-    this.state.smoothProgress = this.targetProgress;
-    this.emit('progressUpdate', this.state);
+    if (this.targetProgress > this.state.progress) {
+      this.state.progress = Math.min(this.targetProgress, this.state.progress + 1);
+      this.state.smoothProgress = this.state.progress;
+    }
+    this.emitProgressUpdate(true);
   }
 
   // Public controls to pause/resume animation when idle
@@ -861,6 +996,10 @@ export class GenerationProgressTracker extends EventEmitter {
   destroy() {
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
+    }
+    if (this.tickInterval) {
+      clearInterval(this.tickInterval);
+      this.tickInterval = null;
     }
     this.removeAllListeners();
   }

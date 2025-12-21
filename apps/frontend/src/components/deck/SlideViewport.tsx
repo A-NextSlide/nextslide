@@ -32,6 +32,9 @@ import { shareService } from '@/services/shareService';
 import { useDeckStore } from '@/stores/deckStore';
 import { useCustomComponentEditStore } from '@/stores/customComponentEditStore';
 import { CommentsPanel } from './CommentsPanel';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { useSlideViewportSize } from './viewport/useSlideViewportSize';
+import { clampZoom, ZOOM_STEP } from '@/utils/zoom';
 
 // Lazy load the waiting game
 import GenerationGameOverlay from '@/components/common/GenerationGameOverlay';
@@ -67,27 +70,13 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 }) => {
   const [selectedComponentId, setSelectedComponentId] = React.useState<string | null>(null);
   const [showWaitingGame, setShowWaitingGame] = useState(false);
-  const [isMobileView, setIsMobileView] = useState(false);
+  const isMobileView = useIsMobile();
   const viewportRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
-
-  // Detect mobile view for responsive editor panel
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobileView(window.innerWidth < 768);
-    };
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    window.addEventListener('orientationchange', checkMobile);
-    return () => {
-      window.removeEventListener('resize', checkMobile);
-      window.removeEventListener('orientationchange', checkMobile);
-    };
-  }, []);
+  const { width: slideWidth, height: slideHeight } = useSlideViewportSize(viewportRef);
 
   // Add ref for the scrollable container
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const zoomContainerRef = useRef<HTMLDivElement>(null);
 
   // Yjs context for collaboration is initialized below
 
@@ -136,25 +125,81 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   const zoomLevel = useEditorSettingsStore(state => state.zoomLevel);
   const setZoomLevel = useEditorSettingsStore(state => state.setZoomLevel);
 
-  // Track zoom origin for cursor-based zooming
-  const [zoomOrigin, setZoomOrigin] = useState({ x: 0.5, y: 0.5 });
+  const zoomScale = zoomLevel / 100;
+  const scaledSlideWidth = Math.max(1, Math.round(slideWidth * zoomScale));
+  const scaledSlideHeight = Math.max(1, Math.round(slideHeight * zoomScale));
+  const topBarHeight = currentSlide ? 48 : 0;
+  const bottomBarHeight = slides.length > 0 ? 56 : 0;
+  const chromeHeight = topBarHeight + bottomBarHeight;
+  const canvasHeight = Math.max(1, scaledSlideHeight + chromeHeight);
+
   const [showCommentsPanel, setShowCommentsPanel] = useState(false);
 
   // Use group keyboard shortcuts
   useGroupKeyboardShortcuts();
 
-  // Enhanced zoom handling with cursor-based zoom
-  React.useEffect(() => {
-    const slideContainer = document.getElementById('slide-display-container');
-    const scrollContainer = scrollContainerRef.current;
-    if (!slideContainer || !scrollContainer) return;
+  const zoomLevelRef = useRef(zoomLevel);
+  const previousZoomRef = useRef(zoomLevel);
+  const skipExternalZoomRef = useRef(false);
 
-    let initialDistance = 0;
-    let initialZoom = zoomLevel;
+  useEffect(() => {
+    zoomLevelRef.current = zoomLevel;
+  }, [zoomLevel]);
+
+  const getViewportCenter = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return null;
+    const rect = container.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }, []);
+
+  const adjustScrollForZoom = useCallback((currentZoom: number, nextZoom: number, anchor?: { x: number; y: number } | null) => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const anchorX = anchor?.x ?? rect.left + rect.width / 2;
+    const anchorY = anchor?.y ?? rect.top + rect.height / 2;
+    const offsetX = anchorX - rect.left;
+    const offsetY = anchorY - rect.top;
+
+    const currentScale = currentZoom / 100;
+    const nextScale = nextZoom / 100;
+    if (!Number.isFinite(currentScale) || currentScale <= 0) return;
+
+    const contentX = container.scrollLeft + offsetX;
+    const contentY = container.scrollTop + offsetY;
+    const scaleRatio = nextScale / currentScale;
+
+    const nextContentX = contentX * scaleRatio;
+    const nextContentY = contentY * scaleRatio;
+
+    requestAnimationFrame(() => {
+      container.scrollLeft = nextContentX - offsetX;
+      container.scrollTop = nextContentY - offsetY;
+    });
+  }, []);
+
+  const zoomTo = useCallback((nextZoom: number, anchor?: { x: number; y: number } | null) => {
+    const currentZoom = zoomLevelRef.current;
+    const clampedZoom = clampZoom(nextZoom);
+    if (clampedZoom === currentZoom) return;
+
+    skipExternalZoomRef.current = true;
+    zoomLevelRef.current = clampedZoom;
+    setZoomLevel(clampedZoom);
+    adjustScrollForZoom(currentZoom, clampedZoom, anchor);
+    previousZoomRef.current = clampedZoom;
+  }, [adjustScrollForZoom, clampZoom, setZoomLevel]);
+
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    const pinchState = { initialDistance: 0, initialZoom: zoomLevelRef.current };
+    let gestureInitialZoom = zoomLevelRef.current;
 
     const handleWheel = (e: WheelEvent) => {
-      // If the event originates from a guarded scrollable inside a custom component,
-      // prevent parent bounce when at edges and let the inner element handle scrolling
       const target = e.target as HTMLElement | null;
       const guardEl = target && typeof target.closest === 'function' ? (target.closest('[data-scroll-guard="true"]') as HTMLElement | null) : null;
       if (guardEl && !(e.ctrlKey || e.metaKey)) {
@@ -172,174 +217,128 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
         const atTop = guardEl.scrollTop <= 0 && deltaY < 0;
         const atBottom = guardEl.scrollTop >= maxScrollTop && deltaY > 0;
         if (atTop || atBottom) {
-          // Clamp and consume to avoid rubber-band and parent scroll
           const next = Math.max(0, Math.min(maxScrollTop, guardEl.scrollTop + deltaY));
           if (next !== guardEl.scrollTop) guardEl.scrollTop = next;
           e.preventDefault();
           e.stopPropagation();
           return;
         }
-        // Not at edges, allow inner scroll to proceed without parent interference
         return;
       }
-      // Check if we're over the slide area
-      const rect = slideContainer.getBoundingClientRect();
-      const isOverSlide = e.clientX >= rect.left && e.clientX <= rect.right &&
-        e.clientY >= rect.top && e.clientY <= rect.bottom;
 
-      if (!isOverSlide) return;
+      const isZoomGesture = e.ctrlKey || e.metaKey;
+      if (!isZoomGesture) return;
 
-      // On Mac, pinch gestures come through as wheel events with ctrlKey=true
-      // Regular two-finger scrolling has ctrlKey=false
-      const isPinchGesture = e.ctrlKey;
+      e.preventDefault();
+      e.stopPropagation();
 
-      if (isPinchGesture) {
-        e.preventDefault();
-
-        // Calculate cursor position relative to the slide container
-        const containerRect = scrollContainer.getBoundingClientRect();
-        const cursorX = e.clientX - containerRect.left + scrollContainer.scrollLeft;
-        const cursorY = e.clientY - containerRect.top + scrollContainer.scrollTop;
-
-        // Calculate the zoom origin as a percentage of container size
-        const originX = cursorX / scrollContainer.scrollWidth;
-        const originY = cursorY / scrollContainer.scrollHeight;
-
-        // Store zoom origin
-        setZoomOrigin({ x: originX, y: originY });
-
-        // Calculate new zoom level
-        const delta = e.deltaY;
-        const zoomSpeed = 1; // Consistent speed for pinch
-        const zoomFactor = delta > 0 ? 0.95 : 1.05; // Bigger increments for faster zoom
-        const newZoom = Math.round(zoomLevel * zoomFactor);
-
-        // Clamp between 65% and 400% for more range
-        const clampedZoom = Math.max(65, Math.min(400, newZoom));
-
-        if (clampedZoom !== zoomLevel) {
-          // Calculate the cursor position before zoom
-          const beforeZoomX = cursorX;
-          const beforeZoomY = cursorY;
-
-          // Set new zoom level
-          setZoomLevel(clampedZoom);
-
-          // Calculate where the cursor would be after zoom
-          // We need to adjust scroll to keep cursor at same position
-          requestAnimationFrame(() => {
-            const scaleFactor = clampedZoom / zoomLevel;
-            const newCursorX = beforeZoomX * scaleFactor;
-            const newCursorY = beforeZoomY * scaleFactor;
-
-            // Calculate scroll adjustment to keep cursor in same position
-            const scrollAdjustX = newCursorX - cursorX;
-            const scrollAdjustY = newCursorY - cursorY;
-
-            // Apply scroll adjustment
-            scrollContainer.scrollLeft += scrollAdjustX;
-            scrollContainer.scrollTop += scrollAdjustY;
-          });
-        }
-      }
-      // If it's not a pinch gesture, let normal scrolling happen
+      const zoomFactor = Math.exp(-e.deltaY * 0.002);
+      const nextZoom = Math.round(zoomLevelRef.current * zoomFactor);
+      zoomTo(nextZoom, { x: e.clientX, y: e.clientY });
     };
 
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
-        const touch1 = e.touches[0];
-        const touch2 = e.touches[1];
-        initialDistance = Math.hypot(
+        const [touch1, touch2] = e.touches;
+        pinchState.initialDistance = Math.hypot(
           touch2.clientX - touch1.clientX,
           touch2.clientY - touch1.clientY
         );
-        initialZoom = zoomLevel;
-
-        // Calculate center point for zoom origin
-        const centerX = (touch1.clientX + touch2.clientX) / 2;
-        const centerY = (touch1.clientY + touch2.clientY) / 2;
-
-        const containerRect = scrollContainer.getBoundingClientRect();
-        const originX = (centerX - containerRect.left + scrollContainer.scrollLeft) / scrollContainer.scrollWidth;
-        const originY = (centerY - containerRect.top + scrollContainer.scrollTop) / scrollContainer.scrollHeight;
-
-        setZoomOrigin({ x: originX, y: originY });
+        pinchState.initialZoom = zoomLevelRef.current;
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
       if (e.touches.length === 2) {
         e.preventDefault();
-
-        const touch1 = e.touches[0];
-        const touch2 = e.touches[1];
+        const [touch1, touch2] = e.touches;
         const distance = Math.hypot(
           touch2.clientX - touch1.clientX,
           touch2.clientY - touch1.clientY
         );
-
-        const scale = distance / initialDistance;
-        const newZoom = Math.round(initialZoom * scale);
-
-        // Clamp between 65% and 400% for wider range
-        const clampedZoom = Math.max(65, Math.min(400, newZoom));
-
-        if (clampedZoom !== zoomLevel) {
-          setZoomLevel(clampedZoom);
-        }
+        const scale = pinchState.initialDistance ? distance / pinchState.initialDistance : 1;
+        const nextZoom = Math.round(pinchState.initialZoom * scale);
+        const center = {
+          x: (touch1.clientX + touch2.clientX) / 2,
+          y: (touch1.clientY + touch2.clientY) / 2
+        };
+        zoomTo(nextZoom, center);
       }
     };
 
-    // Add event listeners - keep passive: false to preventDefault on pinch-zoom
-    slideContainer.addEventListener('wheel', handleWheel, { passive: false });
-    slideContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
-    slideContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+    const handleGestureStart = (e: Event) => {
+      e.preventDefault();
+      gestureInitialZoom = zoomLevelRef.current;
+    };
+
+    const handleGestureChange = (e: Event) => {
+      e.preventDefault();
+      const gestureEvent = e as any;
+      const scale = gestureEvent.scale || 1;
+      const nextZoom = Math.round(gestureInitialZoom * scale);
+      zoomTo(nextZoom, getViewportCenter());
+    };
+
+    const handleGestureEnd = (e: Event) => {
+      e.preventDefault();
+    };
+
+    scrollContainer.addEventListener('wheel', handleWheel, { passive: false });
+    scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
+    scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+    scrollContainer.addEventListener('gesturestart', handleGestureStart as EventListener, { passive: false });
+    scrollContainer.addEventListener('gesturechange', handleGestureChange as EventListener, { passive: false });
+    scrollContainer.addEventListener('gestureend', handleGestureEnd as EventListener, { passive: false });
 
     return () => {
-      slideContainer.removeEventListener('wheel', handleWheel as any);
-      slideContainer.removeEventListener('touchstart', handleTouchStart);
-      slideContainer.removeEventListener('touchmove', handleTouchMove);
+      scrollContainer.removeEventListener('wheel', handleWheel as EventListener);
+      scrollContainer.removeEventListener('touchstart', handleTouchStart as EventListener);
+      scrollContainer.removeEventListener('touchmove', handleTouchMove as EventListener);
+      scrollContainer.removeEventListener('gesturestart', handleGestureStart as EventListener);
+      scrollContainer.removeEventListener('gesturechange', handleGestureChange as EventListener);
+      scrollContainer.removeEventListener('gestureend', handleGestureEnd as EventListener);
     };
-  }, [zoomLevel, setZoomLevel]);
+  }, [getViewportCenter, zoomTo]);
+
+  useEffect(() => {
+    const previousZoom = previousZoomRef.current;
+    if (previousZoom === zoomLevel) return;
+
+    if (skipExternalZoomRef.current) {
+      skipExternalZoomRef.current = false;
+      previousZoomRef.current = zoomLevel;
+      return;
+    }
+
+    adjustScrollForZoom(previousZoom, zoomLevel, getViewportCenter());
+    previousZoomRef.current = zoomLevel;
+  }, [adjustScrollForZoom, getViewportCenter, zoomLevel]);
 
   // Add keyboard shortcuts for zooming
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip shortcuts when in text editing mode or in input elements
       const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '');
       const isContentEditable = (e.target as HTMLElement)?.hasAttribute('contenteditable');
 
       if (isInput || isContentEditable || isTextEditing) return;
 
-      // Check for Ctrl/Cmd + Plus/Minus/0
       if (e.ctrlKey || e.metaKey) {
         if (e.key === '+' || e.key === '=') {
           e.preventDefault();
-          const newZoom = Math.min(400, zoomLevel + 10);
-          setZoomLevel(newZoom);
-          // Center the zoom origin when using keyboard
-          setZoomOrigin({ x: 0.5, y: 0.5 });
+          zoomTo(zoomLevelRef.current + ZOOM_STEP, getViewportCenter());
         } else if (e.key === '-') {
           e.preventDefault();
-          const newZoom = Math.max(65, zoomLevel - 10);
-          setZoomLevel(newZoom);
-          // Center the zoom origin when using keyboard
-          setZoomOrigin({ x: 0.5, y: 0.5 });
+          zoomTo(zoomLevelRef.current - ZOOM_STEP, getViewportCenter());
         } else if (e.key === '0') {
           e.preventDefault();
-          setZoomLevel(100);
-          // Reset scroll when returning to 100%
-          if (scrollContainerRef.current) {
-            scrollContainerRef.current.scrollLeft = 0;
-            scrollContainerRef.current.scrollTop = 0;
-          }
+          zoomTo(100, getViewportCenter());
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [zoomLevel, setZoomLevel, isTextEditing]);
+  }, [getViewportCenter, isTextEditing, zoomTo]);
 
   // Listen for open/close comments panel events from header
   React.useEffect(() => {
@@ -358,6 +357,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 
   // Add keyboard shortcut 'e' to toggle edit mode
   React.useEffect(() => {
+    if (isMobileView) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       // Skip shortcuts when in text editing mode or in input elements
       const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '');
@@ -473,7 +473,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       document.removeEventListener('dblclick', handleDoubleClick, true);
       window.removeEventListener('slide:doubleclick', handleSlideDoubleClick as EventListener);
     };
-  }, [isEditingMode, isTextEditing, setIsEditing, isCurrentSlideCompleted]);
+  }, [isEditingMode, isTextEditing, setIsEditing, isCurrentSlideCompleted, isMobileView]);
 
   // Auto-select the first component when entering edit mode
   React.useEffect(() => {
@@ -806,6 +806,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
         style={{
           scrollbarWidth: zoomLevel > 100 ? 'thin' : 'none',
           scrollbarColor: 'rgba(155, 155, 155, 0.5) transparent',
+          overscrollBehavior: 'contain',
         }}
       >
         {/* Canvas wrapper - centers content and provides scroll area when zoomed */}
@@ -814,9 +815,8 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
           style={{
             minWidth: '100%',
             minHeight: '100%',
-            // Only expand when zoomed in to allow scrolling
-            width: zoomLevel > 100 ? `${zoomLevel}%` : '100%',
-            height: zoomLevel > 100 ? `${zoomLevel}%` : '100%',
+            width: `${scaledSlideWidth}px`,
+            height: `${canvasHeight}px`,
           }}
         >
           {/* Main content wrapper - shifts left and shrinks when editing (desktop only) */}
@@ -834,6 +834,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
             }}
             style={{
               zIndex: 40,
+              width: `${scaledSlideWidth}px`,
               pointerEvents: 'auto',
               willChange: 'transform',
             }}
@@ -864,7 +865,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
               {!isEditing && <div className="flex-1" />}
 
               {/* Edit/Done button on right - always rendered for tour visibility */}
-              {currentSlide && (
+              {currentSlide && !isMobileView && (
                 <button
                   className="px-3 py-1.5 text-xs font-semibold rounded-md border border-[#FF4301]/40 bg-white/80 dark:bg-zinc-900/80 hover:bg-[#FF4301]/10 hover:border-[#FF4301] text-[#FF4301] shadow-sm transition-all duration-200 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm ml-auto"
                   style={{
@@ -883,29 +884,21 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
               )}
             </div>
 
-            {/* Zoom Container - ONLY the slide zooms */}
-            <div
-              ref={zoomContainerRef}
-              style={{
-                transform: `scale(${zoomLevel / 100})`,
-                transformOrigin: 'top center',
-                transition: 'transform 0.1s ease-out',
-              }}
-            >
-              <SlideContainer
-                slides={slides}
-                currentSlideIndex={currentSlideIndex}
-                direction={direction}
-                isEditing={isEditing}
-                selectedComponentId={selectedComponent?.id}
-                onComponentSelect={handleComponentSelect}
-                onComponentDeselect={handleComponentDeselect}
-                updateSlide={updateSlide}
-                zoomLevel={zoomLevel}
-                deckStatus={deckStatus}
-                isNewDeck={isNewDeck}
-              />
-            </div>
+            <SlideContainer
+              slides={slides}
+              currentSlideIndex={currentSlideIndex}
+              direction={direction}
+              isEditing={isEditing}
+              selectedComponentId={selectedComponent?.id}
+              onComponentSelect={handleComponentSelect}
+              onComponentDeselect={handleComponentDeselect}
+              updateSlide={updateSlide}
+              zoomLevel={zoomLevel}
+              slideWidth={slideWidth}
+              slideHeight={slideHeight}
+              deckStatus={deckStatus}
+              isNewDeck={isNewDeck}
+            />
 
             {/* Cursor overlays */}
             {currentSlide && (

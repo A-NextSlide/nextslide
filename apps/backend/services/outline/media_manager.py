@@ -34,7 +34,113 @@ class MediaManager:
             return 'data'
         
         return category_to_type.get(category, 'other')
-    
+
+    def _build_images_payload(self, images: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        payload = []
+        for idx, img in enumerate(images):
+            payload.append({
+                "index": idx,
+                "filename": img.get("filename"),
+                "category": img.get("category"),
+                "interpretation": img.get("interpretation"),
+                "should_use_everywhere": img.get("should_use_everywhere", False),
+            })
+        return payload
+
+    def _build_slides_payload(self, slides: List[SlideContent]) -> List[Dict[str, Any]]:
+        payload = []
+        for slide in slides:
+            content = slide.content
+            payload.append({
+                "id": slide.id,
+                "title": slide.title,
+                "content": content[:200] + "..." if len(content) > 200 else content,
+                "slide_type": slide.slide_type,
+            })
+        return payload
+
+    def _build_assignment_prompt(self, images_data: List[Dict[str, Any]], slides_data: List[Dict[str, Any]]) -> str:
+        return (
+            "Assign images to the slides where they best support the content. "
+            "Leave images unassigned if the match is weak. "
+            "If should_use_everywhere is true, you may assign to multiple slides; otherwise prefer a single best match. "
+            "Return JSON: {\"assignments\": [{\"image_index\": 0, \"slide_ids\": [\"slide-id\"], "
+            "\"confidence\": 0.9, \"reasoning\": \"...\"}]}.\n\n"
+            f"IMAGES:\n{json.dumps(images_data, indent=2)}\n\n"
+            f"SLIDES:\n{json.dumps(slides_data, indent=2)}"
+        )
+
+    def _strip_json_fence(self, text: str) -> str:
+        if "```json" in text:
+            return text.split("```json")[1].split("```")[0]
+        if "```" in text:
+            return text.split("```")[1].split("```")[0]
+        return text
+
+    def _parse_assignments(self, response_text: str) -> Optional[Dict[str, Any]]:
+        cleaned = self._strip_json_fence(response_text).strip()
+        if not cleaned:
+            return None
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError as exc:
+            logger.error("Failed to parse media assignments JSON: %s", exc)
+            return None
+        if isinstance(parsed, list):
+            return {"assignments": parsed}
+        if isinstance(parsed, dict):
+            return parsed
+        logger.error("Unexpected assignments payload type: %s", type(parsed))
+        return None
+
+    def _build_tagged_media(
+        self,
+        img: Dict[str, Any],
+        slide_id: str,
+        assignment: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        preview_url = img.get("url") or img.get("base64", "")
+        interpretation = img.get("interpretation", "")
+        reasoning = assignment.get("reasoning")
+        if reasoning:
+            interpretation = f"{interpretation} | AI Assignment: {reasoning}"
+        return {
+            "id": str(uuid.uuid4()),
+            "filename": img.get("filename"),
+            "type": self._get_media_type(img.get("category", ""), img.get("filename", "")),
+            "previewUrl": preview_url,
+            "url": preview_url,
+            "interpretation": interpretation,
+            "slideId": slide_id,
+            "status": "processed",
+            "metadata": {
+                "componentType": "Image",
+                "confidence": assignment.get("confidence", 0.8),
+                "category": img.get("category"),
+                "ai_assigned": True,
+            },
+        }
+
+    def _apply_assignments(
+        self,
+        assignments: Dict[str, Any],
+        slides: List[SlideContent],
+        images: List[Dict[str, Any]],
+    ) -> None:
+        slide_map = {slide.id: slide for slide in slides}
+        for assignment in assignments.get("assignments", []):
+            image_index = assignment.get("image_index")
+            if not isinstance(image_index, int) or image_index >= len(images):
+                continue
+            img = images[image_index]
+            slide_ids = assignment.get("slide_ids") or []
+            for slide_id in slide_ids:
+                slide = slide_map.get(slide_id)
+                if not slide:
+                    continue
+                tagged_media = self._build_tagged_media(img, slide.id, assignment)
+                slide.taggedMedia.append(tagged_media)
+
     async def assign_media_to_slides_with_ai(
         self,
         slides: List[SlideContent],
@@ -50,41 +156,11 @@ class MediaManager:
         if not valid_images:
             return
         
-        logger.debug(f"[MEDIA ALLOCATION] Starting allocation for {len(valid_images)} images")
-        for i, img in enumerate(valid_images[:2]):  # Log first 2 images
-            logger.debug(f"[MEDIA ALLOCATION] Image: {img['filename']} - has URL: {'yes' if img.get('url') else 'no'}, has base64: {'yes' if img.get('base64') else 'no'}")
-        
-        # Prepare data for AI
-        images_data = []
-        for idx, img in enumerate(valid_images):
-            images_data.append({
-                'index': idx,
-                'filename': img['filename'],
-                'category': img['category'],
-                'interpretation': img['interpretation'],
-                'should_use_everywhere': img.get('should_use_everywhere', False)
-            })
-        
-        slides_data = []
-        for slide in slides:
-            slides_data.append({
-                'id': slide.id,
-                'title': slide.title,
-                'content': slide.content[:200] + "..." if len(slide.content) > 200 else slide.content,
-                'slide_type': slide.slide_type
-            })
-        
-        # Create prompt for AI
-        prompt = (
-            "Assign images to the slides where they best support the content. "
-            "Leave images unassigned if the match is weak. "
-            "If should_use_everywhere is true, you may assign to multiple slides; otherwise prefer a single best match. "
-            "Return JSON: {\"assignments\": [{\"image_index\": 0, \"slide_ids\": [\"slide-id\"], \"confidence\": 0.9, \"reasoning\": \"...\"}]}."
-            "\n\nIMAGES:\n"
-            f"{json.dumps(images_data, indent=2)}\n\n"
-            "SLIDES:\n"
-            f"{json.dumps(slides_data, indent=2)}"
-        )
+        logger.info("[MEDIA] Assigning %s images to %s slides", len(valid_images), len(slides))
+
+        images_data = self._build_images_payload(valid_images)
+        slides_data = self._build_slides_payload(slides)
+        prompt = self._build_assignment_prompt(images_data, slides_data)
 
         try:
             # Get AI client
@@ -103,76 +179,10 @@ class MediaManager:
                 temperature=0.7
             )
             
-            # Parse response
-            response_text = response.strip()
-            # Extract JSON from response
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0]
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0]
-            
-            assignments = json.loads(response_text)
-            
-            # Ensure assignments is a dictionary
-            if isinstance(assignments, list):
-                logger.warning(f"AI returned assignments as list instead of dict: {assignments}")
-                # Try to wrap it in expected format
-                assignments = {'assignments': assignments}
-            elif not isinstance(assignments, dict):
-                logger.error(f"AI returned unexpected type for assignments: {type(assignments)}")
+            assignments = self._parse_assignments(response.strip() if isinstance(response, str) else str(response))
+            if not assignments:
                 return
-            
-            # Apply assignments
-            for assignment in assignments.get('assignments', []):
-                img_idx = assignment['image_index']
-                if img_idx >= len(valid_images):
-                    continue
-                    
-                img = valid_images[img_idx]
-                assigned_slides = []
-                
-                for slide_id in assignment['slide_ids']:
-                    # Find the slide
-                    slide = next((s for s in slides if s.id == slide_id), None)
-                    if slide:
-                        # Combine original interpretation with AI reasoning
-                        combined_interpretation = img['interpretation']
-                        if assignment.get('reasoning'):
-                            combined_interpretation = f"{img['interpretation']} | AI Assignment: {assignment['reasoning']}"
-                        
-                        # Get the base64 content or URL
-                        base64_content = img.get('base64', '')
-                        preview_url = img.get('url', '') or base64_content  # Use URL if available, fallback to base64
-                        
-                        logger.info(f"[MEDIA ALLOCATION] Creating tagged media for {img['filename']}:")
-                        logger.info(f"  - Has base64 content: {'yes' if base64_content else 'no'}")
-                        logger.info(f"  - Has URL: {'yes' if img.get('url') else 'no'}")
-                        logger.info(f"  - Using: {'URL' if img.get('url') else 'base64'}")
-                        
-                        tagged_media = {
-                            'id': str(uuid.uuid4()),
-                            'filename': img['filename'],
-                            'type': self._get_media_type(img['category'], img['filename']),
-                            'previewUrl': preview_url,
-                            'url': preview_url,  # Add url field for frontend compatibility
-                            'interpretation': combined_interpretation,  # AI reasoning goes here
-                            'slideId': slide.id,
-                            'status': 'processed',
-                            'metadata': {
-                                'componentType': 'Image',
-                                'confidence': assignment.get('confidence', 0.8),
-                                'category': img['category'],  # Include original category
-                                'ai_assigned': True  # Flag to indicate AI assignment
-                            }
-                        }
-                        slide.taggedMedia.append(tagged_media)
-                        assigned_slides.append(slide.title)
-                        logger.info(f"[MEDIA ALLOCATION] ✓ Tagged media created for slide: {slide.title}")
-                        logger.info(f"[MEDIA ALLOCATION]   - Slide now has {len(slide.taggedMedia)} tagged media items")
-                        logger.info(f"[MEDIA ALLOCATION]   - Media URL: {preview_url[:100]}...")
-                
-                if assigned_slides:
-                    logger.info(f"AI assigned {img['filename']} to: {', '.join(assigned_slides)}")
+            self._apply_assignments(assignments, slides, valid_images)
             
         except Exception as e:
             logger.error(f"Error in AI-based media assignment: {e}")
@@ -261,93 +271,3 @@ class MediaManager:
             len(processed_files['documents']),
             len(processed_files['style_files'])
         ])
-    
-    def generate_chart_from_data_file(self, data_file: Dict[str, Any], slide_title: str) -> Optional[Dict[str, Any]]:
-        """Generate chart data from an uploaded data file"""
-        try:
-            if data_file.get('format') != 'csv' or 'data' not in data_file:
-                return None
-            
-            csv_data = data_file['data']
-            headers = csv_data.get('headers', [])
-            rows = csv_data.get('rows', [])
-            numeric_cols = csv_data.get('numeric_columns', [])
-            
-            if not headers or not rows or not numeric_cols:
-                return None
-            
-            # Get chart suggestion
-            chart_suggestion = data_file.get('chart_suggestion', {})
-            chart_type = chart_suggestion.get('type', 'bar')
-            
-            # Extract data based on chart type
-            chart_data_points = []
-            
-            if chart_type == 'pie':
-                # For pie charts, use first column as labels and first numeric column as values
-                label_col = 0
-                value_col = numeric_cols[0] if numeric_cols else 1
-                
-                for row in rows[:10]:  # Limit to 10 items for pie charts
-                    if len(row) > max(label_col, value_col):
-                        try:
-                            value = float(row[value_col].replace(',', '').replace('$', '').replace('%', ''))
-                            chart_data_points.append({
-                                'name': row[label_col],
-                                'value': value
-                            })
-                        except:
-                            pass
-            
-            elif chart_type == 'line':
-                # For line charts, look for time column and numeric data
-                x_col = 0  # Assume first column is time/category
-                y_col = numeric_cols[0] if numeric_cols else 1
-                
-                for row in rows:
-                    if len(row) > max(x_col, y_col):
-                        try:
-                            value = float(row[y_col].replace(',', '').replace('$', '').replace('%', ''))
-                            chart_data_points.append({
-                                'x': row[x_col],
-                                'y': value
-                            })
-                        except:
-                            pass
-            
-            else:  # Default to bar chart
-                # Use first column as categories and first numeric column as values
-                label_col = 0
-                value_col = numeric_cols[0] if numeric_cols else 1
-                
-                for row in rows[:15]:  # Limit items for bar charts
-                    if len(row) > max(label_col, value_col):
-                        try:
-                            value = float(row[value_col].replace(',', '').replace('$', '').replace('%', ''))
-                            chart_data_points.append({
-                                'name': row[label_col],
-                                'value': value
-                            })
-                        except:
-                            pass
-            
-            if not chart_data_points:
-                return None
-            
-            # Generate chart title
-            title = chart_suggestion.get('title', '')
-            if not title and headers and numeric_cols:
-                value_header = headers[numeric_cols[0]] if numeric_cols[0] < len(headers) else 'Values'
-                title = f"{value_header} Analysis"
-            
-            return {
-                'chart_type': chart_type,
-                'data': chart_data_points,
-                'title': title,
-                'metadata': {'source': data_file['filename']}
-            }
-            
-        except Exception as e:
-            logger.error(f"Error generating chart from data file: {e}")
-            return None
-    

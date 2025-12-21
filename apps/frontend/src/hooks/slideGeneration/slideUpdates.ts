@@ -27,6 +27,54 @@ const shouldPreserveImage = (existingComp?: ComponentInstance, newComp?: Compone
   return hasRealImage && newIsPlaceholder;
 };
 
+const coerceNumber = (value: any): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const cleaned = value.trim().replace(/px$/i, '');
+    const parsed = Number(cleaned);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+};
+
+const normalizeComponentGeometry = (component: any): any => {
+  const props = component?.props && typeof component.props === 'object' ? { ...component.props } : {};
+
+  const rawPosition = props.position || component?.position;
+  const posX = coerceNumber(rawPosition?.x) ?? coerceNumber(props.x) ?? coerceNumber(component?.x);
+  const posY = coerceNumber(rawPosition?.y) ?? coerceNumber(props.y) ?? coerceNumber(component?.y);
+  if (posX !== undefined || posY !== undefined) {
+    props.position = { x: posX ?? 0, y: posY ?? 0 };
+  }
+
+  const rawSize = props.size || component?.size;
+  let width = coerceNumber(props.width);
+  let height = coerceNumber(props.height);
+  if (width === undefined && rawSize && typeof rawSize === 'object') {
+    width = coerceNumber(rawSize.width);
+  }
+  if (height === undefined && rawSize && typeof rawSize === 'object') {
+    height = coerceNumber(rawSize.height);
+  }
+  if (width === undefined) width = coerceNumber(component?.width);
+  if (height === undefined) height = coerceNumber(component?.height);
+
+  if (width !== undefined) props.width = width;
+  if (height !== undefined) props.height = height;
+  if (!props.size && width !== undefined && height !== undefined) {
+    props.size = { width, height };
+  }
+
+  return {
+    ...component,
+    props,
+    position: component?.position || props.position,
+    size: component?.size || props.size
+  };
+};
+
 export const mergeComponentsPreservingImages = (
   existingComponents: ComponentInstance[],
   newComponents: ComponentInstance[]
@@ -80,7 +128,7 @@ export const applySlideDataToDeck = (options: {
 
   const originalId = updatedSlides[slideIndex]?.id;
   const existingComponents = updatedSlides[slideIndex]?.components || [];
-  const newComponents = slideData.components || [];
+  const newComponents = (slideData.components || []).map(normalizeComponentGeometry);
   const mergedComponents = mergeComponentsPreservingImages(existingComponents, newComponents);
 
   updatedSlides[slideIndex] = {

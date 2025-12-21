@@ -2,17 +2,112 @@ import { useCallback, useState } from 'react';
 import type { OutlineData } from '@/services/outlineAgentService';
 import type { OutlinePreviewData, OutlineSlidePreview } from '@/types/chatBlocks';
 import type { OutlineFlowState } from '../types';
-import { buildOutlinePreview, createOutlineSlideId } from '../utils/outline';
+import {
+  buildOutlinePreview,
+  createOutlineSlideId,
+  extractOutlineSlides,
+  hasSlideTitleOverlap,
+  mergeOutlinePreview,
+} from '../utils/outline';
 
 export const useOutlineState = () => {
   const [outlineFlow, setOutlineFlow] = useState<OutlineFlowState | null>(null);
   const [outlineBlock, setOutlineBlock] = useState<OutlinePreviewData | null>(null);
 
   const initializeOutline = useCallback((outlineData: OutlineData) => {
-    setOutlineFlow(outlineData);
     const preview = buildOutlinePreview(outlineData);
+    const sourceSlides = extractOutlineSlides(outlineData);
+    if (preview?.slides?.length && sourceSlides.length > 0) {
+      const normalizedSlides = sourceSlides.map((slide, index) => {
+        const previewSlide = preview.slides[index];
+        if (!previewSlide) return slide;
+        return {
+          ...slide,
+          title: previewSlide.title,
+          subtitle: previewSlide.subtitle,
+          content: previewSlide.content || slide.content,
+          isContentLoaded: Boolean(previewSlide.content || slide.content),
+          key_points: previewSlide.keyPoints && previewSlide.keyPoints.length > 0
+            ? previewSlide.keyPoints
+            : slide.key_points,
+        };
+      });
+      setOutlineFlow({ ...outlineData, slides: normalizedSlides });
+    } else {
+      const fallbackSlides = preview?.slides?.length
+        ? preview.slides.map((slide) => ({
+          title: slide.title || 'Untitled',
+          subtitle: slide.subtitle,
+          content: slide.content,
+          key_points: slide.keyPoints,
+          assignedVideo: slide.assignedVideo,
+          taggedMedia: slide.taggedMedia,
+        }))
+        : outlineData.slides;
+      setOutlineFlow(fallbackSlides ? { ...outlineData, slides: fallbackSlides } : outlineData);
+    }
     setOutlineBlock(preview);
     return preview;
+  }, []);
+
+  const mergeOutline = useCallback((outlineData: OutlineData, options?: { allowReplace?: boolean }) => {
+    const allowReplace = options?.allowReplace ?? true;
+    setOutlineFlow((prev) => {
+      if (!prev) return outlineData;
+
+      const incomingSlides = extractOutlineSlides(outlineData);
+      const existingSlides = prev.slides || [];
+      const shouldReplace = allowReplace && !hasSlideTitleOverlap(existingSlides, incomingSlides);
+
+      if (shouldReplace) {
+        return outlineData;
+      }
+      const maxSlides = Math.max(existingSlides.length, incomingSlides.length);
+      const mergedSlides = Array.from({ length: maxSlides }).map((_, index) => {
+        const incoming = incomingSlides[index];
+        const current = existingSlides[index];
+        if (!incoming && current) return current;
+        if (incoming && !current) return incoming;
+        if (!incoming || !current) return null;
+
+        const mergedContent = ((incoming as any).content && (incoming as any).content.length > ((current as any).content || '').length)
+          ? (incoming as any).content
+          : (current as any).content;
+        const mergedKeyPoints = ((incoming as any).key_points && (incoming as any).key_points.length > ((current as any).key_points || []).length)
+          ? (incoming as any).key_points
+          : (current as any).key_points;
+        const mergedTitle = (current.title && current.title !== 'Untitled' && current.title !== 'New Slide')
+          ? current.title
+          : incoming.title;
+
+        return {
+          ...current,
+          ...incoming,
+          title: mergedTitle,
+          content: mergedContent,
+          key_points: mergedKeyPoints,
+          assignedVideo: (incoming as any).assignedVideo || (current as any).assignedVideo,
+        };
+      }).filter((slide): slide is NonNullable<typeof slide> => slide !== null);
+
+      return {
+        ...prev,
+        ...outlineData,
+        slides: mergedSlides,
+        scraped_context: outlineData.scraped_context ?? prev.scraped_context,
+        reference_sources: outlineData.reference_sources ?? prev.reference_sources,
+        research_context: outlineData.research_context ?? prev.research_context,
+        research_citations: outlineData.research_citations ?? prev.research_citations,
+        scraped_videos: outlineData.scraped_videos ?? prev.scraped_videos,
+      };
+    });
+
+    setOutlineBlock((prev) => {
+      if (allowReplace && prev && outlineData.slides && !hasSlideTitleOverlap(prev.slides, outlineData.slides)) {
+        return buildOutlinePreview(outlineData);
+      }
+      return mergeOutlinePreview(outlineData, prev, { allowReplace });
+    });
   }, []);
 
   const handleSlideEdit = useCallback((slideId: string, updates: Partial<OutlineSlidePreview>) => {
@@ -53,6 +148,7 @@ export const useOutlineState = () => {
       content: '',
       keyPoints: [],
       isContentLoaded: false,
+      isContentEdited: false,
     };
 
     setOutlineBlock((prev) => (prev ? { ...prev, slides: [...prev.slides, newSlide] } : prev));
@@ -105,6 +201,7 @@ export const useOutlineState = () => {
     setOutlineFlow,
     setOutlineBlock,
     initializeOutline,
+    mergeOutline,
     handleSlideEdit,
     handleSlideAdd,
     handleSlideDelete,

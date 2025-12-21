@@ -289,10 +289,10 @@ class EnhancedFontService:
             'noticia', 'frank ruhl', 'libre baskerville', 'crimson', 
             'spectral', 'cormorant', 'italiana', 'gilda'
         ]):
-            return 'editorial-serif'
+            return 'serif'
         # Playful/Fun fonts
         elif any(kw in name_lower for kw in ['fredoka', 'baloo', 'chewy', 'bubblegum', 'bungee', 'bangers', 'comic', 'righteous', 'titan']):
-            return 'playful'
+            return 'display'
         # Display/Bold fonts
         elif any(kw in name_lower for kw in ['bebas', 'anton', 'oswald', 'impact', 'black', 'bold', 'display']):
             return 'display'
@@ -302,6 +302,9 @@ class EnhancedFontService:
         # Mono/Code
         elif any(kw in name_lower for kw in ['mono', 'code', 'jetbrains', 'fira', 'consolas']):
             return 'mono'
+        # Slab
+        elif 'slab' in name_lower:
+            return 'slab'
         # Serif (general)
         elif any(kw in name_lower for kw in ['serif', 'times', 'garamond', 'playfair', 'merriweather']):
             return 'serif'
@@ -316,21 +319,35 @@ class EnhancedFontService:
         tags = metadata.get('tags', [])
         
         # Convert tags to lowercase for comparison
-        tags_lower = [tag.lower() for tag in tags]
-        
+        tags_lower = [str(tag).lower() for tag in tags if isinstance(tag, str)]
+        name_lower = str(font_data.get('name', font_id)).lower()
+
+        def tag_has(keywords: List[str]) -> bool:
+            return any(any(kw in tag for kw in keywords) for tag in tags_lower)
+
+        def name_has(keywords: List[str]) -> bool:
+            return any(kw in name_lower for kw in keywords)
+
+        mono_keywords = ['mono', 'monospace', 'code']
+        script_keywords = ['script', 'handwritten', 'handwriting', 'hand lettering', 'hand-lettering', 'calligraphy', 'brush', 'signature']
+        slab_keywords = ['slab']
+        serif_keywords = ['serif', 'soft serif', 'display serif', 'serifs']
+        sans_keywords = ['sans', 'sans-serif', 'sanf serif', 'grotesk', 'geometric', 'neo-grotesk']
+        display_keywords = ['display', 'headline', 'poster', 'decorative', 'ornate', 'grunge', 'blackletter', 'gothic', 'pixel', '8bit', '8-bit', 'retro', 'vintage', 'experimental', 'stencil', 'outlined', 'outline', 'shadow', '3d']
+
         # Categorize based on tags
-        if any('serif' in tag and 'sans' not in tag for tag in tags_lower):
-            if any(tag in tags_lower for tag in ['display', 'headline', 'poster']):
-                return 'display-serif'
-            return 'serif'
-        elif any('sans' in tag or 'sans-serif' in tag for tag in tags_lower):
-            return 'sans'
-        elif any('script' in tag or 'handwritten' in tag or 'brush' in tag for tag in tags_lower):
-            return 'script'
-        elif any('display' in tag or 'headline' in tag for tag in tags_lower):
-            return 'display'
-        elif any('mono' in tag or 'code' in tag for tag in tags_lower):
+        if tag_has(mono_keywords) or name_has(mono_keywords):
             return 'mono'
+        if tag_has(script_keywords) or name_has(script_keywords):
+            return 'script'
+        if tag_has(slab_keywords) or name_has(slab_keywords):
+            return 'slab'
+        if (tag_has(serif_keywords) or name_has(serif_keywords)) and not (tag_has(sans_keywords) or name_has(sans_keywords)):
+            return 'serif'
+        if tag_has(sans_keywords) or name_has(sans_keywords):
+            return 'sans'
+        if tag_has(display_keywords) or name_has(display_keywords):
+            return 'display'
         
         # Default category
         return 'display'

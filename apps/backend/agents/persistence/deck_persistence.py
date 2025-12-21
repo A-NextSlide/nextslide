@@ -114,7 +114,7 @@ class DeckPersistence:
         try:
             # Update cache first - this is the source of truth during composition
             self._deck_cache[deck_uuid] = copy.deepcopy(deck_data)
-            
+
             # Check if we should throttle this save
             if (not force_immediate) and self.should_throttle_save(deck_uuid):
                 logger = logging.getLogger(__name__)

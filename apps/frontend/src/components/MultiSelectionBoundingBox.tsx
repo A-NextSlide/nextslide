@@ -264,36 +264,48 @@ const MultiSelectionBoundingBox: React.FC<MultiSelectionBoundingBoxProps> = ({
     >
       {/* Corner handles for visual feedback - positioned with transform to ensure they stay at corners */}
       <div 
-        className="absolute w-2 h-2 bg-[#FF007B] rounded-full pointer-events-none" 
+        className="absolute w-2 h-2 bg-[#FF007B] rounded-full" 
         style={{ 
           top: '-4px', 
           left: '-4px',
-          transform: 'translate(0, 0)' 
+          transform: 'translate(0, 0)',
+          pointerEvents: 'auto',
+          cursor: 'move'
         }} 
+        onMouseDown={handleDragStart}
       />
       <div 
-        className="absolute w-2 h-2 bg-[#FF007B] rounded-full pointer-events-none" 
+        className="absolute w-2 h-2 bg-[#FF007B] rounded-full" 
         style={{ 
           top: '-4px', 
           right: '-4px',
-          transform: 'translate(0, 0)' 
+          transform: 'translate(0, 0)',
+          pointerEvents: 'auto',
+          cursor: 'move'
         }} 
+        onMouseDown={handleDragStart}
       />
       <div 
-        className="absolute w-2 h-2 bg-[#FF007B] rounded-full pointer-events-none" 
+        className="absolute w-2 h-2 bg-[#FF007B] rounded-full" 
         style={{ 
           bottom: '-4px', 
           left: '-4px',
-          transform: 'translate(0, 0)' 
+          transform: 'translate(0, 0)',
+          pointerEvents: 'auto',
+          cursor: 'move'
         }} 
+        onMouseDown={handleDragStart}
       />
       <div 
-        className="absolute w-2 h-2 bg-[#FF007B] rounded-full pointer-events-none" 
+        className="absolute w-2 h-2 bg-[#FF007B] rounded-full" 
         style={{ 
           bottom: '-4px', 
           right: '-4px',
-          transform: 'translate(0, 0)' 
+          transform: 'translate(0, 0)',
+          pointerEvents: 'auto',
+          cursor: 'move'
         }} 
+        onMouseDown={handleDragStart}
       />
       
       {/* Selection count badge */}

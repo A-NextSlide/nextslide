@@ -372,7 +372,7 @@ export function useComponentDrag({
       }
       
       // Handle multi-selection drag with batched updates (throttled)
-      if ((isInMultiSelection || isDraggingGroup) && slideId) {
+      if (isInMultiSelection && slideId) {
         const nowMulti = Date.now();
         if (nowMulti - lastMultiUpdateRef.current > 50) {
           const updates: Array<{ id: string; position: { x: number; y: number } }> = [];

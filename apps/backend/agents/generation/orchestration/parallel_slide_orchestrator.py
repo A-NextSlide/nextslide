@@ -35,9 +35,12 @@ class ParallelSlideOrchestrator:
     ) -> AsyncIterator[Dict[str, Any]]:
         """Generate slides in parallel with proper orchestration."""
         
+        outline_slides = deck_state.deck_outline.slides if hasattr(deck_state.deck_outline, 'slides') else []
+        total_slides = len(outline_slides) or len(deck_state.slides)
+
         # Debug logging for taggedMedia in deck_outline
-        logger.info(f"Starting parallel generation for {len(deck_state.deck_outline.slides)} slides")
-        for i, slide in enumerate(deck_state.deck_outline.slides):
+        logger.info(f"Starting parallel generation for {len(outline_slides)} slides")
+        for i, slide in enumerate(outline_slides):
             tm_count = 0
             if hasattr(slide, 'taggedMedia') and slide.taggedMedia:
                 tm_count = len(slide.taggedMedia)
@@ -52,7 +55,7 @@ class ParallelSlideOrchestrator:
         semaphore = asyncio.Semaphore(options.max_parallel_slides)
         completed_slides = 0
         slides_in_progress = set()
-        total_slides = len(deck_state.deck_outline.slides)
+        total_slides = len(outline_slides) or len(deck_state.slides)
         
         # Create a queue for immediate event streaming
         event_queue = asyncio.Queue()
@@ -69,8 +72,8 @@ class ParallelSlideOrchestrator:
         if ENABLE_PROMPT_CACHE_PREWARM:
             try:
                 # Use first slide to build prompts but issue a tiny request to write cached prefix
-                if deck_state.deck_outline.slides:
-                    first_slide = deck_state.deck_outline.slides[0]
+                if outline_slides:
+                    first_slide = outline_slides[0]
                     theme_to_pass = deck_state.theme or ThemeSpec.from_dict({})
                     context = build_slide_context(
                         deck_outline=deck_state.deck_outline,
@@ -83,21 +86,19 @@ class ParallelSlideOrchestrator:
                         async_images=options.async_images,
                         available_images=[],
                         user_id=getattr(deck_state, "user_id", None),
-                        visual_density=self._infer_visual_density(deck_state, first_slide),
+                        visual_density=self._resolve_visual_density(deck_state, first_slide),
                     )
                     # Build prompts using the same code paths
                     try:
-                        from agents.generation.component_hints import infer_component_hints
-                        component_hints = infer_component_hints(context)
-                        system_prompt, user_prompt = await self.slide_generator._build_prompts(context, component_hints)
+                        system_prompt, user_prompt = await self.slide_generator._build_prompts(context)
                     except Exception:
                         # Fallback: build minimal prompts synchronously
                         system_prompt = self.slide_generator.prompt_builder.build_system_prompt()
                         try:
-                            static_block, slide_block = self.slide_generator.prompt_builder.build_user_prompt_blocks(context, None)
+                            static_block, slide_block = self.slide_generator.prompt_builder.build_user_prompt_blocks(context)
                             user_prompt = f"{static_block}\n<<<CACHE_BREAKPOINT>>>\n{slide_block}"
                         except Exception:
-                            user_prompt = self.slide_generator.prompt_builder.build_user_prompt(context, None)
+                            user_prompt = self.slide_generator.prompt_builder.build_user_prompt(context)
                     # Issue tiny Anthropic call via clients.invoke with low max_tokens to write cache
                     from agents.ai.clients import get_client, invoke
                     # Use the same model as slide generation
@@ -131,8 +132,8 @@ class ParallelSlideOrchestrator:
         
         # Create ALL tasks at once for true parallelism - semaphore controls concurrency
         tasks = []
-        logger.debug(f"Creating {len(deck_state.deck_outline.slides)} slide tasks in parallel")
-        for i, slide_outline in enumerate(deck_state.deck_outline.slides):
+        logger.debug(f"Creating {len(outline_slides)} slide tasks in parallel")
+        for i, slide_outline in enumerate(outline_slides):
             logger.debug(f"Creating task for slide {i+1}: {slide_outline.title}")
             task = asyncio.create_task(
                 self._generate_slide_with_streaming(
@@ -159,6 +160,7 @@ class ParallelSlideOrchestrator:
                         event['progress'] = progress
                         event['slides_in_progress'] = len(slides_in_progress)
                         event['slides_completed'] = completed_slides
+                        event['total_slides'] = total_slides
                         logger.debug(f"slide_started: slide {event.get('slide_index')+1}, in_progress={len(slides_in_progress)}, completed={completed_slides}")
                         if len(slides_in_progress) > 1:
                             logger.debug(f"{len(slides_in_progress)} slides generating in parallel")
@@ -312,9 +314,15 @@ class ParallelSlideOrchestrator:
         
         logger.debug(f"Slide {slide_index + 1} waiting for semaphore...")
         async with semaphore:
-            logger.debug(f"Acquired semaphore for slide {slide_index + 1}/{len(deck_state.deck_outline.slides)}")
+            logger.debug(f"Acquired semaphore for slide {slide_index + 1}/{len(deck_state.deck_outline.slides) if hasattr(deck_state.deck_outline, 'slides') else len(deck_state.slides)}")
             slides_in_progress.add(slide_index)
             logger.debug(f"Slides in progress: {sorted(list(slides_in_progress))}")
+            total_slides = len(deck_state.deck_outline.slides) if hasattr(deck_state.deck_outline, 'slides') else len(deck_state.slides)
+            safe_total_slides = max(1, total_slides)
+
+            def mark_slide_error():
+                if 0 <= slide_index < len(deck_state.slides):
+                    deck_state.slides[slide_index]['status'] = SlideStatus.ERROR.value
             
             try:
                 # Log what we're working with
@@ -396,7 +404,8 @@ class ParallelSlideOrchestrator:
                     async_images=options.async_images,
                     available_images=available_images,
                     user_id=user_id,
-                    visual_density=self._infer_visual_density(deck_state, slide_outline),
+                    visual_density=self._resolve_visual_density(deck_state, slide_outline),
+                    conversation_history=deck_state.conversation_history,
                 )
                 
                 logger.debug(f"[SLIDE GENERATION] Created context with {len(context.tagged_media)} tagged media items")
@@ -416,9 +425,9 @@ class ParallelSlideOrchestrator:
                 deck_state.status = {
                     'state': 'generating',
                     'currentSlide': slide_index,
-                    'totalSlides': len(deck_state.slides),
-                    'message': f'Generating slide {slide_index + 1} of {len(deck_state.slides)}',
-                    'progress': int((slide_index / len(deck_state.slides)) * 40 + 55),  # 55-95% range
+                    'totalSlides': total_slides,
+                    'message': f'Generating slide {slide_index + 1} of {total_slides}',
+                    'progress': int((slide_index / safe_total_slides) * 40 + 55),  # 55-95% range
                     'phase': 'slide_generation'
                 }
                 
@@ -469,15 +478,15 @@ class ParallelSlideOrchestrator:
                     deck_state.status = {
                         'state': 'generating',
                         'currentSlide': completed_count,
-                        'totalSlides': len(deck_state.slides),
-                        'message': f'Generated {completed_count} of {len(deck_state.slides)} slides',
-                        'progress': int((completed_count / len(deck_state.slides)) * 40 + 55),  # 55-95% range
+                        'totalSlides': total_slides,
+                        'message': f'Generated {completed_count} of {total_slides} slides',
+                        'progress': int((completed_count / safe_total_slides) * 40 + 55),  # 55-95% range
                         'phase': 'slide_generation'
                     }
                     
                     # Save the updated deck with new status
                     await self.persistence.save_deck(deck_state.to_dict())
-                    logger.debug(f"  Updated deck status: {completed_count}/{len(deck_state.slides)} slides")
+                    logger.debug(f"  Updated deck status: {completed_count}/{total_slides} slides")
                     
                     # Emit slide saved event
                     await self.event_bus.emit(Events.SLIDE_SAVED, {
@@ -491,7 +500,7 @@ class ParallelSlideOrchestrator:
             except asyncio.TimeoutError:
                 logger.error(f"❌ Slide {slide_index + 1} timed out after 300 seconds")
                 # Mark slide as errored but continue processing other slides
-                deck_state.slides[slide_index]['status'] = SlideStatus.ERROR.value
+                mark_slide_error()
                 await event_queue.put({
                     'type': 'slide_error',
                     'slide_index': slide_index,
@@ -502,7 +511,7 @@ class ParallelSlideOrchestrator:
                 
             except asyncio.CancelledError:
                 logger.warning(f"⚠️ Slide {slide_index + 1} generation was cancelled")
-                deck_state.slides[slide_index]['status'] = SlideStatus.ERROR.value
+                mark_slide_error()
                 await event_queue.put({
                     'type': 'slide_error',
                     'slide_index': slide_index,
@@ -524,7 +533,7 @@ class ParallelSlideOrchestrator:
                     logger.error(f"Error generating slide {slide_index + 1}: {error_message}")
                 
                 # Mark slide as errored
-                deck_state.slides[slide_index]['status'] = SlideStatus.ERROR.value
+                mark_slide_error()
                 
                 await event_queue.put({
                     'type': 'slide_error',
@@ -539,8 +548,8 @@ class ParallelSlideOrchestrator:
                 logger.debug(f"  Slide {slide_index + 1} releasing semaphore")
                 slides_in_progress.discard(slide_index)
 
-    def _infer_visual_density(self, deck_state: DeckState, slide_outline: Any) -> str:
-        """Resolve visual density from explicit inputs (no keyword heuristics)."""
+    def _resolve_visual_density(self, deck_state: DeckState, slide_outline: Any) -> Optional[str]:
+        """Resolve visual density from explicit inputs only."""
         try:
             for attr in ("visual_density", "visualDensity"):
                 value = getattr(slide_outline, attr, None)
@@ -556,14 +565,9 @@ class ParallelSlideOrchestrator:
                         value = getattr(style_prefs, key, None)
                     if isinstance(value, str) and value.strip():
                         return value.strip().lower()
-
-            has_extracted = bool(getattr(slide_outline, "extractedData", None))
-            has_manual = bool(getattr(slide_outline, "manualCharts", None))
-            if has_extracted or has_manual:
-                return "data-heavy"
         except Exception:
             pass
-        return "moderate"
+        return None
     
     async def _collect_slide_updates(
         self,
@@ -589,8 +593,9 @@ class ParallelSlideOrchestrator:
         # Goes up to 95 (before finalization)
         slide_progress_range = 40  # 95 - 55
         
-        # Give partial credit for in-progress slides
-        effective_completed = completed + (in_progress * 0.5)
+        # Give partial credit for in-progress slides to avoid big jumps
+        in_progress_weight = 0.1
+        effective_completed = completed + (in_progress * in_progress_weight)
         progress_ratio = effective_completed / total
         
         return int(55 + (progress_ratio * slide_progress_range)) 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { ExtendedChatMessageProps } from '@/components/chat';
 import { getWelcomeMessage } from '@/components/chat';
@@ -16,14 +16,34 @@ export function useChatSystemMessages({
   setIsGenerating,
   setCurrentPhase,
 }: UseChatSystemMessagesOptions) {
+  // Track if completion was already handled to prevent duplicate processing
+  const completionHandledRef = useRef(false);
+
   const handleCompletion = useCallback((metadata?: Record<string, any>) => {
+    // Prevent duplicate completion handling from multiple events
+    if (completionHandledRef.current) {
+      // Only update if there's actually a progress message to remove
+      setMessages(prev => {
+        const hasProgress = prev.some(msg => msg.id === 'generation-progress');
+        if (!hasProgress) return prev; // Return same reference to avoid re-render
+        return prev.filter(msg => msg.id !== 'generation-progress');
+      });
+      return;
+    }
+    completionHandledRef.current = true;
+
     setIsGenerating(false);
     setMessages(prev => {
-      const hasCompletion = prev.some(m =>
+      // Always remove the progress message first
+      let updated = prev.filter(msg => msg.id !== 'generation-progress');
+
+      const hasCompletion = updated.some(m =>
         m.metadata?.type === 'generation_complete' ||
         (typeof m.message === 'string' && m.message.includes('Your presentation is ready!'))
       );
-      if (hasCompletion) return prev;
+
+      // If already have completion message, just return without progress message
+      if (hasCompletion) return updated;
 
       const completionMessage: ExtendedChatMessageProps = {
         id: 'generation-complete',
@@ -34,13 +54,7 @@ export function useChatSystemMessages({
         metadata: { ...metadata, type: 'generation_complete', stage: 'generation_complete', progress: 100 }
       } as any;
 
-      const progressIdx = prev.findIndex(msg => msg.id === 'generation-progress');
-      if (progressIdx !== -1) {
-        const updated = [...prev];
-        updated[progressIdx] = completionMessage;
-        return updated;
-      }
-      return [...prev, completionMessage];
+      return [...updated, completionMessage];
     });
     setCurrentPhase('generation_complete');
   }, [setCurrentPhase, setIsGenerating, setMessages]);
@@ -131,34 +145,10 @@ export function useChatSystemMessages({
       const { deckId } = event.detail || {};
       console.log('[ChatPanel] Received deck_finalized event:', deckId);
 
-      setIsGenerating(false);
+      // Use the same completion handler to prevent duplicate processing
+      handleCompletion({ deckId });
 
-      setMessages(prev => {
-        const hasCompletion = prev.some(m =>
-          m.metadata?.type === 'generation_complete' ||
-          (typeof m.message === 'string' && m.message.includes('Your presentation is ready!'))
-        );
-        if (hasCompletion) return prev;
-
-        const completionMessage: ExtendedChatMessageProps = {
-          id: 'generation-complete',
-          type: 'ai',
-          message: 'Your presentation is ready!',
-          timestamp: new Date(),
-          feedback: null,
-          metadata: { type: 'generation_complete', stage: 'generation_complete', progress: 100, deckId }
-        } as any;
-
-        const progressIdx = prev.findIndex(msg => msg.id === 'generation-progress');
-        if (progressIdx !== -1) {
-          const updated = [...prev];
-          updated[progressIdx] = completionMessage;
-          return updated;
-        }
-        return [...prev, completionMessage];
-      });
-      setCurrentPhase('generation_complete');
-
+      // Add welcome message after a delay (only if not already present)
       setTimeout(() => {
         setMessages(prev => {
           const hasWelcome = prev.some(m => m.id === 'post-generation-welcome');
@@ -184,5 +174,5 @@ export function useChatSystemMessages({
       window.removeEventListener('add_system_message', handleAddSystemMessage as EventListener);
       window.removeEventListener('deck_finalized', handleDeckFinalized as EventListener);
     };
-  }, [processSystemMessage, setCurrentPhase, setIsGenerating, setMessages]);
+  }, [handleCompletion, processSystemMessage, setCurrentPhase, setIsGenerating, setMessages]);
 }

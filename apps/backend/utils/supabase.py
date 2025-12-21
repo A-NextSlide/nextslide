@@ -146,7 +146,11 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
                 # Keep upload logging lightweight by summarizing instead of per-component logging
                 custom_components = 0
                 total_components = 0
+                non_dict_slides = 0
                 for slide in (deck_data.get("slides") or []):
+                    if not isinstance(slide, dict):
+                        non_dict_slides += 1
+                        continue
                     comps = slide.get("components") or []
                     total_components += len(comps)
                     custom_components += sum(1 for c in comps if c.get("type") == "CustomComponent")
@@ -156,6 +160,8 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
                     total_components,
                     custom_components,
                 )
+                if non_dict_slides:
+                    logger.warning("[UPLOAD_DECK] Skipped %s non-dict slide entries during summary", non_dict_slides)
         if deck_data.get("size") is not None:
             deck_record["size"] = deck_data.get("size")
         if deck_data.get("status") is not None:
@@ -245,10 +251,12 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
         )
         if verify_response.data and verify_response.data.get("slides"):
             # If any slide unexpectedly has zero components after upload, surface it.
-            empty_slides = [
-                i for i, slide in enumerate(verify_response.data.get("slides", []) or [])
-                if not (slide.get("components") or [])
-            ]
+            empty_slides = []
+            for i, slide in enumerate(verify_response.data.get("slides", []) or []):
+                if not isinstance(slide, dict):
+                    continue
+                if not (slide.get("components") or []):
+                    empty_slides.append(i)
             if empty_slides:
                 logger.warning("[UPLOAD_DECK] Verification: %s slides saved with 0 components: %s", len(empty_slides), empty_slides[:20])
             else:
@@ -350,6 +358,9 @@ def get_deck(deck_uuid: str) -> Optional[Dict[str, Any]]:
         # Check visual fixes status
         visual_fixed_count = 0
         for i, slide in enumerate(deck.get('slides', [])[:5]):  # First 5 slides
+            if not isinstance(slide, dict):
+                logger.debug("  Slide %s: non-dict entry (%s)", i + 1, type(slide).__name__)
+                continue
             has_fixes = slide.get('_visual_fixes_saved', False)
             component_count = len(slide.get('components', []))
             if has_fixes:

@@ -1,5 +1,4 @@
 import React, { useRef, useEffect, memo, useState } from 'react';
-import Slide from '../../Slide';
 import { SlideData } from '@/types/SlideTypes';
 import { ComponentInstance } from '@/types/components';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
@@ -8,9 +7,10 @@ import { DeckStatus } from '@/types/DeckTypes';
 import { useMultiSelection } from '@/hooks/useMultiSelection';
 import SelectionRectangle from '@/components/SelectionRectangle';
 import { useEditorStore } from '@/stores/editorStore';
+import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 import GroupContextMenu from '@/components/GroupContextMenu';
 import SimpleSlideDisplay from './SimpleSlideDisplay';
-import SlideGeneratingUI from '../../common/SlideGeneratingUI';
+import SlideGeneratingUI, { LoaderBrandTheme } from '../../common/SlideGeneratingUI';
 import { useTheme } from 'next-themes';
 import { useDeckStore } from '@/stores/deckStore';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
@@ -25,7 +25,8 @@ interface SlideDisplayProps {
   onComponentSelect: (component: ComponentInstance) => void;
   onComponentDeselect: () => void;
   updateSlide: (id: string, data: Partial<SlideData>) => void;
-  zoomLevel?: number;
+  slideWidth: number;
+  slideHeight: number;
   deckStatus?: DeckStatus;
   isNewDeck?: boolean;
 }
@@ -40,7 +41,8 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   onComponentSelect,
   onComponentDeselect,
   updateSlide,
-  zoomLevel = 100,
+  slideWidth,
+  slideHeight,
   deckStatus,
   isNewDeck
 }) => {
@@ -71,8 +73,84 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   const slidesInProgress = progressState?.slides?.filter(s => s.status === 'generating').length || 0;
   const elapsedTime = progressState?.elapsedTime || 0;
 
+  const deckData = useDeckStore(state => state.deckData);
   // Get deck's lastModified to force re-render on restore
   const lastModified = useDeckStore(state => state.deckData.lastModified);
+  
+  const loaderBrand = React.useMemo<LoaderBrandTheme>(() => {
+    const stylePrefs = (deckData?.outline?.stylePreferences || (deckData as any)?.data?.outline?.stylePreferences || {}) as any;
+    const styleColors = stylePrefs?.colors || {};
+    const deckTheme = (deckData as any)?.theme || deckData?.data?.theme || (deckData as any)?.workspaceTheme || (deckData as any)?.data?.workspaceTheme;
+    const palette = deckTheme?.color_palette || deckTheme?.palette || deckTheme?.colorPalette || deckTheme?.colors || {};
+    const paletteMeta = palette?.metadata || deckTheme?.metadata || {};
+
+    const pickString = (...values: Array<any>) => {
+      for (const value of values) {
+        if (typeof value === 'string' && value.trim()) {
+          return value.trim();
+        }
+      }
+      return undefined;
+    };
+
+    const accent = pickString(
+      styleColors?.accent1,
+      palette?.accent_1,
+      palette?.accent1,
+      palette?.accent,
+      Array.isArray(palette?.colors) ? String(palette.colors[0]) : undefined
+    );
+    const accentAlt = pickString(
+      styleColors?.accent2,
+      palette?.accent_2,
+      palette?.accent2,
+      Array.isArray(palette?.colors) ? String(palette.colors[1]) : undefined,
+      accent
+    );
+    const background = pickString(
+      styleColors?.background,
+      palette?.primary_background,
+      Array.isArray(palette?.backgrounds) ? String(palette.backgrounds[0]) : undefined
+    );
+    const text = pickString(
+      styleColors?.text,
+      palette?.primary_text,
+      palette?.text_colors?.primary
+    );
+    const logoUrl = pickString(
+      theme === 'dark' ? stylePrefs?.logoUrlDark : undefined,
+      stylePrefs?.logoUrl,
+      deckTheme?.brandInfo?.logoUrl,
+      paletteMeta?.logo_url,
+      deckTheme?.logoUrl
+    );
+    const name = pickString(
+      stylePrefs?.brandName,
+      deckTheme?.brandInfo?.brandName,
+      paletteMeta?.brand_name,
+      deckData?.name
+    );
+
+    return {
+      logoUrl,
+      name,
+      accent,
+      accentAlt,
+      background,
+      text
+    };
+  }, [deckData?.outline, deckData?.data, deckData?.name, theme]);
+
+  const outlineTitles = React.useMemo(() => {
+    const outlineSlides = (deckData?.outline?.slides || (deckData as any)?.data?.outline?.slides) as any[] | undefined;
+    const fromOutline = Array.isArray(outlineSlides)
+      ? outlineSlides.map(slide => slide?.title).filter(Boolean)
+      : [];
+    if (fromOutline.length > 0) {
+      return fromOutline;
+    }
+    return (deckData?.slides || []).map(slide => slide?.title).filter(Boolean);
+  }, [deckData?.outline, deckData?.data, deckData?.slides]);
 
   // Get activeComponents from context for edit mode
   const { activeComponents } = useActiveSlide();
@@ -188,35 +266,17 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
     return undefined as string | undefined;
   }, [isEditing, activeComponents, currentSlide?.components]);
 
-  // Update window dimensions on resize (use window, not container, to avoid feedback loop)
-  const [windowDimensions, setWindowDimensions] = useState({
-    width: typeof window !== 'undefined' ? window.innerWidth : 1200,
-    height: typeof window !== 'undefined' ? window.innerHeight : 800
-  });
+  const [stableBackground, setStableBackground] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    const updateDimensions = () => {
-      setWindowDimensions({ width: window.innerWidth, height: window.innerHeight });
-    };
+    if (fallbackBackground) {
+      setStableBackground(fallbackBackground);
+    }
+  }, [fallbackBackground]);
 
-    // Initial measurement
-    updateDimensions();
-
-    // Add resize listener with debounce for performance
-    let timeoutId: NodeJS.Timeout;
-    const debouncedUpdate = () => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(updateDimensions, 100);
-    };
-
-    window.addEventListener('resize', debouncedUpdate);
-    window.addEventListener('orientationchange', updateDimensions);
-    return () => {
-      clearTimeout(timeoutId);
-      window.removeEventListener('resize', debouncedUpdate);
-      window.removeEventListener('orientationchange', updateDimensions);
-    };
-  }, []);
+  const resolvedBackground = forceWhite ? '#ffffff' : (fallbackBackground || stableBackground || '#ffffff');
+  const slideWidthComputed = slideWidth || DEFAULT_SLIDE_WIDTH;
+  const slideHeightComputed = slideHeight || slideWidthComputed * (DEFAULT_SLIDE_HEIGHT / DEFAULT_SLIDE_WIDTH);
   
   // Handle background click (or empty space)
   const handleBackgroundClick = (e: React.MouseEvent) => {
@@ -242,6 +302,20 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
       if (!isBackgroundEl) return;
       // If it is a background element, fall through to select background below
     }
+
+    // Exit text editing when clicking on empty space/background
+    const settings = useEditorSettingsStore.getState();
+    if (settings.isTextEditing) {
+      const activeEditor: any = useEditorStore.getState().activeTiptapEditor;
+      try {
+        activeEditor?.commands?.blur?.();
+      } catch {}
+      try {
+        (activeEditor?.view?.dom as HTMLElement | undefined)?.blur?.();
+      } catch {}
+      settings.setTextEditing(false);
+    }
+    useEditorStore.getState().setEditingGroupId(null);
 
     // Find and select the background component for this slide
     const currentSlideLocal = slides[currentSlideIndex];
@@ -289,47 +363,6 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
     }
   };
   
-  // Calculate responsive slide width based on window dimensions
-  // Uses window size directly to avoid feedback loops with container sizing
-  const slideWidth = React.useMemo(() => {
-    const screenWidth = windowDimensions.width;
-    const screenHeight = windowDimensions.height;
-
-    // Calculate aspect ratio
-    const aspectRatio = DEFAULT_SLIDE_WIDTH / DEFAULT_SLIDE_HEIGHT;
-
-    // Reserve space for UI elements (header, toolbar, padding)
-    const verticalPadding = 200; // Space for header, controls, margins
-    const horizontalPadding = 100; // Side margins
-
-    // Available space
-    const availableWidth = screenWidth - horizontalPadding;
-    const availableHeight = screenHeight - verticalPadding;
-
-    // Calculate width constrained by height (maintain aspect ratio)
-    const heightConstrainedWidth = availableHeight * aspectRatio;
-
-    // Use the smaller of available width or height-constrained width
-    const optimalWidth = Math.min(availableWidth, heightConstrainedWidth);
-
-    // Responsive min/max based on screen size
-    // Smaller screens: min 500px, larger screens: min 650px
-    const minWidth = screenWidth < 768 ? 500 : 650;
-
-    // Max width scales with screen size:
-    // - Small screens (<1024px): max 750px
-    // - Medium screens (1024-1440px): max 880px
-    // - Large screens (1440-1920px): max 980px
-    // - Extra large screens (>1920px): max 1100px
-    const maxWidth = screenWidth < 1024 ? 750
-                   : screenWidth < 1440 ? 880
-                   : screenWidth < 1920 ? 980
-                   : 1100;
-
-    return Math.max(minWidth, Math.min(maxWidth, optimalWidth));
-  }, [windowDimensions.width, windowDimensions.height]);
-
-  const slideHeight = slideWidth * (DEFAULT_SLIDE_HEIGHT / DEFAULT_SLIDE_WIDTH);
   
   // Early return if no slides
   if (slides.length === 0) {
@@ -343,7 +376,7 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
         >
           <div 
             className="aspect-[16/9] relative rounded-sm overflow-hidden flex-shrink-0 border border-border flex items-center justify-center"
-            style={{ width: `${slideWidth}px`, height: `${slideHeight}px`, background: '#ffffff' }}
+            style={{ width: `${slideWidthComputed}px`, height: `${slideHeightComputed}px`, background: '#ffffff' }}
           >
             {!forceWhite && (
               <span className="text-xs text-muted-foreground">Your presentation is ready</span>
@@ -379,19 +412,20 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
             id="slide-display-container"
             className={`slide-container relative rounded-sm overflow-hidden flex-shrink-0 border border-border ${isEditing ? 'editing-mode' : ''}`}
             data-slide-id={placeholderSlides[0]?.id || 'unknown'}
-            data-slide-width={slideWidth}
-            data-slide-height={slideHeight}
+            data-slide-width={slideWidthComputed}
+            data-slide-height={slideHeightComputed}
             data-native-width={DEFAULT_SLIDE_WIDTH}
             data-native-height={DEFAULT_SLIDE_HEIGHT}
             style={{
-              width: `${slideWidth}px`,
-              height: `${slideHeight}px`,
+              width: `${slideWidthComputed}px`,
+              height: `${slideHeightComputed}px`,
               aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`,
               position: 'relative',
               transition: 'none',
               margin: '0 auto',
               zIndex: isEditing ? 1 : 10,
-              ...(forceWhite ? { background: '#ffffff' } : {})
+              // Use transparent bg when showing generating UI - SlideGeneratingUI has its own background
+              background: 'transparent'
             }}
             onClick={handleBackgroundClick}
             onDoubleClick={handleDoubleClick}
@@ -406,6 +440,8 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
                   slidesCompleted={slidesCompleted}
                   slidesInProgress={slidesInProgress}
                   elapsedTime={elapsedTime}
+                  brand={loaderBrand}
+                  outlineTitles={outlineTitles}
                 />
               </div>
             )}
@@ -413,37 +449,38 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
         </div>
       );
     }
-    
+
     // For new decks that haven't started generating yet, show a generating placeholder
     if (isNewDeck) {
       return (
-        <div 
+        <div
           ref={containerRef}
-          className="flex justify-center items-center w-full h-full relative" 
-          style={{ 
+          className="flex justify-center items-center w-full h-full relative"
+          style={{
             overflow: 'hidden',
             position: 'relative'
           }}
         >
           <div id="snap-guide-portal" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
-          
-          <div 
+
+          <div
             id="slide-display-container"
             className={`slide-container relative rounded-sm overflow-hidden flex-shrink-0 border border-border ${isEditing ? 'editing-mode' : ''}`}
             data-slide-id="placeholder-0"
-            data-slide-width={slideWidth}
-            data-slide-height={slideHeight}
+            data-slide-width={slideWidthComputed}
+            data-slide-height={slideHeightComputed}
             data-native-width={DEFAULT_SLIDE_WIDTH}
             data-native-height={DEFAULT_SLIDE_HEIGHT}
             style={{
-              width: `${slideWidth}px`,
-              height: `${slideHeight}px`,
+              width: `${slideWidthComputed}px`,
+              height: `${slideHeightComputed}px`,
               aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`,
               position: 'relative',
               transition: 'none',
               margin: '0 auto',
               zIndex: isEditing ? 1 : 10,
-              ...(forceWhite ? { background: '#ffffff' } : {})
+              // Use transparent bg when showing generating UI - SlideGeneratingUI has its own background
+              background: 'transparent'
             }}
             onClick={handleBackgroundClick}
             onDoubleClick={handleDoubleClick}
@@ -458,6 +495,8 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
                   slidesCompleted={0}
                   slidesInProgress={0}
                   elapsedTime={0}
+                  brand={loaderBrand}
+                  outlineTitles={outlineTitles}
                 />
               </div>
             )}
@@ -473,7 +512,7 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
       >
         <div 
           className="aspect-[16/9] relative bg-secondary/20 rounded-sm overflow-hidden flex-shrink-0 border border-border"
-          style={{ width: `${slideWidth}px`, height: `${slideHeight}px` }}
+          style={{ width: `${slideWidthComputed}px`, height: `${slideHeightComputed}px` }}
         >
           {/* Bottom-left loading label styled like generation UI */}
           <div className="absolute bottom-4 left-4 right-4 pointer-events-none">
@@ -516,23 +555,22 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
           id="slide-display-container"
           className={`slide-container relative rounded-sm overflow-hidden flex-shrink-0 border border-border ${isEditing ? 'editing-mode' : ''}`}
           data-slide-id={slides[currentSlideIndex]?.id || 'unknown'}
-          data-slide-width={slideWidth}
-          data-slide-height={slideHeight}
+          data-slide-width={slideWidthComputed}
+          data-slide-height={slideHeightComputed}
           data-native-width={DEFAULT_SLIDE_WIDTH}
           data-native-height={DEFAULT_SLIDE_HEIGHT}
           data-selection-container="true"
           style={{
-            width: `${slideWidth}px`,
-            height: `${slideHeight}px`,
+            width: `${slideWidthComputed}px`,
+            height: `${slideHeightComputed}px`,
             aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`,
             position: 'relative',
             transition: 'none',
             margin: '0 auto',
             zIndex: isEditing ? 1 : 10,
-            cursor: isEditing ? 'crosshair' : 'default',
+            cursor: isEditing ? 'inherit' : 'default',
             pointerEvents: 'auto',
-            // During guided demo, allow forcing a white background for clarity
-            ...((typeof window !== 'undefined' && (window as any).__tourForceWhiteBg) ? { background: '#ffffff' } : (fallbackBackground && !isGenerating ? { background: fallbackBackground } : {}))
+            background: resolvedBackground
           }}
           onClick={handleBackgroundClick}
           onDoubleClick={handleDoubleClick}
@@ -548,8 +586,10 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
             onComponentSelect={onComponentSelect}
             updateSlide={updateSlide}
             deckStatus={deckStatus}
-            containerWidth={slideWidth}
-            containerHeight={slideHeight}
+            containerWidth={slideWidthComputed}
+            containerHeight={slideHeightComputed}
+            brand={loaderBrand}
+            outlineTitles={outlineTitles}
           />
         </div>
         

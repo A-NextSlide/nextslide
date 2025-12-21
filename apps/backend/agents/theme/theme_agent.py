@@ -15,12 +15,32 @@ import logging
 import os
 import json
 import re
+import aiohttp
 from difflib import SequenceMatcher
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Literal
+
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
 _font_service = None
+
+
+class ThemeAnalysisResult(BaseModel):
+    """Structured output for theme analysis to avoid JSON parsing issues."""
+    type: Literal["real_brand", "inspired_by", "fictional_brand", "topic_based", "generic"] = "generic"
+    brand: Optional[str] = None
+    domain: Optional[str] = None
+    inspiration: Optional[str] = None
+    mood: Optional[str] = None
+    color_hints: List[str] = Field(default_factory=list)
+    brand_confidence: Optional[float] = None
+    domain_confidence: Optional[float] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        if hasattr(self, "model_dump"):
+            return self.model_dump()
+        return self.dict()
 
 
 def _get_font_service():
@@ -54,6 +74,76 @@ def _extract_domains_from_text(text: Optional[str]) -> List[str]:
         if domain and domain not in domains:
             domains.append(domain)
     return domains
+
+
+def _normalize_domain(domain: Optional[str]) -> Optional[str]:
+    if not domain:
+        return None
+    cleaned = str(domain).strip().lower()
+    cleaned = re.sub(r"^https?://", "", cleaned)
+    cleaned = cleaned.lstrip("www.")
+    cleaned = cleaned.split("/")[0]
+    return cleaned or None
+
+
+def _coerce_response_text(response: Any) -> str:
+    if isinstance(response, dict):
+        content = response.get("content")
+        if isinstance(content, list):
+            return " ".join(
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict)
+            ).strip()
+        if content is not None:
+            return str(content).strip()
+        for key in ("text", "message", "output"):
+            if key in response:
+                return str(response.get(key) or "").strip()
+        return str(response).strip()
+    if isinstance(response, list):
+        parts = []
+        for item in response:
+            if isinstance(item, dict):
+                parts.append(item.get("text", ""))
+            else:
+                parts.append(str(item))
+        return " ".join(parts).strip()
+    return str(response).strip()
+
+
+def _model_to_dict(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if hasattr(value, "dict"):
+        return value.dict()
+    return {}
+
+
+def _extract_json_object(text: str) -> Optional[Dict[str, Any]]:
+    if not text:
+        return None
+    cleaned = text
+    if "```" in cleaned:
+        cleaned = cleaned.replace("```json", "```")
+        parts = cleaned.split("```")
+        if len(parts) >= 2:
+            cleaned = parts[1]
+    match = re.search(r"\{[\s\S]*\}", cleaned)
+    if not match:
+        return None
+    json_str = match.group(0)
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        # Best-effort cleanup of trailing commas
+        fixed = re.sub(r",\s*([}\]])", r"\1", json_str)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            return None
 
 
 def _validate_font_against_registry(font_name: str) -> Optional[str]:
@@ -305,6 +395,9 @@ class ThemeAgent:
         include_videos: bool = False,
         include_brand_design: bool = False,
         available_videos: Optional[List[Dict[str, Any]]] = None,
+        brand_domain: Optional[str] = None,
+        brand_name: Optional[str] = None,
+        domain_confirmed: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         Run the theme agent to determine the best theme for the presentation.
@@ -334,6 +427,10 @@ class ThemeAgent:
         }
 
         try:
+            explicit_domain = _normalize_domain(brand_domain)
+            explicit_brand_name = (brand_name or "").strip() or None
+            domain_is_confirmed = domain_confirmed if domain_confirmed is not None else bool(explicit_domain)
+
             # Step 1: Ask AI to analyze what kind of theme we need
             logger.info(f"[ThemeAgent] Step 1: Analyzing theme needs...")
             theme_analysis = await self._analyze_theme_needs(title, prompt, context)
@@ -344,14 +441,16 @@ class ThemeAgent:
                 return result
 
             theme_type = theme_analysis.get("type", "generic")
-            brand_name = theme_analysis.get("brand")
+            brand_name = explicit_brand_name or theme_analysis.get("brand")
             domain_hint = theme_analysis.get("domain")
-            brand_confidence = float(theme_analysis.get("brand_confidence") or 0.0)
-            domain_confidence = float(theme_analysis.get("domain_confidence") or 0.0)
-            result["brand_confidence"] = brand_confidence
-            result["domain_confidence"] = domain_confidence
+            brand_confidence_raw = theme_analysis.get("brand_confidence")
+            domain_confidence_raw = theme_analysis.get("domain_confidence")
+            brand_confidence = float(brand_confidence_raw) if brand_confidence_raw is not None else None
+            domain_confidence = float(domain_confidence_raw) if domain_confidence_raw is not None else None
+            result["brand_confidence"] = brand_confidence or 0.0
+            result["domain_confidence"] = domain_confidence or 0.0
 
-            if theme_type == "real_brand" and brand_name and brand_confidence < 0.55:
+            if theme_type == "real_brand" and brand_name and brand_confidence is not None and brand_confidence < 0.55:
                 logger.info(
                     "[ThemeAgent] Brand confidence too low (%.2f) for '%s'; skipping brandfetch",
                     brand_confidence,
@@ -363,8 +462,20 @@ class ThemeAgent:
             resolved_domain = None
             domain_candidates: List[str] = []
             domain_score = 0.0
-            if theme_type == "real_brand" and brand_name:
-                if domain_hint and domain_confidence < 0.6:
+            if explicit_domain:
+                if not domain_is_confirmed:
+                    result["brand_name"] = brand_name or explicit_domain
+                    result["brand_domain_candidates"] = [explicit_domain]
+                    result["needs_domain_confirmation"] = True
+                    theme_analysis["inspiration"] = theme_analysis.get("inspiration") or result["brand_name"]
+                    theme_type = "inspired_by"
+                else:
+                    resolved_domain = explicit_domain
+                    domain_candidates = [explicit_domain]
+                    domain_score = 1.0
+                    theme_type = "real_brand"
+            elif theme_type == "real_brand" and brand_name:
+                if domain_hint and domain_confidence is not None and domain_confidence < 0.6:
                     logger.info(
                         "[ThemeAgent] Domain confidence too low (%.2f) for '%s'; ignoring hint '%s'",
                         domain_confidence,
@@ -380,6 +491,30 @@ class ThemeAgent:
                     context=context,
                 )
 
+                if resolved_domain:
+                    validation = await self._validate_domain_match(
+                        brand_name=brand_name,
+                        domain=resolved_domain,
+                        title=title,
+                        prompt=prompt,
+                        context=context,
+                    )
+                    if validation and validation.get("match") is False:
+                        logger.info(
+                            "[ThemeAgent] Domain validation rejected '%s' for '%s': %s",
+                            resolved_domain,
+                            brand_name,
+                            validation.get("reason", "mismatch"),
+                        )
+                        result["brand_name"] = brand_name
+                        result["brand_domain_candidates"] = list(
+                            dict.fromkeys([resolved_domain, *domain_candidates])
+                        )
+                        result["needs_domain_confirmation"] = True
+                        theme_analysis["inspiration"] = theme_analysis.get("inspiration") or brand_name
+                        theme_type = "inspired_by"
+                        resolved_domain = None
+
                 if not resolved_domain:
                     result["brand_name"] = brand_name
                     if domain_candidates:
@@ -394,7 +529,7 @@ class ThemeAgent:
                 # Real brand - try Brandfetch
                 domain = resolved_domain
                 logger.info(f"[ThemeAgent] Real brand detected: {brand_name} → {domain} (score={domain_score:.2f})")
-                brand_data = await self._fetch_brandfetch(domain)
+                brand_data = await self._fetch_brandfetch(domain, brand_name=brand_name)
 
                 if brand_data and brand_data.get("colors"):
                     result["brand_name"] = brand_name
@@ -405,6 +540,14 @@ class ThemeAgent:
                     result["accent2"] = brand_data["colors"][1] if len(brand_data["colors"]) > 1 else None
                     result["text"] = "#1A1A1A"
                     result["logo_url"] = brand_data.get("logo_url")
+                    if not result["logo_url"]:
+                        logo_url = await self._fetch_logo_from_website(domain)
+                        if logo_url:
+                            result["logo_url"] = logo_url
+                    if not result["logo_url"]:
+                        logo_url = await self._fetch_logo_fallback(domain, brand_name)
+                        if logo_url:
+                            result["logo_url"] = logo_url
                     result["source"] = "brandfetch"
 
                     # Get fonts
@@ -433,7 +576,7 @@ class ThemeAgent:
                                         if pair["body"] != result["fonts"]["hero"]:
                                             result["fonts"]["body"] = pair["body"]
 
-                    if available_videos:
+                    if available_videos is not None:
                         result["videos"] = available_videos
                         logger.info(f"[ThemeAgent] 🎬 Using pre-scraped videos: {len(available_videos)}")
                     elif include_videos:
@@ -463,9 +606,13 @@ class ThemeAgent:
                     logger.info(f"[ThemeAgent] ✅ Brandfetch success: {result['colors'][:3]}")
                     return result
                 else:
-                    # Brandfetch failed, try Firecrawl brand design for colors, logo, AND screenshot
-                    logger.info("[ThemeAgent] Brandfetch failed, trying Firecrawl brand design...")
-                    brand_design = await self._fetch_brand_design(domain, include_screenshot=False)
+                    # Brandfetch failed, optionally try Firecrawl brand design for colors/logo
+                    brand_design = None
+                    if include_brand_design:
+                        logger.info("[ThemeAgent] Brandfetch failed, trying Firecrawl brand design...")
+                        brand_design = await self._fetch_brand_design(domain, include_screenshot=False)
+                    else:
+                        logger.info("[ThemeAgent] 🎨 Skipping brand design fetch (instant theme mode)")
 
                     if brand_design:
                         result["brand_design"] = brand_design
@@ -503,15 +650,20 @@ class ThemeAgent:
                             validated = _validate_font_against_registry(font_name)
                             if validated:
                                 result["fonts"]["hero"] = validated
-                    else:
+                    elif include_brand_design:
                         # Full fallback - just try to get logo
                         logo_url = await self._fetch_logo_from_website(domain)
                         if logo_url:
                             result["logo_url"] = logo_url
                             result["domain"] = domain
                             result["brand_name"] = theme_analysis.get("brand")
+                    else:
+                        logger.info("[ThemeAgent] 🎨 Skipping logo fetch (instant theme mode)")
+                        logo_url = await self._fetch_logo_fallback(domain, brand_name)
+                        if logo_url:
+                            result["logo_url"] = logo_url
 
-                    if available_videos:
+                    if available_videos is not None:
                         result["videos"] = available_videos
                         logger.info(f"[ThemeAgent] 🎬 Using pre-scraped videos: {len(available_videos)}")
                     elif include_videos:
@@ -555,6 +707,55 @@ class ThemeAgent:
             logger.error(f"[ThemeAgent] Error: {e}")
             return result
 
+    async def _validate_domain_match(
+        self,
+        *,
+        brand_name: Optional[str],
+        domain: str,
+        title: str,
+        prompt: str,
+        context: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Ask the model if a domain matches the user request."""
+        try:
+            from agents.ai.clients import get_client, invoke
+            from agents.config import THEME_MODEL
+
+            domain_clean = _normalize_domain(domain)
+            if not domain_clean:
+                return None
+
+            validation_prompt = (
+                "Decide if the domain belongs to the same entity described in the request. "
+                "If uncertain, return match=false.\n\n"
+                f"Title: {title}\n"
+                f"Prompt: {prompt}\n"
+                f"Context: {context or 'None'}\n"
+                f"Brand name: {brand_name or 'Unknown'}\n"
+                f"Domain: {domain_clean}\n\n"
+                "Return JSON: {\"match\": true|false, \"confidence\": 0.0-1.0, \"reason\": \"...\"}"
+            )
+
+            client, actual_model = get_client(THEME_MODEL)
+            if not client or not actual_model:
+                return None
+
+            response = await asyncio.to_thread(
+                invoke,
+                client,
+                actual_model,
+                [{"role": "user", "content": validation_prompt}],
+                None,
+                300,
+                0.0,
+            )
+            parsed = _extract_json_object(_coerce_response_text(response))
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception as e:
+            logger.warning("[ThemeAgent] Domain validation failed: %s", e)
+        return None
+
     async def _analyze_theme_needs(self, title: str, prompt: str, context: Optional[str]) -> Optional[Dict[str, Any]]:
         """
         Use AI to analyze what kind of theme is needed.
@@ -586,7 +787,7 @@ Determine:
 4. Is this topic-based where colors should match the subject? (e.g., "Ocean Conservation" = blues/greens)
 5. Is this generic where any nice colors work?
 
-Return JSON:
+        Return JSON:
 {{
     "type": "real_brand" | "inspired_by" | "fictional_brand" | "topic_based" | "generic",
     "brand": "brand name if applicable",
@@ -604,6 +805,7 @@ IMPORTANT:
 - For fictional variants like "SonicVerse" - type should be "inspired_by" with inspiration="Sonic the Hedgehog"
 - Only include a domain if you are highly confident it is correct.
 - If brand is ambiguous, set type to "topic_based" or "generic" and leave domain null.
+- If a URL or domain is present in the title/prompt/context, treat it as a real brand and set domain to it.
 - Always identify the core INSPIRATION so we can generate appropriate colors"""
 
             client, actual_model = get_client(THEME_MODEL)
@@ -611,29 +813,38 @@ IMPORTANT:
                 logger.error(f"[ThemeAgent] Failed to get client for {THEME_MODEL}")
                 return None
             logger.info(f"[ThemeAgent] Using model: {actual_model}")
+            try:
+                analysis = invoke(
+                    client=client,
+                    model=actual_model,
+                    messages=[{"role": "user", "content": analysis_prompt}],
+                    response_model=ThemeAnalysisResult,
+                    max_tokens=2000,
+                    temperature=0,
+                    theme_generation=True
+                )
+                analysis_dict = _model_to_dict(analysis)
+                logger.info(f"[ThemeAgent] Analysis result: {analysis_dict}")
+                if analysis_dict:
+                    return analysis_dict
+            except Exception as exc:
+                logger.warning(f"[ThemeAgent] Structured analysis failed, falling back to JSON parse: {exc}")
+
             response = invoke(
                 client=client,
                 model=actual_model,
                 messages=[{"role": "user", "content": analysis_prompt}],
-                max_tokens=300,
+                max_tokens=2000,
                 temperature=0,
                 theme_generation=True
             )
             logger.info(f"[ThemeAgent] Analysis response type: {type(response)}, preview: {str(response)[:200]}")
 
-            # Parse JSON from response
-            try:
-                # Handle both string and dict responses
-                response_text = response.get("content") if isinstance(response, dict) else response
-                # Find JSON in response
-                json_start = response_text.find('{')
-                json_end = response_text.rfind('}') + 1
-                if json_start >= 0 and json_end > json_start:
-                    json_str = response_text[json_start:json_end]
-                    return json.loads(json_str)
-            except (json.JSONDecodeError, AttributeError) as e:
-                logger.warning(f"[ThemeAgent] Failed to parse analysis: {str(response)[:200]}, error: {e}")
-                return None
+            parsed = _extract_json_object(_coerce_response_text(response))
+            if isinstance(parsed, dict):
+                return parsed
+            logger.warning("[ThemeAgent] Failed to parse analysis: %s", str(response)[:200])
+            return None
 
         except Exception as e:
             import traceback
@@ -641,7 +852,11 @@ IMPORTANT:
             logger.error(f"[ThemeAgent] Analysis traceback: {traceback.format_exc()}")
             return None
 
-    async def _fetch_brandfetch(self, domain: str) -> Optional[Dict[str, Any]]:
+    async def _fetch_brandfetch(
+        self,
+        domain: str,
+        brand_name: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Fetch brand data from Brandfetch with timeout."""
         try:
             from services.simple_brandfetch_cache import SimpleBrandfetchCache
@@ -657,6 +872,13 @@ IMPORTANT:
                 async with asyncio.timeout(15):
                     async with SimpleBrandfetchCache(db_url) as cache:
                         brand_data = await cache.get_brand_data(domain)
+                        if brand_data and not brand_data.get("error"):
+                            logo_url = None
+                            try:
+                                logo_url = cache.get_best_logo(brand_data)
+                            except Exception:
+                                logo_url = None
+                            brand_data["logo_url"] = brand_data.get("logo_url") or logo_url
             except asyncio.TimeoutError:
                 logger.warning(f"[ThemeAgent] Brandfetch timeout: {domain}")
                 return None
@@ -670,22 +892,69 @@ IMPORTANT:
                 elif isinstance(colors_data, list):
                     colors = [c.get('hex') if isinstance(c, dict) else c for c in colors_data]
 
-                # Extract fonts
+                # Extract fonts with type awareness (title/hero vs body)
                 fonts_data = brand_data.get('fonts', {})
-                fonts = fonts_data.get('names', []) if isinstance(fonts_data, dict) else []
+                hero_font = None
+                body_font = None
+                if isinstance(fonts_data, dict):
+                    all_fonts = fonts_data.get('all', [])
+                    for font_entry in all_fonts:
+                        if isinstance(font_entry, dict):
+                            font_name = font_entry.get('name', '')
+                            font_type = font_entry.get('type', '').lower()
+                            # Skip generic CSS fallbacks
+                            if font_name.lower() in ('sans-serif', 'serif', 'monospace', 'cursive', 'fantasy'):
+                                continue
+                            if font_type in ('title', 'heading', 'hero', 'display', 'primary'):
+                                if not hero_font:
+                                    hero_font = font_name
+                            elif font_type in ('body', 'text', 'paragraph', 'secondary'):
+                                if not body_font:
+                                    body_font = font_name
+                            elif not hero_font:
+                                # Default: first non-generic font becomes hero
+                                hero_font = font_name
+                            elif not body_font:
+                                body_font = font_name
+                    # Fallback to names list if no typed fonts found
+                    if not hero_font and not body_font:
+                        names = fonts_data.get('names', [])
+                        for name in names:
+                            if name.lower() not in ('sans-serif', 'serif', 'monospace', 'cursive', 'fantasy'):
+                                if not hero_font:
+                                    hero_font = name
+                                elif not body_font:
+                                    body_font = name
+                                    break
+                fonts = [f for f in [hero_font, body_font] if f]
 
                 # Extract logo
-                logos = brand_data.get('logos', {})
-                logo_url = None
-                for logo_type in ['light', 'dark', 'icons']:
-                    items = logos.get(logo_type, [])
-                    if items and isinstance(items, list) and items[0]:
-                        item = items[0]
-                        if isinstance(item, dict):
+                logo_url = brand_data.get("logo_url")
+                if not logo_url:
+                    logos = brand_data.get('logos', {}) or {}
+                    for logo_type in ['light', 'dark', 'icons', 'other']:
+                        items = logos.get(logo_type, [])
+                        if not items or not isinstance(items, list):
+                            continue
+                        for item in items:
+                            if not isinstance(item, dict):
+                                continue
                             formats = item.get('formats', [])
-                            if formats:
-                                logo_url = formats[0].get('url')
+                            if not formats:
+                                continue
+                            for fmt in formats:
+                                if not isinstance(fmt, dict):
+                                    continue
+                                candidate = fmt.get('url') or fmt.get('src')
+                                if candidate:
+                                    logo_url = candidate
+                                    break
+                            if logo_url:
                                 break
+                        if logo_url:
+                            break
+                if not logo_url:
+                    logo_url = await self._fetch_logo_fallback(domain, brand_name)
 
                 return {
                     "colors": [c.upper() if isinstance(c, str) else c for c in colors if c],
@@ -838,6 +1107,50 @@ IMPORTANT:
             logger.warning(f"[ThemeAgent] Firecrawl logo fetch error: {e}")
             return None
 
+    async def _probe_logo_url(self, url: str) -> bool:
+        """Check whether a logo URL is reachable."""
+        if not url:
+            return False
+        try:
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.head(url, allow_redirects=True) as response:
+                    return response.status == 200
+        except Exception:
+            return False
+
+    async def _fetch_logo_fallback(
+        self,
+        domain: str,
+        brand_name: Optional[str] = None,
+    ) -> Optional[str]:
+        """Fallback to external logo services when Brandfetch yields no logo."""
+        normalized_domain = _normalize_domain(domain) if domain else None
+        query_name = (brand_name or "").strip() or normalized_domain or ""
+
+        # Try Logo.dev if configured
+        try:
+            from agents.tools.theme.logodev_service import LogoDevService
+
+            service = LogoDevService()
+            if service.public_key or service.private_key:
+                async with service as logo_service:
+                    result = await logo_service.search_logo(query_name, url=f"https://{normalized_domain}" if normalized_domain else None)
+                    if result and result.get("logo_url"):
+                        logger.info("[ThemeAgent] ✅ Logo.dev fallback success for %s", normalized_domain or query_name)
+                        return result["logo_url"]
+        except Exception as exc:
+            logger.debug("[ThemeAgent] Logo.dev fallback failed: %s", exc)
+
+        # Clearbit fallback (no API key)
+        if normalized_domain:
+            clearbit_url = f"https://logo.clearbit.com/{normalized_domain}"
+            if await self._probe_logo_url(clearbit_url):
+                logger.info("[ThemeAgent] ✅ Clearbit logo fallback for %s", normalized_domain)
+                return clearbit_url
+
+        return None
+
     async def _generate_contextual_theme(
         self,
         title: str,
@@ -894,55 +1207,46 @@ Use the REAL colors you know for the inspiration. Return ONLY the JSON."""
             )
             logger.info(f"[ThemeAgent] Contextual response type: {type(response)}, preview: {str(response)[:200]}")
 
-            # Parse JSON
-            try:
-                # Handle both string and dict responses
-                response_text = response.get("content") if isinstance(response, dict) else response
-                json_start = response_text.find('{')
-                json_end = response_text.rfind('}') + 1
-                if json_start >= 0 and json_end > json_start:
-                    json_str = response_text[json_start:json_end]
-                    theme_data = json.loads(json_str)
+            theme_data = _extract_json_object(_coerce_response_text(response))
+            if isinstance(theme_data, dict):
+                # Validate and extract fonts
+                hero_font_raw = theme_data.get("hero_font")
+                body_font_raw = theme_data.get("body_font")
 
-                    # Validate and extract fonts
-                    hero_font_raw = theme_data.get("hero_font")
-                    body_font_raw = theme_data.get("body_font")
+                validated_hero = _validate_font_against_registry(hero_font_raw) if hero_font_raw else None
+                validated_body = _validate_font_against_registry(body_font_raw) if body_font_raw else None
 
-                    validated_hero = _validate_font_against_registry(hero_font_raw) if hero_font_raw else None
-                    validated_body = _validate_font_against_registry(body_font_raw) if body_font_raw else None
+                font_service = _get_font_service()
+                hero_font = validated_hero
+                body_font = validated_body
+                if font_service:
+                    keyword_context = [k for k in [inspiration, mood, theme_type] if k]
+                    pair = font_service.select_font_pair(
+                        deck_title=title,
+                        vibe=mood or "modern",
+                        content_keywords=keyword_context,
+                        variety_seed=f"{title}-{inspiration}-{mood}",
+                    )
+                    if not hero_font:
+                        hero_font = pair.get("hero") if pair else None
+                    if not body_font:
+                        body_font = pair.get("body") if pair else None
+                    if hero_font and body_font and hero_font == body_font:
+                        body_font = pair.get("body") if pair else body_font
 
-                    font_service = _get_font_service()
-                    hero_font = validated_hero
-                    body_font = validated_body
-                    if font_service:
-                        keyword_context = [k for k in [inspiration, mood, theme_type] if k]
-                        pair = font_service.select_font_pair(
-                            deck_title=title,
-                            vibe=mood or "modern",
-                            content_keywords=keyword_context,
-                            variety_seed=f"{title}-{inspiration}-{mood}",
-                        )
-                        if not hero_font:
-                            hero_font = pair.get("hero") if pair else None
-                        if not body_font:
-                            body_font = pair.get("body") if pair else None
-                        if hero_font and body_font and hero_font == body_font:
-                            body_font = pair.get("body") if pair else body_font
-
-                    return {
-                        "background": theme_data.get("background", "#FFFFFF"),
-                        "text": theme_data.get("text", "#1A1A1A"),
-                        "accent": theme_data.get("accent"),
-                        "accent2": theme_data.get("accent2"),
-                        "colors": theme_data.get("colors", []),
-                        "fonts": {
-                            "hero": hero_font or "Montserrat",
-                            "body": body_font or "Open Sans"
-                        },
-                        "source": "ai_contextual"
-                    }
-            except (json.JSONDecodeError, AttributeError) as e:
-                logger.warning(f"[ThemeAgent] Failed to parse theme: {str(response)[:200]}, error: {e}")
+                return {
+                    "background": theme_data.get("background", "#FFFFFF"),
+                    "text": theme_data.get("text", "#1A1A1A"),
+                    "accent": theme_data.get("accent"),
+                    "accent2": theme_data.get("accent2"),
+                    "colors": theme_data.get("colors", []),
+                    "fonts": {
+                        "hero": hero_font or "Montserrat",
+                        "body": body_font or "Open Sans"
+                    },
+                    "source": "ai_contextual"
+                }
+            logger.warning("[ThemeAgent] Failed to parse theme: %s", str(response)[:200])
 
             return None
 

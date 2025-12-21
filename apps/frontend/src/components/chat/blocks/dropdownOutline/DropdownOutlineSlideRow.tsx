@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import {
   Trash2,
@@ -88,6 +88,15 @@ const DropdownOutlineSlideRow: React.FC<DropdownOutlineSlideRowProps> = ({
   const isDragOver = dragOverIndex === index;
   const isDragging = draggedIndex === index;
   const isDraggable = isEditable && !isEditing;
+  const hasPreviewContent = Boolean(
+    (slide.content && slide.content.trim().length > 0)
+      || (slide.keyPoints && slide.keyPoints.length > 0)
+  );
+  const showLoadingState = isLoading && !hasPreviewContent;
+  const [showFullModelContext, setShowFullModelContext] = useState(false);
+  const modelContext = slide.generationContext?.trim() || '';
+  const hasModelContext = modelContext.length > 0;
+  const isModelContextLong = modelContext.length > 320;
 
   return (
     <div
@@ -116,9 +125,8 @@ const DropdownOutlineSlideRow: React.FC<DropdownOutlineSlideRowProps> = ({
         {/* Drag handle */}
         {isEditable && (
           <div
-            data-drag-handle="true"
             className="flex-shrink-0 cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-400 dark:text-zinc-600 dark:hover:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity"
-            onMouseDown={(e) => e.stopPropagation()}
+            title="Drag to reorder"
           >
             <GripVertical className="w-3.5 h-3.5" />
           </div>
@@ -126,7 +134,7 @@ const DropdownOutlineSlideRow: React.FC<DropdownOutlineSlideRowProps> = ({
 
         {/* Expand/collapse icon */}
         <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center">
-          {isLoading ? (
+          {showLoadingState ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500" />
           ) : isExpanded ? (
             <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
@@ -207,7 +215,7 @@ const DropdownOutlineSlideRow: React.FC<DropdownOutlineSlideRowProps> = ({
       {/* Expanded content - Key points + context */}
       {isExpanded && (
         <div className="px-3 pb-2.5 pt-1">
-          {isLoading ? (
+          {showLoadingState ? (
             <div className="flex items-center gap-2 text-xs text-zinc-500 py-2.5 pl-8">
               <Loader2 className="w-3 h-3 animate-spin" />
               Generating slide content...
@@ -296,11 +304,38 @@ const DropdownOutlineSlideRow: React.FC<DropdownOutlineSlideRowProps> = ({
                 )}
               </div>
 
+              {/* Model context */}
+              <div className="mt-2.5">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wide">
+                    Model Context
+                  </span>
+                  {hasModelContext && isModelContextLong && (
+                    <button
+                      onClick={() => setShowFullModelContext((prev) => !prev)}
+                      className="text-[10px] font-medium text-zinc-400 hover:text-zinc-600 transition-colors"
+                    >
+                      {showFullModelContext ? 'Show less' : 'Show full'}
+                    </button>
+                  )}
+                </div>
+                <div
+                  className={cn(
+                    "rounded-md px-2 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-50/70 dark:bg-zinc-800/40 whitespace-pre-wrap leading-relaxed",
+                    hasModelContext && isModelContextLong && !showFullModelContext && "max-h-[120px] overflow-hidden"
+                  )}
+                >
+                  {hasModelContext ? modelContext : (
+                    <span className="text-zinc-400 italic">No model context yet</span>
+                  )}
+                </div>
+              </div>
+
               {/* Context */}
               <div className="mt-2.5">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wide">
-                    Context
+                    Slide Notes
                   </span>
                   {isEditable && !isEditingContent && (
                     <button

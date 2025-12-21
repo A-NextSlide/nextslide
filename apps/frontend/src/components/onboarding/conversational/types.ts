@@ -1,4 +1,11 @@
-import type { ChatMessage, OutlineData, OutlineSlide, ScrapedVideo, UploadedMedia } from '@/services/outlineAgentService';
+import type {
+  ChatMessage,
+  ClarificationField,
+  OutlineData,
+  OutlineSlide,
+  ScrapedVideo,
+  UploadedMedia,
+} from '@/services/outlineAgentService';
 
 export interface ActionButton {
   label: string;
@@ -21,6 +28,12 @@ export interface Message {
   buttons?: ActionButton[];
   showSlideModeSelection?: boolean;
   attachments?: AttachmentPreview[];
+  metadata?: {
+    clarification?: {
+      draft?: string;
+      fields?: ClarificationField[];
+    };
+  };
 }
 
 export interface CollectedData {
@@ -39,6 +52,7 @@ export interface CollectedData {
   slides?: OutlineSlide[];
   narrative?: string;
   scrapedVideos?: ScrapedVideo[];
+  use_uploaded_images?: boolean;
 }
 
 export type ConversationStage =

@@ -15,10 +15,13 @@ COMPONENT TYPES:
 3. Image - Images
    props: { src: "url", position: {x, y}, width, height, objectFit: "cover"|"contain" }
 
-4. Chart - Data visualization
+4. Video - Video embeds
+   props: { src: "url", position: {x, y}, width, height, controls: bool, autoplay: bool, loop: bool, muted: bool, poster?: "url" }
+
+5. Chart - Data visualization
    props: { chartType: "bar"|"line"|"pie", data: [{name, value, color}], position, width, height }
 
-5. CustomComponent - Complex HTML/CSS (USE THIS for creative designs!)
+6. CustomComponent - Complex HTML/CSS (USE THIS for creative designs!)
    props: { render: "<!DOCTYPE html>...", position: {x, y}, width, height }
    The render prop should be a COMPLETE HTML document with Tailwind CSS.
    CRITICAL: Use SINGLE QUOTES in HTML, keep on ONE LINE.

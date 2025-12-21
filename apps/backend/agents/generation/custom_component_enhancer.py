@@ -209,11 +209,14 @@ def build_custom_component_context(
         "slide_type": _get_attr_or_key(context.slide_outline, "layout", "content"),
         "slide_mode": slide_mode,
         "presentation_context": context.presentation_context,
+        "conversation_history": context.conversation_history,
         "initial_idea": initial_idea,
         "vibe_context": vibe_context,
         "deck_title": _get_attr_or_key(context.deck_outline, "title"),
         "deck_uuid": context.deck_uuid,
         "is_full_slide": layout.is_full_slide,
+        "use_uploaded_images": bool(getattr(context.deck_outline, "use_uploaded_images", False)),
+        "has_assigned_video": bool(context.available_videos),
     }
 
     if include_charts:

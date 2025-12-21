@@ -20,8 +20,24 @@ describe('normalizeReferenceImages', () => {
     expect(result).toEqual([dataUrl]);
   });
 
+  it('keeps http URLs intact', () => {
+    const url = 'https://example.com/image.png';
+    const result = normalizeReferenceImages([url]);
+    expect(result).toEqual([url]);
+  });
+
   it('filters invalid entries and preserves order', () => {
-    const result = normalizeReferenceImages(['', '  ', 'foo', 'data:image/png;base64,bar']);
-    expect(result).toEqual(['data:image/png;base64,foo', 'data:image/png;base64,bar']);
+    const result = normalizeReferenceImages([
+      '',
+      '  ',
+      'foo',
+      'data:image/png;base64,bar',
+      'https://cdn.example.com/ref.png',
+    ]);
+    expect(result).toEqual([
+      'data:image/png;base64,foo',
+      'data:image/png;base64,bar',
+      'https://cdn.example.com/ref.png',
+    ]);
   });
 });

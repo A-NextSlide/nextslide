@@ -516,6 +516,7 @@ export const CustomComponentRenderer: React.FC<{
 
     // Build a list of image URLs from props (for index-based matching)
     const imageUrls: string[] = [];
+    const imagePropKeys: string[] = [];
     const imagePropsMap: Record<string, string> = {};
 
     // Collect all image props (both numbered like Image1 and named like heroImage)
@@ -526,6 +527,7 @@ export const CustomComponentRenderer: React.FC<{
         if (/^image\d+$/i.test(key)) {
           const index = parseInt(key.replace(/image/i, ''), 10) - 1;
           imageUrls[index] = value;
+          imagePropKeys[index] = key;
         }
       }
     }
@@ -538,6 +540,8 @@ export const CustomComponentRenderer: React.FC<{
 
     result = result.replace(varSrcRegex, (match, before, varName, after) => {
       const varNameLower = varName.toLowerCase();
+      const hasDataProp = /data-prop=["'][^"']+["']/i.test(before + after);
+      const dataPropAttr = hasDataProp ? '' : ` data-prop="${varName}"`;
 
       // Check multiple variations of the prop name
       const possibleNames = [
@@ -553,7 +557,7 @@ export const CustomComponentRenderer: React.FC<{
         if (imagePropsMap[name.toLowerCase()]) {
           const newSrc = imagePropsMap[name.toLowerCase()];
           DEBUG_CUSTOM_COMPONENT && console.log(`[CustomComponent] Injecting image from \${${varName}}: ${name} = ${newSrc.substring(0, 50)}...`);
-          return `<img ${before}src="${newSrc}"${after}>`;
+          return `<img ${before}src="${newSrc}"${after}${dataPropAttr}>`;
         }
       }
 
@@ -577,11 +581,14 @@ export const CustomComponentRenderer: React.FC<{
       const dataPropMatch = (before + after).match(/data-prop=["']([^"']+)["']/i);
 
       let propValue: string | null = null;
+      let matchedPropKey = '';
       let matchedBy = '';
 
       // 1. Try data-prop attribute first
       if (dataPropMatch?.[1] && imagePropsMap[dataPropMatch[1].toLowerCase()]) {
-        propValue = imagePropsMap[dataPropMatch[1].toLowerCase()];
+        const key = dataPropMatch[1];
+        propValue = imagePropsMap[key.toLowerCase()];
+        matchedPropKey = key;
         matchedBy = 'data-prop';
       }
 
@@ -600,6 +607,7 @@ export const CustomComponentRenderer: React.FC<{
         for (const name of variations) {
           if (imagePropsMap[name.toLowerCase()]) {
             propValue = imagePropsMap[name.toLowerCase()];
+            matchedPropKey = name;
             matchedBy = 'alt-text';
             break;
           }
@@ -609,14 +617,17 @@ export const CustomComponentRenderer: React.FC<{
       // 3. Fall back to index-based matching (Image1, Image2, etc.)
       if (!propValue && imageUrls[imageIndex]) {
         propValue = imageUrls[imageIndex];
+        matchedPropKey = imagePropKeys[imageIndex] || `image${imageIndex + 1}`;
         matchedBy = 'index';
       }
 
       imageIndex++;
 
       if (propValue) {
+        const hasDataProp = /data-prop=["'][^"']+["']/i.test(before + after);
+        const dataPropAttr = hasDataProp || !matchedPropKey ? '' : ` data-prop="${matchedPropKey}"`;
         DEBUG_CUSTOM_COMPONENT && console.log(`[CustomComponent] Injecting image (${matchedBy}): ${propValue.substring(0, 50)}...`);
-        return `<img ${before}src="${propValue}"${after}>`;
+        return `<img ${before}src="${propValue}"${after}${dataPropAttr}>`;
       }
 
       return match;
@@ -784,16 +795,23 @@ export const CustomComponentRenderer: React.FC<{
       var propName = event.data.propName;
       var isProcessing = event.data.isProcessing;
 
-      // Find all images and check if their src contains the propName or their data-prop matches
-      var images = document.querySelectorAll('img');
-      images.forEach(function(img) {
-        var imgWrapper = img.parentElement;
+      // Find all images (including background images) and match by prop/id/alt
+      var targets = document.querySelectorAll('img, [data-ns-id][style*="background-image"]');
+      targets.forEach(function(el) {
+        var isImg = el.tagName && el.tagName.toLowerCase() === 'img';
+        var imgWrapper = isImg ? el.parentElement : el;
         // Check if this image's prop name matches (via data attribute or alt text)
-        var imgPropName = img.getAttribute('data-prop') || img.alt || '';
-        var matches = imgPropName.toLowerCase().includes(propName.toLowerCase()) ||
-                      propName.toLowerCase().includes(imgPropName.toLowerCase().replace(/\\s+/g, ''));
+        var imgPropName = el.getAttribute('data-prop') ||
+                          el.getAttribute('data-ns-id') ||
+                          el.id ||
+                          el.getAttribute('alt') ||
+                          '';
+        var normalizedProp = (propName || '').toLowerCase().replace(/\\s+/g, '');
+        var normalizedImg = (imgPropName || '').toLowerCase().replace(/\\s+/g, '');
+        var matches = normalizedProp &&
+                      (normalizedImg.includes(normalizedProp) || normalizedProp.includes(normalizedImg));
 
-        if (matches || images.length === 1) {
+        if (matches || targets.length === 1) {
           // Ensure wrapper has position relative for overlay positioning
           if (imgWrapper && imgWrapper.tagName !== 'BODY') {
             var wrapperStyle = window.getComputedStyle(imgWrapper);
@@ -802,7 +820,7 @@ export const CustomComponentRenderer: React.FC<{
             }
 
             // Find or create overlay
-            var overlayId = 'ns-processing-overlay-' + (img.id || Math.random().toString(36).substr(2, 9));
+            var overlayId = 'ns-processing-overlay-' + (el.getAttribute('data-ns-id') || el.id || Math.random().toString(36).substr(2, 9));
             var existingOverlay = document.getElementById(overlayId);
 
             if (isProcessing && !existingOverlay) {

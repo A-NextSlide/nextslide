@@ -135,7 +135,6 @@ class ImageOrchestrator:
             # Start background search
             self.search_task = asyncio.create_task(
                 self.image_manager.search_images_background(
-                    slides=slides,
                     deck_outline=deck_outline,
                     deck_uuid=deck_uuid,
                     search_queries=search_queries,
@@ -226,9 +225,9 @@ class ImageOrchestrator:
         try:
             if self.image_manager:
                 slide_data = await self.image_manager.apply_pending_images(
+                    slide_id,
                     slide_data,
-                    pending,
-                    theme_colors
+                    theme_colors or {}
                 )
                 self.clear_pending_images(slide_id)
         except Exception as e:

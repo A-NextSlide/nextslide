@@ -60,6 +60,23 @@ async def resolve_images(
     if not image_props:
         return html, prefetched_images
 
+    brand_info = theme.get("brandInfo", {}) if isinstance(theme, dict) else {}
+    color_palette = theme.get("color_palette", {}) if isinstance(theme, dict) else {}
+    logo_url = (
+        brand_info.get("logoUrl")
+        or brand_info.get("logo_url")
+        or color_palette.get("metadata", {}).get("logo_url")
+        or color_palette.get("metadata", {}).get("logo_url_light")
+    )
+    if isinstance(logo_url, str) and logo_url.endswith("?"):
+        logo_url = logo_url[:-1]
+    if logo_url:
+        for prop_name, query in list(image_props):
+            if "logo" in prop_name.lower() or "logo" in query.lower():
+                prefetched_images[prop_name] = logo_url
+                prefetched_images[f"{prop_name}_query"] = query
+        image_props = [(prop, query) for prop, query in image_props if prop not in prefetched_images]
+
     available_assets = _normalize_available_images(available_images, uploaded_media)
     if available_assets:
         matched, remaining = _match_available_images_to_props(image_props, available_assets)

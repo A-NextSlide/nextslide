@@ -3,8 +3,15 @@ import { FONT_CATEGORIES, FontDefinition } from '../registry/library/fonts';
 /**
  * Find font definition by name
  */
+function extractPrimaryFontName(name: string): string {
+  return (name || '')
+    .split(',')[0]
+    .trim()
+    .replace(/^["']|["']$/g, '');
+}
+
 function normalizeName(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+  return extractPrimaryFontName(name).toLowerCase().replace(/\s+/g, ' ');
 }
 
 export function findFontDefinition(fontName: string): FontDefinition | null {
@@ -25,27 +32,30 @@ export function findFontDefinition(fontName: string): FontDefinition | null {
  * This handles the mapping between display names and actual CSS font-family values
  */
 export function getFontFamilyCSS(fontName: string): string {
+  const primaryName = extractPrimaryFontName(fontName);
   // Find the font definition
   for (const category in FONT_CATEGORIES) {
-    const fontDef = FONT_CATEGORIES[category].find(f => f.name === fontName);
+    const fontDef = FONT_CATEGORIES[category].find(f => f.name === fontName || f.name === primaryName);
     if (fontDef) {
       return fontDef.family;
     }
   }
   
   // If not found in definitions, return the font name as-is
-  return fontName;
+  return primaryName || fontName;
 }
 
 /**
  * Get a properly formatted font-family CSS string with fallbacks
  */
 export function getFontFamilyWithFallback(fontName: string): string {
+  const primaryName = extractPrimaryFontName(fontName);
   const fontDef = findFontDefinition(fontName);
   
   if (!fontDef) {
     // If font not found in our definitions, return the name as-is with fallback
-    return `"${fontName}", sans-serif`;
+    const fallbackName = primaryName || fontName;
+    return `"${fallbackName}", sans-serif`;
   }
 
   // Use the family property from the definition (which has the correct CSS name)

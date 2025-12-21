@@ -53,6 +53,16 @@ export const usePresentationStore = create<PresentationState>((set, get) => ({
       showThumbnails: false,
       controlsTimeout: null 
     });
+
+    // Attempt to unlock orientation if it was locked
+    try {
+      const screenApi = window.screen as any;
+      if (screenApi?.orientation && typeof screenApi.orientation.unlock === 'function') {
+        screenApi.orientation.unlock();
+      }
+    } catch {
+      // Orientation unlock not supported - safe to ignore
+    }
     
     // Then exit fullscreen after a slight delay to avoid white flash
     setTimeout(() => {

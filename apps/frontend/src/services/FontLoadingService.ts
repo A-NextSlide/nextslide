@@ -529,9 +529,25 @@ export const FontLoadingService = {
 
     const fontNames = fonts.map(font => typeof font === 'string' ? font : font.name);
 
-    // Find definitions for names - handle potential nulls
-    const definitions = fontNames.map(findFontDefinition).filter((def): def is FontDefinition => !!def);
-    if (!definitions.length) return;
+    const getDefinitions = () =>
+      fontNames.map(findFontDefinition).filter((def): def is FontDefinition => !!def);
+
+    // Identify fonts not in the frontend registry (likely backend-only)
+    let missingNames = fontNames.filter(name => !findFontDefinition(name));
+    if (missingNames.length && !designerFontsSynced && FontLoadingService.syncDesignerFonts) {
+      try {
+        await FontLoadingService.syncDesignerFonts();
+      } catch {}
+      missingNames = fontNames.filter(name => !findFontDefinition(name));
+    }
+
+    const definitions = getDefinitions();
+    if (!definitions.length) {
+      if (missingNames.length) {
+        await Promise.all(missingNames.map(name => FontLoadingService.loadFont(name)));
+      }
+      return;
+    }
 
     const definitionsToLoad = definitions.filter(def => !loadedFonts.has(def.name));
     if (!definitionsToLoad.length) return;
@@ -567,6 +583,11 @@ export const FontLoadingService = {
       if (i < batches.length - 1) {
         await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
       }
+    }
+
+    // Load any backend-only fonts that weren't in the registry
+    if (missingNames.length) {
+      await Promise.all(missingNames.map(name => FontLoadingService.loadFont(name)));
     }
   },
 

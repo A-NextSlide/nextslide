@@ -16,13 +16,6 @@ async def process_custom_component_images(
 ) -> None:
     """Replace placeholder images inside CustomComponent HTML with real images."""
     try:
-        bad_search_terms = {
-            "image", "image0", "image1", "image2", "image3",
-            "visualization", "dataname", "photo", "picture",
-            "graphic", "visual", "background", "chart", "icon",
-            "placeholder", "img", "figure", "illustration",
-        }
-
         slide_title = getattr(context.slide_outline, "title", "") or ""
         slide_content = getattr(context.slide_outline, "content", "") or ""
 
@@ -55,17 +48,10 @@ async def process_custom_component_images(
                 if is_already_ours:
                     continue
 
-                search_query = re.sub(r"[^a-zA-Z0-9\\s]", " ", alt).strip().lower()
-                is_bad_query = (
-                    not search_query
-                    or len(search_query) < 3
-                    or search_query in bad_search_terms
-                    or any(search_query.startswith(bad) for bad in bad_search_terms)
-                )
-
-                if is_bad_query:
+                search_query = re.sub(r"[^a-zA-Z0-9\\s]", " ", alt).strip()
+                if not search_query:
                     search_query = f"{slide_title} professional" if slide_title else "professional business"
-                    logger.info(f"[CUSTOM IMG] Bad alt text '{alt}' - using fallback: {search_query}")
+                    logger.info(f"[CUSTOM IMG] Empty alt text - using fallback: {search_query}")
 
                 try:
                     from services.combined_image_service import CombinedImageService

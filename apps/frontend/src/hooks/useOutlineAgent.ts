@@ -114,6 +114,7 @@ export function useOutlineAgent() {
         // Stream agent response
         let accumulatedText = '';
         let displayText = '';
+        let hasClarification = false;
 
         for await (const event of streamOutlineAgentChat({
           message: userMessage,
@@ -186,6 +187,26 @@ export function useOutlineAgent() {
           } else if (event.type === 'outline') {
             // Agent generated/updated outline - call the callback
             console.log('[OutlineAgent] Outline data received:', event.data);
+            if (event.data?.action === 'clarify') {
+              const clarificationMessage = event.data.message || event.data.clarification?.message || 'Quick check before I build the deck.';
+              const draftResponse = event.data.draft_response || event.data.clarification?.draft_response || '';
+              const combinedMessage = draftResponse
+                ? `${clarificationMessage}\n\n${draftResponse}`
+                : clarificationMessage;
+
+              hasClarification = true;
+              setMessages((prev) => {
+                const newMessages = prev.map((m) =>
+                  m.id === aiMsgId
+                    ? { ...m, content: combinedMessage, isTyping: false, isResearching: false }
+                    : m
+                );
+                messagesRef.current = newMessages;
+                return newMessages;
+              });
+              setUpdateTrigger(prev => prev + 1);
+              setCurrentTypingMessageId(null);
+            }
             if (onOutlineGenerated) {
               onOutlineGenerated(event.data);
             }
@@ -268,7 +289,11 @@ export function useOutlineAgent() {
             setMessages((prev) => {
               const newMessages = prev.map((m) =>
                 m.id === aiMsgId
-                  ? { ...m, content: displayText, isTyping: false }
+                  ? {
+                      ...m,
+                      content: hasClarification ? m.content : displayText,
+                      isTyping: false
+                    }
                   : m
               );
               messagesRef.current = newMessages; // Update ref directly

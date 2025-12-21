@@ -7,6 +7,7 @@ import asyncio
 from collections import defaultdict
 import time
 from datetime import datetime
+import uuid
 from setup_logging_optimized import get_logger
 from agents import config
 
@@ -96,6 +97,7 @@ class ConcurrencyManager:
         # Global deck locks to prevent duplicate generation
         self._deck_locks: Dict[str, asyncio.Lock] = {}
         self._decks_in_generation: set = set()
+        self._user_slot_tokens: Dict[str, list] = defaultdict(list)
         
         logger.info(
             f"Initialized ConcurrencyManager: "
@@ -190,6 +192,15 @@ class ConcurrencyManager:
             self.active_generations.pop(task_id, None)
             logger.error(f"Failed to acquire resources: {e}")
             raise
+
+    async def acquire_slot(self, user_id: str) -> Optional[str]:
+        """Compatibility wrapper for legacy callers."""
+        task_id = f"{user_id}-{uuid.uuid4().hex[:8]}"
+        acquired = await self.acquire_for_user(user_id, task_id)
+        if not acquired:
+            return None
+        self._user_slot_tokens[user_id].append(task_id)
+        return task_id
     
     async def release_for_user(self, user_id: str, task_id: str):
         """Release resources after generation."""
@@ -220,6 +231,19 @@ class ConcurrencyManager:
         # Clean up old completed generations if configured
         if config.CLEANUP_COMPLETED_AFTER > 0:
             await self._cleanup_old_generations()
+
+    async def release_slot(self, user_id: str, task_id: Optional[str] = None):
+        """Compatibility wrapper for legacy callers."""
+        if task_id is None:
+            tokens = self._user_slot_tokens.get(user_id)
+            task_id = tokens.pop() if tokens else None
+        else:
+            tokens = self._user_slot_tokens.get(user_id, [])
+            if task_id in tokens:
+                tokens.remove(task_id)
+        if not task_id:
+            return
+        await self.release_for_user(user_id, task_id)
     
     async def _cleanup_old_generations(self):
         """Clean up old completed generations."""

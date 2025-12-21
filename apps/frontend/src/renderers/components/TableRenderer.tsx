@@ -22,6 +22,7 @@ import TextStyle from '@tiptap/extension-text-style';
 import Link from '@tiptap/extension-link';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { useEditorSettingsStore } from '../../stores/editorSettingsStore';
+import { useEditorStore } from '../../stores/editorStore';
 import { usePresentationStore } from '@/stores/presentationStore';
 import '../../styles/TiptapStyles.css';
 import { Plus, Minus } from 'lucide-react';
@@ -56,6 +57,7 @@ export const renderTable: RendererFunction = (props) => {
   const { updateComponent } = useActiveSlide();
   const isTextEditingGlobal = useEditorSettingsStore(state => state.isTextEditing);
   const setTextEditingGlobal = useEditorSettingsStore(state => state.setTextEditing);
+  const setActiveTiptapEditor = useEditorStore(state => state.setActiveTiptapEditor);
   
   const componentProps = component.props;
   const {
@@ -279,6 +281,14 @@ export const renderTable: RendererFunction = (props) => {
       attributes: {
         class: 'tiptap-table-editor'
       },
+      handleKeyDown: (view, event) => {
+        if (event.key === 'Escape') {
+          useEditorStore.getState().clearSelection();
+          setTextEditingGlobal(false);
+          return true;
+        }
+        return false;
+      },
       handleDOMEvents: {
         contextmenu: (view, event) => {
           // Let the event bubble up to be handled by React
@@ -317,7 +327,20 @@ export const renderTable: RendererFunction = (props) => {
             const headerCells = headerRows[0].querySelectorAll('th');
             headerCells.forEach(cell => {
               newHeaders.push(cell.innerHTML || '');
-            });
+  });
+
+  // Keep global active editor in sync so global blur/escape works for tables too
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    if (isSelected) {
+      setActiveTiptapEditor(editor);
+      return;
+    }
+    const current = useEditorStore.getState().activeTiptapEditor;
+    if (current === editor) {
+      setActiveTiptapEditor(null);
+    }
+  }, [editor, isSelected, setActiveTiptapEditor]);
           }
           
           // Extract data (preserve HTML)

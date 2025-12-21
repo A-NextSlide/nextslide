@@ -34,6 +34,7 @@ interface ThemeChatBlockProps {
   onBrandNameChange?: (name: string) => void;
   isEditable?: boolean;
   isLoading?: boolean;
+  loadingLabel?: string;
   className?: string;
 }
 
@@ -51,6 +52,7 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
   onLogoChange,
   isEditable = true,
   isLoading = false,
+  loadingLabel,
   className,
 }) => {
   // Normalize color data in case backend sends arrays
@@ -156,12 +158,12 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
   if (isLoading) {
     return (
       <div className={cn(
-        "w-full max-w-[360px] rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900",
+        "relative w-full max-w-[360px] rounded-2xl overflow-hidden border border-zinc-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-zinc-900/80 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]",
+        "before:content-[''] before:absolute before:inset-0 before:rounded-2xl before:bg-[radial-gradient(circle_at_top,rgba(251,146,60,0.15),transparent_55%)] before:pointer-events-none",
         className
       )}>
-        <div className="h-20 flex items-center justify-center gap-2">
-          <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
-          <span className="text-xs text-zinc-500">Loading theme...</span>
+        <div className="relative z-10 h-14 flex items-center justify-center">
+          <span className="text-[11px] text-zinc-500">{loadingLabel || 'Updating theme...'}</span>
         </div>
       </div>
     );
@@ -169,13 +171,34 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
 
   return (
     <div className={cn(
-      "w-full max-w-[360px] rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900",
+      "relative w-full max-w-[360px] rounded-2xl overflow-hidden border border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-zinc-900/90 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]",
+      "before:content-[''] before:absolute before:inset-0 before:rounded-2xl before:bg-[radial-gradient(circle_at_top,rgba(251,146,60,0.12),transparent_55%)] before:pointer-events-none",
       className
     )}>
-      {/* Color bars with logo */}
-      <div className="flex h-12">
-        {/* Logo section */}
-        <div className="relative group flex-shrink-0 w-12 flex flex-col border-r border-zinc-200 dark:border-zinc-800">
+      <div className="relative z-10">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-100/80 dark:border-zinc-800/80">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+              Theme
+            </span>
+            {data.brandName && (
+              <span className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 truncate">
+                {data.brandName}
+              </span>
+            )}
+          </div>
+          <span className={cn(
+            "text-[10px] font-medium",
+            isEditable ? "text-emerald-500" : "text-zinc-400"
+          )}>
+            {isEditable ? 'Editable' : 'Locked'}
+          </span>
+        </div>
+
+        {/* Color bars with logo */}
+        <div className="flex h-14">
+          {/* Logo section */}
+          <div className="relative group flex-shrink-0 w-12 flex flex-col border-r border-zinc-200 dark:border-zinc-800">
           <input
             ref={fileInputRef}
             type="file"
@@ -185,7 +208,7 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
           />
           <div
             className={cn(
-              "flex-1 flex items-center justify-center bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-900 shadow-inner",
+              "flex-1 flex items-center justify-center bg-gradient-to-br from-zinc-100 via-white to-zinc-200 dark:from-zinc-800 dark:via-zinc-900 dark:to-zinc-900 shadow-inner",
               isEditable && "cursor-pointer hover:from-zinc-200 hover:to-zinc-100 dark:hover:from-zinc-700 dark:hover:to-zinc-800"
             )}
             onClick={() => isEditable && fileInputRef.current?.click()}
@@ -204,7 +227,7 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
               <X className="w-2.5 h-2.5" />
             </button>
           )}
-        </div>
+          </div>
 
         {/* Background color bar */}
         <Popover
@@ -215,7 +238,7 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
             <button
               className={cn(
                 "flex-1 flex flex-col transition-all",
-                isEditable && "hover:opacity-90 cursor-pointer"
+                isEditable && "hover:brightness-95 cursor-pointer"
               )}
               disabled={!isEditable}
             >
@@ -249,7 +272,7 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
             <button
               className={cn(
                 "flex-1 flex flex-col transition-all",
-                isEditable && "hover:opacity-90 cursor-pointer"
+                isEditable && "hover:brightness-95 cursor-pointer"
               )}
               disabled={!isEditable}
             >
@@ -283,7 +306,7 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
             <button
               className={cn(
                 "flex-1 flex flex-col transition-all",
-                isEditable && "hover:opacity-90 cursor-pointer"
+                isEditable && "hover:brightness-95 cursor-pointer"
               )}
               disabled={!isEditable}
             >
@@ -309,22 +332,22 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
         </Popover>
       </div>
 
-      {/* Font selectors row */}
-      <div className="flex border-t border-zinc-200 dark:border-zinc-800">
-        {/* Heading font */}
-        <Popover open={showHeadingFonts} onOpenChange={setShowHeadingFonts}>
+        {/* Font selectors row */}
+        <div className="flex border-t border-zinc-200 dark:border-zinc-800">
+          {/* Heading font */}
+          <Popover open={showHeadingFonts} onOpenChange={setShowHeadingFonts}>
           <PopoverTrigger asChild>
             <button
               className={cn(
-                "flex-1 flex items-center justify-between px-2 py-1.5 border-r border-zinc-200 dark:border-zinc-800",
-                isEditable && "hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
+                "flex-1 flex items-center justify-between px-2 py-2 border-r border-zinc-200 dark:border-zinc-800",
+                isEditable && "hover:bg-zinc-50/80 dark:hover:bg-zinc-800/70 cursor-pointer"
               )}
               disabled={!isEditable}
             >
               <div className="flex flex-col items-start min-w-0">
                 <span className="text-[8px] text-zinc-400 uppercase tracking-wide">Heading</span>
                 <span
-                  className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 truncate max-w-[100px]"
+                  className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 truncate max-w-[100px]"
                   style={{ fontFamily: data.fonts.heading }}
                 >
                   {data.fonts.heading}
@@ -334,15 +357,15 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
             </button>
           </PopoverTrigger>
           {isEditable && renderFontDropdown('heading', data.fonts.heading)}
-        </Popover>
+          </Popover>
 
-        {/* Body font */}
-        <Popover open={showBodyFonts} onOpenChange={setShowBodyFonts}>
+          {/* Body font */}
+          <Popover open={showBodyFonts} onOpenChange={setShowBodyFonts}>
           <PopoverTrigger asChild>
             <button
               className={cn(
-                "flex-1 flex items-center justify-between px-2 py-1.5",
-                isEditable && "hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
+                "flex-1 flex items-center justify-between px-2 py-2",
+                isEditable && "hover:bg-zinc-50/80 dark:hover:bg-zinc-800/70 cursor-pointer"
               )}
               disabled={!isEditable}
             >
@@ -359,7 +382,8 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
             </button>
           </PopoverTrigger>
           {isEditable && renderFontDropdown('body', data.fonts.body)}
-        </Popover>
+          </Popover>
+        </div>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { ExtendedChatMessageProps } from '@/components/chat';
 import { normalizeReferenceImages } from '@/utils/referenceImages';
+import { normalizeDeckTitle } from '@/utils/normalizeDeckTitle';
 
 interface UseInitialConversationalDataOptions {
   initialConversationalData?: any;
@@ -38,6 +39,7 @@ export function useInitialConversationalData({
           slides: initialConversationalData.slides,
           narrative: initialConversationalData.narrative,
           uploadedMedia: initialConversationalData.uploadedMedia,
+          use_uploaded_images: initialConversationalData.use_uploaded_images,
           stylePreferences: {
             slideMode: initialConversationalData.slideMode || 'interactive',
             referenceImages: normalizedReferenceImages
@@ -67,7 +69,7 @@ export function useInitialConversationalData({
 
             const outlineForTheme = {
               id: deckId || `temp-${Date.now()}`,
-              title: initialConversationalData.topic || 'Presentation',
+              title: normalizeDeckTitle(initialConversationalData.topic) || 'Presentation',
               slides: initialConversationalData.slides.map((s: any, i: number) => ({
                 id: `slide-${i}`,
                 title: s.title,

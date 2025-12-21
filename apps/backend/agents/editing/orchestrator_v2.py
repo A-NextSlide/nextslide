@@ -284,6 +284,13 @@ VISUAL CONTEXT (screenshot):
   * Layout adjustments - see element positions
 - The screenshot shows the REAL rendered state (not just code/data)
 
+UPLOADED FILES (attachments):
+- If the user explicitly asks to use uploaded images, you MUST place them in the slide
+- Use attachment URLs from the ATTACHMENTS list in context
+- Recommended tools: create_component (Image) for exact placement, or edit_slide/custom_component_rewrite when redesigning
+- When using edit_slide/create_slide/custom_component_rewrite for uploads, set use_attachments: true in tool_args
+- If the user says files are for reference only, do not insert them
+
 IMAGE REPLACEMENT (search_images):
 - For "replace images", "fix images", "new images", "find a different image" → call search_images
 - DON'T call view_component first - you can see the slide from the screenshot (if included)
@@ -377,6 +384,12 @@ Examples - FULL REWRITE OK (use edit_slide):
 - "rewrite this slide with real data" → web_search → edit_slide
 - "redesign this with accurate stats" → web_search → edit_slide
 - "rebuild the content section" → web_search → edit_slide
+
+⚠️ VIDEO REQUEST FLOW (CRITICAL):
+When the user asks to use a video from a website or mentions a domain/URL:
+1. FIRST: Call deep_extract with include_videos: true and the provided URL/domain
+2. THEN: Use edit_slide or custom_component_rewrite to embed the video
+3. If videos are available, embed the first one (prefer embed_url if present)
 
 ⚠️ NEW SLIDE CREATION FLOW:
 
@@ -529,6 +542,24 @@ def parse_selections_from_message(user_message: str) -> tuple[str, List[Dict[str
         return clean, selections
     except Exception:
         return user_message, []
+
+
+_VIDEO_KEYWORDS = ("video", "demo", "footage", "clip", "mp4", "webm", "vimeo", "youtube", "wistia", "loom", "mux")
+
+
+def _looks_like_url_or_domain(text: str) -> bool:
+    if not text:
+        return False
+    if re.search(r'https?://\S+', text, re.IGNORECASE):
+        return True
+    return bool(re.search(r'\b[a-z0-9.-]+\.[a-z]{2,}\b', text, re.IGNORECASE))
+
+
+def _should_hint_video_extract(text: str) -> bool:
+    lower = (text or "").lower()
+    if not any(k in lower for k in _VIDEO_KEYWORDS):
+        return False
+    return _looks_like_url_or_domain(text)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -711,6 +742,7 @@ AVAILABLE TOOLS:
    - ⚠️ ONLY use when user explicitly wants: redesign, rebrand, overhaul, "from scratch"
    - ⚠️ DO NOT use for single fixes like "fix the logo" or "change one color"
    - Args: { "slide_id": str, "instruction": str }
+   - Optional: use_attachments: true when user explicitly asks to use uploaded images
    - Example: {"instruction": "Redesign this slide with Nike branding throughout"}
 
 3. create_slide ⭐ FOR NEW SLIDES
@@ -722,6 +754,7 @@ AVAILABLE TOOLS:
      * Example: "Add a slide about market trends in AI" → web_search FIRST for current data
      * Simple slides (intro, agenda, title, thank you) do NOT need research
    - Args: { "instruction": str, "insert_after": str (REQUIRED - use current slide ID) }
+   - Optional: use_attachments: true when user explicitly asks to use uploaded images
 
 4. delete_slide
    - Remove a slide from the deck
@@ -742,7 +775,8 @@ AVAILABLE TOOLS:
 8. create_component
    - Add a new component to a slide
    - Args: { "slide_id": str, "component_type": str, "instruction": str }
-   - component_type: TiptapTextBlock, Image, Chart, Shape, CustomComponent
+   - component_type: TiptapTextBlock, Image, Video, Chart, Shape, CustomComponent
+   - For uploaded images: use component_type "Image" and set src to an attachment URL
 
 9. delete_component
    - Remove a component from a slide
@@ -826,6 +860,12 @@ AVAILABLE TOOLS:
 
    ⚠️ IMPORTANT: If [SELECTED_LINKEDIN_PROFILE] is in the message, DON'T call linkedin_lookup - use that data directly!
 
+18. deep_extract ⭐ FOR SITE-SPECIFIC DATA + VIDEOS
+   - Use when the user provides a URL/domain or asks for media from a site
+   - Include videos when requested (set include_videos: true)
+   - Args: { "query": str, "url": optional str, "urls": optional [str], "schema": optional object, "include_videos": optional bool, "route_hint": optional str }
+   - Example: {"query": "Find the product video on the homepage", "url": "https://dyna.co", "include_videos": true}
+
 19. web_search ⭐ FOR CONTENT IMPROVEMENT WITH REAL DATA
    - Search the web for current information, facts, statistics, and data
    - ✅ USE FOR CONTENT UPDATES - ALWAYS search before updating text with real data:
@@ -844,7 +884,7 @@ AVAILABLE TOOLS:
    - Example: {"query": "Tesla quarterly earnings Q3 2024"}
    - Example: {"query": "renewable energy adoption statistics Europe 2024"}
 
-18. edit_all_slides ⭐ FOR CROSS-SLIDE EDITS
+20. edit_all_slides ⭐ FOR CROSS-SLIDE EDITS
    - Apply the SAME edit to ALL slides in the deck at once
    - ⚠️ ONLY use when user EXPLICITLY mentions cross-slide scope:
      * "all slides", "every slide", "across the deck", "on all pages"
@@ -929,10 +969,18 @@ def orchestrate(
 
     # Build context (include selection info)
     context = build_context(deck_data, current_slide, attachments, chat_history, selections=selections)
+    video_hint = ""
+    if _should_hint_video_extract(clean_message):
+        video_hint = (
+            "\n\nVIDEO REQUEST DETECTED:\n"
+            "- Call deep_extract with include_videos: true using the provided URL/domain\n"
+            "- Then embed the video in the slide (prefer embed_url if available)\n"
+        )
 
     # Full prompt
     prompt = f"""{context}
 
+{video_hint}
 {TOOL_DESCRIPTIONS}
 
 USER REQUEST: {clean_message}
@@ -1107,8 +1155,9 @@ Respond with the tool_calls to execute."""
                     for integration_name, ctx in integration_context.items():
                         data_type = ctx.get("type", "items")
                         items = ctx.get("data", [])
+                        videos = ctx.get("videos") or []
 
-                        if not items:
+                        if not items and not videos:
                             continue
 
                         # Format data based on integration type
@@ -1181,6 +1230,35 @@ Respond with the tool_calls to execute."""
                             context_blocks.append(header + "\n" + "\n".join(item_lines))
                             logger.info(f"[ORCHESTRATOR] 💉 Injected {len(items)} {data_type} from {integration_name} into {tool_name} instruction")
 
+                        if videos:
+                            if tool_name in ("create_slide", "edit_slide", "custom_component_rewrite"):
+                                existing = tool_args.get("available_videos")
+                                merged: List[Dict[str, Any]] = []
+                                seen = set()
+                                for v in (existing if isinstance(existing, list) else []) + videos:
+                                    if not isinstance(v, dict):
+                                        continue
+                                    url = (v.get("embed_url") or v.get("url") or "").strip()
+                                    if not url or url in seen:
+                                        continue
+                                    seen.add(url)
+                                    merged.append(v)
+                                if merged:
+                                    tool_args["available_videos"] = merged
+
+                            video_lines = []
+                            for v in videos[:5]:
+                                title = v.get("title") or v.get("url") or "video"
+                                url = v.get("embed_url") or v.get("url")
+                                if url:
+                                    video_lines.append(f"- {title} ({url})")
+                                else:
+                                    video_lines.append(f"- {title}")
+                            if video_lines:
+                                header = "[AVAILABLE VIDEOS - EMBED ONE WHEN REQUESTED]:"
+                                context_blocks.append(header + "\n" + "\n".join(video_lines))
+                                logger.info(f"[ORCHESTRATOR] 🎬 Injected {len(video_lines)} video(s) from {integration_name} into {tool_name} instruction")
+
                     if context_blocks:
                         tool_args["instruction"] = instruction + "\n\n" + "\n\n".join(context_blocks)
 
@@ -1239,6 +1317,7 @@ Respond with the tool_calls to execute."""
                             integration_context[integration_name] = {
                                 "type": obs.get("type", "items"),
                                 "data": obs.get("data", []),
+                                "videos": obs.get("videos", []) or [],
                                 "source": obs.get("source", "unknown"),
                                 "query": obs.get("query", "")
                             }
@@ -1363,6 +1442,7 @@ Respond with the tool_calls to execute."""
         try:
             followup_prompt = f"""{context}
 
+{video_hint}
 {TOOL_DESCRIPTIONS}
 
 USER REQUEST: {clean_message}

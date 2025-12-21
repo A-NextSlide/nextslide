@@ -69,8 +69,7 @@ def _ensure_stripe_configured():
 
 # Log initial configuration status
 if _ensure_stripe_configured():
-    key = _get_stripe_key()
-    logger.info(f"Stripe configured successfully (key: {key[:12]}...)")
+    logger.info("Stripe configured successfully")
 else:
     logger.warning(f"Stripe not configured - env_path={env_path}, exists={env_path.exists()}")
 
