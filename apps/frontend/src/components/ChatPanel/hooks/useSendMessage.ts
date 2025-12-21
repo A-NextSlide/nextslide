@@ -283,6 +283,18 @@ export function useSendMessage({
       if (stylePrefs?.referenceLinks && Array.isArray(stylePrefs.referenceLinks) && stylePrefs.referenceLinks.length > 0) {
         context.reference_links = stylePrefs.referenceLinks;
       }
+      if (outline?.scraped_context) {
+        context.scraped_context = outline.scraped_context;
+      }
+      if (Array.isArray(outline?.reference_sources) && outline.reference_sources.length > 0) {
+        context.reference_sources = outline.reference_sources;
+      }
+      if (outline?.research_context) {
+        context.research_context = outline.research_context;
+      }
+      if (Array.isArray(outline?.research_citations) && outline.research_citations.length > 0) {
+        context.research_citations = outline.research_citations;
+      }
 
       try {
         let fullResponse = '';

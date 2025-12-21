@@ -444,7 +444,7 @@ const Landing: React.FC = () => {
       </section>
 
       {/* Live Showcase */}
-      <section id="showcase" className="py-16 px-8 bg-gradient-to-b from-zinc-900 to-black">
+      <section id="showcase" className="py-12 px-4 sm:px-8 bg-gradient-to-b from-zinc-900 to-black">
         <div
           ref={showcaseRef}
           tabIndex={0}
@@ -452,7 +452,7 @@ const Landing: React.FC = () => {
           onFocus={() => setShowcaseFocused(true)}
           onBlur={() => setShowcaseFocused(false)}
         >
-          <div className="text-center mb-10 animate-on-scroll opacity-0">
+          <div className="text-center mb-6 sm:mb-10 animate-on-scroll opacity-0">
             <h2
               className="text-white mb-3"
               style={{
@@ -507,13 +507,13 @@ const Landing: React.FC = () => {
                 </div>
 
                 {/* Content with slide sidebar - fixed height container */}
-                <div className="flex h-[500px]">
+                <div className="flex flex-col md:flex-row h-[420px] sm:h-[480px] lg:h-[500px]">
                   {/* Slide thumbnails sidebar - scrollable */}
-                  <div className="w-[150px] flex-shrink-0 border-r border-white/5 bg-black/30 p-2 overflow-y-auto custom-scrollbar relative group/sidebar">
-                    <div className="space-y-2">
+                  <div className="w-full md:w-[150px] flex-shrink-0 border-b md:border-b-0 md:border-r border-white/5 bg-black/30 p-2 overflow-x-auto md:overflow-y-auto md:overflow-x-hidden custom-scrollbar relative group/sidebar">
+                    <div className="flex md:block gap-2 md:space-y-2">
                       {isLoadingShowcase ? (
                         [...Array(5)].map((_, idx) => (
-                          <div key={idx} className="aspect-video rounded overflow-hidden relative bg-white/5 animate-pulse" />
+                          <div key={idx} className="aspect-video rounded overflow-hidden relative bg-white/5 animate-pulse min-w-[120px] md:min-w-0 flex-shrink-0" />
                         ))
                       ) : (
                         activeDeck?.slides?.map((slide, idx) => (
@@ -526,7 +526,7 @@ const Landing: React.FC = () => {
                               showcaseRef.current?.focus();
                             }}
                             className={cn(
-                              "aspect-video rounded overflow-hidden relative cursor-pointer transition-all flex-shrink-0",
+                              "aspect-video rounded overflow-hidden relative cursor-pointer transition-all flex-shrink-0 min-w-[120px] md:min-w-0",
                               idx === activeDeckSlideIndex
                                 ? "ring-2 ring-[#FF4301]"
                                 : "opacity-50 hover:opacity-100 hover:ring-1 hover:ring-white/30"
@@ -542,14 +542,14 @@ const Landing: React.FC = () => {
                     </div>
                     {/* Scroll indicator - fade gradient at bottom */}
                     {!isLoadingShowcase && activeDeck && activeDeck.slideCount > 5 && (
-                      <div className="sticky bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-black/60 to-transparent pointer-events-none flex items-end justify-center pb-1">
+                      <div className="sticky bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-black/60 to-transparent pointer-events-none hidden md:flex items-end justify-center pb-1">
                         <ChevronDown className="w-4 h-4 text-white/50 animate-bounce" />
                       </div>
                     )}
                   </div>
 
                   {/* Main slide */}
-                  <div className="flex-1 p-4 flex items-center justify-center">
+                  <div className="flex-1 p-3 md:p-4 flex items-center justify-center">
                     <div
                       className="aspect-video w-full max-h-full relative rounded-lg overflow-hidden bg-black group"
                       onClick={() => {
@@ -573,7 +573,7 @@ const Landing: React.FC = () => {
 
                       {/* Navigation buttons - show on hover */}
                       {!isLoadingShowcase && activeDeck && activeDeck.slideCount > 1 && (
-                        <div className="absolute inset-0 flex items-center justify-between px-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                        <div className="absolute inset-0 flex items-center justify-between px-3 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -616,14 +616,14 @@ const Landing: React.FC = () => {
               </div>
 
               {/* Deck gallery - match height with main viewer */}
-              <div className="rounded-2xl overflow-hidden bg-zinc-900/50 border border-white/10 flex flex-col h-[540px]">
+              <div className="rounded-2xl overflow-hidden bg-zinc-900/50 border border-white/10 flex flex-col h-auto lg:h-[540px]">
                 <div className="px-3 py-2 border-b border-white/5 flex-shrink-0">
                   <h4 className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Explore Examples</h4>
                 </div>
-                <div className="p-2 space-y-2 overflow-y-auto flex-1 custom-scrollbar">
+                <div className="p-2 flex gap-3 overflow-x-auto lg:overflow-y-auto lg:flex-col lg:gap-2 flex-1 custom-scrollbar">
                   {isLoadingShowcase ? (
                     [...Array(4)].map((_, index) => (
-                      <div key={index} className="rounded-lg overflow-hidden relative ring-1 ring-white/5">
+                      <div key={index} className="rounded-lg overflow-hidden relative ring-1 ring-white/5 min-w-[180px] lg:min-w-0">
                         <div className="aspect-[16/9] relative overflow-hidden bg-white/5 animate-pulse" />
                       </div>
                     ))
@@ -633,7 +633,7 @@ const Landing: React.FC = () => {
                         key={deck.uuid}
                         onClick={() => { handleUserInteraction(); setActiveShowcaseIndex(index); setActiveDeckSlideIndex(0); showcaseRef.current?.focus(); }}
                         className={cn(
-                          "rounded-lg overflow-hidden relative cursor-pointer transition-all",
+                          "rounded-lg overflow-hidden relative cursor-pointer transition-all min-w-[180px] lg:min-w-0",
                           index === activeShowcaseIndex
                             ? "ring-2 ring-[#FF4301]"
                             : "ring-1 ring-white/5 hover:ring-white/20"

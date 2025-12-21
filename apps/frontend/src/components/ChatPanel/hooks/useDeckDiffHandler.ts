@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useRef, type Dispatch, type SetStateAction } from 'react';
 import { applyDeckDiffPure } from '@/utils/deckDiffUtils';
 import { useDeckStore } from '@/stores/deckStore';
 import { useEditorStore } from '@/stores/editorStore';
@@ -9,7 +9,23 @@ interface UseDeckDiffHandlerOptions {
 }
 
 export function useDeckDiffHandler({ setIsGenerating }: UseDeckDiffHandlerOptions) {
-  const applyDeckDiffRespectingEditMode = useCallback((deckDiff: DeckDiff, isEditDiff = false) => {
+  const pendingDiffRef = useRef<{ diff: DeckDiff; isEditDiff: boolean } | null>(null);
+  const pendingPreviewRef = useRef<{ slides: any[]; isAgentEdit: boolean } | null>(null);
+  const pendingTimerRef = useRef<number | null>(null);
+  const pendingSinceRef = useRef<number | null>(null);
+
+  const isUserInteracting = useCallback(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      (window as any).__isDragging === true ||
+      (window as any).__isDraggingCharts === true ||
+      (window as any).__isResizingCharts === true ||
+      (window as any).__isDraggingSlide === true ||
+      (window as any).__isSlideOperationInProgress === true
+    );
+  }, []);
+
+  const applyDeckDiffNow = useCallback((deckDiff: DeckDiff, isEditDiff = false) => {
     if (!deckDiff) {
       return;
     }
@@ -26,16 +42,6 @@ export function useDeckDiffHandler({ setIsGenerating }: UseDeckDiffHandlerOption
     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
 
     if (isEditing) {
-      try {
-        const interacting = (typeof window !== 'undefined') && (
-          (window as any).__isDragging === true ||
-          (window as any).__isDraggingCharts === true ||
-          (window as any).__isResizingCharts === true
-        );
-        if (interacting) {
-          return;
-        }
-      } catch { }
       try {
         const editorStore = useEditorStore.getState();
         const slidesToUpdate = (deckDiff as any).slides_to_update || [];
@@ -116,6 +122,23 @@ export function useDeckDiffHandler({ setIsGenerating }: UseDeckDiffHandlerOption
             }, 50);
           }
         }
+
+        const addedSlideIds = (slidesToAdd || [])
+          .map((slide: any) => (typeof slide === 'string' ? slide : slide?.id))
+          .filter(Boolean);
+        const removedSlideIds = (slidesToRemove || [])
+          .map((slide: any) => (typeof slide === 'string' ? slide : slide?.id))
+          .filter(Boolean);
+
+        addedSlideIds.forEach((slideId: string) => {
+          editorStore.clearDraftComponents(slideId);
+          editorStore.initializeDraftComponents(slideId);
+        });
+
+        removedSlideIds.forEach((slideId: string) => {
+          editorStore.clearDraftComponents(slideId);
+        });
+
         return;
       } catch (e) {
         console.warn('[AgentChat] Failed to apply diff to drafts', e);
@@ -133,7 +156,7 @@ export function useDeckDiffHandler({ setIsGenerating }: UseDeckDiffHandlerOption
     }
   }, [setIsGenerating]);
 
-  const applyPreviewSlidesRespectingEditMode = useCallback((previewSlides: any[], isAgentEdit = false) => {
+  const applyPreviewSlidesNow = useCallback((previewSlides: any[], isAgentEdit = false) => {
     if (!Array.isArray(previewSlides) || previewSlides.length === 0) return;
     try {
       const deckData = (useDeckStore as any).getState().deckData;
@@ -163,17 +186,19 @@ export function useDeckDiffHandler({ setIsGenerating }: UseDeckDiffHandlerOption
     }
 
     try {
-      const interacting = (typeof window !== 'undefined') && (
-        (window as any).__isDragging === true ||
-        (window as any).__isDraggingCharts === true ||
-        (window as any).__isResizingCharts === true
-      );
-      if (interacting) {
-        return;
-      }
-    } catch { }
-    try {
       const editorStore = useEditorStore.getState();
+      const deckStore = useDeckStore.getState();
+      const currentSlides = deckStore.deckData?.slides || [];
+      const missingSlides = previewSlides.filter((ps: any) => !currentSlides.some((sl: any) => sl.id === ps.id));
+
+      if (missingSlides.length > 0) {
+        deckStore.updateDeckData({
+          slides: [...currentSlides, ...missingSlides],
+          lastModified: new Date().toISOString(),
+          version: `${deckStore.deckData?.version || ''}-preview-${Date.now()}`
+        }, { skipBackend: true });
+      }
+
       previewSlides.forEach((previewSlide: any) => {
         const slideId = previewSlide?.id;
         if (!slideId) return;
@@ -214,6 +239,68 @@ export function useDeckDiffHandler({ setIsGenerating }: UseDeckDiffHandlerOption
       console.warn('[AgentChat] Failed to apply preview slides to drafts', e);
     }
   }, [setIsGenerating]);
+
+  const schedulePendingApply = useCallback(() => {
+    if (pendingTimerRef.current) return;
+    pendingTimerRef.current = window.setTimeout(() => {
+      pendingTimerRef.current = null;
+
+      if (!pendingDiffRef.current && !pendingPreviewRef.current) {
+        pendingSinceRef.current = null;
+        return;
+      }
+
+      const stillInteracting = isUserInteracting();
+      if (stillInteracting) {
+        if (!pendingSinceRef.current) pendingSinceRef.current = Date.now();
+        if (Date.now() - pendingSinceRef.current < 4000) {
+          schedulePendingApply();
+          return;
+        }
+      }
+
+      pendingSinceRef.current = null;
+      const pendingDiff = pendingDiffRef.current;
+      const pendingPreview = pendingPreviewRef.current;
+      pendingDiffRef.current = null;
+      pendingPreviewRef.current = null;
+
+      if (pendingDiff) {
+        applyDeckDiffNow(pendingDiff.diff, pendingDiff.isEditDiff);
+      }
+      if (pendingPreview) {
+        applyPreviewSlidesNow(pendingPreview.slides, pendingPreview.isAgentEdit);
+      }
+    }, 200);
+  }, [applyDeckDiffNow, applyPreviewSlidesNow, isUserInteracting]);
+
+  const applyDeckDiffRespectingEditMode = useCallback((deckDiff: DeckDiff, isEditDiff = false) => {
+    if (!deckDiff) {
+      return;
+    }
+
+    if (isUserInteracting()) {
+      pendingDiffRef.current = { diff: deckDiff, isEditDiff };
+      if (!pendingSinceRef.current) pendingSinceRef.current = Date.now();
+      schedulePendingApply();
+      return;
+    }
+
+    applyDeckDiffNow(deckDiff, isEditDiff);
+  }, [applyDeckDiffNow, isUserInteracting, schedulePendingApply]);
+
+  const applyPreviewSlidesRespectingEditMode = useCallback((previewSlides: any[], isAgentEdit = false) => {
+    if (!Array.isArray(previewSlides) || previewSlides.length === 0) return;
+
+    if (isUserInteracting()) {
+      pendingPreviewRef.current = { slides: previewSlides, isAgentEdit };
+      if (!pendingSinceRef.current) pendingSinceRef.current = Date.now();
+      schedulePendingApply();
+      return;
+    }
+
+    applyPreviewSlidesNow(previewSlides, isAgentEdit);
+  }, [applyPreviewSlidesNow, isUserInteracting, schedulePendingApply]);
 
   return {
     applyDeckDiffRespectingEditMode,

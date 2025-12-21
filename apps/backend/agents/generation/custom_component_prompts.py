@@ -165,11 +165,55 @@ def _format_manual_charts_for_prompt(manual_charts: List[Any]) -> str:
     return "\n\n".join(blocks)
 
 
+def _truncate_text(text: str, max_chars: int) -> str:
+    if not text:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + " [TRUNCATED]"
+
+
 def _format_conversation_history(history: Dict[str, Any]) -> str:
     """Format conversation history for prompt readability."""
     if not isinstance(history, dict):
         return ""
-    return json.dumps(history, ensure_ascii=True, indent=2)
+    trimmed: Dict[str, Any] = {}
+
+    initial_request = history.get("initial_request")
+    if isinstance(initial_request, str) and initial_request.strip():
+        trimmed["initial_request"] = _truncate_text(initial_request.strip(), 800)
+
+    messages = history.get("messages")
+    if isinstance(messages, list):
+        trimmed_messages: List[Dict[str, Any]] = []
+        for msg in messages[-6:]:
+            if not isinstance(msg, dict):
+                continue
+            content = msg.get("content")
+            if content is None:
+                continue
+            trimmed_messages.append({
+                "role": msg.get("role"),
+                "content": _truncate_text(str(content), 800),
+            })
+        if trimmed_messages:
+            trimmed["messages"] = trimmed_messages
+
+    context = history.get("context")
+    if isinstance(context, dict):
+        trimmed_context: Dict[str, Any] = {}
+        reference_sources = context.get("reference_sources")
+        if isinstance(reference_sources, list) and reference_sources:
+            trimmed_context["reference_sources"] = reference_sources[:5]
+        citations = context.get("research_citations")
+        if isinstance(citations, list) and citations:
+            trimmed_context["research_citations"] = [str(c) for c in citations[:5] if c]
+        if trimmed_context:
+            trimmed["context"] = trimmed_context
+
+    if not trimmed:
+        return ""
+    return json.dumps(trimmed, ensure_ascii=True, indent=2)
 
 
 def build_user_prompt(

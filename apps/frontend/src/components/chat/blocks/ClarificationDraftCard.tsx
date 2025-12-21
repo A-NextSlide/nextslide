@@ -3,6 +3,111 @@ import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ClarificationField } from '@/services/outlineAgentService';
 
+/**
+ * Simple markdown renderer for inline formatting (bold, italic)
+ */
+const renderMarkdown = (text: string): React.ReactNode => {
+  if (!text) return null;
+
+  // Split by markdown patterns while preserving delimiters
+  // Order matters: check ** before * to avoid conflicts
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let keyIndex = 0;
+
+  while (remaining.length > 0) {
+    // Check for bold (**text**)
+    const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
+    if (boldMatch) {
+      parts.push(<strong key={keyIndex++} className="font-semibold">{boldMatch[1]}</strong>);
+      remaining = remaining.slice(boldMatch[0].length);
+      continue;
+    }
+
+    // Check for italic (*text*)
+    const italicMatch = remaining.match(/^\*([^*]+)\*/);
+    if (italicMatch) {
+      parts.push(<em key={keyIndex++} className="italic">{italicMatch[1]}</em>);
+      remaining = remaining.slice(italicMatch[0].length);
+      continue;
+    }
+
+    // Find next markdown delimiter
+    const nextBold = remaining.indexOf('**');
+    const nextItalic = remaining.search(/(?<!\*)\*(?!\*)/);
+
+    let nextDelim = -1;
+    if (nextBold !== -1 && nextItalic !== -1) {
+      nextDelim = Math.min(nextBold, nextItalic);
+    } else if (nextBold !== -1) {
+      nextDelim = nextBold;
+    } else if (nextItalic !== -1) {
+      nextDelim = nextItalic;
+    }
+
+    if (nextDelim === -1 || nextDelim === 0) {
+      // No more delimiters or delimiter at start with no match - consume one char
+      if (nextDelim === 0) {
+        parts.push(remaining[0]);
+        remaining = remaining.slice(1);
+      } else {
+        parts.push(remaining);
+        remaining = '';
+      }
+    } else {
+      parts.push(remaining.slice(0, nextDelim));
+      remaining = remaining.slice(nextDelim);
+    }
+  }
+
+  return parts.length === 1 && typeof parts[0] === 'string' ? parts[0] : <>{parts}</>;
+};
+
+/**
+ * Parse numbered questions from a draft text.
+ * Handles formats like "1. **Question:** text" or "1. Question text"
+ */
+const parseNumberedQuestions = (draft: string): { intro: string; questions: Array<{ num: number; title: string; content: string }> } => {
+  const lines = draft.split(/(?=\d+\.\s)/);
+  const intro: string[] = [];
+  const questions: Array<{ num: number; title: string; content: string }> = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Check if this is a numbered question
+    const numMatch = trimmed.match(/^(\d+)\.\s*(.*)/s);
+    if (numMatch) {
+      const num = parseInt(numMatch[1], 10);
+      let content = numMatch[2].trim();
+
+      // Try to extract title from **Title:** pattern
+      const titleMatch = content.match(/^\*\*([^*:]+)(?::\*\*|\*\*:)\s*(.*)/s);
+      if (titleMatch) {
+        questions.push({
+          num,
+          title: titleMatch[1].trim(),
+          content: titleMatch[2].trim(),
+        });
+      } else {
+        // No explicit title, use first few words
+        const words = content.split(/\s+/).slice(0, 3).join(' ');
+        questions.push({
+          num,
+          title: words.length > 30 ? words.slice(0, 30) + '...' : words,
+          content,
+        });
+      }
+    } else {
+      // Not a numbered item - part of intro
+      intro.push(trimmed);
+    }
+  }
+
+  return { intro: intro.join(' ').trim(), questions };
+};
+
 type DraftPart =
   | { type: 'text'; value: string }
   | { type: 'field'; id: string; value: string };
@@ -17,6 +122,7 @@ interface ClarificationQuestion {
   defaultValue?: string;
   title?: string;
   hint?: string;
+  fullContent?: string; // Full question content with markdown
 }
 
 interface DraftTokenMeta {
@@ -290,21 +396,40 @@ const buildDraftTokenMeta = (parts: DraftPart[]): DraftTokenMeta[] => {
 };
 
 const buildQuestionsFromDraft = (draft: string, tokens: DraftTokenMeta[]): ClarificationQuestion[] => {
-  if (tokens.length === 0) {
-    const label = normalizeQuestionLabel(draft);
-    return label
-      ? [{ id: 'field-0', label, title: label, type: 'text' }]
-      : [];
+  // If we have tokens, use them
+  if (tokens.length > 0) {
+    return tokens.map((token, index) => ({
+      id: token.id,
+      label: token.title || `Detail ${index + 1}`,
+      title: token.title,
+      hint: token.hint,
+      type: 'text',
+      defaultValue: token.defaultValue,
+    }));
   }
 
-  return tokens.map((token, index) => ({
-    id: token.id,
-    label: token.title || `Detail ${index + 1}`,
-    title: token.title,
-    hint: token.hint,
-    type: 'text',
-    defaultValue: token.defaultValue,
-  }));
+  // Check if the draft contains numbered questions (1. 2. 3. etc.)
+  const hasNumberedQuestions = /\d+\.\s+\*?\*?[A-Z]/.test(draft);
+  if (hasNumberedQuestions) {
+    const parsed = parseNumberedQuestions(draft);
+    if (parsed.questions.length > 0) {
+      return parsed.questions.map((q, index) => ({
+        id: `question-${index}`,
+        label: q.title,
+        title: q.title,
+        hint: parsed.intro && index === 0 ? parsed.intro : undefined,
+        type: 'text' as QuestionType,
+        // Store the full content for display
+        fullContent: q.content,
+      }));
+    }
+  }
+
+  // Fallback: single question from draft
+  const label = normalizeQuestionLabel(draft);
+  return label
+    ? [{ id: 'field-0', label, title: label, type: 'text', fullContent: draft }]
+    : [];
 };
 
 const buildQuestionsFromFields = (fields: ClarificationField[]): ClarificationQuestion[] => (
@@ -558,18 +683,35 @@ const ClarificationDraftCard: React.FC<ClarificationDraftCardProps> = ({
         </div>
 
         <div className="mt-3">
-          <div className="text-sm font-semibold text-zinc-800 animate-fade-in">
-            <span
-              key={questionAnimationKey}
-              className={cn(shouldTypeQuestion ? 'typing-animation' : '')}
-              style={shouldTypeQuestion ? {
-                '--message-length': questionTitle.length,
-                '--animation-duration': `${typingDurationMs}ms`,
-              } as React.CSSProperties : undefined}
-            >
-              {questionTitle}
-            </span>
-            {shouldTypeQuestion && (
+          {/* Show intro text if present (only on first question) */}
+          {questionHint && currentIndex === 0 && (
+            <div className="mb-3 text-sm text-zinc-600 leading-relaxed">
+              {renderMarkdown(questionHint)}
+            </div>
+          )}
+
+          {/* Question title/label */}
+          <div className="text-xs font-semibold uppercase tracking-wide text-orange-600 mb-1">
+            {currentIndex + 1}. {currentQuestion?.title || currentQuestion?.label}
+          </div>
+
+          {/* Full question content with markdown */}
+          <div className="text-sm text-zinc-800 leading-relaxed animate-fade-in max-h-[200px] overflow-y-auto">
+            {currentQuestion?.fullContent ? (
+              renderMarkdown(currentQuestion.fullContent)
+            ) : (
+              <span
+                key={questionAnimationKey}
+                className={cn(shouldTypeQuestion ? 'typing-animation' : '')}
+                style={shouldTypeQuestion ? {
+                  '--message-length': questionTitle.length,
+                  '--animation-duration': `${typingDurationMs}ms`,
+                } as React.CSSProperties : undefined}
+              >
+                {questionTitle}
+              </span>
+            )}
+            {!currentQuestion?.fullContent && shouldTypeQuestion && (
               <span
                 className="typing-cursor typing-cursor-fade relative -top-[1px] ml-0.5"
                 style={{ '--cursor-hide-delay': `${cursorHideDelayMs}ms` } as React.CSSProperties}
@@ -578,9 +720,6 @@ const ClarificationDraftCard: React.FC<ClarificationDraftCardProps> = ({
               </span>
             )}
           </div>
-          {questionHint && (
-            <div className="mt-1 text-xs text-zinc-400">{questionHint}</div>
-          )}
           <input
             ref={inputRef as React.RefObject<HTMLInputElement>}
             type={inputType}

@@ -115,11 +115,13 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
 
     try:
         slides = deck_data.get("slides", []) or []
+        status_value = deck_data.get("status")
+        status_state = status_value.get("state", "unknown") if isinstance(status_value, dict) else "unknown"
         logger.debug(
             "Uploading deck %s - %s slides, status: %s, user: %s",
             deck_uuid,
             len(slides),
-            (deck_data.get("status", {}) or {}).get("state", "unknown"),
+            status_state,
             user_id or "anonymous",
         )
         
@@ -153,7 +155,7 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
                         continue
                     comps = slide.get("components") or []
                     total_components += len(comps)
-                    custom_components += sum(1 for c in comps if c.get("type") == "CustomComponent")
+                    custom_components += sum(1 for c in comps if isinstance(c, dict) and c.get("type") == "CustomComponent")
                 logger.debug(
                     "[UPLOAD_DECK] Prepared %s slides (%s total components, %s CustomComponents)",
                     len(deck_data.get("slides") or []),
@@ -192,14 +194,22 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
             timeout_seconds=8.0
         )
         if existing.data:
-            # This can happen during rapid successive saves; keep at DEBUG to avoid log spam.
-            logger.debug(
-                "Duplicate deck upsert detected for %s (created_at=%s, existing_name=%r, new_name=%r)",
-                deck_uuid,
-                existing.data[0].get("created_at"),
-                existing.data[0].get("name"),
-                deck_data.get("name"),
-            )
+            existing_row = existing.data[0] if isinstance(existing.data, list) and existing.data else None
+            if isinstance(existing_row, dict):
+                # This can happen during rapid successive saves; keep at DEBUG to avoid log spam.
+                logger.debug(
+                    "Duplicate deck upsert detected for %s (created_at=%s, existing_name=%r, new_name=%r)",
+                    deck_uuid,
+                    existing_row.get("created_at"),
+                    existing_row.get("name"),
+                    deck_data.get("name"),
+                )
+            else:
+                logger.debug(
+                    "Duplicate deck upsert detected for %s (unexpected existing row type: %s)",
+                    deck_uuid,
+                    type(existing_row).__name__,
+                )
             # Shallow-merge existing data into data_field to preserve keys when we update only some
             try:
                 existing_full = perform_supabase_operation_with_retry(
@@ -208,7 +218,7 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
                     max_attempts=3,
                     timeout_seconds=8.0
                 )
-                if existing_full.data and isinstance(existing_full.data.get("data"), dict):
+                if isinstance(existing_full.data, dict) and isinstance(existing_full.data.get("data"), dict):
                     existing_data = existing_full.data.get("data") or {}
                     if data_field:
                         merged = dict(existing_data)
@@ -249,7 +259,7 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
             max_attempts=2,
             timeout_seconds=8.0
         )
-        if verify_response.data and verify_response.data.get("slides"):
+        if isinstance(verify_response.data, dict) and verify_response.data.get("slides"):
             # If any slide unexpectedly has zero components after upload, surface it.
             empty_slides = []
             for i, slide in enumerate(verify_response.data.get("slides", []) or []):

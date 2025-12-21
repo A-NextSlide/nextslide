@@ -901,7 +901,7 @@ export function createSlideRemoveDiff(slideId: string): DeckDiff {
 }
 
 /**
- * Cleans up duplicate CustomComponents on a slide, keeping the smallest/cleanest one
+ * Cleans up duplicate CustomComponents on a slide, keeping the most recently added one
  * @param slide The slide to clean up
  * @returns A new slide with duplicate CustomComponents removed
  */
@@ -927,24 +927,18 @@ export function cleanupDuplicateCustomComponents(slide: SlideData): { slide: Sli
     }))
   });
 
-  // Sort by render HTML length (DESCENDING) - keep the LARGEST one (most content)
-  // This prevents losing content when a minimal duplicate gets created
-  const sorted = [...customComponents].sort((a, b) => {
-    const aLen = a.props?.render?.length || 0;
-    const bLen = b.props?.render?.length || 0;
-    return bLen - aLen;  // Descending: largest first
-  });
-
-  // Keep only the first (LARGEST) one
-  const keepId = sorted[0].id;
-  const removeIds = sorted.slice(1).map(c => c.id);
+  // Keep the most recently added component (last in array order).
+  // mergeComponents appends new components at the end, so this preserves latest edits.
+  const keepComponent = customComponents[customComponents.length - 1];
+  const keepId = keepComponent.id;
+  const removeIds = customComponents.slice(0, -1).map(c => c.id);
 
   console.log('[DeckDiff] Cleaning up duplicate CustomComponents', {
     slideId: slide.id,
     keepId,
-    keepRenderLength: sorted[0].props?.render?.length || 0,
+    keepRenderLength: keepComponent.props?.render?.length || 0,
     removeIds,
-    removedRenderLengths: sorted.slice(1).map(c => c.props?.render?.length || 0)
+    removedRenderLengths: customComponents.slice(0, -1).map(c => c.props?.render?.length || 0)
   });
 
   // Filter out the duplicates

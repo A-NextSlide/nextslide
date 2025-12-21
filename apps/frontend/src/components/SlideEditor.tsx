@@ -1670,7 +1670,7 @@ const SlideEditorContent: React.FC = () => {
               onCollapse={() => setIsChatCollapsed(true)}
               onExpand={() => setIsChatCollapsed(false)}
             >
-              <div className="flex flex-col gap-4 h-full min-w-0 overflow-y-auto">
+              <div className="flex flex-col gap-4 h-full min-w-0 overflow-y-auto" data-scroll-guard="true">
                 <ChatPanel
                   onCollapseChange={handleCollapseChange}
                   opacity={chatOpacity}

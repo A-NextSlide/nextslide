@@ -1,6 +1,7 @@
 import json
 import asyncio
 import os
+from urllib.parse import urlparse
 from typing import Dict, Any, List, Optional, AsyncGenerator
 from datetime import datetime
 
@@ -19,6 +20,7 @@ from .streaming_helpers import (
     collect_urls_to_scrape,
     extract_domains_from_message,
     extract_json_blocks,
+    is_explicit_refresh_request,
     is_explicit_research_request,
     normalize_action_payload,
     scrape_reference_content,
@@ -337,6 +339,47 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         reference_context_emitted = False
         research_results_emitted = False
 
+        def _normalize_url(candidate: str) -> str:
+            if not isinstance(candidate, str):
+                return ""
+            value = candidate.strip()
+            if not value:
+                return ""
+            try:
+                parsed = urlparse(value if value.startswith("http") else f"https://{value}")
+                host = (parsed.hostname or "").lower().lstrip("www.")
+                path = (parsed.path or "").rstrip("/")
+                return f"{host}{path}"
+            except Exception:
+                return value.lower().rstrip("/")
+
+        def _extract_reference_urls(sources: List[Dict[str, Any]]) -> set:
+            urls = set()
+            for source in sources or []:
+                if not isinstance(source, dict):
+                    continue
+                candidate = source.get("url") or source.get("source_url") or ""
+                normalized = _normalize_url(candidate)
+                if normalized:
+                    urls.add(normalized)
+            return urls
+
+        def _merge_reference_sources(
+            existing: List[Dict[str, Any]],
+            incoming: List[Dict[str, Any]],
+        ) -> List[Dict[str, Any]]:
+            merged: List[Dict[str, Any]] = []
+            seen = set()
+            for item in (existing or []) + (incoming or []):
+                if not isinstance(item, dict):
+                    continue
+                key = (_normalize_url(item.get("url") or "") or "").strip() or item.get("title") or ""
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged.append(item)
+            return merged
+
         def _merge_scraped_videos() -> None:
             nonlocal scrape_result, scraped_videos
             if not scraped_videos:
@@ -366,13 +409,36 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         analysis_by_id = file_payload.analysis_by_id
         analysis_by_name = file_payload.analysis_by_name
 
+        if request.context:
+            context_scraped = request.context.get("scraped_context") or request.context.get("scrapedContext")
+            if isinstance(context_scraped, str) and context_scraped.strip():
+                scraped_context = context_scraped
+
+            context_sources = request.context.get("reference_sources") or request.context.get("referenceSources") or []
+            if isinstance(context_sources, list):
+                reference_sources = [s for s in context_sources if isinstance(s, dict)]
+
+            context_research = request.context.get("research_context") or request.context.get("researchContext")
+            if isinstance(context_research, str) and context_research.strip():
+                research_context = context_research
+
+            context_citations = request.context.get("research_citations") or request.context.get("researchCitations") or []
+            if isinstance(context_citations, list):
+                research_citations = [str(c) for c in context_citations if c]
+
         if file_context and not request.files:
             logger.info("[OutlineAgent] Using previous file analysis context: %s chars", len(file_context))
+
+        has_reference_context = bool(scraped_context or reference_sources)
+        has_research_context = bool(research_context or research_citations)
+        explicit_request = is_explicit_research_request(request.message)
+        refresh_request = is_explicit_refresh_request(request.message)
+
         # Detect URLs in the CURRENT message only and auto-scrape them.
         # Exception: if the user explicitly asks to search, fall back to recent history.
-        urls_to_scrape = collect_urls_to_scrape(request.message, request.context or {})
+        urls_to_scrape = collect_urls_to_scrape(request.message)
         explicit_domains = extract_domains_from_message(request.message)
-        if not urls_to_scrape and not explicit_domains and is_explicit_research_request(request.message):
+        if not urls_to_scrape and not explicit_domains and explicit_request:
             recent_user_messages: List[str] = []
             for msg in reversed(request.chat_history or []):
                 if msg.role != "user":
@@ -387,6 +453,9 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
             if history_text:
                 urls_to_scrape = collect_urls_to_scrape(history_text, request.context or {})
                 explicit_domains = extract_domains_from_message(history_text)
+        if not urls_to_scrape and not explicit_domains and not has_reference_context:
+            urls_to_scrape = collect_urls_to_scrape(request.message, request.context or {})
+            explicit_domains = extract_domains_from_message(request.message)
         if not explicit_domains:
             recent_user_messages: List[str] = []
             for msg in reversed(request.chat_history or []):
@@ -404,6 +473,15 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 if history_domains:
                     explicit_domains = history_domains
                     logger.info("[OutlineAgent] Using explicit domains from chat history: %s", explicit_domains)
+
+        if urls_to_scrape and has_reference_context and not refresh_request:
+            existing_urls = _extract_reference_urls(reference_sources)
+            urls_to_scrape = [
+                url for url in urls_to_scrape
+                if _normalize_url(url) not in existing_urls
+            ]
+            if not urls_to_scrape:
+                logger.info("[OutlineAgent] Skipping auto-scrape; reference context already present")
         explicit_brand_domain = None
         if request.context:
             explicit_brand_domain = (
@@ -422,8 +500,15 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         if not explicit_brand_domain and explicit_domains:
             explicit_brand_domain = explicit_domains[0]
 
-        prefetch_query = build_prefetch_research_query(request.message, urls_to_scrape, request.context)
-        if prefetch_query:
+        allow_prefetch = bool(urls_to_scrape) or not has_research_context or refresh_request
+        prefetch_query = build_prefetch_research_query(
+            request.message,
+            urls_to_scrape,
+            request.context if allow_prefetch else None,
+        )
+        if explicit_request and not allow_prefetch:
+            logger.info("[OutlineAgent] Prefetch research skipped; cached context present and no refresh requested")
+        if prefetch_query and allow_prefetch:
             has_perplexity = bool(os.getenv("PPLX_API_KEY") or os.getenv("PERPLEXITY_API_KEY"))
             if has_perplexity:
                 logger.info("[OutlineAgent] Prefetch research: %s", prefetch_query)
@@ -457,15 +542,21 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                     if event.get('status') == 'scraping':
                         continue
                     yield sse_event(event)
-                scraped_context = scrape_payload.scraped_context
+                new_scraped_context = scrape_payload.scraped_context
                 scrape_result = scrape_payload.scrape_result
                 _merge_scraped_videos()
                 if scrape_result and scrape_result.get("scraped_content"):
-                    reference_sources = [
+                    incoming_sources = [
                         {"url": item.get("url"), "title": item.get("title")}
                         for item in scrape_result.get("scraped_content", [])
                         if isinstance(item, dict)
                     ]
+                    reference_sources = _merge_reference_sources(reference_sources, incoming_sources)
+                if new_scraped_context:
+                    if scraped_context and new_scraped_context not in scraped_context:
+                        scraped_context = f"{scraped_context}\n\n{new_scraped_context}"
+                    else:
+                        scraped_context = new_scraped_context
                 if scraped_context and not reference_context_emitted:
                     yield sse_event({
                         "type": "reference_content",
@@ -479,7 +570,13 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
             except Exception as exc:
                 logger.warning("[OutlineAgent] Reference scraping failed before model call: %s", exc)
 
-        messages = build_messages(request, scraped_context, file_context)
+        messages = build_messages(
+            request,
+            scraped_context,
+            file_context,
+            research_context,
+            research_citations,
+        )
 
         logger.info(f"[OutlineAgent] Processing message with {len(messages)} messages in history")
 

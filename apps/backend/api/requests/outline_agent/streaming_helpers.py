@@ -29,6 +29,11 @@ EXPLICIT_RESEARCH_PATTERN = re.compile(
     r'\b(search|research|crawl|scrape|lookup|look up|find|investigate|verify|diligence|due diligence)\b',
     re.IGNORECASE,
 )
+REFRESH_RESEARCH_PATTERN = re.compile(
+    r'\b(re-?scrape|re-?crawl|re-?fetch|re-?search|refresh|re-?run|rerun|run again|fetch again|'
+    r'update (?:the )?(?:research|data|sources|website))\b',
+    re.IGNORECASE,
+)
 DEPTH_RESEARCH_PATTERN = re.compile(
     r'\b(pitch deck|series [a-d]|investor|funding|analytical|in-depth|deep dive|market|competitive|data-driven)\b',
     re.IGNORECASE,
@@ -41,6 +46,12 @@ def is_explicit_research_request(message: str) -> bool:
     if not message:
         return False
     return bool(EXPLICIT_RESEARCH_PATTERN.search(message))
+
+
+def is_explicit_refresh_request(message: str) -> bool:
+    if not message:
+        return False
+    return bool(REFRESH_RESEARCH_PATTERN.search(message))
 
 
 def _sanitize_context_block(text: str, max_chars: int = MAX_FILE_CONTEXT_CHARS) -> str:
@@ -387,6 +398,8 @@ def build_messages(
     request: OutlineAgentRequest,
     scraped_context: str,
     file_context: str,
+    research_context: str = "",
+    research_citations: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     messages: List[Dict[str, Any]] = []
     for msg in request.chat_history:
@@ -394,7 +407,24 @@ def build_messages(
             messages.append({"role": msg.role, "content": msg.content})
 
     safe_file_context = _sanitize_context_block(file_context)
-    user_content = request.message + scraped_context + safe_file_context
+    safe_research_context = _sanitize_context_block(research_context, max_chars=60000)
+    research_block = ""
+    if safe_research_context:
+        research_block = (
+            "\n\n[RESEARCH CONTEXT]\n"
+            f"{safe_research_context}\n"
+            "[END RESEARCH CONTEXT]\n"
+        )
+        if research_citations:
+            citations = [str(c) for c in (research_citations or []) if c]
+            if citations:
+                research_block += (
+                    "\n[RESEARCH CITATIONS]\n"
+                    + "\n".join(citations[:5])
+                    + "\n[END RESEARCH CITATIONS]\n"
+                )
+
+    user_content = request.message + scraped_context + research_block + safe_file_context
     if request.context and request.context.get("force_outline"):
         user_content = (
             f"{user_content}\n\n[CLARIFICATION_ANSWERED]\n"

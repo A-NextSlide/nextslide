@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { API_CONFIG } from "../config/environment";
 import { SubscriptionManager } from "../utils/SubscriptionManager";
 import { authService } from "../services/authService";
+import { cleanupDuplicateCustomComponents } from "../utils/deckDiffUtils";
 
 /**
  * This module contains functions for synchronization operations within the deck store.
@@ -284,6 +285,16 @@ export const createSyncOperations = (set: Function, get: Function) => {
   // Add state for tracking deck creation
   let isCreatingDeck = false;
   let realtimeFetchTimeout: NodeJS.Timeout | null = null;
+  let pendingRealtimeUpdate: {
+    slides: any[];
+    data?: any;
+    lastModified?: string;
+    version?: any;
+    outline?: any;
+    notes?: any;
+  } | null = null;
+  let pendingRealtimeTimer: NodeJS.Timeout | null = null;
+  let pendingRealtimeSince: number | null = null;
   
   // Create singleton subscription manager
   const subscriptionManager = new SubscriptionManager(
@@ -302,6 +313,133 @@ export const createSyncOperations = (set: Function, get: Function) => {
       }
     }
   );
+
+  const isInteractionActive = () => {
+    if (typeof window === 'undefined') return false;
+    return (
+      (window as any).__isDragging === true ||
+      (window as any).__isDraggingCharts === true ||
+      (window as any).__isResizingCharts === true ||
+      (window as any).__isDraggingSlide === true ||
+      (window as any).__isSlideOperationInProgress === true
+    );
+  };
+
+  const applyIncomingSlides = async (
+    incomingSlides: any[],
+    incomingDataField: any,
+    newLastModified: string,
+    incomingVersion?: any,
+    incomingOutline?: any,
+    incomingNotes?: any
+  ) => {
+    const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
+    if (isEditing) {
+      try {
+        const { useEditorStore } = await import('../stores/editorStore');
+        const editorStore = (useEditorStore as any).getState();
+        incomingSlides.forEach((incomingSlide: any) => {
+          const slideId = incomingSlide?.id;
+          if (!slideId) return;
+          const incomingComponents: any[] = Array.isArray(incomingSlide.components) ? incomingSlide.components : [];
+          const draftComponents: any[] = editorStore.getDraftComponents(slideId) || [];
+          const draftById = new Map(draftComponents.map((c: any) => [c.id, c]));
+          const incomingById = new Map(incomingComponents.map((c: any) => [c.id, c]));
+
+          // Update/add components - ALWAYS accept CustomComponent updates
+          incomingComponents.forEach((ic) => {
+            const current = draftById.get(ic.id);
+            if (!current) {
+              editorStore.addDraftComponent(slideId, ic, true);
+              return;
+            }
+
+            // For CustomComponents, always accept backend updates (AI edits)
+            const isCustomComponent = ic.type === 'CustomComponent';
+            const typeChanged = current.type !== ic.type;
+            const propsChanged = JSON.stringify(current.props || {}) !== JSON.stringify(ic.props || {});
+
+            if (isCustomComponent || typeChanged || propsChanged) {
+              editorStore.updateDraftComponent(slideId, ic.id, { type: ic.type, props: ic.props || {} }, true);
+            }
+          });
+
+          // Remove components that no longer exist
+          draftComponents.forEach((dc: any) => {
+            if (!incomingById.has(dc.id)) {
+              editorStore.removeDraftComponent(slideId, dc.id, true);
+            }
+          });
+
+          // Mark slide as unchanged after server-driven merge
+          try { editorStore.markSlideAsUnchanged(slideId); } catch {}
+        });
+
+        // SIMPLIFIED: Always update deckData from database (source of truth)
+        try {
+          const state = get();
+          const deckLevelUpdates: any = {
+            ...state.deckData,
+            slides: incomingSlides
+          };
+          if (incomingDataField) {
+            deckLevelUpdates.data = incomingDataField;
+          }
+          if (incomingOutline) deckLevelUpdates.outline = incomingOutline;
+          if (incomingNotes) deckLevelUpdates.notes = incomingNotes;
+          if (newLastModified) deckLevelUpdates.lastModified = newLastModified;
+          if (incomingVersion) deckLevelUpdates.version = incomingVersion;
+          set({ deckData: deckLevelUpdates });
+        } catch {}
+      } catch {}
+      return;
+    }
+
+    const current = get().deckData;
+    const updates: any = { ...current, slides: incomingSlides };
+    if ((incomingDataField)) updates.data = incomingDataField;
+    if (incomingOutline) updates.outline = incomingOutline;
+    if (incomingNotes) updates.notes = incomingNotes;
+    if (incomingVersion) updates.version = incomingVersion;
+    updates.lastModified = newLastModified || new Date().toISOString();
+    try {
+      get().updateDeckData(updates, { isRealtimeUpdate: true, skipBackend: true });
+    } catch {
+      set({ deckData: updates, lastModified: updates.lastModified, version: updates.version || get().version });
+    }
+  };
+
+  const schedulePendingRealtimeApply = () => {
+    if (pendingRealtimeTimer) return;
+    pendingRealtimeTimer = setTimeout(async () => {
+      pendingRealtimeTimer = null;
+      if (!pendingRealtimeUpdate) {
+        pendingRealtimeSince = null;
+        return;
+      }
+
+      const stillInteracting = isInteractionActive();
+      if (stillInteracting) {
+        if (!pendingRealtimeSince) pendingRealtimeSince = Date.now();
+        if (Date.now() - pendingRealtimeSince < 4000) {
+          schedulePendingRealtimeApply();
+          return;
+        }
+      }
+
+      const update = pendingRealtimeUpdate;
+      pendingRealtimeUpdate = null;
+      pendingRealtimeSince = null;
+      await applyIncomingSlides(
+        update.slides,
+        update.data,
+        update.lastModified || '',
+        update.version,
+        update.outline,
+        update.notes
+      );
+    }, 200);
+  };
   
   // Set up real-time subscription to deck changes
   const setupRealtimeSubscription = () => {
@@ -394,107 +532,32 @@ export const createSyncOperations = (set: Function, get: Function) => {
           try {
             const incomingSlides = (payload.new as any)?.slides;
             const incomingDataField = (payload.new as any)?.data;
+            const incomingVersion = (payload.new as any)?.version;
+            const incomingOutline = (payload.new as any)?.outline;
+            const incomingNotes = (payload.new as any)?.notes;
             if (Array.isArray(incomingSlides)) {
-              const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
-              // CRITICAL: Check for any active slide operations BEFORE edit mode check
-              // This prevents realtime from overwriting local changes during duplicate/delete/reorder
-              try {
-                const activeSlideOperation = (typeof window !== 'undefined') && (
-                  (window as any).__isDraggingSlide === true ||
-                  (window as any).__isSlideOperationInProgress === true
-                );
-                if (activeSlideOperation) {
-                  return;
-                }
-              } catch {}
-
-              if (isEditing) {
-                // If user is actively interacting (dragging/resizing), skip incoming merges to avoid snapping back
-                try {
-                  const interacting = (typeof window !== 'undefined') && (
-                    (window as any).__isDragging === true ||
-                    (window as any).__isDraggingCharts === true ||
-                    (window as any).__isResizingCharts === true
-                  );
-                  if (interacting) {
-                    return;
-                  }
-                } catch {}
-                // SIMPLIFIED: Update editor drafts from database (source of truth)
-                // Always accept CustomComponent updates from backend (AI edits)
-                try {
-                  const { useEditorStore } = await import('../stores/editorStore');
-                  const editorStore = (useEditorStore as any).getState();
-                  incomingSlides.forEach((incomingSlide: any) => {
-                    const slideId = incomingSlide?.id;
-                    if (!slideId) return;
-                    const incomingComponents: any[] = Array.isArray(incomingSlide.components) ? incomingSlide.components : [];
-                    const draftComponents: any[] = editorStore.getDraftComponents(slideId) || [];
-                    const draftById = new Map(draftComponents.map((c: any) => [c.id, c]));
-                    const incomingById = new Map(incomingComponents.map((c: any) => [c.id, c]));
-
-                    // Update/add components - ALWAYS accept CustomComponent updates
-                    incomingComponents.forEach((ic) => {
-                      const current = draftById.get(ic.id);
-                      if (!current) {
-                        editorStore.addDraftComponent(slideId, ic, true);
-                        return;
-                      }
-
-                      // For CustomComponents, always accept backend updates (AI edits)
-                      const isCustomComponent = ic.type === 'CustomComponent';
-                      const typeChanged = current.type !== ic.type;
-                      const propsChanged = JSON.stringify(current.props || {}) !== JSON.stringify(ic.props || {});
-
-                      if (isCustomComponent || typeChanged || propsChanged) {
-                        editorStore.updateDraftComponent(slideId, ic.id, { type: ic.type, props: ic.props || {} }, true);
-                      }
-                    });
-
-                    // Remove components that no longer exist
-                    draftComponents.forEach((dc: any) => {
-                      if (!incomingById.has(dc.id)) {
-                        editorStore.removeDraftComponent(slideId, dc.id, true);
-                      }
-                    });
-
-                    // Mark slide as unchanged after server-driven merge
-                    try { editorStore.markSlideAsUnchanged(slideId); } catch {}
-                  });
-
-                  // SIMPLIFIED: Always update deckData from database (source of truth)
-                  try {
-                    const state = get();
-                    const deckLevelUpdates: any = {
-                      ...state.deckData,
-                      slides: incomingSlides  // Always use incoming slides
-                    };
-                    if (incomingDataField) {
-                      deckLevelUpdates.data = incomingDataField;
-                    }
-                    if (newLastModified) deckLevelUpdates.lastModified = newLastModified;
-                    if ((payload.new as any)?.version) deckLevelUpdates.version = (payload.new as any).version;
-                    set({ deckData: deckLevelUpdates });
-                  } catch {}
-                } catch {}
-              } else {
-                const current = get().deckData;
-                const updates: any = { ...current, slides: incomingSlides };
-                if ((payload.new as any)?.outline) updates.outline = (payload.new as any).outline;
-                if ((payload.new as any)?.notes) updates.notes = (payload.new as any).notes;
-                // Include deck-level data updates (e.g., theme) for non-edit mode
-                if (incomingDataField) updates.data = incomingDataField;
-                // Carry forward server-provided version/last modified for proper ordering
-                if ((payload.new as any)?.version) updates.version = (payload.new as any).version;
-                updates.lastModified = newLastModified || new Date().toISOString();
-                // Use guarded update to prevent clobbering completed slides with empty/stale data
-                try {
-                  get().updateDeckData(updates, { isRealtimeUpdate: true, skipBackend: true });
-                } catch {
-                  // As a last resort, fall back to direct set (should be rare)
-                  set({ deckData: updates, lastModified: updates.lastModified, version: updates.version || get().version });
-                }
+              if (isInteractionActive()) {
+                pendingRealtimeUpdate = {
+                  slides: incomingSlides,
+                  data: incomingDataField,
+                  lastModified: newLastModified,
+                  version: incomingVersion,
+                  outline: incomingOutline,
+                  notes: incomingNotes
+                };
+                if (!pendingRealtimeSince) pendingRealtimeSince = Date.now();
+                schedulePendingRealtimeApply();
+                return;
               }
+
+              await applyIncomingSlides(
+                incomingSlides,
+                incomingDataField,
+                newLastModified,
+                incomingVersion,
+                incomingOutline,
+                incomingNotes
+              );
             }
           } catch {}
 
@@ -836,20 +899,11 @@ export const createSyncOperations = (set: Function, get: Function) => {
             const customComponents = slide.components.filter(c => c.type === 'CustomComponent');
             if (customComponents.length > 1) {
               console.log('[loadDeck] 🧹 AUTO-CLEANUP: Found', customComponents.length, 'CustomComponents on slide', slide.id);
-              // Sort by render HTML length (DESCENDING) - keep the LARGEST one (most content)
-              // This prevents losing content when a minimal duplicate gets created
-              const sorted = [...customComponents].sort((a, b) => {
-                const aLen = (a.props?.render as string)?.length || 0;
-                const bLen = (b.props?.render as string)?.length || 0;
-                return bLen - aLen;  // Descending: largest first
-              });
-              const keepId = sorted[0].id;
-              const removeIds = new Set(sorted.slice(1).map(c => c.id));
-              console.log('[loadDeck] 🧹 AUTO-CLEANUP: Keeping', keepId, '(largest), removing', Array.from(removeIds));
-              transformedDeck.slides[i] = {
-                ...slide,
-                components: slide.components.filter(c => !removeIds.has(c.id))
-              };
+              const { slide: cleanedSlide, removedIds } = cleanupDuplicateCustomComponents(slide);
+              if (removedIds.length > 0) {
+                console.log('[loadDeck] 🧹 AUTO-CLEANUP: Removed duplicate CustomComponents:', removedIds);
+                transformedDeck.slides[i] = cleanedSlide;
+              }
             }
           }
         }

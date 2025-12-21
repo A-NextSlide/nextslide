@@ -854,7 +854,6 @@ const SharedDeckView: React.FC = () => {
               currentSlideIndex={currentSlideIndex}
               renderSlide={renderSlide}
               isViewOnly={!canEdit}
-              alwaysShowControls={true}
             />
           </ActiveSlideProvider>
         </EditorStateProvider>

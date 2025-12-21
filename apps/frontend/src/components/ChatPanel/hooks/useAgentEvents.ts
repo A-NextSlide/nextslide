@@ -40,6 +40,7 @@ export function useAgentEvents({
   const processedEditEventsRef = useRef<Set<string>>(new Set());
   const styleToolStateRef = useRef<{ active: boolean; name: string; lastStartTs: number; lastFinishTs: number }>({ active: false, name: '', lastStartTs: 0, lastFinishTs: 0 });
   const streamingAiMsgIdRef = useRef<string | null>(null);
+  const agentEditTimeoutRef = useRef<number | null>(null);
 
   const clearPlanTimers = useCallback(() => {
     try {
@@ -47,6 +48,59 @@ export function useAgentEvents({
     } catch { }
     planTimersRef.current = [];
   }, []);
+
+  const clearAgentEditTimeout = useCallback(() => {
+    if (agentEditTimeoutRef.current) {
+      clearTimeout(agentEditTimeoutRef.current);
+      agentEditTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleAgentEditTimeout = useCallback(() => {
+    clearAgentEditTimeout();
+    if (typeof window === 'undefined') return;
+    agentEditTimeoutRef.current = window.setTimeout(() => {
+      agentEditTimeoutRef.current = null;
+      if ((window as any).__agentEditInProgress !== true) return;
+
+      console.warn('[AgentChat] Agent edit appears stuck - forcing refresh');
+      try {
+        if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
+        if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
+        (window as any).__agentEditInProgress = false;
+      } catch { }
+
+      try {
+        const deckStore = useDeckStore.getState();
+        const deckIdToRefresh = deckStore.deckData?.uuid || (deckStore.deckData as any)?.id;
+        if (!deckIdToRefresh) return;
+        deckSyncService.getFullDeck(String(deckIdToRefresh))
+          .then((latest) => {
+            if (latest && (latest as any).slides) {
+              deckStore.updateDeckData(latest as any, { skipBackend: true, isRealtimeUpdate: true });
+            }
+            if (typeof window !== 'undefined' && (window as any).__isEditMode) {
+              const navContext = (window as any).__navigationContext;
+              const currentSlideIdx = navContext?.currentSlideIndex || 0;
+              const currentSlideId = deckStore.deckData?.slides?.[currentSlideIdx]?.id;
+              if (currentSlideId) {
+                const editorStore = useEditorStore.getState();
+                editorStore.clearDraftComponents(currentSlideId);
+                editorStore.initializeDraftComponents(currentSlideId);
+              }
+            }
+          })
+          .catch(() => {
+            try {
+              const deckStore = useDeckStore.getState();
+              if ((deckStore as any).loadDeck) {
+                (deckStore as any).loadDeck();
+              }
+            } catch { }
+          });
+      } catch { }
+    }, 8000);
+  }, [clearAgentEditTimeout]);
 
   const animatePlanMessage = useCallback((steps: string[]) => {
     if (!steps || steps.length === 0) return;
@@ -398,6 +452,7 @@ export function useAgentEvents({
     const isPrimary = source === 'primary';
 
     try {
+      clearAgentEditTimeout();
       if (!isPrimary) {
         console.warn('[ChatPanel:secondary] 🎯🎯🎯 deck.edit.applied EVENT RECEIVED (secondary)! 🎯🎯🎯', evt);
       }
@@ -741,6 +796,7 @@ export function useAgentEvents({
     applyDeckDiffRespectingEditMode,
     applyPreviewSlidesRespectingEditMode,
     captureImmediateSnapshot,
+    clearAgentEditTimeout,
     clearPlanTimers,
     insertEditAppliedFallbackMessage,
     insertEditAppliedMessage,
@@ -816,6 +872,7 @@ export function useAgentEvents({
           (window as any).__pendingPreviewTs = Date.now();
           (window as any).__agentEditInProgress = true;
         } catch { }
+        scheduleAgentEditTimeout();
         if (diffSecondary) {
           applyDeckDiffRespectingEditMode(diffSecondary, true);
         }
@@ -861,13 +918,14 @@ export function useAgentEvents({
       (window as any).__pendingPreviewTs = now;
       if (editId) (window as any).__pendingPreviewEditId = editId;
       (window as any).__agentEditInProgress = true;
+      scheduleAgentEditTimeout();
 
       const normalizedPreviewSlides = normalizeSlidesPayload(previewSlidesPayload);
       if (previewMessageId && normalizedPreviewSlides.length > 0) {
         pendingSlidesByMessageIdRef.current.set(previewMessageId, normalizedPreviewSlides);
       }
       if (normalizedPreviewSlides.length > 0) {
-        applyPreviewSlidesRespectingEditMode(normalizedPreviewSlides);
+        applyPreviewSlidesRespectingEditMode(normalizedPreviewSlides, true);
 
         if (diff && (diff.deck_properties || diff.slides_to_remove)) {
           const deckLevelOnlyDiff = {
@@ -889,7 +947,7 @@ export function useAgentEvents({
       console.error('[Realtime][preview.diff] Error applying preview', e);
     }
     return true;
-  }, [applyDeckDiffRespectingEditMode, applyPreviewSlidesRespectingEditMode, normalizeSlidesPayload]);
+  }, [applyDeckDiffRespectingEditMode, applyPreviewSlidesRespectingEditMode, normalizeSlidesPayload, scheduleAgentEditTimeout]);
 
   return {
     handleCommonAgentEvent,

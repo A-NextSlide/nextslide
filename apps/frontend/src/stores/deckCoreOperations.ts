@@ -5,7 +5,7 @@ import { deckSyncService } from "../lib/deckSyncService";
 import { DeckState } from './deckStoreTypes';
 import { mergeComponents } from "../utils/slideUtils";
 import { v4 as uuidv4 } from 'uuid';
-import { applyDeckDiffPure } from "../utils/deckDiffUtils";
+import { applyDeckDiffPure, cleanupDuplicateCustomComponents } from "../utils/deckDiffUtils";
 import { createLogger, LogCategory } from "../utils/logging";
 
 /**
@@ -287,18 +287,8 @@ export const createCoreDeckOperations = (set, get) => {
           const components = slide.components || [];
           const customComponents = components.filter(c => c.type === 'CustomComponent');
           if (customComponents.length > 1) {
-            // Sort by render HTML length (DESCENDING) - keep the LARGEST one (most content)
-            // This prevents losing content when a minimal duplicate gets created
-            const sorted = [...customComponents].sort((a, b) => {
-              const aLen = (a.props?.render as string)?.length || 0;
-              const bLen = (b.props?.render as string)?.length || 0;
-              return bLen - aLen;  // Descending: largest first
-            });
-            const removeIds = new Set(sorted.slice(1).map(c => c.id));
-            return {
-              ...slide,
-              components: components.filter(c => !removeIds.has(c.id))
-            };
+            const { slide: cleanedSlide } = cleanupDuplicateCustomComponents(slide);
+            return cleanedSlide;
           }
           return slide;
         });

@@ -62,7 +62,9 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const presentationRef = useRef<HTMLDivElement>(null);
   const [slideScale, setSlideScale] = useState(0.8); // Start with a conservative scale
   const [isMobile, setIsMobile] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(true);
   const isExpanded = isFullscreen || isLandscapeMode;
+  const shouldRotate = isExpanded && isMobile && isPortrait;
 
   // Detect mobile device - improved detection for tablets and touch devices
   useEffect(() => {
@@ -75,6 +77,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       const isLandscapeMobile = isTouch && height < 500; // Phone in landscape
 
       setIsMobile(isTouch && (isNarrow || isLandscapeMobile));
+      setIsPortrait(height >= width);
     };
     checkMobile();
     window.addEventListener('resize', checkMobile);
@@ -137,14 +140,19 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       } else if ((elem as any).webkitRequestFullscreen) {
         (elem as any).webkitRequestFullscreen();
       }
-      const locked = await safeOrientationLock('landscape');
-      if (locked) setIsLandscapeMode(true);
     } catch {
-      // Fullscreen failed, try just landscape lock on mobile
-      if (isMobile) {
-        const locked = await safeOrientationLock('landscape');
-        if (locked) setIsLandscapeMode(true);
-      }
+      // Fullscreen failed, continue with orientation/manual fallback below
+    }
+
+    const locked = await safeOrientationLock('landscape');
+    if (locked) {
+      setIsLandscapeMode(true);
+      return;
+    }
+
+    // Manual landscape fallback for mobile browsers without fullscreen/orientation lock
+    if (isMobile) {
+      setIsLandscapeMode(true);
     }
   }, [isExpanded, isMobile, safeOrientationLock, safeOrientationUnlock]);
 
@@ -207,8 +215,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
         if (!containerWidth || !containerHeight || containerWidth === 0 || containerHeight === 0) return;
 
         // Calculate scale to fit the slide within the container
-        const scaleX = containerWidth / DEFAULT_SLIDE_WIDTH;
-        const scaleY = containerHeight / DEFAULT_SLIDE_HEIGHT;
+        const baseWidth = shouldRotate ? DEFAULT_SLIDE_HEIGHT : DEFAULT_SLIDE_WIDTH;
+        const baseHeight = shouldRotate ? DEFAULT_SLIDE_WIDTH : DEFAULT_SLIDE_HEIGHT;
+        const scaleX = containerWidth / baseWidth;
+        const scaleY = containerHeight / baseHeight;
         const scale = Math.min(scaleX, scaleY);
         if (!Number.isFinite(scale) || scale <= 0) return;
 
@@ -245,7 +255,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       }
       window.removeEventListener('resize', calculateScale);
     };
-  }, [isPresenting, isFullscreen, isMobile]);
+  }, [isPresenting, isFullscreen, isMobile, isExpanded, shouldRotate]);
   
   // Scroll current slide into view when thumbnails open
   useEffect(() => {
@@ -400,6 +410,19 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const progressTotal = Math.max(1, slides.length);
   const maxWidth = `min(${viewportClamp}vw, calc(${viewportClamp}dvh * ${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}))`;
   const minHeight = `min(calc(${viewportClamp}vw * ${DEFAULT_SLIDE_HEIGHT} / ${DEFAULT_SLIDE_WIDTH}), ${viewportClamp}dvh)`;
+  const slideViewportStyle = isExpanded && isMobile
+    ? { width: '100%', height: '100%' }
+    : {
+        width: '100%',
+        maxWidth,
+        aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`,
+        minHeight
+      };
+  const slideFrameStyle = {
+    width: `${DEFAULT_SLIDE_WIDTH * slideScale}px`,
+    height: `${DEFAULT_SLIDE_HEIGHT * slideScale}px`
+  };
+  const slideWrapperPadding = isExpanded && isMobile ? "p-0" : (isMobile ? "p-2" : "p-4");
 
   return (
     <motion.div
@@ -413,34 +436,41 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       {/* Main slide display */}
       <div className={cn(
         "relative w-full h-full flex items-center justify-center",
-        isMobile ? "p-2" : "p-4"
+        slideWrapperPadding
       )}>
         <div
           ref={slideContainerRef}
-          className="relative rounded-lg overflow-hidden"
-          style={{
-            width: '100%',
-            maxWidth,
-            aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`,
-            // Fallback height for browsers that don't support aspect-ratio
-            minHeight
-          }}
+          className={cn(
+            "relative overflow-hidden",
+            isExpanded && isMobile ? "rounded-none" : "rounded-lg"
+          )}
+          style={slideViewportStyle}
         >
-          {currentSlide && (
-            <div key={`slide-${currentSlide.id || validIndex}`} className="w-full h-full">
-              {renderSlide(currentSlide, validIndex, slideScale, false)}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div
+              className={cn(
+                "relative overflow-hidden",
+                shouldRotate && "rotate-90"
+              )}
+              style={slideFrameStyle}
+            >
+              {currentSlide && (
+                <div key={`slide-${currentSlide.id || validIndex}`} className="w-full h-full relative">
+                  {renderSlide(currentSlide, validIndex, slideScale, false)}
+                  {/* Add watermark for view-only presentations */}
+                  {isViewOnly && (
+                    <Watermark 
+                      text="VIEW ONLY"
+                      opacity={0.06}
+                      fontSize={120}
+                      rotation={-30}
+                      repeat={false}
+                    />
+                  )}
+                </div>
+              )}
             </div>
-          )}
-          {/* Add watermark for view-only presentations */}
-          {isViewOnly && (
-            <Watermark 
-              text="VIEW ONLY"
-              opacity={0.06}
-              fontSize={120}
-              rotation={-30}
-              repeat={false}
-            />
-          )}
+          </div>
         </div>
       </div>
 
@@ -452,7 +482,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="absolute inset-0 pointer-events-none z-20"
+            className="absolute inset-0 pointer-events-auto z-[20000]"
           >
             {/* Top bar */}
             <div className="absolute top-0 left-0 right-0 p-6 pointer-events-auto">
@@ -613,7 +643,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/98 z-20 overflow-y-auto"
+            className="absolute inset-0 bg-black/98 z-[20000] overflow-y-auto"
             onClick={() => setShowThumbnails(false)}
           >
                         <div className="flex flex-col h-full" onClick={(e) => e.stopPropagation()}>

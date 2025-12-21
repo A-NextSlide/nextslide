@@ -146,6 +146,7 @@ export function ChatMessageList({
         ref={scrollContainerRef}
         className="overflow-y-auto overflow-x-hidden p-2.5 pr-3 flex-1 min-h-0 min-w-0"
         style={{ scrollbarGutter: 'stable both-edges' }}
+        data-scroll-guard="true"
       >
         {BROWSER.isSafari && (
           <style>{`.glass-panel{background-color:rgba(255,255,255,0.06) !important; background-image:none !important;}`}</style>

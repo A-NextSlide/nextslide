@@ -124,7 +124,13 @@ def create_deck_compose_stream(
                     return
             
             if not request.force_restart:
-                status = existing_deck.get('status') or {}
+                raw_status = existing_deck.get('status')
+                if isinstance(raw_status, dict):
+                    status = raw_status
+                elif isinstance(raw_status, str):
+                    status = {'state': raw_status}
+                else:
+                    status = {}
                 if status.get('state') == 'completed':
                     slides = existing_deck.get('slides', [])
                     # Check if all slides are genuinely completed based on new status system

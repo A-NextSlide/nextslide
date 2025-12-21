@@ -2,7 +2,7 @@
 Dedicated CustomComponent generator using Gemini 3 Pro for creative HTML/CSS/JS generation.
 
 This module generates visually stunning CustomComponents for slides using:
-- Gemini 3 Pro's creative capabilities (with Claude Opus 4.5 fallback on rate limits)
+- Gemini 3 Pro's creative capabilities (optional Claude Opus 4.5 fallback)
 - Full HTML document mode (iframe)
 - Tailwind CSS for styling
 - Context-aware design (theme, content, style)
@@ -17,7 +17,9 @@ from agents.ai.clients import get_client, invoke
 from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_rate_limited
 from agents.config import (
     CUSTOM_COMPONENT_MODEL,
+    CUSTOM_COMPONENT_ALLOW_FALLBACK,
     CUSTOM_COMPONENT_FALLBACK_MODEL,
+    CUSTOM_COMPONENT_RESPECT_GLOBAL_GEMINI_COOLDOWN,
     CUSTOM_COMPONENT_TEMPERATURE,
     ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN
 )
@@ -49,7 +51,7 @@ _AI_SEMAPHORE = asyncio.Semaphore(MAX_API_CONCURRENT_CALLS)
 
 class CustomComponentGenerator:
     """
-    Generates creative CustomComponents using Gemini 3 Pro (with Opus 4.5 fallback).
+    Generates creative CustomComponents using Gemini 3 Pro (with optional Opus 4.5 fallback).
 
     This generator creates visually impressive HTML/CSS/JS components that:
     - Match the presentation theme
@@ -57,7 +59,7 @@ class CustomComponentGenerator:
     - Use modern web design patterns
     - Include animations and interactivity
 
-    Falls back to Claude Opus 4.5 if Gemini rate limits are hit.
+    Optionally falls back to Claude Opus 4.5 if Gemini rate limits are hit.
     """
 
     def __init__(self, model: str = CUSTOM_COMPONENT_MODEL):
@@ -249,34 +251,44 @@ class CustomComponentGenerator:
     async def _invoke_with_fallback(self, messages: List[Dict[str, Any]]) -> Tuple[Any, bool]:
         loop = asyncio.get_event_loop()
         used_fallback = False
+        allow_fallback = bool(CUSTOM_COMPONENT_ALLOW_FALLBACK and CUSTOM_COMPONENT_FALLBACK_MODEL)
 
         client, model_name = get_client(self.model)
         active_client, active_model = client, model_name
 
-        if is_provider_in_cooldown(GEMINI_PROVIDER):
-            logger.info("[CUSTOM_COMPONENT] Gemini in cooldown, using fallback: %s", CUSTOM_COMPONENT_FALLBACK_MODEL)
-            active_client, active_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
-            used_fallback = True
+        if CUSTOM_COMPONENT_RESPECT_GLOBAL_GEMINI_COOLDOWN and is_provider_in_cooldown(GEMINI_PROVIDER):
+            if allow_fallback:
+                logger.info(
+                    "[CUSTOM_COMPONENT] Gemini in cooldown, using fallback: %s",
+                    CUSTOM_COMPONENT_FALLBACK_MODEL,
+                )
+                active_client, active_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+                used_fallback = True
+            else:
+                logger.debug("[CUSTOM_COMPONENT] Gemini cooldown detected but fallback disabled")
 
         try:
             response = await self._invoke_model(loop, active_client, active_model, messages)
         except AIRateLimitError:
             if not used_fallback:
                 mark_provider_rate_limited(GEMINI_PROVIDER)
-                fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
-                response = await self._invoke_model(loop, fallback_client, fallback_model, messages)
-                used_fallback = True
+                if allow_fallback:
+                    fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+                    response = await self._invoke_model(loop, fallback_client, fallback_model, messages)
+                    used_fallback = True
+                else:
+                    raise
             else:
                 raise
         except Exception as exc:
-            if self._should_fallback_from_error(exc) and not used_fallback:
+            if self._should_fallback_from_error(exc) and not used_fallback and allow_fallback:
                 fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
                 response = await self._invoke_model(loop, fallback_client, fallback_model, messages)
                 used_fallback = True
             else:
                 raise
 
-        if self._is_empty_response(response) and not used_fallback:
+        if self._is_empty_response(response) and not used_fallback and allow_fallback:
             try:
                 fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
                 response = await self._invoke_model(loop, fallback_client, fallback_model, messages)

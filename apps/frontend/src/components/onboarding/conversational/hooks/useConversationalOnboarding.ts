@@ -554,11 +554,24 @@ export const useConversationalOnboarding = ({
       const currentOutlineContext = buildCurrentOutlineContext();
       const forceOutline = forceOutlineAfterClarificationRef.current;
       forceOutlineAfterClarificationRef.current = false;
+      const outlineContext = outlineState.outlineFlow;
+      const persistedScrapeContext = outlineContext?.scraped_context || pendingContextRef.current.scraped_context;
+      const persistedReferenceSources = outlineContext?.reference_sources?.length
+        ? outlineContext.reference_sources
+        : pendingContextRef.current.reference_sources;
+      const persistedResearchContext = outlineContext?.research_context || pendingContextRef.current.research_context;
+      const persistedResearchCitations = outlineContext?.research_citations?.length
+        ? outlineContext.research_citations
+        : pendingContextRef.current.research_citations;
       const contextWithFileAnalysis = {
         ...collectedData,
         ...(fileUploads.fileAnalysisContext && filesToSend.length === 0
           ? { previousFileAnalysis: fileUploads.fileAnalysisContext }
           : {}),
+        ...(persistedScrapeContext ? { scraped_context: persistedScrapeContext } : {}),
+        ...(persistedReferenceSources.length > 0 ? { reference_sources: persistedReferenceSources } : {}),
+        ...(persistedResearchContext ? { research_context: persistedResearchContext } : {}),
+        ...(persistedResearchCitations.length > 0 ? { research_citations: persistedResearchCitations } : {}),
         ...(currentOutlineContext ? { current_outline: currentOutlineContext } : {}),
         ...(forceOutline ? { force_outline: true } : {}),
       };

@@ -46,6 +46,7 @@ import OutlineHeader from '@/components/outline/OutlineHeader';
 import BrandWordmark from '@/components/common/BrandWordmark';
 import { useSlideResearch } from '@/hooks/useSlideResearch';
 import { useOutlineChat } from '@/hooks/useOutlineChat';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { normalizeReferenceImages } from '@/utils/referenceImages';
 import { normalizeDeckTitle } from '@/utils/normalizeDeckTitle';
@@ -117,6 +118,7 @@ const DeckList: React.FC = () => {
   const instanceId = useRef(`DeckList_${++componentInstanceCount}_${Date.now()}`);
   const outlineThemeRequestsRef = useRef<Set<string>>(new Set());
   const { isAuthenticated, refreshAdminStatus } = useAuth();
+  const isMobileView = useIsMobile();
   const hasCalledAdminCheckRef = useRef(false);
 
   // Get deck management state and functions first, before using isLoading
@@ -1696,7 +1698,7 @@ const DeckList: React.FC = () => {
   }
 
   return (
-    <div className="h-screen bg-white dark:bg-black flex flex-col overflow-hidden relative font-sans">
+    <div className="min-h-screen h-[100dvh] bg-white dark:bg-black flex flex-col overflow-hidden relative font-sans">
       <ParticleAnimation
         isTyping={isUserTyping}
         isLoading={isOutlineChatGenerating || isDeckGenerating || isAgentThinking}
@@ -1705,8 +1707,8 @@ const DeckList: React.FC = () => {
 
 
 
-      <header className="w-full bg-transparent flex items-center justify-between px-6 py-4 z-20 relative">
-        <div className="w-32"></div> {/* Spacer for centering */}
+      <header className="w-full bg-transparent flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 z-20 relative">
+        <div className="w-12 sm:w-32"></div> {/* Spacer for centering */}
         <div className="absolute left-1/2 -translate-x-1/2 cursor-pointer" onClick={() => navigate('/')}>
           {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
           {/* @ts-ignore allow custom tag */}
@@ -1722,7 +1724,7 @@ const DeckList: React.FC = () => {
             rightLiftPx={0}
           />
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           {!(currentOutline || isOutlineChatGenerating || showConversationalOnboarding) && (
             <div className="flex items-center">
               <DropdownMenu>
@@ -2273,23 +2275,23 @@ const DeckList: React.FC = () => {
                   )}
                 </div>
               ) : (
-                <div className="w-screen h-screen flex relative overflow-hidden font-sans text-slate-900 dark:text-zinc-100 selection:bg-orange-100 dark:selection:bg-orange-900/30 selection:text-orange-900 dark:selection:text-orange-300">
+                <div className="w-full min-h-full flex flex-col lg:flex-row relative overflow-y-auto lg:overflow-hidden font-sans text-slate-900 dark:text-zinc-100 selection:bg-orange-100 dark:selection:bg-orange-900/30 selection:text-orange-900 dark:selection:text-orange-300">
                   {/* Particle Background */}
 
 
                   {/* Left Pane: Hero Section */}
                   <div
-                    className="relative z-10 h-full overflow-y-auto flex flex-col flex-1 min-w-0"
+                    className="relative z-10 flex flex-col min-w-0 w-full lg:flex-1 lg:h-full lg:overflow-y-auto"
                   >
-                    <div className="min-h-full flex flex-col">
+                    <div className="flex flex-col min-h-0 lg:min-h-full">
                       {/* Header Removed (Duplicate) */}
 
                       {/* Hero Content - Centered Vertically */}
-                      <div className="flex-1 flex flex-col justify-center items-center p-8 pb-32">
-                        <div className="max-w-3xl w-full text-center space-y-8">
+                      <div className="flex-1 flex flex-col justify-center items-center px-5 pt-8 pb-16 sm:p-8 sm:pb-32">
+                        <div className="max-w-3xl w-full text-center space-y-6 sm:space-y-8">
                           {/* Main Heading */}
                           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                            <div className="flex flex-col items-center justify-center mb-10 space-y-6 text-center z-10 relative">
+                            <div className="flex flex-col items-center justify-center mb-6 sm:mb-10 space-y-4 sm:space-y-6 text-center z-10 relative">
                               <h1
                                 className="text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
                                 style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
@@ -2511,7 +2513,7 @@ const DeckList: React.FC = () => {
 
                   {/* Resize Handle */}
                   <div
-                    className="w-1 h-full cursor-ew-resize hover:bg-orange-500/50 transition-colors relative z-50 flex-shrink-0 group"
+                    className="hidden lg:flex w-1 h-full cursor-ew-resize hover:bg-orange-500/50 transition-colors relative z-50 flex-shrink-0 group"
                     onMouseDown={handleResizeStart}
                   >
                     <div className="absolute inset-y-0 -left-2 -right-2 z-50" /> {/* Hit area */}
@@ -2520,10 +2522,10 @@ const DeckList: React.FC = () => {
 
                   {/* Right Pane: Deck List */}
                   <div
-                    className="h-full bg-white/60 dark:bg-zinc-900/90 backdrop-blur-xl border-l border-white/50 dark:border-zinc-800/50 shadow-xl shadow-slate-200/50 dark:shadow-black/30 relative z-10 flex flex-col flex-none"
-                    style={{ width: `${deckListWidth}%` }}
+                    className="w-full lg:h-full max-h-[60vh] lg:max-h-none bg-white/60 dark:bg-zinc-900/90 backdrop-blur-xl border-t border-white/50 dark:border-zinc-800/50 lg:border-t-0 lg:border-l shadow-xl shadow-slate-200/50 dark:shadow-black/30 relative z-10 flex flex-col flex-none mt-6 lg:mt-0"
+                    style={{ width: isMobileView ? '100%' : `${deckListWidth}%` }}
                   >
-                    <div className="p-4 pt-20 border-b border-zinc-100 dark:border-zinc-800 flex-shrink-0">
+                    <div className="p-4 pt-6 lg:pt-20 border-b border-zinc-100 dark:border-zinc-800 flex-shrink-0">
                       <div className="flex flex-col gap-4">
                         <div className="relative w-full">
                           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 dark:text-zinc-400" />
