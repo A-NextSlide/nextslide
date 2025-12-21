@@ -171,7 +171,8 @@ class CustomComponentGenerator:
                 {"role": "user", "content": user_content},
             ]
 
-            response, used_fallback = await self._invoke_with_fallback(messages)
+            async with _AI_SEMAPHORE:
+                response, used_fallback = await self._invoke_with_fallback(messages)
             if used_fallback:
                 logger.info("[CUSTOM_COMPONENT] Used fallback model for this generation")
 
