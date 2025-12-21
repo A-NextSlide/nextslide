@@ -10,7 +10,7 @@ const OnboardingHeader: React.FC<OnboardingHeaderProps> = ({ onCancel }) => {
   if (!onCancel) return null;
 
   return (
-    <div className="py-4 border-b border-zinc-200 dark:border-zinc-800">
+    <div className="py-3 sm:py-4 border-b border-zinc-200 dark:border-zinc-800 px-1 sm:px-0">
       <Button
         variant="ghost"
         size="sm"

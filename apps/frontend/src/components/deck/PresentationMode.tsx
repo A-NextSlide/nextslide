@@ -7,6 +7,7 @@ import { SlideData } from '@/types/SlideTypes';
 import { cn } from '@/lib/utils';
 import { DEFAULT_SLIDE_HEIGHT, DEFAULT_SLIDE_WIDTH } from '@/utils/deckUtils';
 import Watermark from '@/components/common/Watermark';
+import MiniSlide from './MiniSlide';
 
 interface PresentationModeProps {
   slides: SlideData[];
@@ -65,6 +66,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const [isPortrait, setIsPortrait] = useState(true);
   const isExpanded = isFullscreen || isLandscapeMode;
   const shouldRotate = isExpanded && isMobile && isPortrait;
+  const baseSlideWidth = shouldRotate ? DEFAULT_SLIDE_HEIGHT : DEFAULT_SLIDE_WIDTH;
+  const baseSlideHeight = shouldRotate ? DEFAULT_SLIDE_WIDTH : DEFAULT_SLIDE_HEIGHT;
+  const thumbnailHeight = isMobile ? 96 : 120;
+  const thumbnailWidth = Math.round(thumbnailHeight * (DEFAULT_SLIDE_WIDTH / DEFAULT_SLIDE_HEIGHT));
 
   // Detect mobile device - improved detection for tablets and touch devices
   useEffect(() => {
@@ -215,10 +220,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
         if (!containerWidth || !containerHeight || containerWidth === 0 || containerHeight === 0) return;
 
         // Calculate scale to fit the slide within the container
-        const baseWidth = shouldRotate ? DEFAULT_SLIDE_HEIGHT : DEFAULT_SLIDE_WIDTH;
-        const baseHeight = shouldRotate ? DEFAULT_SLIDE_WIDTH : DEFAULT_SLIDE_HEIGHT;
-        const scaleX = containerWidth / baseWidth;
-        const scaleY = containerHeight / baseHeight;
+        const scaleX = containerWidth / baseSlideWidth;
+        const scaleY = containerHeight / baseSlideHeight;
         const scale = Math.min(scaleX, scaleY);
         if (!Number.isFinite(scale) || scale <= 0) return;
 
@@ -406,16 +409,17 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   // Defensive: ensure currentSlideIndex is valid
   const validIndex = Math.max(0, Math.min(currentSlideIndex, slides.length - 1));
   const currentSlide = slides[validIndex];
-  const viewportClamp = isMobile ? 100 : 95;
+  const viewportClamp = isMobile ? 100 : 98;
   const progressTotal = Math.max(1, slides.length);
-  const maxWidth = `min(${viewportClamp}vw, calc(${viewportClamp}dvh * ${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}))`;
-  const minHeight = `min(calc(${viewportClamp}vw * ${DEFAULT_SLIDE_HEIGHT} / ${DEFAULT_SLIDE_WIDTH}), ${viewportClamp}dvh)`;
+  const slideRatio = baseSlideWidth / baseSlideHeight;
+  const maxWidth = `min(${viewportClamp}vw, calc(${viewportClamp}dvh * ${slideRatio}))`;
+  const minHeight = `min(calc(${viewportClamp}vw / ${slideRatio}), ${viewportClamp}dvh)`;
   const slideViewportStyle = isExpanded && isMobile
     ? { width: '100%', height: '100%' }
     : {
         width: '100%',
         maxWidth,
-        aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`,
+        aspectRatio: `${baseSlideWidth} / ${baseSlideHeight}`,
         minHeight
       };
   const slideFrameStyle = {
@@ -696,13 +700,19 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                             validIndex === index && "ring-2 ring-white scale-105"
                           )}
                         style={{
-                          height: '120px',
-                          aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`
+                          height: `${thumbnailHeight}px`,
+                          width: `${thumbnailWidth}px`
                         }}
                       >
                         {/* Slide thumbnail - use isThumbnail=true for lighter rendering */}
                         <div className="relative bg-white w-full h-full overflow-hidden">
-                          {renderSlide(slide, index, 1, true)}
+                          <MiniSlide
+                            slide={slide}
+                            width={thumbnailWidth}
+                            height={thumbnailHeight}
+                            responsive={false}
+                            className="pointer-events-none rounded-none hover:ring-0"
+                          />
                         </div>
 
                         {/* Slide number overlay */}

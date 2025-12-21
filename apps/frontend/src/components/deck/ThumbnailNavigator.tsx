@@ -94,9 +94,8 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
       (c) => c.type !== 'Background' && !c.id?.toLowerCase().includes('background')
     );
   }, [slide?.components]);
-  const fallbackBackground = useMemo(() => (
-    renderSimple ? getSlideFallbackBackground(slide) : undefined
-  ), [renderSimple, slide]);
+  const fallbackBackground = useMemo(() => getSlideFallbackBackground(slide), [slide]);
+  const shouldRenderMiniSlide = hasRealContent;
 
   return (
     <ContextMenu>
@@ -136,25 +135,20 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
 
           {/* Main thumbnail content */}
           <div className="w-full h-full flex items-center justify-center overflow-hidden rounded-sm">
-            {renderSimple ? (
-              <div
-                className="w-full h-full rounded-sm overflow-hidden flex items-center justify-center"
-                style={fallbackBackground ? { background: fallbackBackground } : { background: '#f5f5f5' }}
-              >
-                <div className="text-[10px] font-medium text-zinc-600">
-                  Slide {index + 1}
-                </div>
-              </div>
-            ) : hasRealContent ? (
+            {shouldRenderMiniSlide ? (
               <MiniSlide
                 slide={slide}
                 width={160}
                 height={90}
                 responsive={false}
+                className={cn("pointer-events-none", renderSimple && "hover:ring-0 cursor-default")}
               />
             ) : (
-              <div className="w-full h-full rounded-sm overflow-hidden bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 flex items-center justify-center">
-                <div className="text-[10px] font-medium text-orange-600 dark:text-orange-400">
+              <div
+                className="w-full h-full rounded-sm overflow-hidden flex items-center justify-center"
+                style={fallbackBackground ? { background: fallbackBackground } : { background: '#f5f5f5' }}
+              >
+                <div className="text-[10px] font-medium text-zinc-600">
                   Slide {index + 1}
                 </div>
               </div>

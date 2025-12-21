@@ -119,6 +119,7 @@ const DeckList: React.FC = () => {
   const outlineThemeRequestsRef = useRef<Set<string>>(new Set());
   const { isAuthenticated, refreshAdminStatus } = useAuth();
   const isMobileView = useIsMobile();
+  const heroTextareaBaseHeight = isMobileView ? 44 : 48;
   const hasCalledAdminCheckRef = useRef(false);
 
   // Get deck management state and functions first, before using isLoading
@@ -436,9 +437,9 @@ const DeckList: React.FC = () => {
     setShowConversationalOnboarding(true);
     setHeroInput('');
     if (heroTextareaRef.current) {
-      heroTextareaRef.current.style.height = '48px';
+      heroTextareaRef.current.style.height = `${heroTextareaBaseHeight}px`;
     }
-  }, [setHeroInput, setOnboardingSeedPrompt, setOnboardingSessionId, setShowConversationalOnboarding]);
+  }, [heroTextareaBaseHeight, setHeroInput, setOnboardingSeedPrompt, setOnboardingSessionId, setShowConversationalOnboarding]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -1698,7 +1699,7 @@ const DeckList: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen h-[100dvh] bg-white dark:bg-black flex flex-col overflow-hidden relative font-sans">
+    <div className="h-[100dvh] sm:h-screen bg-white dark:bg-black flex flex-col overflow-hidden relative font-sans">
       <ParticleAnimation
         isTyping={isUserTyping}
         isLoading={isOutlineChatGenerating || isDeckGenerating || isAgentThinking}
@@ -2275,34 +2276,44 @@ const DeckList: React.FC = () => {
                   )}
                 </div>
               ) : (
-                <div className="w-full min-h-full flex flex-col lg:flex-row relative overflow-y-auto lg:overflow-hidden font-sans text-slate-900 dark:text-zinc-100 selection:bg-orange-100 dark:selection:bg-orange-900/30 selection:text-orange-900 dark:selection:text-orange-300">
+                <div
+                  className={cn(
+                    "relative font-sans text-slate-900 dark:text-zinc-100 selection:bg-orange-100 dark:selection:bg-orange-900/30 selection:text-orange-900 dark:selection:text-orange-300",
+                    isMobileView
+                      ? "w-full min-h-full flex flex-col overflow-y-auto"
+                      : "w-full h-full flex overflow-hidden"
+                  )}
+                >
                   {/* Particle Background */}
 
 
                   {/* Left Pane: Hero Section */}
                   <div
-                    className="relative z-10 flex flex-col min-w-0 w-full lg:flex-1 lg:h-full lg:overflow-y-auto"
+                    className={cn(
+                      "relative z-10 flex flex-col min-w-0",
+                      isMobileView ? "w-full" : "h-full overflow-y-auto flex-1"
+                    )}
                   >
-                    <div className="flex flex-col min-h-0 lg:min-h-full">
+                    <div className={cn("flex flex-col", isMobileView ? "min-h-0" : "min-h-full")}>
                       {/* Header Removed (Duplicate) */}
 
                       {/* Hero Content - Centered Vertically */}
-                      <div className="flex-1 flex flex-col justify-center items-center px-5 pt-8 pb-16 sm:p-8 sm:pb-32">
+                      <div className="flex-1 flex flex-col justify-center items-center px-5 pt-6 pb-10 sm:p-8 sm:pb-32">
                         <div className="max-w-3xl w-full text-center space-y-6 sm:space-y-8">
                           {/* Main Heading */}
                           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                            <div className="flex flex-col items-center justify-center mb-6 sm:mb-10 space-y-4 sm:space-y-6 text-center z-10 relative">
+                            <div className="flex flex-col items-center justify-center mb-5 sm:mb-10 space-y-4 sm:space-y-6 text-center z-10 relative">
                               <h1
-                                className="text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
+                                className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
                                 style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
                               >
                                 TURN{' '}<RotatingWords />{' '}INTO<br />PERFECT PRESENTATIONS
                               </h1>
                               <div className="space-y-2">
-                                <p className="text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
+                                <p className="text-sm sm:text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
                                   Any topic. Visualized. Perfected. In 90 seconds.
                                 </p>
-                                <p className="text-sm md:text-base text-zinc-500 dark:text-zinc-400">
+                                <p className="text-xs sm:text-sm md:text-base text-zinc-500 dark:text-zinc-400">
                                   Type, talk, or drop a file — we handle the rest.
                                 </p>
                               </div>
@@ -2311,18 +2322,6 @@ const DeckList: React.FC = () => {
 
                           {/* Input Area */}
                           <div className="relative max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-6 duration-700 delay-100">
-                            {/* Branded slides hint bubble */}
-                            <div
-                              className={cn(
-                                "absolute -top-8 left-2 flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800/50 rounded-full shadow-sm transition-all duration-300",
-                                heroInput ? "opacity-0 -translate-y-2 pointer-events-none" : "opacity-100 translate-y-0"
-                              )}
-                            >
-                              <span className="text-xs font-medium text-orange-600 dark:text-orange-400">
-                                Add your domain <span className="text-zinc-400 dark:text-zinc-500">(e.g.</span> <span className="font-semibold">Nike.com</span><span className="text-zinc-400 dark:text-zinc-500">)</span> for branded slides
-                              </span>
-                            </div>
-
                             <div className="relative group">
                               <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                               <div
@@ -2361,10 +2360,10 @@ const DeckList: React.FC = () => {
                                 )}
 
                                 {/* Input Field with Typewriter Placeholder */}
-                                <div className="flex-1 relative min-h-[48px]">
+                                <div className="flex-1 relative min-h-[44px] sm:min-h-[48px]">
                                   <Textarea
                                     ref={heroTextareaRef}
-                                    className="w-full border-none shadow-none focus-visible:ring-0 min-h-[48px] max-h-[150px] bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-4 py-3 font-sans dark:text-zinc-100 resize-none overflow-y-auto text-base leading-normal"
+                                    className="w-full border-none shadow-none focus-visible:ring-0 min-h-[44px] sm:min-h-[48px] max-h-[150px] bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-3 py-2 sm:px-4 sm:py-3 font-sans dark:text-zinc-100 resize-none overflow-y-auto text-sm sm:text-base leading-normal"
                                     value={heroInput}
                                     onChange={(e) => setHeroInput(e.target.value)}
                                     onKeyDown={(e) => {
@@ -2376,15 +2375,15 @@ const DeckList: React.FC = () => {
                                     rows={1}
                                     onInput={(e) => {
                                       const target = e.target as HTMLTextAreaElement;
-                                      target.style.height = '48px';
+                                      target.style.height = `${heroTextareaBaseHeight}px`;
                                       target.style.height = Math.min(target.scrollHeight, 150) + 'px';
                                     }}
                                   />
                                   {!heroInput && (
-                                    <div className="absolute top-0 left-0 right-0 pointer-events-none flex items-center px-4 h-[48px] text-lg text-slate-400 dark:text-zinc-500">
-                                      <span className="whitespace-pre">I want to create </span>
-                                      <span className="text-slate-300 dark:text-zinc-600">{typewriterText}</span>
-                                      <span className="animate-pulse text-orange-500">|</span>
+                                    <div className="absolute top-0 left-0 right-0 pointer-events-none flex items-center px-3 sm:px-4 h-[44px] sm:h-[48px] text-sm sm:text-base text-slate-400 dark:text-zinc-500 min-w-0 overflow-hidden">
+                                      <span className="whitespace-nowrap">I want to create </span>
+                                      <span className="min-w-0 truncate text-slate-300 dark:text-zinc-600">{typewriterText}</span>
+                                      <span className="ml-0.5 animate-pulse text-orange-500">|</span>
                                     </div>
                                   )}
                                 </div>
@@ -2455,7 +2454,7 @@ const DeckList: React.FC = () => {
                                         // Auto-resize and scroll textarea after state update
                                         setTimeout(() => {
                                           if (heroTextareaRef.current) {
-                                            heroTextareaRef.current.style.height = '48px';
+                                            heroTextareaRef.current.style.height = `${heroTextareaBaseHeight}px`;
                                             heroTextareaRef.current.style.height = Math.min(heroTextareaRef.current.scrollHeight, 150) + 'px';
                                             heroTextareaRef.current.scrollTop = heroTextareaRef.current.scrollHeight;
                                           }
@@ -2522,7 +2521,12 @@ const DeckList: React.FC = () => {
 
                   {/* Right Pane: Deck List */}
                   <div
-                    className="w-full lg:h-full max-h-[60vh] lg:max-h-none bg-white/60 dark:bg-zinc-900/90 backdrop-blur-xl border-t border-white/50 dark:border-zinc-800/50 lg:border-t-0 lg:border-l shadow-xl shadow-slate-200/50 dark:shadow-black/30 relative z-10 flex flex-col flex-none mt-6 lg:mt-0"
+                    className={cn(
+                      "bg-white/60 dark:bg-zinc-900/90 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-black/30 relative z-10 flex flex-col flex-none",
+                      isMobileView
+                        ? "w-full flex-1 min-h-0 border-t border-white/50 dark:border-zinc-800/50 mt-4"
+                        : "h-full border-l border-white/50 dark:border-zinc-800/50"
+                    )}
                     style={{ width: isMobileView ? '100%' : `${deckListWidth}%` }}
                   >
                     <div className="p-4 pt-6 lg:pt-20 border-b border-zinc-100 dark:border-zinc-800 flex-shrink-0">
