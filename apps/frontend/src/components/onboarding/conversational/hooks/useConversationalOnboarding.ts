@@ -85,7 +85,7 @@ export const useConversationalOnboarding = ({
   const forceOutlineAfterClarificationRef = useRef(false);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const messagesEndRef = useAutoScroll([
+  const { anchorRef: messagesEndRef, scrollContainerRef } = useAutoScroll([
     chatMessages.messages,
     agentStatus.state.thinkingSteps,
     agentStatus.state.isAgentTyping,
@@ -129,11 +129,8 @@ export const useConversationalOnboarding = ({
   ), [collectedData.use_uploaded_images, extractedImages.length]);
 
   const fileImageDefaultValue = useMemo(() => {
-    const preference = outlineState.outlineFlow?.use_uploaded_images;
-    if (preference === true) return 'Use extracted images';
-    if (preference === false) return 'Find best images';
-    return undefined;
-  }, [outlineState.outlineFlow?.use_uploaded_images]);
+    return extractedImages.length > 0 ? 'Find best images' : undefined;
+  }, [extractedImages.length]);
 
   const mergeExtractedMedia = useCallback((
     existing: UploadedMedia[] | undefined,
@@ -153,7 +150,7 @@ export const useConversationalOnboarding = ({
         filename: `extracted-image-${index + 1}.png`,
         type: 'image/png',
         url,
-        metadata: { source: 'file_extract' },
+        metadata: { source: 'file_extract', usePolicy: 'explicit' },
       }));
     return existingList.concat(additions);
   }, []);
@@ -164,6 +161,10 @@ export const useConversationalOnboarding = ({
       const next = { ...prev, use_uploaded_images: useImages };
       if (useImages && extractedImages.length > 0) {
         next.uploadedMedia = mergeExtractedMedia(prev.uploadedMedia, extractedImages);
+      } else if (!useImages && Array.isArray(prev.uploadedMedia)) {
+        next.uploadedMedia = prev.uploadedMedia.filter(
+          (media) => media?.metadata?.source !== 'file_extract'
+        );
       }
       return next;
     });
@@ -240,6 +241,8 @@ export const useConversationalOnboarding = ({
     if (needsFileImageConfirmation) return;
     if (outlineState.outlineFlow.stylePreferences?.needsBrandDomainConfirmation) return;
     if (themeState.themeBlock?.branding?.needsBrandDomainConfirmation) return;
+    if (isOutlinePrefetching) return;
+    if (themeState.isThemeLoading) return;
 
     const timer = setTimeout(() => {
       if (slideModePromptedRef.current) return;
@@ -255,7 +258,9 @@ export const useConversationalOnboarding = ({
     chatMessages,
     outlineState.outlineFlow,
     needsFileImageConfirmation,
+    isOutlinePrefetching,
     stage,
+    themeState.isThemeLoading,
     themeState.themeBlock,
   ]);
 
@@ -708,10 +713,14 @@ export const useConversationalOnboarding = ({
       agentStatus.actions.clearThinkingSteps();
 
       if (outlineData && outlineData.action === 'clarify') {
-        const clarificationMessage = outlineData.message || outlineData.clarification?.message || 'Quick check before I build the deck.';
-        const draftResponse = outlineData.draft_response || outlineData.clarification?.draft_response || '';
+        const toText = (value: unknown): string => (typeof value === 'string' ? value : '');
+        const clarificationMessage = toText(outlineData.message) ||
+          toText(outlineData.clarification?.message) ||
+          'Quick check before I build the deck.';
+        const draftResponse = toText(outlineData.draft_response) ||
+          toText(outlineData.clarification?.draft_response);
         const clarificationFields = outlineData.clarification?.fields;
-        const clarificationDraft = (draftResponse || clarificationMessage || '').trim() ||
+        const clarificationDraft = (draftResponse || clarificationMessage).trim() ||
           'Provide the missing detail: [[details]].';
         const hasClarificationData = Boolean(clarificationDraft || (clarificationFields && clarificationFields.length > 0));
         chatMessages.addAgentMessage(clarificationMessage, {
@@ -865,7 +874,11 @@ export const useConversationalOnboarding = ({
         slideScreenshots: outlineState.outlineFlow?.slide_screenshots,
         slides: outlineState.outlineFlow?.slides,
         scrapedVideos: outlineState.outlineFlow?.scraped_videos,
-        use_uploaded_images: outlineState.outlineFlow?.use_uploaded_images ?? collectedData.use_uploaded_images,
+        use_uploaded_images: collectedData.use_uploaded_images === true,
+        scraped_context: outlineState.outlineFlow?.scraped_context,
+        research_context: outlineState.outlineFlow?.research_context,
+        reference_sources: outlineState.outlineFlow?.reference_sources,
+        research_citations: outlineState.outlineFlow?.research_citations,
       });
     }, 1500);
   }, [
@@ -882,7 +895,7 @@ export const useConversationalOnboarding = ({
     setIsProcessing(true);
 
     if (prefetchSlidesRef.current) {
-      agentStatus.actions.setStatusMessage('Finalizing outline details...');
+      agentStatus.actions.setStatusMessage('Generating your outline...');
       agentStatus.actions.setStatusPhase('compiling');
       agentStatus.actions.setIsAgentTyping(true);
 
@@ -1075,7 +1088,7 @@ export const useConversationalOnboarding = ({
       agentStatus.state.isAgentTyping
     );
     const blockingLabel = isOutlinePrefetching
-      ? 'Finalizing outline details...'
+      ? 'Generating your outline...'
       : themeState.isThemeLoading
         ? 'Fetching brand images...'
         : 'Preparing your deck...';
@@ -1132,6 +1145,7 @@ export const useConversationalOnboarding = ({
       inputRef,
       fileInputRef: fileUploads.fileInputRef,
       messagesEndRef,
+      scrollContainerRef,
     },
     handlers: {
       handleInputChange,

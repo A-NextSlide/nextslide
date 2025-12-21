@@ -7,6 +7,7 @@ import { API_ENDPOINTS } from '@/config/apiEndpoints';
 import { v4 as uuidv4 } from 'uuid';
 import { authService } from '@/services/authService';
 import { normalizeSseEvent } from '@/services/generation/normalizeEvent';
+import { normalizeReferenceImages } from '@/utils/referenceImages';
 
 // Types for API requests/responses
 interface OutlineGenerationRequest {
@@ -421,7 +422,7 @@ export class OutlineAPI {
           logoUrlDark: (outline.stylePreferences as any)?.logoUrlDark,
           slideMode: (outline.stylePreferences as any)?.slideMode,
           // Slide screenshots from uploaded PPT/PDF for visual design reference
-          referenceImages: (outline.stylePreferences as any)?.referenceImages,
+          referenceImages: normalizeReferenceImages((outline.stylePreferences as any)?.referenceImages),
         }
         : undefined,
       notes: normalizedNotes,

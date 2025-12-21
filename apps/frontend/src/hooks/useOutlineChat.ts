@@ -156,13 +156,19 @@ export const useOutlineChat = ({
     } catch { }
   }, []);
 
-  const requestThemeForOutline = useCallback(async (outline: DeckOutline | null | undefined) => {
+  const requestThemeForOutline = useCallback(async (
+    outline: DeckOutline | null | undefined,
+    options: { force?: boolean } = {}
+  ) => {
     if (!outline) return;
     const outlineId = resolveOutlineId(outline.id);
     if (!outlineId) return;
     const themeStore = useThemeStore.getState();
-    if (themeStore.hasOutlineThemeRequested(outlineId)) {
+    if (!options.force && themeStore.hasOutlineThemeRequested(outlineId)) {
       return;
+    }
+    if (options.force && themeStore.clearOutlineThemeRequested) {
+      themeStore.clearOutlineThemeRequested(outlineId);
     }
     themeStore.markOutlineThemeRequested(outlineId);
     const stylePreferences = outline.stylePreferences || buildThemeStylePreferences();
@@ -250,7 +256,8 @@ export const useOutlineChat = ({
                 title: `Slide ${idx + 1}`,
                 content: '',
                 deepResearch: false,
-                taggedMedia: []
+                taggedMedia: [],
+                assignedVideo: undefined,
               }));
               console.log('[useOutlineChat] research_plan - Creating placeholder outline');
               console.log('[useOutlineChat] research_plan - deckId provided:', deckId);
@@ -420,7 +427,8 @@ export const useOutlineChat = ({
                   title,
                   content: '',
                   deepResearch: false,
-                  taggedMedia: []
+                  taggedMedia: [],
+                  assignedVideo: undefined,
                 };
               });
               setCurrentOutline(prev => {
@@ -499,7 +507,8 @@ export const useOutlineChat = ({
                       title: outlineStructureInfo?.slideTitles?.[idx] || `Slide ${idx + 1}`,
                       content: '',
                       deepResearch: false,
-                      taggedMedia: []
+                      taggedMedia: [],
+                      assignedVideo: undefined,
                     }))
                   };
                   // Update the specific slide with the completed data
@@ -507,7 +516,8 @@ export const useOutlineChat = ({
                     newOutline.slides[event.slideIndex] = {
                       ...event.slide,
                       id: event.slide.id || newOutline.slides[event.slideIndex].id,
-                      deepResearch: (event.slide as any).deepResearch || false
+                      deepResearch: (event.slide as any).deepResearch || false,
+                      assignedVideo: newOutline.slides[event.slideIndex].assignedVideo || event.slide.assignedVideo,
                     };
                   }
                   console.log('[useOutlineChat] Created new outline with slide content:', newOutline);
@@ -524,7 +534,8 @@ export const useOutlineChat = ({
                     title: outlineStructureInfo?.slideTitles?.[updatedSlides.length] || `Slide ${updatedSlides.length + 1}`,
                     content: '',
                     deepResearch: false,
-                    taggedMedia: []
+                    taggedMedia: [],
+                    assignedVideo: undefined,
                   });
                 }
 
@@ -537,7 +548,8 @@ export const useOutlineChat = ({
                   // Preserve existing tagged media if present
                   taggedMedia: (updatedSlides[event.slideIndex].taggedMedia && updatedSlides[event.slideIndex].taggedMedia.length > 0)
                     ? updatedSlides[event.slideIndex].taggedMedia
-                    : (event.slide.taggedMedia || [])
+                    : (event.slide.taggedMedia || []),
+                  assignedVideo: updatedSlides[event.slideIndex].assignedVideo || event.slide.assignedVideo,
                 };
 
                 const updatedOutline = {
@@ -580,6 +592,7 @@ export const useOutlineChat = ({
                     const taggedMedia = (base.taggedMedia && base.taggedMedia.length > 0)
                       ? base.taggedMedia
                       : (finalSlide.taggedMedia || []);
+                    const assignedVideo = base.assignedVideo || finalSlide.assignedVideo;
                     // Carry extractedData from either side
                     const extractedData = base.extractedData || finalSlide.extractedData;
                     return {
@@ -589,6 +602,7 @@ export const useOutlineChat = ({
                       content,
                       deepResearch,
                       taggedMedia,
+                      assignedVideo,
                       extractedData,
                     };
                   })
@@ -699,7 +713,8 @@ export const useOutlineChat = ({
                   const colorCount = Array.isArray(palette?.colors) ? palette.colors.length : 0;
                   console.warn('[useOutlineChat] 🎨 Triggering theme generation after outline_complete', { colorCount, hasMeaningfulPalette, outlineId: outlineForTheme.id });
                 }
-                void requestThemeForOutline(outlineForTheme);
+                const forceTheme = Boolean(sp?.brandDomain || sp?.brandName);
+                void requestThemeForOutline(outlineForTheme, { force: forceTheme });
               }
             } catch (err) {
               // Swallow theme derivation errors
@@ -1127,6 +1142,7 @@ export const useOutlineChat = ({
               const taggedMedia = (slide.taggedMedia && slide.taggedMedia.length > 0)
                 ? slide.taggedMedia
                 : (resultSlide?.taggedMedia || []);
+              const assignedVideo = slide.assignedVideo || resultSlide?.assignedVideo;
 
               if (taggedMedia.length > 0) {
                 // console.log(`[useOutlineChat] Slide ${index} "${slide.title}" has ${taggedMedia.length} tagged media`);
@@ -1134,7 +1150,8 @@ export const useOutlineChat = ({
 
               return {
                 ...slide,
-                taggedMedia
+                taggedMedia,
+                assignedVideo,
               };
             }),
             // Add narrative flow if it exists in the result
@@ -1225,6 +1242,7 @@ export const useOutlineChat = ({
           title: slide.title,
           content: slide.content,
           taggedMedia: [],
+          assignedVideo: slide.assignedVideo,
           deepResearch: false,
           extractedData: slide.extractedData || undefined,
           manualCharts: slide.manualCharts || undefined

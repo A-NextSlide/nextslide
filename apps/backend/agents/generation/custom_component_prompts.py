@@ -18,10 +18,11 @@ def build_system_prompt(
         "Create visually compelling, professional slides appropriate for the content and audience."
     )
 
-    accent = colors.get("accent_1", "#6366f1")
-    secondary = colors.get("accent_2", "#8b5cf6")
-    text_color = colors.get("primary_text", "#ffffff")
-    bg_color = colors.get("primary_background", "#0a0e27")
+    accent = colors.get("accent_1") or colors.get("accent_2")
+    secondary = colors.get("accent_2") or colors.get("accent_1")
+    text_color = colors.get("primary_text")
+    bg_color = colors.get("primary_background")
+    has_palette = bool(accent and text_color and bg_color)
     hero_font, body_font = _extract_fonts_from_typography(typography)
 
     logo_line = (
@@ -30,19 +31,32 @@ def build_system_prompt(
         else "LOGO: If props.logoUrl is provided, place it in a corner or header when appropriate."
     )
 
-    theme_info = (
-        "THEME: --accent: {accent}; --secondary: {secondary}; --text: {text}; --bg: {bg}\n"
-        "FONTS: {hero} / {body}\n"
-        "IMAGES: Use <img src=\"placeholder\" alt=\"searchable query\">. If a named entity is mentioned, use the exact name in alt text.\n"
-        f"{logo_line}"
-    ).format(
-        accent=accent,
-        secondary=secondary,
-        text=text_color,
-        bg=bg_color,
-        hero=hero_font,
-        body=body_font,
-    )
+    if has_palette:
+        theme_info = (
+            "THEME: --accent: {accent}; --secondary: {secondary}; --text: {text}; --bg: {bg}\n"
+            "FONTS: {hero} / {body}\n"
+            "COLOR USE: Only use the palette values above (plus white/black for legibility).\n"
+            "IMAGES: Use <img src=\"placeholder\" alt=\"searchable query\">. If a named entity is mentioned, use the exact name in alt text.\n"
+            f"{logo_line}"
+        ).format(
+            accent=accent,
+            secondary=secondary,
+            text=text_color,
+            bg=bg_color,
+            hero=hero_font,
+            body=body_font,
+        )
+    else:
+        theme_info = (
+            "THEME: No fixed palette provided. Choose a cohesive palette and define "
+            "--accent, --secondary, --text, --bg. Use them consistently.\n"
+            "FONTS: {hero} / {body}\n"
+            "IMAGES: Use <img src=\"placeholder\" alt=\"searchable query\">. If a named entity is mentioned, use the exact name in alt text.\n"
+            f"{logo_line}"
+        ).format(
+            hero=hero_font,
+            body=body_font,
+        )
 
     if slide_mode == "static":
         return (
@@ -76,7 +90,8 @@ def build_system_prompt(
         "DESIGN PRINCIPLES:\n"
         "- Bold, creative visuals/diagrams that explain the idea\n"
         "- Clear hierarchy and strong composition\n"
-        "- Fill the full canvas; keep content inside bounds\n\n"
+        "- Fill the full canvas; keep content inside bounds\n"
+        "- Maps: Use D3.js + TopoJSON (cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json for world, us-atlas for US). Style all land/water/borders with theme colors - never use external map tiles.\n\n"
         "INTERACTION (use when appropriate):\n"
         "- Animated diagrams that build on click\n"
         "- Interactive timelines or step-throughs\n"

@@ -457,12 +457,9 @@ def _reference_images_from_uploaded_media(uploaded_media: Optional[list]) -> Lis
         is_drawing = any(kw in filename.lower() for kw in ["sketch", "drawing", "mockup", "wireframe", "draft", "layout", "design"]) if filename else False
         is_screenshot = any(kw in filename.lower() for kw in ["screenshot", "screen", "capture"]) if filename else False
         if is_drawing or is_screenshot:
-            content_b64 = media.get("content")
-            if content_b64:
-                mime = media.get("type") or "image/png"
-                reference_images.append(f"data:{mime};base64,{content_b64}")
-            elif media.get("previewUrl"):
-                reference_images.append(media["previewUrl"])
+            preview_url = media.get("previewUrl") or media.get("url")
+            if isinstance(preview_url, str) and preview_url.startswith(("http://", "https://")):
+                reference_images.append(preview_url)
     return reference_images
 
 

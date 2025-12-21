@@ -51,7 +51,7 @@ const OutlineThemeBlocks: React.FC<OutlineThemeBlocksProps> = ({
   if (!outlineBlock && !themeBlock) return null;
 
   const stackedBlocks = Boolean(outlineBlock && themeBlock);
-  const outlineLoadingLabel = isOutlinePrefetching ? 'Finalizing outline details...' : 'Generating outline...';
+  const outlineLoadingLabel = isOutlinePrefetching ? 'Generating your outline...' : 'Creating your structure...';
   const isOutlineEditable = !isProcessing && !isOutlinePrefetching;
   const isThemeEditable = Boolean(themeBlock?.isEditable) && !isThemeLoading;
   const themeLoadingLabel = themeBlock?.loadingMessage || (isThemeLoading ? 'Updating theme...' : undefined);

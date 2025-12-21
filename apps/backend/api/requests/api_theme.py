@@ -94,6 +94,76 @@ async def stream_theme_from_outline(
             style_prefs = getattr(outline, 'stylePreferences', None)
             logger.info(f"[THEME API] DEBUG: Checking stylePreferences for theme reconstruction - type: {type(style_prefs)}")
 
+            # FAST PATH #1: Direct brand cache lookup
+            # If we have a brandDomain or vibeContext that looks like a domain, check cache first
+            brand_domain = getattr(style_prefs, 'brandDomain', None) if style_prefs else None
+            vibe_context_raw = getattr(style_prefs, 'vibeContext', None) if style_prefs else None
+            brand_name_raw = getattr(style_prefs, 'brandName', None) if style_prefs else None
+
+            # Try direct cache lookup
+            cache_lookup_key = brand_domain or vibe_context_raw or brand_name_raw
+            if cache_lookup_key:
+                try:
+                    from services.brand_cache_direct import get_cached_brand_direct
+                    cached_brand = get_cached_brand_direct(cache_lookup_key)
+
+                    if cached_brand and cached_brand.get("found"):
+                        colors = cached_brand.get("colors", {})
+                        fonts = cached_brand.get("fonts", {})
+
+                        # Check if cache has meaningful data
+                        has_colors = colors.get("accent") or colors.get("background") not in (None, "#FFFFFF")
+                        has_fonts = fonts.get("hero") and fonts.get("hero") not in ("Montserrat", "Inter", "Open Sans", None)
+
+                        if has_colors or has_fonts:
+                            hero_font = fonts.get("hero") or "Montserrat"
+                            body_font = fonts.get("body") or hero_font
+
+                            cached_theme = {
+                                "theme_name": f"{cached_brand.get('brand_name', 'Brand')} Theme",
+                                "color_palette": {
+                                    "primary_background": colors.get("background") or "#FFFFFF",
+                                    "primary_text": colors.get("text") or "#1A1A1A",
+                                    "accent_1": colors.get("accent"),
+                                    "accent_2": colors.get("accent2"),
+                                    "backgrounds": [colors.get("background") or "#FFFFFF"],
+                                    "accents": [c for c in [colors.get("accent"), colors.get("accent2")] if c],
+                                    "text_colors": {"primary": colors.get("text") or "#1A1A1A"},
+                                    "colors": [c for c in [colors.get("accent"), colors.get("accent2"), colors.get("background")] if c],
+                                    "metadata": {"logo_url": cached_brand.get("logo_url")} if cached_brand.get("logo_url") else {}
+                                },
+                                "typography": {
+                                    "hero_title": {"family": hero_font},
+                                    "body_text": {"family": body_font}
+                                },
+                                "brandInfo": {
+                                    "logoUrl": cached_brand.get("logo_url"),
+                                    "brandName": cached_brand.get("brand_name"),
+                                    "brandDomain": cached_brand.get("domain"),
+                                },
+                                "visual_style": {}
+                            }
+
+                            logger.info(
+                                f"[THEME API] FAST PATH: Using cached brand data for {cache_lookup_key} - "
+                                f"bg={colors.get('background')}, accent={colors.get('accent')}, fonts={hero_font}/{body_font}"
+                            )
+
+                            yield _sse({
+                                "type": "theme_generated",
+                                "timestamp": datetime.now().isoformat(),
+                                "theme": cached_theme,
+                                "palette": cached_theme["color_palette"],
+                                "cached": True,
+                                "source": "brand_cache_direct"
+                            })
+                            yield _sse({"type": "end", "message": "Stream complete"})
+                            return
+
+                except Exception as cache_err:
+                    logger.warning(f"[THEME API] Direct cache lookup failed: {cache_err}")
+                    # Continue with normal flow
+
             # Access brand data from stylePreferences (ColorConfigItem structure)
             brand_colors = []
             brand_fonts = None

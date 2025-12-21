@@ -56,7 +56,16 @@ const GenerationSidebar: React.FC<GenerationSidebarProps> = ({
   onBrandNameChange,
 }) => {
   const hasBlocks = Boolean(outlineBlock || themeBlock);
-  const readinessLabel = generationStatus.canGenerate ? 'Ready' : 'Gathering';
+  const readinessLabel = generationStatus.isBlocking
+    ? 'Loading'
+    : (generationStatus.canGenerate ? 'Ready' : 'Gathering');
+  const showGeneratedCards = generationStatus.hasOutline;
+
+  if (!showGeneratedCards) {
+    return (
+      <aside className="hidden lg:flex w-[360px] flex-col h-full overflow-hidden" />
+    );
+  }
 
   return (
     <aside className="hidden lg:flex w-[360px] flex-col h-full overflow-hidden">
@@ -141,13 +150,7 @@ const GenerationSidebar: React.FC<GenerationSidebarProps> = ({
                   themeClassName="rounded-2xl border-zinc-200/80 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.4)]"
                 />
               </div>
-            ) : (
-              <div className="relative pb-4">
-                <div className="rounded-2xl border border-dashed border-zinc-200/80 bg-zinc-50/80 px-4 py-6 text-sm text-zinc-500">
-                  Your outline and theme will appear here as soon as the agent drafts them.
-                </div>
-              </div>
-            )}
+            ) : null}
           </section>
         </div>
       </div>

@@ -491,12 +491,63 @@ class BrandfetchService:
     def get_categorized_colors(self, brand_data: Dict[str, Any]) -> Dict[str, List[str]]:
         """Get colors categorized by their intended use (background, accent, text, etc.)."""
         colors = brand_data.get("colors", {})
-        
-        # Extract colors by type from Brandfetch
-        primary_colors = [c["hex"] for c in colors.get("primary", [])]
-        secondary_colors = [c["hex"] for c in colors.get("secondary", [])]
-        accent_colors = [c["hex"] for c in colors.get("accent", [])]
-        all_colors = colors.get("hex_list", [])
+
+        # Debug logging to understand data structure
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[BrandfetchService] get_categorized_colors - colors type: {type(colors).__name__}")
+        if isinstance(colors, dict):
+            logger.info(f"[BrandfetchService] colors keys: {list(colors.keys())}")
+            for key in ['primary', 'secondary', 'accent', 'background', 'hex_list', 'all']:
+                val = colors.get(key)
+                if val:
+                    logger.info(f"[BrandfetchService] colors.{key}: {val[:3] if isinstance(val, list) and len(val) > 3 else val}")
+
+        # Helper to safely extract hex values from various formats
+        def extract_hex_list(items: Any) -> List[str]:
+            if not items:
+                return []
+            if isinstance(items, str):
+                # Single hex color
+                return [items] if items.startswith('#') else []
+            if isinstance(items, list):
+                result = []
+                for item in items:
+                    if isinstance(item, str) and item.startswith('#'):
+                        result.append(item.upper())
+                    elif isinstance(item, dict):
+                        hex_val = item.get("hex") or item.get("color") or item.get("value")
+                        if isinstance(hex_val, str) and hex_val.startswith('#'):
+                            result.append(hex_val.upper())
+                return result
+            return []
+
+        # Handle case where colors is a list of hex strings instead of a dict
+        if isinstance(colors, list):
+            all_colors = extract_hex_list(colors)
+            primary_colors = []
+            secondary_colors = []
+            accent_colors = []
+        else:
+            # Extract colors by type from Brandfetch (check ALL possible keys)
+            primary_colors = extract_hex_list(colors.get("primary", []))
+            secondary_colors = extract_hex_list(colors.get("secondary", []))
+            accent_colors = extract_hex_list(colors.get("accent", []))
+            background_colors = extract_hex_list(colors.get("background", []))
+            text_brandfetch = extract_hex_list(colors.get("text", []) or colors.get("textPrimary", []))
+            accent2_colors = extract_hex_list(colors.get("accent2", []))
+
+            # Try hex_list first, then all, then combine ALL categorized colors
+            all_colors = extract_hex_list(colors.get("hex_list", []))
+            if not all_colors:
+                all_colors = extract_hex_list(colors.get("all", []))
+            # CRITICAL: If still empty, combine ALL available colors as fallback
+            if not all_colors:
+                combined = []
+                for c in primary_colors + secondary_colors + accent_colors + accent2_colors + background_colors + text_brandfetch:
+                    if c and c not in combined:
+                        combined.append(c)
+                all_colors = combined
         
         # Intelligent categorization based on color properties
         backgrounds = []
@@ -544,14 +595,21 @@ class BrandfetchService:
         light_backgrounds = [c for c in backgrounds if self._calculate_luminance(c) > 0.7]
         dark_backgrounds = [c for c in backgrounds if self._calculate_luminance(c) < 0.3]
         ordered_backgrounds = light_backgrounds + dark_backgrounds
-        
+
+        # Prioritize Brandfetch's explicit background colors over luminance-based categorization
+        # Also add any explicit background_colors that weren't picked up by luminance
+        final_backgrounds = []
+        for c in background_colors + ordered_backgrounds:
+            if c and c not in final_backgrounds:
+                final_backgrounds.append(c)
+
         # Use Brandfetch categories if available, otherwise use our intelligent categorization
         result = {
             "primary": primary_colors or all_colors[:2],
             "secondary": secondary_colors or all_colors[2:4] if len(all_colors) > 2 else [],
-            "accent": accent_colors or accent_final[:3],
-            "backgrounds": ordered_backgrounds[:4],  # Light backgrounds first for slides
-            "text": text_colors[:4],          # Top 4 text colors
+            "accent": accent_colors + accent2_colors if accent_colors else accent_final[:3],
+            "backgrounds": final_backgrounds[:4],  # Brandfetch backgrounds first, then luminance-based
+            "text": text_brandfetch if text_brandfetch else text_colors[:4],
             "all": all_colors
         }
         

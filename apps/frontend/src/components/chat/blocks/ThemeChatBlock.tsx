@@ -162,7 +162,7 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
         "before:content-[''] before:absolute before:inset-0 before:rounded-2xl before:bg-[radial-gradient(circle_at_top,rgba(251,146,60,0.15),transparent_55%)] before:pointer-events-none",
         className
       )}>
-        <div className="relative z-10 h-14 flex items-center justify-center">
+        <div className="relative z-10 h-10 flex items-center justify-center">
           <span className="text-[11px] text-zinc-500">{loadingLabel || 'Updating theme...'}</span>
         </div>
       </div>

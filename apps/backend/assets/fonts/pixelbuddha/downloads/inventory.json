@@ -1,7 +1,7 @@
 {
-  "total_expected": 699,
-  "total_found": 354,
-  "total_missing": 345,
+  "total_expected": 403,
+  "total_found": 353,
+  "total_missing": 50,
   "found_fonts": {
     "5134-binary-groove-groovy-1980s-typeface": "5134_binary_groove_groovy_1980s_typeface.zip",
     "4802-patty-press-friendly-typeface": "4802_patty_press_friendly_typeface.zip",
@@ -218,7 +218,6 @@
     "3057-teenage-yellow-star-3d-svg-font": "3057_teenage_yellow_star_3d_svg_font.zip",
     "3585-matech-monospace-techno-font": "3585_matech_monospace_techno_font.zip",
     "4220-bulchuy-sans-serif-font": "4220_bulchuy_sans_serif_font.zip",
-    "4905-avilar-display-font": "4905_avilar_display_font.zip",
     "5058-razor-titan-halloween-typeface": "5058_razor_titan_halloween_typeface.zip",
     "4750-typobelle-antique-art-nouveau-typeface": "4750_typobelle_antique_art_nouveau_typeface.zip",
     "4229-403-mokino-hi-tech-futuristic-display-font": "4229_403_mokino_hi_tech_futuristic_display_font.zip",

@@ -998,7 +998,6 @@ class EnhancedFontService:
                         # Strategy: Check if the font_id appears at the end of the directory name, or as a component
                         # This handles cases like:
                         # - "4126-403-doshi" matching "403-doshi"
-                        # - "4905-avilar-display-font" matching "avilar"
                         if (name == font_id or 
                             name == base_id or 
                             name.endswith('-' + font_id) or

@@ -37,7 +37,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = (props
           <div className="mx-auto flex h-full w-full max-w-2xl flex-col">
             <OnboardingHeader onCancel={props.onCancel} />
 
-            <div className="flex-1 overflow-y-auto px-4 py-8 space-y-6">
+            <div ref={refs.scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-8 space-y-6">
               <MessageList
                 messages={state.messages}
                 stage={state.stage}

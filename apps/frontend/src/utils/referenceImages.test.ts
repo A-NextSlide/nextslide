@@ -9,15 +9,15 @@ describe('normalizeReferenceImages', () => {
     expect(normalizeReferenceImages([''])).toBeUndefined();
   });
 
-  it('adds data URL prefix for raw base64 strings', () => {
+  it('drops base64 strings', () => {
     const result = normalizeReferenceImages(['abc123']);
-    expect(result).toEqual(['data:image/png;base64,abc123']);
+    expect(result).toBeUndefined();
   });
 
-  it('keeps data URLs intact', () => {
+  it('drops data URLs', () => {
     const dataUrl = 'data:image/png;base64,abc123';
     const result = normalizeReferenceImages([dataUrl]);
-    expect(result).toEqual([dataUrl]);
+    expect(result).toBeUndefined();
   });
 
   it('keeps http URLs intact', () => {
@@ -34,10 +34,6 @@ describe('normalizeReferenceImages', () => {
       'data:image/png;base64,bar',
       'https://cdn.example.com/ref.png',
     ]);
-    expect(result).toEqual([
-      'data:image/png;base64,foo',
-      'data:image/png;base64,bar',
-      'https://cdn.example.com/ref.png',
-    ]);
+    expect(result).toEqual(['https://cdn.example.com/ref.png']);
   });
 });

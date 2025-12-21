@@ -4,9 +4,9 @@ export const normalizeReferenceImages = (images?: string[]): string[] | undefine
     .map((img) => {
       if (typeof img !== 'string' || img.trim() === '') return null;
       const trimmed = img.trim();
-      if (trimmed.startsWith('data:')) return trimmed;
+      if (trimmed.startsWith('data:')) return null;
       if (/^https?:\/\//i.test(trimmed)) return trimmed;
-      return `data:image/png;base64,${trimmed}`;
+      return null;
     })
     .filter(Boolean) as string[];
   return normalized.length > 0 ? normalized : undefined;

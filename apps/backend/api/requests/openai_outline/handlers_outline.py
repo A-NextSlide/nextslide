@@ -446,20 +446,36 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                             brand_design = theme_result.get('brand_design')
                             if brand_design and brand_design.get('screenshot'):
                                 screenshot = brand_design['screenshot']
-                                # Screenshot might be base64 or URL - convert to data URL if base64
-                                if screenshot.startswith('data:'):
+                                ref_img = None
+                                if isinstance(screenshot, str) and screenshot.startswith('http'):
                                     ref_img = screenshot
-                                elif screenshot.startswith('http'):
-                                    ref_img = screenshot
-                                else:
-                                    # Assume base64, create data URL
-                                    ref_img = f"data:image/png;base64,{screenshot}"
+                                elif isinstance(screenshot, str):
+                                    try:
+                                        from services.image_storage_service import ImageStorageService
+
+                                        payload = screenshot
+                                        if screenshot.startswith('data:'):
+                                            payload = screenshot.split(',', 1)[-1]
+
+                                        async with ImageStorageService() as storage:
+                                            result = await storage.upload_image_from_base64(
+                                                payload,
+                                                filename=f"{outline_id}_brand_ref.png",
+                                                content_type="image/png",
+                                                folder="brand-screenshots"
+                                            )
+                                        if result and result.get('url'):
+                                            ref_img = result['url'].split('?')[0]
+                                    except Exception as img_err:
+                                        logger.warning("[PARALLEL THEME] ⚠️ Failed to upload brand screenshot: %s", img_err)
 
                                 # Add to reference images (create list if doesn't exist)
-                                if not style_prefs.referenceImages:
-                                    style_prefs.referenceImages = []
-                                style_prefs.referenceImages.append(ref_img)
-                                logger.info(f"[PARALLEL THEME] 📸 Brand screenshot added as reference image ({len(screenshot)} chars)")
+                                if ref_img:
+                                    if not style_prefs.referenceImages:
+                                        style_prefs.referenceImages = []
+                                    if ref_img not in style_prefs.referenceImages:
+                                        style_prefs.referenceImages.append(ref_img)
+                                    logger.info("[PARALLEL THEME] 📸 Brand screenshot added as reference image (stored URL)")
 
                                 # Also store the brand design colors in notes for the generator
                                 if brand_design.get('colors'):

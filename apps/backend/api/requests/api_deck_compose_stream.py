@@ -50,8 +50,16 @@ def create_deck_compose_stream(
     if hasattr(deck_outline, 'stylePreferences'):
         logger.info(f"[COMPOSE_STREAM] StylePreferences present: {deck_outline.stylePreferences is not None}")
         if deck_outline.stylePreferences:
-            logger.info(f"[COMPOSE_STREAM] VibeContext: {getattr(deck_outline.stylePreferences, 'vibeContext', 'NOT SET')}")
-            logger.info(f"[COMPOSE_STREAM] Full stylePreferences: {deck_outline.stylePreferences}")
+            style_prefs = deck_outline.stylePreferences
+            ref_images = getattr(style_prefs, 'referenceImages', None)
+            ref_count = len(ref_images) if isinstance(ref_images, list) else 0
+            logger.info(
+                "[COMPOSE_STREAM] StylePreferences: vibe=%s, font=%s, brand=%s, refs=%s",
+                getattr(style_prefs, 'vibeContext', 'NOT SET'),
+                getattr(style_prefs, 'font', None),
+                getattr(style_prefs, 'brandDomain', None) or getattr(style_prefs, 'brandName', None),
+                ref_count
+            )
     else:
         logger.info("[COMPOSE_STREAM] No stylePreferences attribute in outline")
     

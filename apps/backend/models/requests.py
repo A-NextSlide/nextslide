@@ -161,6 +161,33 @@ class StylePreferencesItem(BaseModel):
     slideMode: Optional[str] = Field(None, description="Slide mode: 'interactive' for animations/interactions, 'static' for classic clean slides.")
     referenceImages: Optional[List[str]] = Field(None, description="URLs of design reference images (e.g., PPT screenshots) for the AI to match style/design from.")
 
+    @field_validator("referenceImages", mode="before")
+    @classmethod
+    def _sanitize_reference_images(cls, value):
+        if not value:
+            return None
+        if isinstance(value, str):
+            value = [value]
+        if not isinstance(value, list):
+            return None
+        cleaned: List[str] = []
+        seen = set()
+        for item in value:
+            if not isinstance(item, str):
+                continue
+            trimmed = item.strip()
+            if not trimmed:
+                continue
+            if trimmed.startswith("data:") or len(trimmed) > 2048:
+                continue
+            if not trimmed.startswith(("http://", "https://")):
+                continue
+            if trimmed in seen:
+                continue
+            cleaned.append(trimmed)
+            seen.add(trimmed)
+        return cleaned or None
+
 class DeckOutline(BaseModel):
     id: str = Field(description="Unique identifier for the deck outline.")
     title: str = Field(description="Title of the presentation deck.")

@@ -49,6 +49,7 @@ import { useOutlineChat } from '@/hooks/useOutlineChat';
 import { cn } from '@/lib/utils';
 import { normalizeReferenceImages } from '@/utils/referenceImages';
 import { normalizeDeckTitle } from '@/utils/normalizeDeckTitle';
+import { hasRealThemeColors } from '@/utils/themeUtils';
 import { outlineApi } from '@/services/outlineApi';
 import { deckSyncService } from '@/lib/deckSyncService';
 import { useSlideGeneration } from '@/hooks/useSlideGeneration';
@@ -114,6 +115,7 @@ const normalizeUploadedMedia = (
  */
 const DeckList: React.FC = () => {
   const instanceId = useRef(`DeckList_${++componentInstanceCount}_${Date.now()}`);
+  const outlineThemeRequestsRef = useRef<Set<string>>(new Set());
   const { isAuthenticated, refreshAdminStatus } = useAuth();
   const hasCalledAdminCheckRef = useRef(false);
 
@@ -592,6 +594,8 @@ const DeckList: React.FC = () => {
     stylePreferences?: string;
     slideCount?: number;
     detailLevel?: 'quick' | 'standard' | 'detailed';
+    slideMode?: 'interactive' | 'static';
+    chatHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
     uploadedFiles?: File[];
     uploadedMedia?: Array<{
       id: string;
@@ -601,7 +605,26 @@ const DeckList: React.FC = () => {
       url?: string;
       size?: number;
     }>;
+    slideScreenshots?: string[];
+    slides?: Array<{
+      title: string;
+      subtitle?: string;
+      content?: string;
+      key_points?: string[];
+    }>;
+    narrative?: string;
+    scrapedVideos?: Array<{
+      url: string;
+      title?: string;
+      thumbnail?: string;
+      source_type?: string;
+      embed_url?: string;
+    }>;
     use_uploaded_images?: boolean;
+    scraped_context?: string;
+    research_context?: string;
+    reference_sources?: Array<{ url?: string; title?: string }>;
+    research_citations?: string[];
   } | null>(null);
 
   // Handle "Create with AI" - show conversational onboarding
@@ -618,6 +641,7 @@ const DeckList: React.FC = () => {
     detailLevel?: 'quick' | 'standard' | 'detailed';
     slideMode?: 'interactive' | 'static';  // 'interactive' = NextGen, 'static' = Traditional PPT
     themeChanges?: any;
+    chatHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
     uploadedFiles?: File[];
     uploadedMedia?: Array<{
       id: string;
@@ -644,6 +668,10 @@ const DeckList: React.FC = () => {
       embed_url?: string;
     }>;
     use_uploaded_images?: boolean;
+    scraped_context?: string;
+    research_context?: string;
+    reference_sources?: Array<{ url?: string; title?: string }>;
+    research_citations?: string[];
   }) => {
     console.log('[DeckList] Conversational onboarding complete:', data);
     console.log('[DeckList] Uploaded files count:', data.uploadedFiles?.length || 0);
@@ -678,6 +706,14 @@ const DeckList: React.FC = () => {
       }
     }
 
+    const hasExplicitColors = Boolean(
+      parsedStylePrefs?.colors?.background ||
+      parsedStylePrefs?.colors?.text ||
+      parsedStylePrefs?.colors?.accent1 ||
+      parsedStylePrefs?.colors?.accent2 ||
+      parsedStylePrefs?.colors?.accent3
+    );
+
     const vibeContext = data.style || parsedStylePrefs?.vibeContext || data.stylePreferences;
     const normalizedReferenceImages = normalizeReferenceImages(data.slideScreenshots);
     const normalizedUploadedMedia = normalizeUploadedMedia(data.uploadedMedia);
@@ -686,7 +722,15 @@ const DeckList: React.FC = () => {
     setStylePreferences({
       initialIdea: data.topic,
       vibeContext: vibeContext,
-      colors: undefined,
+      colors: hasExplicitColors ? parsedStylePrefs?.colors : undefined,
+      font: parsedStylePrefs?.font ?? null,
+      bodyFont: parsedStylePrefs?.bodyFont ?? null,
+      logoUrl: parsedStylePrefs?.logoUrl,
+      logoUrlDark: parsedStylePrefs?.logoUrlDark,
+      brandName: parsedStylePrefs?.brandName,
+      brandDomain: parsedStylePrefs?.brandDomain,
+      brandDomainCandidates: parsedStylePrefs?.brandDomainCandidates,
+      needsBrandDomainConfirmation: parsedStylePrefs?.needsBrandDomainConfirmation,
       slideMode: data.slideMode || 'interactive',
       referenceImages: normalizedReferenceImages,
     });
@@ -720,32 +764,58 @@ const DeckList: React.FC = () => {
       }
 
       // Build theme payload from parsed style prefs FIRST so we can include it in outline.notes
-      // NOTE: Colors should ALWAYS be provided from ConversationalOnboarding (which fetches from backend)
-      // These neutral fallbacks are only for edge cases - they should never appear in real usage
       const themePayload = parsedStylePrefs ? {
-        color_palette: {
-          primary_background: parsedStylePrefs.colors?.background || '#FFFFFF',
-          primary_text: parsedStylePrefs.colors?.text || '#1A1A1A',
-          accent_1: parsedStylePrefs.colors?.accent1 || '#333333',  // Neutral dark fallback (not orange!)
-          accent_2: parsedStylePrefs.colors?.accent2 || '#666666',  // Neutral gray fallback
-        },
-        typography: {
-          hero_title: { family: parsedStylePrefs.font || 'Roboto' },  // Roboto as safe fallback
-          body_text: { family: parsedStylePrefs.bodyFont || 'Roboto' },
-        },
-        logo: parsedStylePrefs.logoUrl ? { url: parsedStylePrefs.logoUrl } : undefined,
+        ...(hasExplicitColors ? {
+          color_palette: {
+            primary_background: parsedStylePrefs.colors?.background,
+            primary_text: parsedStylePrefs.colors?.text,
+            accent_1: parsedStylePrefs.colors?.accent1,
+            accent_2: parsedStylePrefs.colors?.accent2,
+            accent_3: parsedStylePrefs.colors?.accent3,
+          },
+        } : {}),
+        ...((parsedStylePrefs.font || parsedStylePrefs.bodyFont) ? {
+          typography: {
+            hero_title: { family: parsedStylePrefs.font },
+            body_text: { family: parsedStylePrefs.bodyFont },
+          },
+        } : {}),
+        ...(parsedStylePrefs.logoUrl ? { logo: { url: parsedStylePrefs.logoUrl } } : {}),
       } : null;
+      const hasThemePayload = Boolean(themePayload && Object.keys(themePayload).length > 0);
 
       // CRITICAL: Include notes.theme in outline so backend uses it without regenerating
-      // Build notes object with theme and scraped videos
-      const notesPayload: { theme?: any; videos?: any[] } = {};
-      if (themePayload) {
+      // Build notes object with theme, scraped videos, and research context
+      const notesPayload: {
+        theme?: any;
+        videos?: any[];
+        scraped_context?: string;
+        research_context?: string;
+        reference_sources?: Array<{ url?: string; title?: string }>;
+        research_citations?: string[];
+      } = {};
+      if (hasThemePayload) {
         notesPayload.theme = themePayload;
       }
       if (data.scrapedVideos && data.scrapedVideos.length > 0) {
         notesPayload.videos = data.scrapedVideos;
         console.log('[DeckList] 🎬 Including', data.scrapedVideos.length, 'scraped videos in outline.notes');
       }
+      if (data.scraped_context) notesPayload.scraped_context = data.scraped_context;
+      if (data.research_context) notesPayload.research_context = data.research_context;
+      if (data.reference_sources) notesPayload.reference_sources = data.reference_sources;
+      if (data.research_citations) notesPayload.research_citations = data.research_citations;
+
+      const conversationHistory = (data.chatHistory && data.chatHistory.length > 0) ? {
+        initial_request: data.topic || vibeContext,
+        messages: data.chatHistory,
+        context: {
+          scraped_context: data.scraped_context,
+          research_context: data.research_context,
+          reference_sources: data.reference_sources,
+          research_citations: data.research_citations,
+        },
+      } : undefined;
 
       const newOutline: FrontendDeckOutline & { notes?: { theme?: any; videos?: any[] } } = {
         id: newOutlineId,
@@ -756,49 +826,57 @@ const DeckList: React.FC = () => {
           slideMode: data.slideMode || 'interactive',
           referenceImages: normalizedReferenceImages,
           // CRITICAL: Include colors, fonts, and logo so backend can use them
-          colors: parsedStylePrefs?.colors,
+          colors: hasExplicitColors ? parsedStylePrefs?.colors : undefined,
           font: parsedStylePrefs?.font,
           bodyFont: parsedStylePrefs?.bodyFont,
           logoUrl: parsedStylePrefs?.logoUrl,  // CRITICAL: Include logo URL for brand slides
+          logoUrlDark: parsedStylePrefs?.logoUrlDark,
+          brandName: parsedStylePrefs?.brandName,
+          brandDomain: parsedStylePrefs?.brandDomain,
+          brandDomainCandidates: parsedStylePrefs?.brandDomainCandidates,
+          needsBrandDomainConfirmation: parsedStylePrefs?.needsBrandDomainConfirmation,
         },
         uploadedMedia: normalizedUploadedMedia,
         use_uploaded_images: data.use_uploaded_images,
         slides: outlineSlides,
         // CRITICAL: Embed theme and videos in notes so backend finds them
         notes: Object.keys(notesPayload).length > 0 ? notesPayload : undefined,
+        conversation_history: conversationHistory,
       };
 
-      console.log('[DeckList] 🎨 Theme embedded in outline.notes:', themePayload ? 'YES' : 'NO');
-      console.log('[DeckList] 🎨 Theme fonts:', themePayload?.typography);
+      console.log('[DeckList] 🎨 Theme embedded in outline.notes:', hasThemePayload ? 'YES' : 'NO');
+      console.log('[DeckList] 🎨 Theme fonts:', hasThemePayload ? themePayload?.typography : undefined);
 
       // Store theme from parsed style prefs in store as well
-      if (themePayload) {
+      if (hasThemePayload) {
         themeStore.setOutlineDeckTheme?.(newOutlineId, themePayload);
 
-        // CRITICAL: Also set workspace theme so ThemePanel shows correct colors
-        // This ensures the theme tab matches what was set in conversational onboarding
-        const workspaceTheme = {
-          name: 'Custom Theme',
-          page: { backgroundColor: parsedStylePrefs?.colors?.background || '#FFFFFF' },
-          typography: {
-            paragraph: {
-              fontFamily: parsedStylePrefs?.bodyFont || 'Roboto',  // Roboto as safe fallback
-              color: parsedStylePrefs?.colors?.text || '#1A1A1A',
-              fontSize: 16,
-              fontWeight: 400,
+        if (hasExplicitColors) {
+          // CRITICAL: Also set workspace theme so ThemePanel shows correct colors
+          // This ensures the theme tab matches what was set in conversational onboarding
+          const workspaceTheme = {
+            name: 'Custom Theme',
+            page: { backgroundColor: parsedStylePrefs?.colors?.background },
+            typography: {
+              paragraph: {
+                fontFamily: parsedStylePrefs?.bodyFont,
+                color: parsedStylePrefs?.colors?.text,
+                fontSize: 16,
+                fontWeight: 400,
+              },
+              heading: {
+                fontFamily: parsedStylePrefs?.font,
+                color: parsedStylePrefs?.colors?.text,
+                fontWeight: 700,
+              }
             },
-            heading: {
-              fontFamily: parsedStylePrefs?.font || 'Roboto',  // Roboto as safe fallback
-              color: parsedStylePrefs?.colors?.text || '#1A1A1A',
-              fontWeight: 700,
-            }
-          },
-          accent1: parsedStylePrefs?.colors?.accent1 || '#333333',  // Neutral fallback
-          accent2: parsedStylePrefs?.colors?.accent2 || '#666666',  // Neutral fallback
-        };
-        const themeId = themeStore.addCustomTheme(workspaceTheme as any);
-        themeStore.setWorkspaceTheme(themeId);
-        console.log('[DeckList] 🎨 Synced workspace theme from onboarding:', { themeId, workspaceTheme });
+            accent1: parsedStylePrefs?.colors?.accent1,
+            accent2: parsedStylePrefs?.colors?.accent2,
+          };
+          const themeId = themeStore.addCustomTheme(workspaceTheme as any);
+          themeStore.setWorkspaceTheme(themeId);
+          console.log('[DeckList] 🎨 Synced workspace theme from onboarding:', { themeId, workspaceTheme });
+        }
       }
 
       // DON'T set currentOutline - it would trigger the outline view to show!
@@ -813,12 +891,17 @@ const DeckList: React.FC = () => {
           vibeContext: vibeContext,
           slideMode: data.slideMode || 'interactive',
           referenceImages: normalizedReferenceImages,
-          deck_theme: themePayload || undefined,
+          deck_theme: hasThemePayload && hasExplicitColors ? themePayload : undefined,
           // CRITICAL: Include colors, fonts, and logo from parsed style prefs
-          colors: parsedStylePrefs?.colors,
+          colors: hasExplicitColors ? parsedStylePrefs?.colors : undefined,
           font: parsedStylePrefs?.font,
           bodyFont: parsedStylePrefs?.bodyFont,
           logoUrl: parsedStylePrefs?.logoUrl,
+          logoUrlDark: parsedStylePrefs?.logoUrlDark,
+          brandName: parsedStylePrefs?.brandName,
+          brandDomain: parsedStylePrefs?.brandDomain,
+          brandDomainCandidates: parsedStylePrefs?.brandDomainCandidates,
+          needsBrandDomainConfirmation: parsedStylePrefs?.needsBrandDomainConfirmation,
         };
 
         console.log('[DeckList] 🚀 Starting generation with outline:', newOutline.title);
@@ -930,7 +1013,11 @@ const DeckList: React.FC = () => {
         slides: outlineFlow?.slides,
         uploadedMedia: outlineFlow?.uploadedMedia,
         slideScreenshots: outlineFlow?.slide_screenshots,
-        use_uploaded_images: outlineFlow?.use_uploaded_images,
+        use_uploaded_images: collectedData?.use_uploaded_images === true,
+        scraped_context: outlineFlow?.scraped_context,
+        research_context: outlineFlow?.research_context,
+        reference_sources: outlineFlow?.reference_sources,
+        research_citations: outlineFlow?.research_citations,
       };
 
       console.log('[DeckList] Calling handleConversationalComplete with:', resumeData);
@@ -1024,7 +1111,14 @@ const DeckList: React.FC = () => {
     initialIdea?: string;
     vibeContext?: string;
     font?: string | null;
+    bodyFont?: string | null;
     colors?: ColorConfig | null;
+    logoUrl?: string;
+    logoUrlDark?: string;
+    brandName?: string;
+    brandDomain?: string;
+    brandDomainCandidates?: string[];
+    needsBrandDomainConfirmation?: boolean;
     autoSelectImages?: boolean;
     referenceLinks?: string[];
     enableResearch?: boolean;
@@ -1133,12 +1227,68 @@ const DeckList: React.FC = () => {
     initialIdea?: string;
     vibeContext?: string;
     font?: string | null;
+    bodyFont?: string | null;
     colors?: ColorConfig | null;
+    logoUrl?: string;
+    logoUrlDark?: string;
+    brandName?: string;
+    brandDomain?: string;
+    brandDomainCandidates?: string[];
+    needsBrandDomainConfirmation?: boolean;
     autoSelectImages?: boolean;
     referenceLinks?: string[];
     enableResearch?: boolean;
   }) => {
     setStylePreferences(preferences);
+  }, []);
+
+  const hasExplicitColorConfig = useCallback((colors?: any) => Boolean(
+    colors && (colors.background || colors.text || colors.accent1 || colors.accent2 || colors.accent3)
+  ), []);
+
+  const requestOutlineTheme = useCallback(async (outline: FrontendDeckOutline | null, stylePrefs?: any) => {
+    if (!outline?.id) return;
+    const themeStore = useThemeStore.getState();
+    const existingTheme = themeStore.getOutlineDeckTheme?.(outline.id);
+    if (existingTheme?.color_palette || existingTheme?.palette) return;
+    if (outlineThemeRequestsRef.current.has(outline.id)) return;
+    outlineThemeRequestsRef.current.add(outline.id);
+    themeStore.markOutlineThemeRequested?.(outline.id);
+
+    const deckId = String(outline.id || '').startsWith('temp-') ? undefined : outline.id;
+    const outlineForTheme = {
+      ...outline,
+      stylePreferences: stylePrefs || outline.stylePreferences
+    };
+
+    try {
+      window.dispatchEvent(new CustomEvent('theme_preview_update', {
+        detail: { type: 'theme_loading', message: 'Generating theme...' }
+      }));
+    } catch {}
+
+    try {
+      const themeResult = await outlineApi.generateThemeFromOutline(
+        outlineForTheme as any,
+        deckId,
+        (evt) => {
+          try {
+            window.dispatchEvent(new CustomEvent('theme_preview_update', { detail: evt }));
+          } catch {}
+        }
+      );
+      if (themeResult?.theme) {
+        try {
+          window.dispatchEvent(new CustomEvent('theme_preview_update', {
+            detail: { type: 'theme_generated', theme: themeResult.theme, palette: themeResult.palette }
+          }));
+        } catch {}
+      }
+    } catch (err) {
+      themeStore.clearOutlineThemeRequested?.(outline.id);
+      outlineThemeRequestsRef.current.delete(outline.id);
+      console.warn('[DeckList] Theme generation failed:', err);
+    }
   }, []);
 
   // Simplified deck generation using GenerationCoordinator
@@ -1244,7 +1394,14 @@ const DeckList: React.FC = () => {
       // The wsTheme only has accent1/accent2, but outlineDeckTheme has the complete colors array
       let finalTheme: any = null;
 
-      if (outlineDeckTheme && outlineDeckTheme.color_palette) {
+      const explicitColorPrefs = hasExplicitColorConfig(currentOutline?.stylePreferences?.colors) ||
+        hasExplicitColorConfig(stylePreferences?.colors);
+      const hasOutlinePalette = Boolean(
+        outlineDeckTheme?.color_palette &&
+        (explicitColorPrefs || hasRealThemeColors(outlineDeckTheme.color_palette))
+      );
+
+      if (hasOutlinePalette) {
         // outlineDeckTheme is already in backend format with full color palette - use it directly!
         finalTheme = outlineDeckTheme;
 
@@ -1359,10 +1516,15 @@ const DeckList: React.FC = () => {
         }
       };
 
+      const generationStylePrefs = {
+        ...(stylePreferences || {}),
+        ...(currentOutline?.stylePreferences || {}),
+      };
+
       // Start generation - this will return immediately with deck ID
       const resultPromise = coordinator.generateFromOutline(
         outlineWithTheme,
-        stylePreferences,
+        generationStylePrefs,
         (event) => {
           // Pass events to slide generation hook
           onSlideImagesFound(event);
@@ -1809,52 +1971,67 @@ const DeckList: React.FC = () => {
                                 };
                               });
                               
-                              // Apply to theme store if colors present OR font is specified
-                              const hasColors = apiColors && (apiColors.background || apiColors.accent1);
-                              if (hasColors || apiFont) {
+                              // Apply to theme store only when explicit colors are provided
+                              const hasExplicitColors = hasExplicitColorConfig(apiColors);
+                              if (hasExplicitColors) {
                                 console.log('[DeckList] 🎨 APPLYING STYLE-ONLY UPDATE TO THEME STORE:', { colors: apiColors, font: apiFont });
                                 const ts = useThemeStore.getState();
                                 const outlineId = currentOutline?.id || '';
-                                
+
                                 const themePayload = {
                                   color_palette: {
-                                    primary_background: apiColors?.background || '#ffffff',
-                                    primary_text: apiColors?.text || '#1f2937',
-                                    accent_1: apiColors?.accent1 || '#333333',  // Neutral fallback
-                                    accent_2: apiColors?.accent2 || apiColors?.accent1 || '#666666',  // Neutral fallback
-                                    backgrounds: [apiColors?.background || '#ffffff'],
-                                    accents: [apiColors?.accent1, apiColors?.accent2].filter(Boolean),
-                                    text_colors: { primary: apiColors?.text || '#1f2937' }
+                                    primary_background: apiColors?.background,
+                                    primary_text: apiColors?.text,
+                                    accent_1: apiColors?.accent1,
+                                    accent_2: apiColors?.accent2,
+                                    accent_3: apiColors?.accent3,
+                                    backgrounds: apiColors?.background ? [apiColors.background] : undefined,
+                                    accents: [apiColors?.accent1, apiColors?.accent2, apiColors?.accent3].filter(Boolean),
+                                    text_colors: apiColors?.text ? { primary: apiColors.text } : undefined
                                   }
                                 };
-                                
+
                                 ts.setOutlineDeckTheme?.(outlineId, themePayload);
-                                
-                                // CRITICAL: Use apiFont directly - Roboto as safe fallback
-                                const fontToApply = apiFont || 'Roboto';
-                                console.log('[DeckList] 🎨 APPLYING FONT TO WORKSPACE THEME:', fontToApply);
-                                
+
                                 const builtTheme = {
-                                  name: apiColors?.name || 'Iconic Theme',
-                                  page: { backgroundColor: apiColors?.background || '#ffffff' },
+                                  name: apiColors?.name || 'Custom Theme',
+                                  page: { backgroundColor: apiColors?.background },
                                   typography: {
-                                    paragraph: { fontFamily: fontToApply, color: apiColors?.text || '#1f2937' },
-                                    heading: { fontFamily: fontToApply, color: apiColors?.text || '#1f2937' }
+                                    paragraph: { fontFamily: apiFont, color: apiColors?.text },
+                                    heading: { fontFamily: apiFont, color: apiColors?.text }
                                   },
-                                  accent1: apiColors?.accent1 || '#333333',  // Neutral fallback
-                                  accent2: apiColors?.accent2 || apiColors?.accent1 || '#666666'  // Neutral fallback
+                                  accent1: apiColors?.accent1,
+                                  accent2: apiColors?.accent2
                                 };
 
                                 const addedId = ts.addCustomTheme(builtTheme as any);
                                 ts.setWorkspaceTheme(addedId);
                                 ts.setOutlineTheme(outlineId, { ...builtTheme, id: addedId, isCustom: true } as any);
                                 ts.setThemeReady(true);
-                                
+
                                 window.dispatchEvent(new CustomEvent('theme_preview_update', {
                                   detail: { type: 'theme_generated', theme: themePayload }
                                 }));
-                                
+
                                 console.log('[DeckList] ✅ Theme applied from stylePreferences-only update!');
+                              } else if (currentOutline) {
+                                const nextStylePrefs = {
+                                  ...(currentOutline.stylePreferences || {}),
+                                  ...apiStylePrefs,
+                                  colors: apiColors || currentOutline.stylePreferences?.colors
+                                };
+                                const hasThemeSignal = Boolean(
+                                  nextStylePrefs.brandDomain ||
+                                  nextStylePrefs.brandName ||
+                                  nextStylePrefs.vibeContext ||
+                                  nextStylePrefs.initialIdea
+                                );
+                                if (hasThemeSignal) {
+                                  void requestOutlineTheme(
+                                    { ...currentOutline, stylePreferences: nextStylePrefs },
+                                    nextStylePrefs
+                                  );
+                                }
                               }
                               return;
                             }
@@ -1873,6 +2050,17 @@ const DeckList: React.FC = () => {
                               // Only update outline metadata (title, stylePreferences), preserve existing slides
                               setCurrentOutline(prev => {
                                 if (!prev) return prev;
+                                const conversationHistory = (conversationalData?.chatHistory && conversationalData.chatHistory.length > 0) ? {
+                                  initial_request: conversationalData.topic || params.topic,
+                                  messages: conversationalData.chatHistory,
+                                  context: {
+                                    scraped_context: params.scraped_context,
+                                    research_context: params.research_context,
+                                    reference_sources: params.reference_sources,
+                                    research_citations: params.research_citations,
+                                  },
+                                } : prev.conversation_history;
+
                                 return {
                                   ...prev,
                                   title: normalizeDeckTitle(params.topic) || prev.title,
@@ -1880,7 +2068,15 @@ const DeckList: React.FC = () => {
                                     ...prev.stylePreferences,
                                     ...params.stylePreferences
                                   } : prev.stylePreferences,
-                                  uploadedMedia: normalizedUploadedMedia || prev.uploadedMedia
+                                  uploadedMedia: normalizedUploadedMedia || prev.uploadedMedia,
+                                  notes: {
+                                    ...(prev.notes || {}),
+                                    ...(params.scraped_context ? { scraped_context: params.scraped_context } : {}),
+                                    ...(params.research_context ? { research_context: params.research_context } : {}),
+                                    ...(params.reference_sources ? { reference_sources: params.reference_sources } : {}),
+                                    ...(params.research_citations ? { research_citations: params.research_citations } : {}),
+                                  },
+                                  conversation_history: conversationHistory,
                                 };
                               });
                               return;
@@ -1921,23 +2117,42 @@ const DeckList: React.FC = () => {
                             const cp = currentDeckTheme?.color_palette || {};
                             
                             // Build stylePreferences.colors from theme store data
-                            const themeColors = cp.primary_background || cp.accent_1 ? {
+                            const themeColors = (cp.primary_background || cp.primary_text || cp.accent_1 || cp.accent_2) ? {
                               type: 'custom' as const,
-                              background: cp.primary_background || '#ffffff',
-                              text: cp.primary_text || '#1f2937',
-                              accent1: cp.accent_1 || '#333333',  // Neutral fallback
-                              accent2: cp.accent_2 || cp.accent_1 || '#666666',  // Neutral fallback
+                              background: cp.primary_background,
+                              text: cp.primary_text,
+                              accent1: cp.accent_1,
+                              accent2: cp.accent_2,
                               accent3: cp.accents?.[2]
                             } : undefined;
 
                             // Use API colors FIRST (this is where the backend sends Pikachu yellow, etc.)
-                            const finalColors = apiColors || themeColors || currentOutline?.stylePreferences?.colors || stylePreferences?.colors;
+                            const finalColors = hasExplicitColorConfig(apiColors)
+                              ? apiColors
+                              : hasExplicitColorConfig(themeColors)
+                                ? themeColors
+                                : hasExplicitColorConfig(currentOutline?.stylePreferences?.colors)
+                                  ? currentOutline?.stylePreferences?.colors
+                                  : hasExplicitColorConfig(stylePreferences?.colors)
+                                    ? stylePreferences?.colors
+                                    : undefined;
                             
                             const apiFont = apiStylePrefs?.font;
                             console.log('[DeckList] 🎨 API stylePreferences:', apiStylePrefs);
                             console.log('[DeckList] 🎨 API colors:', apiColors);
                             console.log('[DeckList] 🎨 API font:', apiFont);
                             console.log('[DeckList] 🎨 Final colors:', finalColors);
+
+                            const conversationHistory = (conversationalData?.chatHistory && conversationalData.chatHistory.length > 0) ? {
+                              initial_request: conversationalData.topic || params.topic,
+                              messages: conversationalData.chatHistory,
+                              context: {
+                                scraped_context: params.scraped_context,
+                                research_context: params.research_context,
+                                reference_sources: params.reference_sources,
+                                research_citations: params.research_citations,
+                              },
+                            } : currentOutline?.conversation_history;
 
                             const newOutline: FrontendDeckOutline = {
                               id: currentOutline?.id || uuidv4(), // Preserve ID if updating placeholder
@@ -1951,7 +2166,15 @@ const DeckList: React.FC = () => {
                                 ...stylePreferences,
                                 ...apiStylePrefs,  // Include ALL API style prefs (logo, font, etc.)
                                 colors: finalColors
-                              }
+                              },
+                              notes: {
+                                ...(currentOutline?.notes || {}),
+                                ...(params.scraped_context ? { scraped_context: params.scraped_context } : {}),
+                                ...(params.research_context ? { research_context: params.research_context } : {}),
+                                ...(params.reference_sources ? { reference_sources: params.reference_sources } : {}),
+                                ...(params.research_citations ? { research_citations: params.research_citations } : {}),
+                              },
+                              conversation_history: conversationHistory,
                             };
 
                             console.log('[DeckList] ✅ Setting new outline with', newOutline.slides.length, 'slides');
@@ -1959,41 +2182,41 @@ const DeckList: React.FC = () => {
                             setCurrentOutline(newOutline);
                             
                             // CRITICAL: If API sent colors OR font (e.g., Pikachu yellow + Bungee font), apply to theme store NOW
-                            const hasApiColors = apiColors && (apiColors.background || apiColors.accent1);
-                            if (hasApiColors || apiFont) {
+                            const hasApiColors = hasExplicitColorConfig(apiColors);
+                            if (hasApiColors) {
                               console.log('[DeckList] 🎨 APPLYING API THEME TO STORE:', { colors: apiColors, font: apiFont });
                               const ts = useThemeStore.getState();
                               
                               // Build theme payload for theme store
                               const themePayload = {
                                 color_palette: {
-                                  primary_background: apiColors?.background || '#ffffff',
-                                  primary_text: apiColors?.text || '#1f2937',
-                                  accent_1: apiColors?.accent1 || '#333333',  // Neutral fallback
-                                  accent_2: apiColors?.accent2 || apiColors?.accent1 || '#666666',  // Neutral fallback
-                                  backgrounds: [apiColors?.background || '#ffffff'],
-                                  accents: [apiColors?.accent1, apiColors?.accent2].filter(Boolean),
-                                  text_colors: { primary: apiColors?.text || '#1f2937' }
+                                  primary_background: apiColors?.background,
+                                  primary_text: apiColors?.text,
+                                  accent_1: apiColors?.accent1,
+                                  accent_2: apiColors?.accent2,
+                                  accent_3: apiColors?.accent3,
+                                  backgrounds: apiColors?.background ? [apiColors.background] : undefined,
+                                  accents: [apiColors?.accent1, apiColors?.accent2, apiColors?.accent3].filter(Boolean),
+                                  text_colors: apiColors?.text ? { primary: apiColors.text } : undefined
                                 }
                               };
                               
                               // Store in outline deck theme
                               ts.setOutlineDeckTheme?.(newOutline.id, themePayload);
                               
-                              // Use apiFont - Roboto as safe fallback
-                              const fontToApply = apiFont || 'Roboto';
+                              const fontToApply = apiFont;
                               console.log('[DeckList] 🎨 APPLYING FONT TO WORKSPACE THEME (batch):', fontToApply);
                               
                               // Create workspace theme to match
                               const builtTheme = {
-                                name: apiColors?.name || 'Iconic Theme',
-                                page: { backgroundColor: apiColors?.background || '#ffffff' },
+                                name: apiColors?.name || 'Custom Theme',
+                                page: { backgroundColor: apiColors?.background },
                                 typography: {
-                                  paragraph: { fontFamily: fontToApply, color: apiColors?.text || '#1f2937' },
-                                  heading: { fontFamily: fontToApply, color: apiColors?.text || '#1f2937' }
+                                  paragraph: { fontFamily: fontToApply, color: apiColors?.text },
+                                  heading: { fontFamily: fontToApply, color: apiColors?.text }
                                 },
-                                accent1: apiColors?.accent1 || '#333333',  // Neutral fallback
-                                accent2: apiColors?.accent2 || apiColors?.accent1 || '#666666'  // Neutral fallback
+                                accent1: apiColors?.accent1,
+                                accent2: apiColors?.accent2
                               };
                               
                               const addedId = ts.addCustomTheme(builtTheme as any);
@@ -2007,6 +2230,16 @@ const DeckList: React.FC = () => {
                               }));
                               
                               console.log('[DeckList] ✅ Theme applied from API!');
+                            } else {
+                              const hasThemeSignal = Boolean(
+                                newOutline.stylePreferences?.brandDomain ||
+                                newOutline.stylePreferences?.brandName ||
+                                newOutline.stylePreferences?.vibeContext ||
+                                newOutline.stylePreferences?.initialIdea
+                              );
+                              if (hasThemeSignal) {
+                                void requestOutlineTheme(newOutline, newOutline.stylePreferences);
+                              }
                             }
                             // Note: We don't manually set isOutlineChatGenerating(false) here anymore.
                             // The ChatPanel component monitors the agent's processing state and updates it automatically.

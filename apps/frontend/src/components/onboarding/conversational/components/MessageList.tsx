@@ -63,7 +63,8 @@ const MessageList: React.FC<MessageListProps> = ({
   const isSlideModeBlocked = isThemeLoading || isOutlinePrefetching;
   const blockingLabel = isThemeLoading
     ? 'Fetching brand images...'
-    : (isOutlinePrefetching ? 'Finalizing outline details...' : undefined);
+    : (isOutlinePrefetching ? 'Generating your outline...' : undefined);
+  const hasOutline = Boolean(outlineBlock?.slides?.length);
 
   return (
     <>
@@ -89,7 +90,7 @@ const MessageList: React.FC<MessageListProps> = ({
         );
       })}
 
-      {showInlineOutline && (outlineBlock || themeBlock) && (
+      {showInlineOutline && hasOutline && (outlineBlock || themeBlock) && (
         <div className={inlineControlsClassName}>
           <OutlineThemeBlocks
             outlineBlock={outlineBlock}

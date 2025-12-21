@@ -53,6 +53,10 @@ export interface CollectedData {
   narrative?: string;
   scrapedVideos?: ScrapedVideo[];
   use_uploaded_images?: boolean;
+  scraped_context?: string;
+  research_context?: string;
+  reference_sources?: Array<{ url?: string; title?: string }>;
+  research_citations?: string[];
 }
 
 export type ConversationStage =

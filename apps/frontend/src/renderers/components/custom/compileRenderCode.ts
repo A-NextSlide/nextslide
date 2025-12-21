@@ -5,7 +5,7 @@ import animeImport from 'animejs';
 import roughImport from 'roughjs';
 import confettiImport from 'canvas-confetti';
 import * as gsapImport from 'gsap';
-import { ensureHtmlNewlines, escapeRawNewlinesInStringLiterals, fixBrokenCssImports } from './stringUtils';
+import { ensureHtmlNewlines, escapeRawNewlinesInStringLiterals, fixBrokenCssImports, fixBrokenCssUrls } from './stringUtils';
 import { DEBUG_CUSTOM_COMPONENT } from './debug';
 
 export type CompiledRenderResult = {
@@ -55,6 +55,8 @@ export const compileRenderCode = (renderCode: any): CompiledRenderResult => {
   if (isFullHtmlDoc) {
     // Fix broken CSS @import URLs (AI sometimes generates them with newlines inside)
     let formattedHtml = fixBrokenCssImports(code);
+    // Fix broken CSS url() declarations (AI generates data URIs with newlines)
+    formattedHtml = fixBrokenCssUrls(formattedHtml);
     // Ensure proper newlines in HTML (fixes iframe rendering issues)
     formattedHtml = ensureHtmlNewlines(formattedHtml);
 

@@ -387,12 +387,38 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
             if history_text:
                 urls_to_scrape = collect_urls_to_scrape(history_text, request.context or {})
                 explicit_domains = extract_domains_from_message(history_text)
+        if not explicit_domains:
+            recent_user_messages: List[str] = []
+            for msg in reversed(request.chat_history or []):
+                if msg.role != "user":
+                    continue
+                content = (msg.content or "").strip()
+                if not content:
+                    continue
+                recent_user_messages.append(content)
+                if len(recent_user_messages) >= 6:
+                    break
+            history_text = "\n".join(reversed(recent_user_messages))
+            if history_text:
+                history_domains = extract_domains_from_message(history_text)
+                if history_domains:
+                    explicit_domains = history_domains
+                    logger.info("[OutlineAgent] Using explicit domains from chat history: %s", explicit_domains)
         explicit_brand_domain = None
         if request.context:
             explicit_brand_domain = (
                 request.context.get("brandDomain")
                 or request.context.get("brand_domain")
             )
+            if not explicit_brand_domain:
+                current_outline = request.context.get("current_outline")
+                if isinstance(current_outline, dict):
+                    style_prefs = current_outline.get("stylePreferences") or current_outline.get("style_preferences")
+                    if isinstance(style_prefs, dict):
+                        explicit_brand_domain = (
+                            style_prefs.get("brandDomain")
+                            or style_prefs.get("brand_domain")
+                        )
         if not explicit_brand_domain and explicit_domains:
             explicit_brand_domain = explicit_domains[0]
 

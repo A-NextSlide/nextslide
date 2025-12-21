@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { getInitialThemePreview, type ThemePreviewState } from '../utils/themePreview';
 
 interface UseThemePreviewStateOptions {
@@ -9,6 +9,10 @@ interface UseThemePreviewStateOptions {
 export function useThemePreviewState({ outline, currentPhase }: UseThemePreviewStateOptions) {
   const [themePreview, setThemePreview] = useState<ThemePreviewState | null>(() => getInitialThemePreview(outline));
   const [isThemePreviewOpen, setIsThemePreviewOpen] = useState(false);
+
+  // Use ref to track isThemePreviewOpen to avoid circular dependency in event listener
+  const isThemePreviewOpenRef = useRef(isThemePreviewOpen);
+  isThemePreviewOpenRef.current = isThemePreviewOpen;
 
   useEffect(() => {
     const sp = outline?.stylePreferences;
@@ -118,21 +122,26 @@ export function useThemePreviewState({ outline, currentPhase }: UseThemePreviewS
 
         return next;
       });
-      if (!isThemePreviewOpen) setIsThemePreviewOpen(true);
+      // Use ref to check current state without causing re-registration of listener
+      if (!isThemePreviewOpenRef.current) setIsThemePreviewOpen(true);
     };
     window.addEventListener('theme_preview_update', onThemePreview as EventListener);
     return () => window.removeEventListener('theme_preview_update', onThemePreview as EventListener);
-  }, [isThemePreviewOpen]);
+  }, []); // Empty dependency - listener doesn't need to change
+
+  // Track if we have theme preview data - only care about existence, not content
+  const hasThemePreviewRef = useRef(!!themePreview);
+  hasThemePreviewRef.current = !!themePreview;
 
   useEffect(() => {
     if (!currentPhase) return;
     const p = String(currentPhase);
     if (p === 'theme_generation' || p === 'image_collection') {
-      if (themePreview) setIsThemePreviewOpen(true);
+      if (hasThemePreviewRef.current) setIsThemePreviewOpen(true);
     } else if (p === 'slide_generation' || p === 'finalization' || p === 'generation_complete') {
       setIsThemePreviewOpen(false);
     }
-  }, [currentPhase, themePreview]);
+  }, [currentPhase]); // Only depend on currentPhase, not themePreview object
 
   return {
     themePreview,

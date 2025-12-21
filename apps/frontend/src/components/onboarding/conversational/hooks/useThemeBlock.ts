@@ -2,14 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { OutlineData } from '@/services/outlineAgentService';
 import type { ThemeEditorData, ThemeColorPalette } from '@/types/chatBlocks';
 import { useFontLoader } from '@/hooks/useFontLoading';
+import { normalizeReferenceImages } from '@/utils/referenceImages';
 import {
   buildThemeBlockFromOutline,
   mergeThemeBlockWithGenerated,
 } from '../utils/theme';
 import { extractDomainFromText } from '../utils/domain';
-
-const DEFAULT_THEME_ACCENT = '#FF6B35';
-const FALLBACK_THEME_ACCENT = '#000000';
 
 interface UseThemeBlockOptions {
   onThinkingStart?: (status: string, message?: string, query?: string) => void;
@@ -37,6 +35,7 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
           ...prev.colors,
           [colorKey]: hex,
         },
+        hasExplicitColors: true,
       };
     });
   }, []);
@@ -100,6 +99,25 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
       return;
     }
 
+    // Skip regeneration if we already have explicit colors from a previous fetch
+    // BUT only if the vibe is essentially just the domain (no style modifiers)
+    if (themeBlock?.hasExplicitColors && themeBlock?.branding?.brandDomain) {
+      const currentDomain = themeBlock.branding.brandDomain.toLowerCase();
+      const domainBase = currentDomain.replace('.com', '').replace('.co', '').replace('.io', '');
+      const vibeLower = normalizedVibe.toLowerCase().trim();
+
+      // Only skip if vibe is JUST the domain name (no additional style modifiers)
+      const isJustDomain = vibeLower === currentDomain ||
+                           vibeLower === domainBase ||
+                           vibeLower === `${domainBase}.com` ||
+                           vibeLower === `www.${currentDomain}`;
+
+      if (isJustDomain) {
+        console.log('[useThemeBlock] Skipping regeneration - same domain without modifiers:', currentDomain);
+        return;
+      }
+    }
+
     setIsThemeLoading(true);
     const isDomainLike = normalizedVibe.includes('.') && normalizedVibe.length < 64;
     const themeMessage = isDomainLike
@@ -145,7 +163,7 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
           colors: stylePreferences?.colors,
           logoUrl: stylePreferences?.logoUrl,
           logoUrlDark: stylePreferences?.logoUrlDark,
-          referenceImages: stylePreferences?.referenceImages,
+          referenceImages: normalizeReferenceImages(stylePreferences?.referenceImages),
         },
         notes: {
           videos: Array.isArray(availableVideos) ? availableVideos : [],
@@ -181,12 +199,7 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
   }, [lastThemeVibeContext, onThinkingComplete, onThinkingStart]);
 
   const initializeThemeFromOutline = useCallback((outlineData: OutlineData) => {
-    const hasExistingTheme = Boolean(
-      themeBlock &&
-      themeBlock.colors &&
-      themeBlock.colors.accent_1 !== DEFAULT_THEME_ACCENT &&
-      themeBlock.colors.accent_1 !== FALLBACK_THEME_ACCENT
-    );
+    const hasExistingTheme = Boolean(themeBlock?.hasExplicitColors);
 
     const stylePrefs = outlineData.stylePreferences || {};
     const needsDomainConfirmation = Boolean(stylePrefs.needsBrandDomainConfirmation);

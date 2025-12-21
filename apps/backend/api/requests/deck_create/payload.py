@@ -97,6 +97,12 @@ def initialize_conversation_history(
     deck_outline: DeckOutline,
 ) -> None:
     try:
+        existing_history = getattr(deck_outline, "conversation_history", None)
+        if isinstance(existing_history, dict) and existing_history:
+            deck_data_with_outline["conversation_history"] = existing_history
+            logger.info("[DECK_CREATE] Using provided conversation_history from outline")
+            return
+
         initial_request = None
         style_prefs = getattr(deck_outline, "stylePreferences", None)
         if style_prefs is not None:

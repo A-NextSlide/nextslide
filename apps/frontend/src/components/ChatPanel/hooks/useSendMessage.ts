@@ -475,9 +475,13 @@ export function useSendMessage({
 
         if (outlineData) {
           if (outlineData.action === 'clarify') {
-            const clarificationMessage = outlineData.message || outlineData.clarification?.message || 'Quick check before I build the deck.';
-            const draftResponse = outlineData.draft_response || outlineData.clarification?.draft_response || '';
-            const clarificationDraft = (draftResponse || clarificationMessage || '').trim() ||
+            const toText = (value: unknown): string => (typeof value === 'string' ? value : '');
+            const clarificationMessage = toText(outlineData.message) ||
+              toText(outlineData.clarification?.message) ||
+              'Quick check before I build the deck.';
+            const draftResponse = toText(outlineData.draft_response) ||
+              toText(outlineData.clarification?.draft_response);
+            const clarificationDraft = (draftResponse || clarificationMessage).trim() ||
               'Provide the missing detail: [[details]].';
             setMessages(prev => prev.map(m =>
               m.id === aiMessageId

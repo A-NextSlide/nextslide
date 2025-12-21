@@ -16,6 +16,7 @@ import {
   reorderColorsWithAccentsFirst,
   buildThemePayloadForStore,
   buildWorkspaceTheme,
+  hasRealThemeColors,
 } from '@/utils/themeUtils';
 
 interface UseChatBlocksOptions {
@@ -71,6 +72,13 @@ export function useChatBlocks(options: UseChatBlocksOptions) {
       const data = pendingChangesRef.current;
       if (!data || !outlineId) return;
 
+      const shouldSyncPalette = data.hasExplicitColors === true ||
+        (data.hasExplicitColors === undefined && hasRealThemeColors(data.colors));
+      if (!shouldSyncPalette) {
+        pendingChangesRef.current = null;
+        return;
+      }
+
       const themePayload = buildThemePayloadForStore({
         colors: data.colors,
         typography: data.typography,
@@ -100,6 +108,7 @@ export function useChatBlocks(options: UseChatBlocksOptions) {
       newColors.colors = reorderedColors;
 
       const updated = { ...prev, colors: newColors };
+      updated.hasExplicitColors = true;
 
       // Sync to store
       syncThemeToStore(updated);

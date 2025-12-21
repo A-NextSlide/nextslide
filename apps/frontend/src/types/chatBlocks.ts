@@ -58,6 +58,7 @@ export interface ThemeEditorData {
   isEditable: boolean;
   isLoading?: boolean;
   loadingMessage?: string;
+  hasExplicitColors?: boolean;
 }
 
 /**
@@ -172,6 +173,12 @@ export function backendThemeToEditorData(
 ): ThemeEditorData {
   const colorPalette = theme?.color_palette || theme;
   const typography = theme?.typography || {};
+  const hasExplicitColors = Boolean(
+    colorPalette?.primary_background ||
+    colorPalette?.primary_text ||
+    colorPalette?.accent_1 ||
+    colorPalette?.accent_2
+  );
 
   return {
     themeId,
@@ -195,10 +202,13 @@ export function backendThemeToEditorData(
       logoUrl: theme?.logo?.url || theme?.logo_url || theme?.brandInfo?.logoUrl,
       brandName: theme?.brandInfo?.name || theme?.brand_name,
       brandDomain: theme?.brandInfo?.domain,
+      brandDomainCandidates: theme?.brandInfo?.brandDomainCandidates || theme?.brand_domain_candidates,
+      needsBrandDomainConfirmation: theme?.brandInfo?.needsBrandDomainConfirmation ?? theme?.needs_domain_confirmation,
     },
     designStyle: theme?.design_style,
     vibeContext,
     isEditable: true,
+    hasExplicitColors,
   };
 }
 
@@ -206,17 +216,20 @@ export function backendThemeToEditorData(
  * Convert ThemeEditorData to backend theme format
  */
 export function editorDataToBackendTheme(data: ThemeEditorData): any {
+  const includePalette = data.hasExplicitColors === true;
   return {
-    color_palette: {
-      primary_background: data.colors.primary_background,
-      secondary_background: data.colors.secondary_background,
-      primary_text: data.colors.primary_text,
-      accent_1: data.colors.accent_1,
-      accent_2: data.colors.accent_2,
-      colors: data.colors.colors,
-      backgrounds: data.colors.backgrounds,
-      text_colors: data.colors.text_colors,
-    },
+    ...(includePalette ? {
+      color_palette: {
+        primary_background: data.colors.primary_background,
+        secondary_background: data.colors.secondary_background,
+        primary_text: data.colors.primary_text,
+        accent_1: data.colors.accent_1,
+        accent_2: data.colors.accent_2,
+        colors: data.colors.colors,
+        backgrounds: data.colors.backgrounds,
+        text_colors: data.colors.text_colors,
+      },
+    } : {}),
     typography: {
       hero_title: {
         family: data.typography.headingFont,

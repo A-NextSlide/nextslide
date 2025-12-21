@@ -87,15 +87,28 @@ class SlidePromptBuilder:
             or ""
         )
 
-        sections.extend(
-            [
-                "THEME:",
-                f"- background: {colors.get('primary_background', '#FFFFFF')}",
-                f"- text: {colors.get('primary_text', '#111111')}",
-                f"- accent_1: {colors.get('accent_1', '#2563EB')}",
-                f"- accent_2: {colors.get('accent_2', '#F59E0B')}",
-            ]
+        has_palette = any(
+            colors.get(key)
+            for key in ("primary_background", "primary_text", "accent_1", "accent_2")
         )
+        if has_palette:
+            sections.append("THEME COLORS:")
+            if colors.get("primary_background"):
+                sections.append(f"- background: {colors.get('primary_background')}")
+            if colors.get("primary_text"):
+                sections.append(f"- text: {colors.get('primary_text')}")
+            if colors.get("accent_1"):
+                sections.append(f"- accent_1: {colors.get('accent_1')}")
+            if colors.get("accent_2"):
+                sections.append(f"- accent_2: {colors.get('accent_2')}")
+            sections.append(
+                "COLOR USE: Use only the palette colors above (plus white/black for legibility). "
+                "Do not introduce new brand colors."
+            )
+        else:
+            sections.append(
+                "THEME COLORS: None provided. Choose a cohesive palette that matches the topic and keep it consistent."
+            )
 
         if hero_font or body_font:
             sections.append("FONTS:")
@@ -148,6 +161,37 @@ class SlidePromptBuilder:
             sections.append(
                 f"PRESENTATION CONTEXT: {context.presentation_context}"
             )
+
+        notes = getattr(context.deck_outline, "notes", None)
+        if isinstance(notes, dict):
+            def _truncate(text: str, limit: int = 2000) -> str:
+                if len(text) <= limit:
+                    return text
+                return text[:limit] + "\n[TRUNCATED]"
+
+            research_context = notes.get("research_context") or notes.get("researchContext")
+            scraped_context = notes.get("scraped_context") or notes.get("scrapedContext")
+            reference_sources = notes.get("reference_sources") or notes.get("referenceSources")
+            research_citations = notes.get("research_citations") or notes.get("researchCitations")
+
+            if research_context:
+                sections.append("RESEARCH CONTEXT:")
+                sections.append(_truncate(str(research_context)))
+            if scraped_context:
+                sections.append("REFERENCE CONTEXT:")
+                sections.append(_truncate(str(scraped_context)))
+            if isinstance(reference_sources, list) and reference_sources:
+                sources = [
+                    f"{s.get('title') or 'Source'} ({s.get('url') or 'n/a'})"
+                    for s in reference_sources
+                    if isinstance(s, dict)
+                ]
+                if sources:
+                    sections.append("REFERENCE SOURCES:")
+                    sections.append("- " + "; ".join(sources[:6]))
+            if isinstance(research_citations, list) and research_citations:
+                sections.append("RESEARCH CITATIONS:")
+                sections.append("- " + "; ".join(str(c) for c in research_citations[:6]))
 
         if context.reference_images:
             refs = "\n".join(

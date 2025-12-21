@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { ExtendedChatMessageProps } from '@/components/chat';
 
@@ -60,9 +60,17 @@ export function useOutlineChatSync({
     }
   }, [messagesLength, outline?.stylePreferences, outlineMode, setMessages, useOutlineAgent]);
 
+  // Track last synced message IDs to prevent unnecessary re-renders
+  const lastSyncedIdsRef = useRef<string>('');
+
   useEffect(() => {
     if (outlineMode && outlineMessages && outlineMessages.length > 0) {
-      setMessages(outlineMessages);
+      // Create a signature of message IDs to check if we actually need to update
+      const newIds = outlineMessages.map(m => m.id).join(',');
+      if (newIds !== lastSyncedIdsRef.current) {
+        lastSyncedIdsRef.current = newIds;
+        setMessages(outlineMessages);
+      }
     }
   }, [outlineMode, outlineMessages, setMessages]);
 

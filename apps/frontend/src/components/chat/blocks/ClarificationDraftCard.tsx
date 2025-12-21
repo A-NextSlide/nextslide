@@ -135,6 +135,32 @@ const cleanDefaultValue = (value: string, field: ClarificationField) => {
   return stripExampleValue(cleaned);
 };
 
+const hasTokenLabelCue = (value: string) => (
+  value.includes(':') ||
+  /\b(e\.?g\.?|eg\.?|example|for example)\b/i.test(value)
+);
+
+const parseTokenLabelAndDefault = (rawValue: string) => {
+  const trimmed = rawValue.trim();
+  if (!trimmed) return { label: '', defaultValue: '' };
+  if (!hasTokenLabelCue(trimmed)) {
+    return { label: '', defaultValue: stripExampleValue(trimmed) };
+  }
+
+  const labelCandidate = formatFieldLabel(trimmed);
+  if (!labelCandidate || /^\d+$/.test(labelCandidate)) {
+    return { label: '', defaultValue: stripExampleValue(trimmed) };
+  }
+
+  const cleanedDefault = cleanDefaultValue(trimmed, {
+    key: labelCandidate,
+    label: labelCandidate,
+    type: 'text',
+  } as ClarificationField);
+
+  return { label: labelCandidate, defaultValue: cleanedDefault };
+};
+
 const getSentenceTail = (text: string) => {
   const segments = text.split(/[\n.!?]/);
   return segments[segments.length - 1] ?? '';
@@ -240,19 +266,23 @@ const buildDraftTokenMeta = (parts: DraftPart[]): DraftTokenMeta[] => {
     const { prefix, suffix } = getPromptParts(before, after);
     const prompt = buildPromptSnippet(before, after);
     const fallback = normalizeQuestionLabel(`${prefix} ${suffix}`) || prompt || `Detail ${tokens.length + 1}`;
-    const defaultValue = stripExampleValue(part.value);
+    const rawTokenValue = part.value?.trim() || '';
+    const parsedToken = parseTokenLabelAndDefault(rawTokenValue);
+    const defaultValue = parsedToken.label ? parsedToken.defaultValue : stripExampleValue(rawTokenValue);
+    const tokenValueForInference = defaultValue || rawTokenValue;
     const title = inferQuestionTitle({
       before: prefix,
       after: suffix,
-      tokenValue: defaultValue,
+      tokenValue: tokenValueForInference,
       fallback,
       index: tokens.length,
     });
-    const hint = buildHintSnippet(before, after, title);
+    const resolvedTitle = parsedToken.label || title;
+    const hint = buildHintSnippet(before, after, resolvedTitle);
     tokens.push({
       id: part.id,
       defaultValue,
-      title,
+      title: resolvedTitle,
       hint,
     });
   });

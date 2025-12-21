@@ -42,6 +42,44 @@ export function fixBrokenCssImports(html: string): string {
 }
 
 /**
+ * Fix broken CSS url() declarations that have newlines inside.
+ * AI sometimes generates url('data:image/svg+xml;\nutf8,...') with line breaks,
+ * which is invalid CSS and breaks the background/etc.
+ *
+ * Example broken:
+ *   background: url('data:image/svg+xml;
+ *   utf8,<svg viewBox="0 0 1440 320"...');
+ *
+ * Fixed:
+ *   background: url('data:image/svg+xml;utf8,<svg viewBox="0 0 1440 320"...');
+ */
+export function fixBrokenCssUrls(html: string): string {
+  if (!html || typeof html !== 'string') return html;
+
+  // Match url('...') or url("...") with potential newlines inside
+  // Be careful not to break legitimate content - only remove newlines/whitespace
+  // that appear right after certain URL components like semicolons
+  return html.replace(
+    /url\s*\(\s*(['"])([\s\S]*?)\1\s*\)/gi,
+    (match, quote, urlContent) => {
+      // For data URIs, clean up newlines that break the URI syntax
+      if (urlContent.includes('data:')) {
+        // Remove newlines and excess whitespace after semicolons and commas in data URIs
+        const cleanUrl = urlContent
+          .replace(/;\s*\n\s*/g, ';')  // Fix: svg+xml;\nutf8 -> svg+xml;utf8
+          .replace(/,\s*\n\s*/g, ',')  // Fix: utf8,\n<svg -> utf8,<svg
+          .replace(/\n\s*/g, ' ')      // Replace remaining newlines with space (for SVG content)
+          .replace(/\s{2,}/g, ' ');    // Collapse multiple spaces
+        return `url(${quote}${cleanUrl}${quote})`;
+      }
+      // For regular URLs, just remove newlines
+      const cleanUrl = urlContent.replace(/\s+/g, '');
+      return `url(${quote}${cleanUrl}${quote})`;
+    }
+  );
+}
+
+/**
  * Escape raw newlines that appear inside single/double quoted string literals.
  * This prevents accidental split string literals (e.g., 'Calvin\nCycle' becoming two lines)
  * and keeps generated code valid for parsing.

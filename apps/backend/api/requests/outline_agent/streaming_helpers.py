@@ -33,12 +33,32 @@ DEPTH_RESEARCH_PATTERN = re.compile(
     r'\b(pitch deck|series [a-d]|investor|funding|analytical|in-depth|deep dive|market|competitive|data-driven)\b',
     re.IGNORECASE,
 )
+DATA_URL_PATTERN = re.compile(r"data:[^\s]+", re.IGNORECASE)
+MAX_FILE_CONTEXT_CHARS = 120000
 
 
 def is_explicit_research_request(message: str) -> bool:
     if not message:
         return False
     return bool(EXPLICIT_RESEARCH_PATTERN.search(message))
+
+
+def _sanitize_context_block(text: str, max_chars: int = MAX_FILE_CONTEXT_CHARS) -> str:
+    if not text:
+        return ""
+    cleaned = DATA_URL_PATTERN.sub("[data omitted]", text)
+    sanitized_lines: List[str] = []
+    for line in cleaned.splitlines():
+        if "data:" in line and "base64" in line:
+            continue
+        if len(line) > 6000:
+            sanitized_lines.append(line[:6000] + " [TRUNCATED]")
+        else:
+            sanitized_lines.append(line)
+    cleaned = "\n".join(sanitized_lines)
+    if len(cleaned) > max_chars:
+        cleaned = cleaned[:max_chars] + "\n[TRUNCATED]"
+    return cleaned
 
 def extract_domains_from_message(message: str) -> List[str]:
     """Extract explicit domains from the current user message."""
@@ -208,13 +228,14 @@ async def analyze_request_files(request: OutlineAgentRequest) -> FileAnalysisPay
         file_context_parts.append(analysis_block)
 
     if payload.content_context:
+        payload.content_context = _sanitize_context_block(payload.content_context, max_chars=60000)
         file_context_parts.append(
             "\n\n[EXTRACTED FILE CONTENT]\n"
             f"{payload.content_context}\n[END EXTRACTED FILE CONTENT]\n"
         )
 
     if file_context_parts:
-        payload.file_context = "\n".join(file_context_parts)
+        payload.file_context = _sanitize_context_block("\n".join(file_context_parts))
         file_count = file_analysis.get('file_count', len(request.files))
         events.append({
             'type': 'status',
@@ -372,7 +393,8 @@ def build_messages(
         if msg.content and msg.content.strip():
             messages.append({"role": msg.role, "content": msg.content})
 
-    user_content = request.message + scraped_context + file_context
+    safe_file_context = _sanitize_context_block(file_context)
+    user_content = request.message + scraped_context + safe_file_context
     if request.context and request.context.get("force_outline"):
         user_content = (
             f"{user_content}\n\n[CLARIFICATION_ANSWERED]\n"

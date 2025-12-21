@@ -13,6 +13,17 @@ from .models import GenerateSlideContentRequest, GenerateSlideContentResponse
 
 logger = get_logger(__name__)
 
+MAX_FILE_CONTEXT_CHARS = 120000
+
+
+def _sanitize_source_material(text: Optional[str], max_chars: int = MAX_FILE_CONTEXT_CHARS) -> str:
+    if not text:
+        return ""
+    cleaned = re.sub(r"data:[^\s]+", "[data omitted]", text, flags=re.IGNORECASE)
+    if len(cleaned) > max_chars:
+        cleaned = cleaned[:max_chars] + "\n[TRUNCATED]"
+    return cleaned
+
 
 async def generate_slide_content_response(
     request: GenerateSlideContentRequest,
@@ -21,6 +32,8 @@ async def generate_slide_content_response(
     logger.info("[OutlineAgent] Generating content for slide: %s", request.slide_title)
 
     client, model = get_client(OUTLINE_AGENT_MODEL, wrap_with_instructor=False)
+
+    safe_file_content = _sanitize_source_material(request.file_content)
 
     prompt = (
         "Generate detailed slide content as JSON with keys: content, key_points. "
@@ -32,7 +45,7 @@ async def generate_slide_content_response(
         f"Title: {request.slide_title}\n"
         f"Context: {request.presentation_context or ''}\n"
         f"Existing key points: {', '.join(request.existing_key_points or [])}\n"
-        f"Source material: {request.file_content or ''}\n"
+        f"Source material: {safe_file_content}\n"
         "Return JSON only."
     )
 

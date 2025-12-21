@@ -81,6 +81,11 @@ export interface DeckOutline {
     theme?: any;
     [key: string]: any;
   };
+  conversation_history?: {
+    initial_request?: string;
+    messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    context?: Record<string, any>;
+  };
 }
 
 /**

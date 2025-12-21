@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-import base64
-import re
 from typing import Any, Dict, List, Tuple, Union
 
 import requests
 
-from agents.generation.custom_component_helpers import (
-    _compress_image_for_multimodal,
-    _estimate_token_count,
-)
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
@@ -48,60 +42,9 @@ async def build_multimodal_user_content(
 
         try:
             if img_url.startswith("data:"):
-                match = re.match(r"data:([^;]+);base64,(.+)", img_url)
-                if not match:
-                    logger.warning("[CUSTOM_COMPONENT] Invalid data URL format for reference %s", idx + 1)
-                    continue
-
-                original_media_type = match.group(1)
-                original_b64 = match.group(2)
-                original_tokens = _estimate_token_count(original_b64)
-
-                try:
-                    original_data = base64.b64decode(original_b64)
-                    compressed_data, media_type = _compress_image_for_multimodal(original_data)
-                    img_b64 = base64.b64encode(compressed_data).decode("utf-8")
-                    new_tokens = _estimate_token_count(img_b64)
-                    logger.info(
-                        "[CUSTOM_COMPONENT] Data URL compressed: %s -> %s tokens",
-                        original_tokens,
-                        new_tokens,
-                    )
-                except Exception as exc:
-                    logger.warning("[CUSTOM_COMPONENT] Compression failed for data URL: %s", exc)
-                    img_b64 = original_b64
-                    media_type = original_media_type
-                    new_tokens = original_tokens
-
-                if total_image_tokens + new_tokens > MAX_TOTAL_IMAGE_TOKENS:
-                    logger.warning(
-                        "[CUSTOM_COMPONENT] Skipping image %s; would exceed token budget",
-                        idx + 1,
-                    )
-                    continue
-
-                total_image_tokens += new_tokens
-                user_content_parts.append(
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": img_b64,
-                        },
-                    }
-                )
-                user_content_parts.append(
-                    {
-                        "type": "text",
-                        "text": f"[Design Reference {idx + 1} - MATCH THIS STYLE EXACTLY]",
-                    }
-                )
-                images_added += 1
                 logger.info(
-                    "[CUSTOM_COMPONENT] Added base64 reference image %s (%s tokens)",
+                    "[CUSTOM_COMPONENT] Skipping data URL reference image %s to avoid prompt bloat",
                     idx + 1,
-                    new_tokens,
                 )
                 continue
 

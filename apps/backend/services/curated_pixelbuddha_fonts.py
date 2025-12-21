@@ -59,7 +59,6 @@ CURATED_PIXELBUDDHA_FONTS = [
     "4954-sappy-sans",
     "2371-brume-decorative-font",
     "2348-cognace-decorative-font",
-    "4905-avilar-display-font",
     "4916-night-lounge-tall-sans-typeface",
     "4917-digital-deco-typeface",
     "4930-oceania-mesmerizing-typeface",
@@ -110,4 +109,3 @@ def is_curated_pixelbuddha_font(font_id: str) -> bool:
 # Stats for reference
 TOTAL_CURATED = len(CURATED_PIXELBUDDHA_FONTS)
 TOTAL_WITH_FALLBACK = len(CURATED_PIXELBUDDHA_FONTS) + len(FALLBACK_PIXELBUDDHA_FONTS)
-

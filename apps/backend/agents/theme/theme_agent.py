@@ -83,7 +83,13 @@ def _normalize_domain(domain: Optional[str]) -> Optional[str]:
     cleaned = re.sub(r"^https?://", "", cleaned)
     cleaned = cleaned.lstrip("www.")
     cleaned = cleaned.split("/")[0]
-    return cleaned or None
+    cleaned = cleaned.split("?")[0]
+    cleaned = cleaned.strip().strip(").,;:")
+    if not cleaned:
+        return None
+    if not re.match(r"^[a-z0-9.-]+\.[a-z]{2,}$", cleaned):
+        return None
+    return cleaned
 
 
 def _coerce_response_text(response: Any) -> str:
@@ -426,6 +432,65 @@ class ThemeAgent:
             "source": "default"
         }
 
+        # FAST PATH: Check if we have curated brand data in cache
+        # If brand_domain or brand_name is provided, try direct cache lookup first
+        # This bypasses all AI analysis and uses admin-curated data directly
+        try:
+            if brand_domain or brand_name:
+                from services.brand_cache_direct import get_cached_brand_direct
+                lookup_key = brand_domain or brand_name
+                cached_brand = get_cached_brand_direct(lookup_key)
+
+                if cached_brand and cached_brand.get("found"):
+                    colors = cached_brand.get("colors", {})
+                    fonts = cached_brand.get("fonts", {})
+
+                    # Only use cache if we have meaningful data (not all defaults)
+                    has_colors = colors.get("accent") or colors.get("background") != "#FFFFFF"
+                    has_fonts = fonts.get("hero") and fonts.get("hero") not in ("Montserrat", "Inter", "Open Sans")
+
+                    if has_colors or has_fonts:
+                        result["brand_name"] = cached_brand.get("brand_name")
+                        result["domain"] = cached_brand.get("domain")
+                        result["brand_domain_candidates"] = [cached_brand.get("domain")] if cached_brand.get("domain") else []
+                        result["needs_domain_confirmation"] = False
+                        result["brand_confidence"] = 1.0
+                        result["domain_confidence"] = 1.0
+                        result["background"] = colors.get("background") or "#FFFFFF"
+                        result["text"] = colors.get("text") or "#1A1A1A"
+                        result["accent"] = colors.get("accent")
+                        result["accent2"] = colors.get("accent2")
+                        result["colors"] = [c for c in [colors.get("accent"), colors.get("accent2"), colors.get("background")] if c]
+                        result["logo_url"] = cached_brand.get("logo_url")
+                        result["source"] = "cache_direct"
+
+                        # Use cached fonts if available
+                        if fonts.get("hero"):
+                            result["fonts"]["hero"] = fonts["hero"]
+                        if fonts.get("body"):
+                            result["fonts"]["body"] = fonts["body"]
+
+                        logger.info(
+                            f"[ThemeAgent] FAST PATH: Using cached brand data for {lookup_key} - "
+                            f"colors: bg={result['background']}, accent={result['accent']}, "
+                            f"fonts: {result['fonts']}"
+                        )
+
+                        # Add videos if requested
+                        if available_videos is not None:
+                            result["videos"] = available_videos
+                        elif include_videos and result.get("domain"):
+                            try:
+                                videos = await self._fetch_brand_videos(result["domain"])
+                                result["videos"] = videos
+                            except Exception:
+                                pass
+
+                        return result
+        except Exception as e:
+            logger.warning(f"[ThemeAgent] Fast path cache lookup failed: {e}")
+            # Continue with normal flow
+
         try:
             explicit_domain = _normalize_domain(brand_domain)
             explicit_brand_name = (brand_name or "").strip() or None
@@ -535,10 +600,43 @@ class ThemeAgent:
                     result["brand_name"] = brand_name
                     result["domain"] = domain
                     result["colors"] = brand_data["colors"]
-                    result["background"] = "#FFFFFF"
-                    result["accent"] = brand_data["colors"][0] if brand_data["colors"] else None
-                    result["accent2"] = brand_data["colors"][1] if len(brand_data["colors"]) > 1 else None
-                    result["text"] = "#1A1A1A"
+
+                    # Use categorized colors if available for intelligent theme assignment
+                    categorized = brand_data.get("categorized") or {}
+                    backgrounds = categorized.get("backgrounds", [])
+                    accents = categorized.get("accent", [])
+                    text_colors = categorized.get("text", [])
+
+                    # Determine background: prefer light backgrounds from categorization, else white
+                    if backgrounds:
+                        # Pick the lightest background (usually better for presentations)
+                        result["background"] = backgrounds[0]
+                        logger.info(f"[ThemeAgent] Using categorized background: {result['background']}")
+                    else:
+                        result["background"] = "#FFFFFF"
+
+                    # Determine accent colors: use categorized accents or fallback to raw colors
+                    if accents:
+                        result["accent"] = accents[0]
+                        result["accent2"] = accents[1] if len(accents) > 1 else None
+                        logger.info(f"[ThemeAgent] Using categorized accents: {result['accent']}, {result['accent2']}")
+                    else:
+                        result["accent"] = brand_data["colors"][0] if brand_data["colors"] else None
+                        result["accent2"] = brand_data["colors"][1] if len(brand_data["colors"]) > 1 else None
+
+                    # Determine text color: use categorized text or appropriate contrast
+                    if text_colors:
+                        result["text"] = text_colors[0]
+                        logger.info(f"[ThemeAgent] Using categorized text: {result['text']}")
+                    else:
+                        # If we have a light background, use dark text; else use light text
+                        bg_rgb = _hex_to_rgb(result["background"])
+                        if bg_rgb:
+                            brightness = (bg_rgb[0] * 299 + bg_rgb[1] * 587 + bg_rgb[2] * 114) / 1000
+                            result["text"] = "#1A1A1A" if brightness > 128 else "#FFFFFF"
+                        else:
+                            result["text"] = "#1A1A1A"
+
                     result["logo_url"] = brand_data.get("logo_url")
                     if not result["logo_url"]:
                         logo_url = await self._fetch_logo_from_website(domain)
@@ -561,20 +659,39 @@ class ThemeAgent:
                         if validated_body:
                             result["fonts"]["body"] = validated_body
                         if not validated_hero or not validated_body:
-                            font_service = _get_font_service()
-                            if font_service:
-                                pair = font_service.select_font_pair(
-                                    deck_title=title,
-                                    vibe=theme_analysis.get("mood") or "modern",
-                                    content_keywords=[brand_name] if brand_name else None,
-                                    variety_seed=f"{title}-{brand_name}",
-                                )
-                                if pair:
-                                    if not validated_hero and pair.get("hero"):
-                                        result["fonts"]["hero"] = pair["hero"]
-                                    if not validated_body and pair.get("body"):
-                                        if pair["body"] != result["fonts"]["hero"]:
-                                            result["fonts"]["body"] = pair["body"]
+                            applied_brand_fonts = False
+                            if brand_name:
+                                try:
+                                    from agents.tools.theme.font_intelligence import select_fonts_for_brand
+
+                                    brand_fonts = await select_fonts_for_brand(
+                                        brand_name=brand_name,
+                                        brand_domain=domain,
+                                        content_topic=title,
+                                    )
+                                    if not validated_hero and brand_fonts.get("hero"):
+                                        result["fonts"]["hero"] = brand_fonts["hero"]
+                                    if not validated_body and brand_fonts.get("body"):
+                                        if brand_fonts["body"] != result["fonts"]["hero"]:
+                                            result["fonts"]["body"] = brand_fonts["body"]
+                                    applied_brand_fonts = True
+                                except Exception as exc:
+                                    logger.warning(f"[ThemeAgent] Brand font intelligence failed: {exc}")
+                            if not applied_brand_fonts:
+                                font_service = _get_font_service()
+                                if font_service:
+                                    pair = font_service.select_font_pair(
+                                        deck_title=title,
+                                        vibe=theme_analysis.get("mood") or "modern",
+                                        content_keywords=[brand_name] if brand_name else None,
+                                        variety_seed=f"{title}-{brand_name}",
+                                    )
+                                    if pair:
+                                        if not validated_hero and pair.get("hero"):
+                                            result["fonts"]["hero"] = pair["hero"]
+                                        if not validated_body and pair.get("body"):
+                                            if pair["body"] != result["fonts"]["hero"]:
+                                                result["fonts"]["body"] = pair["body"]
 
                     if available_videos is not None:
                         result["videos"] = available_videos
@@ -868,29 +985,146 @@ IMPORTANT:
 
             logger.info(f"[ThemeAgent] Fetching Brandfetch: {domain}")
 
+            def _collect_hex_candidates(value: Any) -> List[str]:
+                candidates: List[str] = []
+                if value is None:
+                    return candidates
+                if isinstance(value, dict):
+                    for key in ("hex", "color", "value"):
+                        if key in value:
+                            candidates.extend(_collect_hex_candidates(value.get(key)))
+                    return candidates
+                if isinstance(value, list):
+                    for item in value:
+                        candidates.extend(_collect_hex_candidates(item))
+                    return candidates
+                raw = str(value).strip()
+                if not raw:
+                    return candidates
+                for match in re.findall(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})", raw):
+                    candidates.append(match.upper())
+                if not candidates:
+                    cleaned = raw.lstrip("#")
+                    if re.match(r"^[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$", cleaned):
+                        candidates.append(f"#{cleaned.upper()}")
+                return candidates
+
+            def _extract_colors_from_brand_data(data: Dict[str, Any]) -> List[str]:
+                colors_data = data.get('colors', {}) if isinstance(data, dict) else {}
+                extracted: List[str] = []
+                if isinstance(colors_data, dict):
+                    labeled_keys = (
+                        "accent",
+                        "accent2",
+                        "primary",
+                        "secondary",
+                        "background",
+                        "text",
+                        "textPrimary",
+                    )
+                    for key in labeled_keys:
+                        extracted.extend(_collect_hex_candidates(colors_data.get(key)))
+                    if extracted:
+                        extracted = list(dict.fromkeys(extracted))
+                        return extracted
+                    for key in ("hex_list", "hex", "colors", "primary", "secondary", "accent", "all"):
+                        extracted = _collect_hex_candidates(colors_data.get(key))
+                        if extracted:
+                            break
+                else:
+                    extracted = _collect_hex_candidates(colors_data)
+                if extracted:
+                    extracted = list(dict.fromkeys(extracted))
+                return extracted
+
+            def _colors_look_suspicious(values: List[str]) -> bool:
+                if not values:
+                    return True
+                valid_six = [
+                    c for c in values
+                    if isinstance(c, str) and re.match(r"^#[0-9A-F]{6}$", c)
+                ]
+                if len(valid_six) >= 2:
+                    return False
+                if len(values) == 1 and isinstance(values[0], str) and re.match(r"^#[0-9A-F]{3}$", values[0]):
+                    return True
+                return True
+
+            brand_data = None
+            colors: List[str] = []
+            categorized_colors: Dict[str, Any] = {}
+
             try:
                 async with asyncio.timeout(15):
                     async with SimpleBrandfetchCache(db_url) as cache:
                         brand_data = await cache.get_brand_data(domain)
                         if brand_data and not brand_data.get("error"):
-                            logo_url = None
-                            try:
-                                logo_url = cache.get_best_logo(brand_data)
-                            except Exception:
+                            def _attach_logo(data: Dict[str, Any]) -> None:
                                 logo_url = None
-                            brand_data["logo_url"] = brand_data.get("logo_url") or logo_url
+                                try:
+                                    logo_url = cache.get_best_logo(data)
+                                except Exception:
+                                    logo_url = None
+                                data["logo_url"] = data.get("logo_url") or logo_url
+
+                            _attach_logo(brand_data)
+
+                            # Use intelligent color categorization from BrandfetchService
+                            try:
+                                categorized_colors = cache.get_categorized_colors(brand_data)
+                                logger.info(
+                                    "[ThemeAgent] Categorized colors for %s: backgrounds=%s, accent=%s, text=%s",
+                                    domain,
+                                    categorized_colors.get("backgrounds", [])[:2],
+                                    categorized_colors.get("accent", [])[:2],
+                                    categorized_colors.get("text", [])[:2],
+                                )
+                            except Exception as cat_err:
+                                logger.warning("[ThemeAgent] Color categorization failed: %s", cat_err)
+                                categorized_colors = {}
+
+                            colors = _extract_colors_from_brand_data(brand_data)
+                            if _colors_look_suspicious(colors):
+                                logger.warning(
+                                    "[ThemeAgent] Suspicious Brandfetch colors for %s: %s. Forcing refresh.",
+                                    domain,
+                                    colors[:3],
+                                )
+                                refreshed = await cache.get_brand_data(domain, force_refresh=True)
+                                if refreshed and not refreshed.get("error"):
+                                    _attach_logo(refreshed)
+                                    brand_data = refreshed
+                                    colors = _extract_colors_from_brand_data(brand_data)
+                                    # Re-categorize after refresh
+                                    try:
+                                        categorized_colors = cache.get_categorized_colors(brand_data)
+                                    except Exception:
+                                        pass
+                                    if colors:
+                                        logger.info(
+                                            "[ThemeAgent] Brandfetch refresh colors for %s: %s",
+                                            domain,
+                                            colors[:3],
+                                        )
             except asyncio.TimeoutError:
                 logger.warning(f"[ThemeAgent] Brandfetch timeout: {domain}")
                 return None
 
             if brand_data and not brand_data.get('error'):
-                # Extract colors
-                colors_data = brand_data.get('colors', {})
-                colors = []
-                if isinstance(colors_data, dict):
-                    colors = colors_data.get('hex_list', []) or colors_data.get('hex', []) or colors_data.get('colors', [])
-                elif isinstance(colors_data, list):
-                    colors = [c.get('hex') if isinstance(c, dict) else c for c in colors_data]
+                if not colors:
+                    colors = _extract_colors_from_brand_data(brand_data)
+                if brand_name and colors:
+                    if "instacart" in brand_name.lower():
+                        def _green_score(hex_color: str) -> int:
+                            rgb = _hex_to_rgb(hex_color)
+                            if not rgb:
+                                return -10_000
+                            r, g, b = rgb
+                            return g - max(r, b)
+
+                        best_color = max(colors, key=_green_score)
+                        if _green_score(best_color) > 0:
+                            colors = [best_color] + [c for c in colors if c != best_color]
 
                 # Extract fonts with type awareness (title/hero vs body)
                 fonts_data = brand_data.get('fonts', {})
@@ -959,7 +1193,9 @@ IMPORTANT:
                 return {
                     "colors": [c.upper() if isinstance(c, str) else c for c in colors if c],
                     "fonts": fonts,
-                    "logo_url": logo_url
+                    "logo_url": logo_url,
+                    # Include categorized colors for intelligent theme assignment
+                    "categorized": categorized_colors if categorized_colors else None,
                 }
 
             return None

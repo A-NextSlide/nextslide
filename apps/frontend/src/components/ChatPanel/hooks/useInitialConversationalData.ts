@@ -31,6 +31,23 @@ export function useInitialConversationalData({
 
       if (initialConversationalData.slides && initialConversationalData.slides.length > 0) {
         const normalizedReferenceImages = normalizeReferenceImages(initialConversationalData.slideScreenshots);
+        let parsedStylePrefs: any = undefined;
+        if (initialConversationalData.stylePreferences) {
+          try {
+            parsedStylePrefs = typeof initialConversationalData.stylePreferences === 'string'
+              ? JSON.parse(initialConversationalData.stylePreferences)
+              : initialConversationalData.stylePreferences;
+          } catch (err) {
+            console.warn('[ChatPanel] Failed to parse initial stylePreferences:', err);
+          }
+        }
+        const hasExplicitColors = Boolean(
+          parsedStylePrefs?.colors?.background ||
+          parsedStylePrefs?.colors?.text ||
+          parsedStylePrefs?.colors?.accent1 ||
+          parsedStylePrefs?.colors?.accent2 ||
+          parsedStylePrefs?.colors?.accent3
+        );
 
         onOutlineAgentToolCall({
           topic: initialConversationalData.topic,
@@ -40,9 +57,22 @@ export function useInitialConversationalData({
           narrative: initialConversationalData.narrative,
           uploadedMedia: initialConversationalData.uploadedMedia,
           use_uploaded_images: initialConversationalData.use_uploaded_images,
+          scraped_context: initialConversationalData.scraped_context,
+          research_context: initialConversationalData.research_context,
+          reference_sources: initialConversationalData.reference_sources,
+          research_citations: initialConversationalData.research_citations,
           stylePreferences: {
             slideMode: initialConversationalData.slideMode || 'interactive',
-            referenceImages: normalizedReferenceImages
+            referenceImages: normalizedReferenceImages,
+            colors: hasExplicitColors ? parsedStylePrefs?.colors : undefined,
+            font: parsedStylePrefs?.font,
+            bodyFont: parsedStylePrefs?.bodyFont,
+            logoUrl: parsedStylePrefs?.logoUrl,
+            logoUrlDark: parsedStylePrefs?.logoUrlDark,
+            brandName: parsedStylePrefs?.brandName,
+            brandDomain: parsedStylePrefs?.brandDomain,
+            brandDomainCandidates: parsedStylePrefs?.brandDomainCandidates,
+            needsBrandDomainConfirmation: parsedStylePrefs?.needsBrandDomainConfirmation,
           }
         });
 
@@ -77,17 +107,25 @@ export function useInitialConversationalData({
               })),
               stylePreferences: {
                 initialIdea: initialConversationalData.topic,
-                vibeContext: initialConversationalData.stylePreferences,
+                vibeContext: parsedStylePrefs?.vibeContext || initialConversationalData.stylePreferences,
                 slideMode: initialConversationalData.slideMode || 'interactive',
                 referenceImages: normalizedReferenceImages,
                 colors: searchedColors ? {
                   type: 'custom' as const,
-                  background: searchedColors.background || searchedColors.primary_background || '#ffffff',
-                  text: searchedColors.text || searchedColors.primary_text || '#1f2937',
-                  accent: searchedColors.accent || searchedColors.accent_1 || searchedColors.primary || '#3b82f6',
-                  secondary: searchedColors.secondary || searchedColors.accent_2 || '#6b7280',
-                } : undefined,
-                font: searchedFont
+                  background: searchedColors.background || searchedColors.primary_background,
+                  text: searchedColors.text || searchedColors.primary_text,
+                  accent1: searchedColors.accent1 || searchedColors.accent_1 || searchedColors.accent || searchedColors.primary,
+                  accent2: searchedColors.accent2 || searchedColors.accent_2 || searchedColors.secondary,
+                  accent3: searchedColors.accent3,
+                } : (hasExplicitColors ? parsedStylePrefs?.colors : undefined),
+                font: searchedFont || parsedStylePrefs?.font,
+                bodyFont: parsedStylePrefs?.bodyFont,
+                logoUrl: parsedStylePrefs?.logoUrl,
+                logoUrlDark: parsedStylePrefs?.logoUrlDark,
+                brandName: parsedStylePrefs?.brandName,
+                brandDomain: parsedStylePrefs?.brandDomain,
+                brandDomainCandidates: parsedStylePrefs?.brandDomainCandidates,
+                needsBrandDomainConfirmation: parsedStylePrefs?.needsBrandDomainConfirmation,
               }
             };
 
