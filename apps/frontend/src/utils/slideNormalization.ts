@@ -132,12 +132,82 @@ const normalizeComponentGeometry = (component: ComponentInstance, slideSize: Sli
     } catch {}
   }
 
-  return {
+  let normalizedComponent: ComponentInstance = {
     ...component,
     props,
     position: (component as any).position || props.position,
     size: (component as any).size || props.size
   };
+
+  if (normalizedComponent?.type === 'TiptapTextBlock') {
+    const texts = (normalizedComponent.props as any)?.texts;
+    if (texts && !(texts.type === 'doc' && texts.content)) {
+      let normalizedTexts: any;
+
+      if (Array.isArray(texts)) {
+        const content: any[] = [];
+        texts.forEach((item: any) => {
+          if (item && item.type === 'paragraph' && typeof item.content === 'string') {
+            content.push({
+              type: 'paragraph',
+              content: [{ type: 'text', text: item.content, style: item.style || {} }]
+            });
+          } else if (item && item.type === 'heading' && typeof item.content === 'string') {
+            content.push({
+              type: 'paragraph',
+              content: [{ type: 'text', text: item.content, style: item.style || {} }]
+            });
+          } else if (item && typeof item.text === 'string') {
+            content.push({
+              type: 'paragraph',
+              content: [{ type: 'text', text: item.text, style: item.style || {} }]
+            });
+          } else if (typeof item === 'string') {
+            content.push({
+              type: 'paragraph',
+              content: [{ type: 'text', text: item, style: {} }]
+            });
+          }
+        });
+        normalizedTexts = {
+          type: 'doc',
+          content: content.length > 0 ? content : [
+            { type: 'paragraph', content: [{ type: 'text', text: '', style: {} }] }
+          ]
+        };
+      } else if (typeof texts === 'string') {
+        normalizedTexts = {
+          type: 'doc',
+          content: [
+            { type: 'paragraph', content: [{ type: 'text', text: texts, style: {} }] }
+          ]
+        };
+      } else {
+        let fallbackText = '';
+        if (texts && typeof texts === 'object' && !Array.isArray(texts)) {
+          if ((texts as any).text) fallbackText = String((texts as any).text);
+          else if ((texts as any).content) fallbackText = String((texts as any).content);
+          else if ((texts as any).value) fallbackText = String((texts as any).value);
+        }
+        normalizedTexts = {
+          type: 'doc',
+          content: [
+            { type: 'paragraph', content: [{ type: 'text', text: fallbackText || 'Text content', style: {} }] }
+          ]
+        };
+      }
+
+      normalizedComponent = {
+        ...normalizedComponent,
+        props: {
+          ...(normalizedComponent.props as any),
+          texts: normalizedTexts
+        }
+      };
+    }
+  }
+
+  return normalizedComponent;
 };
 
 export const normalizeSlideForRender = (
@@ -146,8 +216,16 @@ export const normalizeSlideForRender = (
 ): { slide: SlideData; slideSize: SlideSize } | null => {
   if (!slide) return null;
   const slideSize = resolveSlideSize(slide, fallbackSize);
-  const components = Array.isArray(slide.components)
-    ? slide.components.map((component) => normalizeComponentGeometry(component as ComponentInstance, slideSize))
+  let rawComponents: any = (slide as any).components;
+  if (typeof rawComponents === 'string') {
+    try {
+      rawComponents = JSON.parse(rawComponents);
+    } catch {
+      rawComponents = [];
+    }
+  }
+  const components = Array.isArray(rawComponents)
+    ? rawComponents.map((component) => normalizeComponentGeometry(component as ComponentInstance, slideSize))
     : [];
 
   return {
