@@ -9,14 +9,11 @@ import type { ClarificationField } from '@/services/outlineAgentService';
 const renderMarkdown = (text: string): React.ReactNode => {
   if (!text) return null;
 
-  // Split by markdown patterns while preserving delimiters
-  // Order matters: check ** before * to avoid conflicts
   const parts: React.ReactNode[] = [];
   let remaining = text;
   let keyIndex = 0;
 
   while (remaining.length > 0) {
-    // Check for bold (**text**)
     const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
     if (boldMatch) {
       parts.push(<strong key={keyIndex++} className="font-semibold">{boldMatch[1]}</strong>);
@@ -24,7 +21,6 @@ const renderMarkdown = (text: string): React.ReactNode => {
       continue;
     }
 
-    // Check for italic (*text*)
     const italicMatch = remaining.match(/^\*([^*]+)\*/);
     if (italicMatch) {
       parts.push(<em key={keyIndex++} className="italic">{italicMatch[1]}</em>);
@@ -32,7 +28,6 @@ const renderMarkdown = (text: string): React.ReactNode => {
       continue;
     }
 
-    // Find next markdown delimiter
     const nextBold = remaining.indexOf('**');
     const nextItalic = remaining.search(/(?<!\*)\*(?!\*)/);
 
@@ -46,7 +41,6 @@ const renderMarkdown = (text: string): React.ReactNode => {
     }
 
     if (nextDelim === -1 || nextDelim === 0) {
-      // No more delimiters or delimiter at start with no match - consume one char
       if (nextDelim === 0) {
         parts.push(remaining[0]);
         remaining = remaining.slice(1);
@@ -63,77 +57,18 @@ const renderMarkdown = (text: string): React.ReactNode => {
   return parts.length === 1 && typeof parts[0] === 'string' ? parts[0] : <>{parts}</>;
 };
 
-/**
- * Parse numbered questions from a draft text.
- * Handles formats like "1. **Question:** text" or "1. Question text"
- */
-const parseNumberedQuestions = (draft: string): { intro: string; questions: Array<{ num: number; title: string; content: string }> } => {
-  const lines = draft.split(/(?=\d+\.\s)/);
-  const intro: string[] = [];
-  const questions: Array<{ num: number; title: string; content: string }> = [];
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    // Check if this is a numbered question
-    const numMatch = trimmed.match(/^(\d+)\.\s*(.*)/s);
-    if (numMatch) {
-      const num = parseInt(numMatch[1], 10);
-      let content = numMatch[2].trim();
-
-      // Try to extract title from **Title:** pattern
-      const titleMatch = content.match(/^\*\*([^*:]+)(?::\*\*|\*\*:)\s*(.*)/s);
-      if (titleMatch) {
-        questions.push({
-          num,
-          title: titleMatch[1].trim(),
-          content: titleMatch[2].trim(),
-        });
-      } else {
-        // No explicit title, use first few words
-        const words = content.split(/\s+/).slice(0, 3).join(' ');
-        questions.push({
-          num,
-          title: words.length > 30 ? words.slice(0, 30) + '...' : words,
-          content,
-        });
-      }
-    } else {
-      // Not a numbered item - part of intro
-      intro.push(trimmed);
-    }
-  }
-
-  return { intro: intro.join(' ').trim(), questions };
-};
-
-type DraftPart =
-  | { type: 'text'; value: string }
-  | { type: 'field'; id: string; value: string };
-
 type QuestionType = 'text' | 'number' | 'choice' | 'boolean';
 
 interface ClarificationQuestion {
   id: string;
   label: string;
+  responseLabel: string;
   type: QuestionType;
   options?: string[];
   defaultValue?: string;
-  title?: string;
-  hint?: string;
-  fullContent?: string; // Full question content with markdown
-}
-
-interface DraftTokenMeta {
-  id: string;
-  defaultValue: string;
-  title: string;
-  hint?: string;
 }
 
 interface ClarificationDraftCardProps {
-  draft?: string;
   fields?: ClarificationField[];
   onConfirm: (text: string) => void;
   onEdit: (text: string) => void;
@@ -141,312 +76,24 @@ interface ClarificationDraftCardProps {
   autoFocus?: boolean;
 }
 
-const TOKEN_REGEX = /\[\[([^\]]+)\]\]/g;
-
-const parseDraft = (draft: string): DraftPart[] => {
-  TOKEN_REGEX.lastIndex = 0;
-  const parts: DraftPart[] = [];
-  let lastIndex = 0;
-  let fieldIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = TOKEN_REGEX.exec(draft)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push({ type: 'text', value: draft.slice(lastIndex, match.index) });
-    }
-    parts.push({
-      type: 'field',
-      id: `field-${fieldIndex}`,
-      value: match[1]?.trim() || '',
-    });
-    fieldIndex += 1;
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < draft.length) {
-    parts.push({ type: 'text', value: draft.slice(lastIndex) });
-  }
-
-  return parts.length > 0 ? parts : [{ type: 'text', value: draft }];
-};
-
-const buildResolvedDraft = (parts: DraftPart[], values: Record<string, string>) => (
-  parts.map((part) => {
-    if (part.type === 'text') return part.value;
-    return values[part.id] ?? part.value;
-  }).join('')
-);
-
-const normalizeQuestionLabel = (line: string) => {
-  TOKEN_REGEX.lastIndex = 0;
-  const withoutToken = line.replace(TOKEN_REGEX, '').trim();
-  const withoutBullet = withoutToken
-    .replace(/^\s*[-*]\s*/, '')
-    .replace(/^\s*\d+\.\s*/, '');
-  return withoutBullet.replace(/\s*[:\-–]\s*$/, '').trim();
-};
-
-const normalizeWhitespace = (value: string) => value.replace(/\s+/g, ' ').trim();
-
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const toTitleCase = (value: string) => (
-  value.replace(/\w\S*/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-);
-
-const formatFieldLabel = (value: string) => {
-  let cleaned = value.trim();
+const formatKeyLabel = (value: string) => {
+  const cleaned = value.replace(/[_-]+/g, ' ').trim();
   if (!cleaned) return '';
-  TOKEN_REGEX.lastIndex = 0;
-  cleaned = cleaned.replace(TOKEN_REGEX, '').trim();
-  cleaned = cleaned.replace(/\b(?:e\.?g\.?|eg\.?|example|for example)\b.*$/i, '').trim();
-  cleaned = cleaned.split(',')[0]?.trim() ?? '';
-  cleaned = cleaned.replace(/[:\-–]\s*$/, '').trim();
-  cleaned = cleaned.replace(/_+/g, ' ');
-  cleaned = normalizeWhitespace(cleaned);
-  if (!cleaned) return '';
-  if (/[A-Z]/.test(cleaned) && /[a-z]/.test(cleaned)) return cleaned;
-  if (cleaned.toUpperCase() === cleaned) return cleaned;
-  return toTitleCase(cleaned);
-};
-
-const stripExampleValue = (value: string) => {
-  const trimmed = value.trim();
-  if (!trimmed) return value;
-  if (/^(?:\(?\s*)?(?:e\.?g\.?|eg\.?|example|for example)\b[\s:–,)]*/i.test(trimmed)) {
-    return '';
-  }
-  return value;
-};
-
-const cleanDefaultValue = (value: string, field: ClarificationField) => {
-  let cleaned = value.trim();
-  if (!cleaned) return value;
-
-  const prefixes = [
-    field.label,
-    field.key,
-    field.key?.replace(/_/g, ' '),
-    field.key?.replace(/_/g, '-'),
-  ].filter(Boolean) as string[];
-
-  for (const prefix of prefixes) {
-    const pattern = new RegExp(`^${escapeRegExp(prefix)}\\s*[:\\-–]\\s*`, 'i');
-    if (pattern.test(cleaned)) {
-      cleaned = cleaned.replace(pattern, '').trim();
-      break;
-    }
-  }
-
-  return stripExampleValue(cleaned);
-};
-
-const hasTokenLabelCue = (value: string) => (
-  value.includes(':') ||
-  /\b(e\.?g\.?|eg\.?|example|for example)\b/i.test(value)
-);
-
-const parseTokenLabelAndDefault = (rawValue: string) => {
-  const trimmed = rawValue.trim();
-  if (!trimmed) return { label: '', defaultValue: '' };
-  if (!hasTokenLabelCue(trimmed)) {
-    return { label: '', defaultValue: stripExampleValue(trimmed) };
-  }
-
-  const labelCandidate = formatFieldLabel(trimmed);
-  if (!labelCandidate || /^\d+$/.test(labelCandidate)) {
-    return { label: '', defaultValue: stripExampleValue(trimmed) };
-  }
-
-  const cleanedDefault = cleanDefaultValue(trimmed, {
-    key: labelCandidate,
-    label: labelCandidate,
-    type: 'text',
-  } as ClarificationField);
-
-  return { label: labelCandidate, defaultValue: cleanedDefault };
-};
-
-const getSentenceTail = (text: string) => {
-  const segments = text.split(/[\n.!?]/);
-  return segments[segments.length - 1] ?? '';
-};
-
-const getSentenceHead = (text: string) => {
-  const segments = text.split(/[\n.!?]/);
-  return segments[0] ?? '';
-};
-
-const stripLeadingMarkers = (value: string) => (
-  value
-    .replace(/^\s*[-*]\s*/, '')
-    .replace(/^\s*\d+\.\s*/, '')
-);
-
-const cleanBeforeSegment = (value: string) => {
-  let cleaned = normalizeWhitespace(stripLeadingMarkers(value));
-  cleaned = cleaned.replace(/^[,.;:–-]+\s*/, '');
-  cleaned = cleaned.replace(/[:\-–]\s*$/, '');
-  return cleaned.trim();
-};
-
-const cleanAfterSegment = (value: string) => {
-  let cleaned = normalizeWhitespace(value);
-  cleaned = cleaned.replace(/^[\s,.;:–-]+/, '');
-  return cleaned.trim();
-};
-
-const getPromptParts = (before: string, after: string) => ({
-  prefix: cleanBeforeSegment(getSentenceTail(before)),
-  suffix: cleanAfterSegment(getSentenceHead(after)),
-});
-
-const buildPromptSnippet = (before: string, after: string) => {
-  const { prefix, suffix } = getPromptParts(before, after);
-  if (!prefix && !suffix) return '';
-  const placeholder = '____';
-  const combined = prefix && suffix
-    ? `${prefix} ${placeholder} ${suffix}`
-    : (prefix ? `${prefix} ${placeholder}` : `${placeholder} ${suffix}`);
-  return combined.replace(/\s+([.,!?;:])/g, '$1').trim();
-};
-
-const buildHintSnippet = (before: string, after: string, title: string) => {
-  const { prefix, suffix } = getPromptParts(before, after);
-  const primary = prefix || suffix;
-  if (!primary) return undefined;
-  if (/[,:]/.test(primary)) return undefined;
-  const hint = prefix ? `${primary} ____` : `____ ${suffix}`;
-  if (hint.length > 60) return undefined;
-  const normalizedHint = normalizeWhitespace(hint.replace(/____/g, '')).toLowerCase();
-  const normalizedTitle = normalizeWhitespace(title).toLowerCase();
-  if (!normalizedHint || normalizedHint === normalizedTitle || normalizedHint.includes(normalizedTitle)) {
-    return undefined;
-  }
-  return hint.replace(/\s+([.,!?;:])/g, '$1').trim();
-};
-
-const inferQuestionTitle = ({
-  before,
-  after,
-  tokenValue,
-  fallback,
-  index,
-}: {
-  before: string;
-  after: string;
-  tokenValue: string;
-  fallback: string;
-  index: number;
-}) => {
-  const beforeLower = before.toLowerCase();
-  const afterLower = after.toLowerCase();
-  const tokenLower = tokenValue.toLowerCase();
-  const context = `${beforeLower} ${afterLower} ${tokenLower}`;
-
-  if (/(tone|voice|style|vibe)/.test(context)) return 'Tone';
-  if (/(motion|animation|mode|transition)/.test(context)) return 'Motion';
-  if (/(slide)/.test(context) && /^\d+$/.test(tokenLower)) return 'Slide count';
-  if (/(audience|attendee|attendees|viewer|viewers|customer|customers)/.test(context)) return 'Audience';
-  if (/\bfor\b/.test(beforeLower) && tokenLower && !/^\d+$/.test(tokenLower)) return 'Audience';
-  if (/(brand|company|organization|client|logo|domain)/.test(context)) return 'Brand';
-  if (/(title|topic|subject|theme)/.test(context)) return 'Topic';
-
-  const cleanedFallback = normalizeWhitespace(fallback);
-  if (cleanedFallback && cleanedFallback.length <= 60) return cleanedFallback;
-  return `Detail ${index + 1}`;
-};
-
-const formatQuestionTitle = (title: string) => {
-  const normalized = normalizeWhitespace(title);
-  if (!normalized) return 'Quick question';
-  return /[?.!]$/.test(normalized) ? normalized : `${normalized}?`;
-};
-
-const buildDraftTokenMeta = (parts: DraftPart[]): DraftTokenMeta[] => {
-  const tokens: DraftTokenMeta[] = [];
-  parts.forEach((part, index) => {
-    if (part.type !== 'field') return;
-    const before = index > 0 && parts[index - 1].type === 'text' ? parts[index - 1].value : '';
-    const after = index < parts.length - 1 && parts[index + 1].type === 'text' ? parts[index + 1].value : '';
-    const { prefix, suffix } = getPromptParts(before, after);
-    const prompt = buildPromptSnippet(before, after);
-    const fallback = normalizeQuestionLabel(`${prefix} ${suffix}`) || prompt || `Detail ${tokens.length + 1}`;
-    const rawTokenValue = part.value?.trim() || '';
-    const parsedToken = parseTokenLabelAndDefault(rawTokenValue);
-    const defaultValue = parsedToken.label ? parsedToken.defaultValue : stripExampleValue(rawTokenValue);
-    const tokenValueForInference = defaultValue || rawTokenValue;
-    const title = inferQuestionTitle({
-      before: prefix,
-      after: suffix,
-      tokenValue: tokenValueForInference,
-      fallback,
-      index: tokens.length,
-    });
-    const resolvedTitle = parsedToken.label || title;
-    const hint = buildHintSnippet(before, after, resolvedTitle);
-    tokens.push({
-      id: part.id,
-      defaultValue,
-      title: resolvedTitle,
-      hint,
-    });
-  });
-  return tokens;
-};
-
-const buildQuestionsFromDraft = (draft: string, tokens: DraftTokenMeta[]): ClarificationQuestion[] => {
-  // If we have tokens, use them
-  if (tokens.length > 0) {
-    return tokens.map((token, index) => ({
-      id: token.id,
-      label: token.title || `Detail ${index + 1}`,
-      title: token.title,
-      hint: token.hint,
-      type: 'text',
-      defaultValue: token.defaultValue,
-    }));
-  }
-
-  // Check if the draft contains numbered questions (1. 2. 3. etc.)
-  const hasNumberedQuestions = /\d+\.\s+\*?\*?[A-Z]/.test(draft);
-  if (hasNumberedQuestions) {
-    const parsed = parseNumberedQuestions(draft);
-    if (parsed.questions.length > 0) {
-      return parsed.questions.map((q, index) => ({
-        id: `question-${index}`,
-        label: q.title,
-        title: q.title,
-        hint: parsed.intro && index === 0 ? parsed.intro : undefined,
-        type: 'text' as QuestionType,
-        // Store the full content for display
-        fullContent: q.content,
-      }));
-    }
-  }
-
-  // Fallback: single question from draft
-  const label = normalizeQuestionLabel(draft);
-  return label
-    ? [{ id: 'field-0', label, title: label, type: 'text', fullContent: draft }]
-    : [];
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 };
 
 const buildQuestionsFromFields = (fields: ClarificationField[]): ClarificationQuestion[] => (
   fields.map((field, index) => {
-    const labelSource = field.label || field.key || '';
-    const label = formatFieldLabel(labelSource) || `Detail ${index + 1}`;
-    const rawDefaultValue = field.value !== undefined
-      ? String(field.value)
-      : '';
-    const defaultValue = typeof field.value === 'string'
-      ? cleanDefaultValue(rawDefaultValue, field)
-      : rawDefaultValue;
+    const label = field.label?.trim() || formatKeyLabel(field.key) || `Detail ${index + 1}`;
+    const responseLabel = field.key?.trim() || label;
+    let defaultValue = field.value !== undefined ? String(field.value) : '';
+    if (field.type === 'boolean' && typeof field.value === 'boolean') {
+      defaultValue = field.value ? 'Yes' : 'No';
+    }
     return {
       id: field.key || `field-${index}`,
       label,
-      title: label,
-      hint: undefined,
+      responseLabel,
       type: field.type || 'text',
       options: field.options,
       defaultValue,
@@ -455,26 +102,16 @@ const buildQuestionsFromFields = (fields: ClarificationField[]): ClarificationQu
 );
 
 const ClarificationDraftCard: React.FC<ClarificationDraftCardProps> = ({
-  draft: rawDraft,
   fields,
   onConfirm,
   onEdit,
   className,
   autoFocus = true,
 }) => {
-  const draft = typeof rawDraft === 'string' ? rawDraft.trim() : '';
-  const hasFields = Boolean(fields && fields.length > 0);
-  const parsedDraft = useMemo(() => (draft ? parseDraft(draft) : []), [draft]);
-  const draftTokens = useMemo(
-    () => (draft && !hasFields ? buildDraftTokenMeta(parsedDraft) : []),
-    [draft, hasFields, parsedDraft]
+  const questions = useMemo(
+    () => (fields && fields.length > 0 ? buildQuestionsFromFields(fields) : []),
+    [fields]
   );
-  const templateParts = useMemo(() => (draft && !hasFields ? parsedDraft : []), [draft, hasFields, parsedDraft]);
-  const questions = useMemo(() => {
-    if (hasFields && fields) return buildQuestionsFromFields(fields);
-    if (draft) return buildQuestionsFromDraft(draft, draftTokens);
-    return [];
-  }, [draft, draftTokens, fields, hasFields]);
 
   const initialAnswers = useMemo(() => (
     questions.reduce((acc, question) => {
@@ -505,36 +142,23 @@ const ClarificationDraftCard: React.FC<ClarificationDraftCardProps> = ({
 
   const currentQuestion = questions[currentIndex];
   const currentValue = currentQuestion ? answers[currentQuestion.id] ?? '' : '';
-  const questionTitle = currentQuestion ? formatQuestionTitle(currentQuestion.title ?? currentQuestion.label) : '';
-  const questionHint = currentQuestion?.hint;
-  const questionAnimationKey = currentQuestion ? `${currentQuestion.id}-${currentIndex}` : 'question';
-  const typingDurationMs = Math.min(1400, Math.max(400, questionTitle.length * 28));
-  const shouldTypeQuestion = questionTitle.length <= 72;
-  const cursorHideDelayMs = Math.min(2200, typingDurationMs + 500);
 
   const buildResponse = useCallback((override?: { id: string; value: string }) => {
     const resolvedAnswers = override
       ? { ...answers, [override.id]: override.value }
       : answers;
 
-    if (templateParts.length > 0) {
-      const answeredQuestions = questions.filter((question) => (resolvedAnswers[question.id] ?? '').trim());
-      if (answeredQuestions.length === 0) return '';
-      if (answeredQuestions.length === questions.length) {
-        return buildResolvedDraft(templateParts, resolvedAnswers).trim();
-      }
-    }
-
     return questions
       .map((question) => {
         const value = (resolvedAnswers[question.id] ?? '').trim();
         if (!value) return '';
-        return `${question.label}: ${value}`;
+        const label = question.responseLabel || question.label;
+        return `${label}: ${value}`;
       })
       .filter(Boolean)
       .join('\n')
       .trim();
-  }, [answers, questions, templateParts]);
+  }, [answers, questions]);
 
   const handleAdvance = useCallback((valueOverride?: string) => {
     if (!currentQuestion) return;
@@ -619,40 +243,40 @@ const ClarificationDraftCard: React.FC<ClarificationDraftCardProps> = ({
         )}
       >
         <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-            Quick questions
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+              Quick questions
+            </div>
+            <div className="mt-1 flex items-center gap-1 text-[10px] text-zinc-400">
+              <button
+                type="button"
+                onClick={handlePrevQuestion}
+                disabled={!canGoBack}
+                className={cn(
+                  'inline-flex h-5 w-5 items-center justify-center rounded-full border border-zinc-200 text-zinc-400 transition',
+                  canGoBack ? 'hover:bg-zinc-100' : 'opacity-40'
+                )}
+                aria-label="Previous question"
+              >
+                <ChevronLeft className="h-3 w-3" />
+              </button>
+              <span>
+                {currentIndex + 1} of {questions.length}
+              </span>
+              <button
+                type="button"
+                onClick={handleNextQuestion}
+                disabled={!canGoForward}
+                className={cn(
+                  'inline-flex h-5 w-5 items-center justify-center rounded-full border border-zinc-200 text-zinc-400 transition',
+                  canGoForward ? 'hover:bg-zinc-100' : 'opacity-40'
+                )}
+                aria-label="Next question"
+              >
+                <ChevronRight className="h-3 w-3" />
+              </button>
+            </div>
           </div>
-          <div className="mt-1 flex items-center gap-1 text-[10px] text-zinc-400">
-            <button
-              type="button"
-              onClick={handlePrevQuestion}
-              disabled={!canGoBack}
-              className={cn(
-                'inline-flex h-5 w-5 items-center justify-center rounded-full border border-zinc-200 text-zinc-400 transition',
-                canGoBack ? 'hover:bg-zinc-100' : 'opacity-40'
-              )}
-              aria-label="Previous question"
-            >
-              <ChevronLeft className="h-3 w-3" />
-            </button>
-            <span>
-              {currentIndex + 1} of {questions.length}
-            </span>
-            <button
-              type="button"
-              onClick={handleNextQuestion}
-              disabled={!canGoForward}
-              className={cn(
-                'inline-flex h-5 w-5 items-center justify-center rounded-full border border-zinc-200 text-zinc-400 transition',
-                canGoForward ? 'hover:bg-zinc-100' : 'opacity-40'
-              )}
-              aria-label="Next question"
-            >
-              <ChevronRight className="h-3 w-3" />
-            </button>
-          </div>
-        </div>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
@@ -683,43 +307,11 @@ const ClarificationDraftCard: React.FC<ClarificationDraftCardProps> = ({
         </div>
 
         <div className="mt-3">
-          {/* Show intro text if present (only on first question) */}
-          {questionHint && currentIndex === 0 && (
-            <div className="mb-3 text-sm text-zinc-600 leading-relaxed">
-              {renderMarkdown(questionHint)}
-            </div>
-          )}
-
-          {/* Question title/label */}
-          <div className="text-xs font-semibold uppercase tracking-wide text-orange-600 mb-1">
-            {currentIndex + 1}. {currentQuestion?.title || currentQuestion?.label}
+          <div className="text-sm font-medium text-orange-600 mb-2">
+            <span className="mr-2">{currentIndex + 1}.</span>
+            <span>{renderMarkdown(currentQuestion.label)}</span>
           </div>
 
-          {/* Full question content with markdown */}
-          <div className="text-sm text-zinc-800 leading-relaxed animate-fade-in max-h-[200px] overflow-y-auto">
-            {currentQuestion?.fullContent ? (
-              renderMarkdown(currentQuestion.fullContent)
-            ) : (
-              <span
-                key={questionAnimationKey}
-                className={cn(shouldTypeQuestion ? 'typing-animation' : '')}
-                style={shouldTypeQuestion ? {
-                  '--message-length': questionTitle.length,
-                  '--animation-duration': `${typingDurationMs}ms`,
-                } as React.CSSProperties : undefined}
-              >
-                {questionTitle}
-              </span>
-            )}
-            {!currentQuestion?.fullContent && shouldTypeQuestion && (
-              <span
-                className="typing-cursor typing-cursor-fade relative -top-[1px] ml-0.5"
-                style={{ '--cursor-hide-delay': `${cursorHideDelayMs}ms` } as React.CSSProperties}
-              >
-                |
-              </span>
-            )}
-          </div>
           <input
             ref={inputRef as React.RefObject<HTMLInputElement>}
             type={inputType}

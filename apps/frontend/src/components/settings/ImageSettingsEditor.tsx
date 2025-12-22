@@ -356,8 +356,26 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (!resp.ok) throw new Error('Edit failed');
-      const data = await resp.json();
+      const text = await resp.text();
+      if (!resp.ok) {
+        let detail = text;
+        if (text) {
+          try {
+            const parsed = JSON.parse(text);
+            detail = parsed?.error || parsed?.message || text;
+          } catch {}
+        }
+        throw new Error(detail || 'Edit failed');
+      }
+      if (!text.trim()) {
+        throw new Error('Image edit service returned an empty response.');
+      }
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error('Image edit service returned invalid JSON.');
+      }
       const url = data.editedUrl || data.url || data.image_url || data.imageUrl || data.image || '';
       if (!url) throw new Error('No URL in response');
       handlePropChange('src', url);
@@ -390,8 +408,26 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, images: imgs, size })
       });
-      if (!resp.ok) throw new Error('Fusion failed');
-      const data = await resp.json();
+      const text = await resp.text();
+      if (!resp.ok) {
+        let detail = text;
+        if (text) {
+          try {
+            const parsed = JSON.parse(text);
+            detail = parsed?.error || parsed?.message || text;
+          } catch {}
+        }
+        throw new Error(detail || 'Fusion failed');
+      }
+      if (!text.trim()) {
+        throw new Error('Image fuse service returned an empty response.');
+      }
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error('Image fuse service returned invalid JSON.');
+      }
       const url = data.url || data.image_url || '';
       if (!url) throw new Error('No URL in response');
       handlePropChange('src', url);

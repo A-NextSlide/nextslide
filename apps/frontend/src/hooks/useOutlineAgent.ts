@@ -189,10 +189,16 @@ export function useOutlineAgent() {
             console.log('[OutlineAgent] Outline data received:', event.data);
             if (event.data?.action === 'clarify') {
               const clarificationMessage = event.data.message || event.data.clarification?.message || 'Quick check before I build the deck.';
-              const draftResponse = event.data.draft_response || event.data.clarification?.draft_response || '';
-              const combinedMessage = draftResponse
-                ? `${clarificationMessage}\n\n${draftResponse}`
-                : clarificationMessage;
+              const clarificationFields = event.data.clarification?.fields || [];
+              const fieldLines = clarificationFields.map((field, index) => {
+                const label = field.label || field.key || `Detail ${index + 1}`;
+                const value = field.value !== undefined ? String(field.value) : '';
+                const suffix = value ? ` (suggested: ${value})` : '';
+                return `${index + 1}. ${label}${suffix}`;
+              });
+              const combinedMessage = [clarificationMessage, fieldLines.length ? fieldLines.join('\n') : '']
+                .filter(Boolean)
+                .join('\n\n');
 
               hasClarification = true;
               setMessages((prev) => {

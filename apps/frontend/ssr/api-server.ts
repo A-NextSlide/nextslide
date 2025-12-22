@@ -341,10 +341,16 @@ app.post('/api/google/slides/thumbnails:batch', (req, res) => {
             body: JSON.stringify({ items, size, mime })
           });
           const text = await forward.text();
+          const trimmedText = text.trim();
           const contentType = forward.headers.get('content-type') || '';
           res.status(forward.status);
           if (contentType) {
             res.set('content-type', contentType);
+          }
+          if (!trimmedText) {
+            console.warn('Upstream /google/slides/thumbnails:batch returned empty response', { status: forward.status });
+            return res.status(forward.status >= 200 && forward.status < 300 ? 502 : forward.status)
+              .json({ error: 'Upstream thumbnails batch returned an empty response' });
           }
           if (contentType.includes('application/json')) {
             return res.send(text);
@@ -447,10 +453,16 @@ app.post('/api/images/edit', (req, res) => {
             body: JSON.stringify(req.body || {})
           });
           const text = await forward.text();
+          const trimmedText = text.trim();
           const contentType = forward.headers.get('content-type') || '';
           res.status(forward.status);
           if (contentType) {
             res.set('content-type', contentType);
+          }
+          if (!trimmedText) {
+            console.warn('Upstream /images/edit returned empty response', { status: forward.status });
+            return res.status(forward.status >= 200 && forward.status < 300 ? 502 : forward.status)
+              .json({ error: 'Upstream image edit returned an empty response' });
           }
           if (contentType.includes('application/json')) {
             return res.send(text);
@@ -599,10 +611,16 @@ app.post('/api/images/fuse', (req, res) => {
             body: JSON.stringify(req.body || {})
           });
           const text = await forward.text();
+          const trimmedText = text.trim();
           const contentType = forward.headers.get('content-type') || '';
           res.status(forward.status);
           if (contentType) {
             res.set('content-type', contentType);
+          }
+          if (!trimmedText) {
+            console.warn('Upstream /images/fuse returned empty response', { status: forward.status });
+            return res.status(forward.status >= 200 && forward.status < 300 ? 502 : forward.status)
+              .json({ error: 'Upstream image fuse returned an empty response' });
           }
           if (contentType.includes('application/json')) {
             return res.send(text);

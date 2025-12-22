@@ -291,9 +291,8 @@ export function ChatMessageList({
                 onSkipLinkedInSelection={onSkipLinkedInSelection}
                 selectedLinkedInProfileId={selectedLinkedInProfileId}
               />
-              {msg.type === 'ai' && (msg.metadata?.clarification?.draft || msg.metadata?.clarification?.fields?.length) && (
+              {msg.type === 'ai' && msg.metadata?.clarification?.fields?.length && (
                 <ClarificationDraftCard
-                  draft={msg.metadata.clarification.draft}
                   fields={msg.metadata.clarification.fields}
                   onConfirm={onClarificationConfirm}
                   onEdit={onClarificationEdit}

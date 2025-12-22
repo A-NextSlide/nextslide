@@ -98,8 +98,7 @@ export interface ClarificationField {
 }
 
 export interface OutlineClarification {
-  message: string;
-  draft_response?: string;
+  message?: string;
   fields?: ClarificationField[];
 }
 
@@ -160,7 +159,6 @@ export interface OutlineData {
     mood?: string;
   };
   message?: string;
-  draft_response?: string;
   clarification?: OutlineClarification;
 }
 
@@ -453,7 +451,9 @@ function isValidOutlineData(parsed: any): boolean {
   const hasUpdatedSlides = parsed.updated_slides && Array.isArray(parsed.updated_slides);
   const hasThemeChanges = parsed.theme_changes && typeof parsed.theme_changes === 'object';
   const isGenerateTheme = parsed.action === 'generate_theme' && parsed.context;
-  const isClarify = parsed.action === 'clarify' && (parsed.message || parsed.draft_response || parsed.clarification);
+  const clarification = parsed.clarification;
+  const hasClarificationFields = clarification?.fields && Array.isArray(clarification.fields) && clarification.fields.length > 0;
+  const isClarify = parsed.action === 'clarify' && (parsed.message || clarification?.message || hasClarificationFields);
 
   return hasSlides || hasUpdatedSlides || hasThemeChanges || isGenerateTheme || isClarify;
 }

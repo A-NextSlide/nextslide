@@ -30,7 +30,6 @@ export interface Message {
   attachments?: AttachmentPreview[];
   metadata?: {
     clarification?: {
-      draft?: string;
       fields?: ClarificationField[];
     };
   };

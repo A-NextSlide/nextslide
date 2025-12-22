@@ -508,19 +508,42 @@ export function useSendMessage({
             const clarificationMessage = toText(outlineData.message) ||
               toText(outlineData.clarification?.message) ||
               'Quick check before I build the deck.';
-            const draftResponse = toText(outlineData.draft_response) ||
-              toText(outlineData.clarification?.draft_response);
-            const clarificationDraft = (draftResponse || clarificationMessage).trim() ||
-              'Provide the missing detail: [[details]].';
+            const clarificationFields = outlineData.clarification?.fields;
+            const hasClarificationFields = Boolean(clarificationFields && clarificationFields.length > 0);
+            const normalizeClarificationText = (value: string) => (
+              value
+                .toLowerCase()
+                .replace(/[*_`]/g, '')
+                .replace(/[?.!]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+            );
+            const shouldUseGenericIntro = (message: string, fields: typeof clarificationFields) => {
+              if (!fields || fields.length === 0) return false;
+              const normalizedMessage = normalizeClarificationText(message);
+              if (!normalizedMessage) return true;
+              return fields.some((field) => {
+                const label = (field.label || field.key || '').toString();
+                const normalizedLabel = normalizeClarificationText(label);
+                if (!normalizedLabel) return false;
+                return normalizedMessage === normalizedLabel ||
+                  normalizedMessage.startsWith(normalizedLabel) ||
+                  normalizedLabel.startsWith(normalizedMessage);
+              });
+            };
+            const clarificationIntro = 'A few quick questions to make sure this is right.';
+            const displayMessage = hasClarificationFields && shouldUseGenericIntro(clarificationMessage, clarificationFields)
+              ? clarificationIntro
+              : clarificationMessage;
             setMessages(prev => prev.map(m =>
               m.id === aiMessageId
                 ? {
                   ...m,
-                  message: clarificationMessage,
+                  message: displayMessage,
                   metadata: {
                     ...m.metadata,
                     isTyping: false,
-                    clarification: { draft: clarificationDraft, fields: outlineData.clarification?.fields }
+                    clarification: hasClarificationFields ? { fields: clarificationFields } : undefined
                   }
                 }
                 : m

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronLeft, ChevronRight, Grid3X3, Maximize2, Minimize2 } from 'lucide-react';
 import { usePresentationStore } from '@/stores/presentationStore';
@@ -64,6 +64,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const slideContainerRef = useRef<HTMLDivElement>(null);
   const presentationRef = useRef<HTMLDivElement>(null);
   const [slideScale, setSlideScale] = useState(0.8); // Start with a conservative scale
+  const lastScaleRef = useRef<number | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [isPortrait, setIsPortrait] = useState(true);
   const isExpanded = isFullscreen || isLandscapeMode;
@@ -207,28 +208,36 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   }, [currentSlideIndex, slides, isPresenting]);
   
   // Calculate slide scale based on container size
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const getScaleTarget = () => (isMobile ? presentationRef.current : slideContainerRef.current);
     const calculateScale = () => {
       if (!isPresenting) return;
 
-      const container = slideContainerRef.current;
+      const container = getScaleTarget();
       if (!container) return;
 
       // Use try-catch for extra safety during orientation changes
       try {
-        const containerWidth = container.clientWidth || window.innerWidth;
-        const containerHeight = container.clientHeight || window.innerHeight;
+        const rect = container.getBoundingClientRect();
+        const containerWidth = rect.width || window.innerWidth;
+        const containerHeight = rect.height || window.innerHeight;
+        const padding = isMobile ? (isExpanded ? 0 : 8) : 0;
+        const availableWidth = Math.max(0, containerWidth - padding * 2);
+        const availableHeight = Math.max(0, containerHeight - padding * 2);
 
         // Skip if container has no dimensions yet
-        if (!containerWidth || !containerHeight || containerWidth === 0 || containerHeight === 0) return;
+        if (!availableWidth || !availableHeight || availableWidth === 0 || availableHeight === 0) return;
 
         // Calculate scale to fit the slide within the container
-        const scaleX = containerWidth / baseSlideWidth;
-        const scaleY = containerHeight / baseSlideHeight;
+        const scaleX = availableWidth / baseSlideWidth;
+        const scaleY = availableHeight / baseSlideHeight;
         const scale = Math.min(scaleX, scaleY);
         if (!Number.isFinite(scale) || scale <= 0) return;
+        const normalizedScale = Math.round(scale * 1000) / 1000;
+        if (lastScaleRef.current === normalizedScale) return;
+        lastScaleRef.current = normalizedScale;
 
-        setSlideScale(scale);
+        setSlideScale(normalizedScale);
       } catch (error) {
         console.warn('[PresentationMode] Scale calculation failed:', error);
       }
@@ -244,11 +253,12 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     
     // Use ResizeObserver for better dimension tracking
     let resizeObserver: ResizeObserver | null = null;
-    if (slideContainerRef.current && 'ResizeObserver' in window) {
+    const resizeTarget = getScaleTarget();
+    if (resizeTarget && 'ResizeObserver' in window) {
       resizeObserver = new ResizeObserver(() => {
         calculateScale();
       });
-      resizeObserver.observe(slideContainerRef.current);
+      resizeObserver.observe(resizeTarget);
     }
     
     window.addEventListener('resize', calculateScale);
@@ -408,21 +418,21 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   }, [isPresenting, showThumbnails, setShowControls, handleExitPresentation, goToNextSlide, goToPrevSlide, isExpanded, toggleFullscreen, safeOrientationUnlock]);
 
   // Defensive: ensure currentSlideIndex is valid
+  if (!isPresenting) return null;
   const validIndex = Math.max(0, Math.min(currentSlideIndex, slides.length - 1));
   const currentSlide = slides[validIndex];
-  const slideContent = useMemo(() => {
-    if (!currentSlide) return null;
-    return renderSlide(currentSlide, validIndex, slideScale, false);
-  }, [currentSlide, renderSlide, slideScale, validIndex]);
-
-  if (!isPresenting) return null;
+  const slideContent = currentSlide
+    ? renderSlide(currentSlide, validIndex, slideScale, false)
+    : null;
   const viewportClamp = isMobile ? 100 : 98;
   const progressTotal = Math.max(1, slides.length);
   const slideRatio = baseSlideWidth / baseSlideHeight;
   const maxWidth = `min(${viewportClamp}vw, calc(${viewportClamp}dvh * ${slideRatio}))`;
   const minHeight = `min(calc(${viewportClamp}vw / ${slideRatio}), ${viewportClamp}dvh)`;
-  const slideViewportStyle = isExpanded && isMobile
-    ? { width: '100%', height: '100%' }
+  const scaledViewportWidth = baseSlideWidth * slideScale;
+  const scaledViewportHeight = baseSlideHeight * slideScale;
+  const slideViewportStyle = isMobile
+    ? { width: `${scaledViewportWidth}px`, height: `${scaledViewportHeight}px` }
     : {
         width: '100%',
         maxWidth,

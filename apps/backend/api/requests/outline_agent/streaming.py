@@ -34,7 +34,9 @@ OUTLINE_AGENT_SYSTEM_PROMPT = (
     "You are a presentation outline agent. Return a single JSON object only. "
     "Always include a top-level action: generate_outline, update_outline, update_theme, update_slides, scrape_media, clarify. "
     "If key details are missing (topic, audience, slide_count, tone/style, slideMode) or the request is high-stakes/educational, "
-    "respond with action=clarify and include message plus draft_response with editable fields wrapped in [[double brackets]]. "
+    "respond with action=clarify and include a short intro message (do not repeat field labels) plus clarification.fields "
+    "(array of {key,label,type,options?,value?}). "
+    "Use label for the question (markdown ok). Use value for a suggested default/prefill that is ready to submit. "
     "Ask for all missing essentials in a single clarify response (avoid multi-step questioning). "
     "When a CURRENT OUTLINE is provided, do not use generate_outline unless the user explicitly asks to regenerate or start over. "
     "Use update_outline for structure/content changes, update_slides for specific slide tweaks, and update_theme for style/brand changes. "
@@ -74,7 +76,7 @@ async def _repair_outline_response(
     repair_system = (
         "Return a single JSON object only. "
         "If details are missing or the response is a question, use action=clarify "
-        "with message and draft_response (use [[...]] for editable fields). "
+        "with a short intro message and clarification.fields (array of {key,label,type,options?,value?}). "
         "Otherwise use action=generate_outline with title, topic, slide_count, detail_level, tone, slides."
     )
     repair_user = (
@@ -860,7 +862,34 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 fallback = {
                     "action": "clarify",
                     "message": fallback_message or "Quick check before I draft the outline.",
-                    "draft_response": "Make it [[10]] slides for [[audience]]. Tone: [[professional]]. Motion: [[interactive/static]].",
+                    "clarification": {
+                        "fields": [
+                            {
+                                "key": "slide_count",
+                                "label": "How many slides should it be?",
+                                "type": "number",
+                                "value": 10,
+                            },
+                            {
+                                "key": "audience",
+                                "label": "Who is the audience?",
+                                "type": "text",
+                            },
+                            {
+                                "key": "tone",
+                                "label": "Preferred tone?",
+                                "type": "text",
+                                "value": "professional",
+                            },
+                            {
+                                "key": "slide_mode",
+                                "label": "Slide mode",
+                                "type": "choice",
+                                "options": ["interactive", "static"],
+                                "value": "interactive",
+                            },
+                        ]
+                    },
                 }
                 yield f"data: {json.dumps({'type': 'outline', 'data': fallback})}\n\n"
             else:

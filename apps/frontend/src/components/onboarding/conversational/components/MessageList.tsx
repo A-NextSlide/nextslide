@@ -73,9 +73,8 @@ const MessageList: React.FC<MessageListProps> = ({
           <div key={message.id}>
             <MessageBubble message={message} index={index} />
 
-            {message.role === 'assistant' && message.metadata?.clarification && (
+            {message.role === 'assistant' && message.metadata?.clarification?.fields?.length && (
               <ClarificationDraftCard
-                draft={message.metadata.clarification.draft}
                 fields={message.metadata.clarification.fields}
                 onConfirm={onClarificationConfirm}
                 onEdit={onClarificationEdit}

@@ -380,9 +380,14 @@ export const useConversationalOnboarding = ({
     if (!needsConfirm) return;
     const candidate = themeState.themeBlock?.branding?.brandDomain ||
       themeState.themeBlock?.branding?.brandDomainCandidates?.[0];
-    const draft = candidate ? `Brand domain: [[${candidate}]].` : 'Brand domain: [[yourdomain.com]].';
+    const fields = [{
+      key: 'brand_domain',
+      label: 'What is the brand domain?',
+      type: 'text',
+      value: candidate || 'yourdomain.com',
+    }];
     chatMessages.addAgentMessage('Confirm the brand domain to fetch the logo and colors.', {
-      metadata: { clarification: { draft } },
+      metadata: { clarification: { fields } },
     });
     brandConfirmationPromptedRef.current = true;
   }, [chatMessages, themeState.themeBlock]);
@@ -730,15 +735,36 @@ export const useConversationalOnboarding = ({
         const clarificationMessage = toText(outlineData.message) ||
           toText(outlineData.clarification?.message) ||
           'Quick check before I build the deck.';
-        const draftResponse = toText(outlineData.draft_response) ||
-          toText(outlineData.clarification?.draft_response);
         const clarificationFields = outlineData.clarification?.fields;
-        const clarificationDraft = (draftResponse || clarificationMessage).trim() ||
-          'Provide the missing detail: [[details]].';
-        const hasClarificationData = Boolean(clarificationDraft || (clarificationFields && clarificationFields.length > 0));
-        chatMessages.addAgentMessage(clarificationMessage, {
-          metadata: hasClarificationData
-            ? { clarification: { draft: clarificationDraft, fields: clarificationFields } }
+        const hasClarificationFields = Boolean(clarificationFields && clarificationFields.length > 0);
+        const normalizeClarificationText = (value: string) => (
+          value
+            .toLowerCase()
+            .replace(/[*_`]/g, '')
+            .replace(/[?.!]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+        );
+        const shouldUseGenericIntro = (message: string, fields: typeof clarificationFields) => {
+          if (!fields || fields.length === 0) return false;
+          const normalizedMessage = normalizeClarificationText(message);
+          if (!normalizedMessage) return true;
+          return fields.some((field) => {
+            const label = (field.label || field.key || '').toString();
+            const normalizedLabel = normalizeClarificationText(label);
+            if (!normalizedLabel) return false;
+            return normalizedMessage === normalizedLabel ||
+              normalizedMessage.startsWith(normalizedLabel) ||
+              normalizedLabel.startsWith(normalizedMessage);
+          });
+        };
+        const clarificationIntro = 'A few quick questions to make sure this is right.';
+        const displayMessage = hasClarificationFields && shouldUseGenericIntro(clarificationMessage, clarificationFields)
+          ? clarificationIntro
+          : clarificationMessage;
+        chatMessages.addAgentMessage(displayMessage, {
+          metadata: hasClarificationFields
+            ? { clarification: { fields: clarificationFields } }
             : undefined,
         });
 
@@ -796,11 +822,14 @@ export const useConversationalOnboarding = ({
         if (needsDomainConfirmation) {
           const candidate = enrichedOutline.stylePreferences?.brandDomain ||
             enrichedOutline.stylePreferences?.brandDomainCandidates?.[0];
-          const draft = candidate
-            ? `Brand domain: [[${candidate}]].`
-            : 'Brand domain: [[yourdomain.com]].';
+          const fields = [{
+            key: 'brand_domain',
+            label: 'What is the brand domain?',
+            type: 'text',
+            value: candidate || 'yourdomain.com',
+          }];
           chatMessages.addAgentMessage('Confirm the brand domain to fetch the logo and colors.', {
-            metadata: { clarification: { draft } },
+            metadata: { clarification: { fields } },
           });
           brandConfirmationPromptedRef.current = true;
         }

@@ -307,6 +307,33 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
+export const StaticActiveSlideProvider = ({
+  slide,
+  children
+}: {
+  slide: SlideData | null;
+  children: ReactNode;
+}) => {
+  const activeComponents = useMemo(() => {
+    return Array.isArray(slide?.components) ? slide!.components : [];
+  }, [slide]);
+
+  const value = useMemo<ActiveSlideContextType>(() => ({
+    activeSlide: slide ?? null,
+    slideId: slide?.id ?? null,
+    activeComponents,
+    updateComponent: () => {},
+    addComponent: () => {},
+    removeComponent: () => {}
+  }), [slide, activeComponents]);
+
+  return (
+    <ActiveSlideContext.Provider value={value}>
+      {children}
+    </ActiveSlideContext.Provider>
+  );
+};
+
 // Custom hook to use the active slide context
 export const useActiveSlide = () => {
   const context = useContext(ActiveSlideContext);
