@@ -44,16 +44,32 @@ let animationFrameId: number | null = null;
 let lastLayoutUpdateAt: number = 0; // Timestamp of the most recent remote layout message
 
 // Function to update component layouts in the DOM
+function getSlideDimensions(element: HTMLElement): { width: number; height: number } {
+  const slideRoot = element.closest('[data-slide-width]') as HTMLElement | null;
+  const rawWidth = slideRoot?.getAttribute('data-slide-width');
+  const rawHeight = slideRoot?.getAttribute('data-slide-height');
+  const width = rawWidth ? Number(rawWidth) : NaN;
+  const height = rawHeight ? Number(rawHeight) : NaN;
+  if (Number.isFinite(width) && Number.isFinite(height) && width > 100 && height > 100) {
+    return { width, height };
+  }
+  return { width: 1920, height: 1080 };
+}
+
 function updateComponentLayoutsInDOM() { // Renamed
   if (typeof window === 'undefined' || !window.__remoteComponentLayouts) return;
 
   const layouts = window.__remoteComponentLayouts; // Renamed
   const now = Date.now();
+  const activeSlideId = (window as any).__activeSlideIdForLayoutSync as string | undefined;
   let hasUpdates = false;
   let anyInteracting = false;
   let interactionEndedFor = new Set<string>(); // Track components that stopped interacting
 
   layouts.forEach((componentData, componentId) => {
+    if (activeSlideId && componentData.slideId && componentData.slideId !== activeSlideId) {
+      return;
+    }
     let componentElement: HTMLElement | null = null;
     componentElement = document.querySelector(`[data-component-id="${componentId}"]`);
     if (!componentElement) componentElement = document.getElementById(componentId);
@@ -62,8 +78,7 @@ function updateComponentLayoutsInDOM() { // Renamed
     if (componentElement instanceof HTMLElement) {
       try {
         const { position, size, rotation } = componentData.layout;
-        const standardWidth = 1920;
-        const standardHeight = 1080;
+        const { width: standardWidth, height: standardHeight } = getSlideDimensions(componentElement);
 
         // Apply position (only if changed to reduce layout thrash)
         if (position) {
@@ -180,6 +195,25 @@ function setupWebSocketMonitoring() { /* ... needs update for new layout message
  */
 export function useComponentPositionSync(enabled = false) { // Consider renaming to useComponentLayoutSync
   const { updateComponent, slideId: activeSlideId } = useActiveSlide();
+
+  useEffect(() => {
+    if (!enabled || !activeSlideId) return;
+    if (typeof window !== 'undefined') {
+      (window as any).__activeSlideIdForLayoutSync = activeSlideId;
+      if ((window as any).__remoteComponentLayouts instanceof Map) {
+        (window as any).__remoteComponentLayouts.forEach((data: any, key: string) => {
+          if (data?.slideId && data.slideId !== activeSlideId) {
+            (window as any).__remoteComponentLayouts.delete(key);
+          }
+        });
+      }
+    }
+    return () => {
+      if (typeof window !== 'undefined' && (window as any).__activeSlideIdForLayoutSync === activeSlideId) {
+        delete (window as any).__activeSlideIdForLayoutSync;
+      }
+    };
+  }, [enabled, activeSlideId]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {

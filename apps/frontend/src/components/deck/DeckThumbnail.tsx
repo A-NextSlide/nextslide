@@ -7,7 +7,15 @@ import MiniSlide from './MiniSlide';
 const DeckThumbnail: React.FC<{ deck: CompleteDeckData }> = React.memo(({ deck }) => {
   // Get the first slide from the deck for the thumbnail
   // Support both old format (deck.slides[0]) and new format (deck.first_slide)
-  const firstSlide = (deck as any).first_slide || (deck.slides && deck.slides.length > 0 ? deck.slides[0] : null);
+  const rawFirstSlide = (deck as any).first_slide || (deck.slides && deck.slides.length > 0 ? deck.slides[0] : null);
+  let firstSlide: any = rawFirstSlide;
+  if (typeof rawFirstSlide === 'string') {
+    try {
+      firstSlide = JSON.parse(rawFirstSlide);
+    } catch {
+      firstSlide = null;
+    }
+  }
   
 
   

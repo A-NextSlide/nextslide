@@ -4,6 +4,8 @@ import type { ComponentInstance } from '@/types/components';
 
 export type SlideSize = { width: number; height: number };
 
+type CoordinateMode = 'absolute' | 'percent';
+
 const isValidSize = (width?: number | null, height?: number | null) => {
   return (
     typeof width === 'number' &&
@@ -15,10 +17,23 @@ const isValidSize = (width?: number | null, height?: number | null) => {
   );
 };
 
-const coerceNumber = (value: any, axisSize?: number): number | null => {
+const toNumber = (value: any): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const cleaned = trimmed.replace(/px$/i, '');
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const coerceNumber = (value: any, axisSize?: number, allowPercentRange: boolean = false): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     if (axisSize && value > 0 && value <= 1) {
       return value * axisSize;
+    }
+    if (axisSize && allowPercentRange && value > 1 && value <= 100) {
+      return (value / 100) * axisSize;
     }
     return value;
   }
@@ -37,6 +52,9 @@ const coerceNumber = (value: any, axisSize?: number): number | null => {
   if (!Number.isFinite(parsed)) return null;
   if (axisSize && parsed > 0 && parsed <= 1) {
     return parsed * axisSize;
+  }
+  if (axisSize && allowPercentRange && parsed > 1 && parsed <= 100) {
+    return (parsed / 100) * axisSize;
   }
   return parsed;
 };
@@ -85,27 +103,79 @@ export const resolveSlideSize = (
   return fallback;
 };
 
-const normalizeComponentGeometry = (component: ComponentInstance, slideSize: SlideSize): ComponentInstance => {
+const detectCoordinateMode = (components: ComponentInstance[]): CoordinateMode => {
+  let sampleCount = 0;
+  let percentLike = 0;
+  let absoluteLike = 0;
+
+  const scanValue = (value: any) => {
+    const numeric = toNumber(value);
+    if (numeric === null) return;
+    sampleCount += 1;
+    if (numeric > 100) {
+      absoluteLike += 1;
+    } else if (numeric > 0) {
+      percentLike += 1;
+    }
+  };
+
+  components.forEach((component) => {
+    const isBackground =
+      component?.type === 'Background' ||
+      (component?.id && component.id.toLowerCase().includes('background'));
+    if (isBackground) {
+      return;
+    }
+    const props: any = component?.props || {};
+    const pos = props.position || (component as any).position;
+    const size = props.size || (component as any).size;
+
+    scanValue(pos?.x);
+    scanValue(pos?.y);
+    scanValue(props.x);
+    scanValue(props.y);
+    scanValue(size?.width);
+    scanValue(size?.height);
+    scanValue(props.width);
+    scanValue(props.height);
+    scanValue((component as any).width);
+    scanValue((component as any).height);
+  });
+
+  if (!sampleCount) return 'absolute';
+  if (absoluteLike > 0) return 'absolute';
+  if (percentLike >= 4 && percentLike / sampleCount >= 0.7) {
+    return 'percent';
+  }
+  return 'absolute';
+};
+
+const normalizeComponentGeometry = (
+  component: ComponentInstance,
+  slideSize: SlideSize,
+  coordinateMode: CoordinateMode
+): ComponentInstance => {
   const props: any = component?.props && typeof component.props === 'object' ? { ...component.props } : {};
+  const allowPercentRange = coordinateMode === 'percent';
 
   const rawPosition = props.position || (component as any).position;
-  const posX = coerceNumber(rawPosition?.x, slideSize.width)
-    ?? coerceNumber(props.x, slideSize.width)
-    ?? coerceNumber((component as any).x, slideSize.width);
-  const posY = coerceNumber(rawPosition?.y, slideSize.height)
-    ?? coerceNumber(props.y, slideSize.height)
-    ?? coerceNumber((component as any).y, slideSize.height);
+  const posX = coerceNumber(rawPosition?.x, slideSize.width, allowPercentRange)
+    ?? coerceNumber(props.x, slideSize.width, allowPercentRange)
+    ?? coerceNumber((component as any).x, slideSize.width, allowPercentRange);
+  const posY = coerceNumber(rawPosition?.y, slideSize.height, allowPercentRange)
+    ?? coerceNumber(props.y, slideSize.height, allowPercentRange)
+    ?? coerceNumber((component as any).y, slideSize.height, allowPercentRange);
   if (posX !== null || posY !== null) {
     props.position = { x: posX ?? 0, y: posY ?? 0 };
   }
 
   const rawSize = props.size || (component as any).size;
-  const width = coerceNumber(props.width, slideSize.width)
-    ?? coerceNumber(rawSize?.width, slideSize.width)
-    ?? coerceNumber((component as any).width, slideSize.width);
-  const height = coerceNumber(props.height, slideSize.height)
-    ?? coerceNumber(rawSize?.height, slideSize.height)
-    ?? coerceNumber((component as any).height, slideSize.height);
+  const width = coerceNumber(props.width, slideSize.width, allowPercentRange)
+    ?? coerceNumber(rawSize?.width, slideSize.width, allowPercentRange)
+    ?? coerceNumber((component as any).width, slideSize.width, allowPercentRange);
+  const height = coerceNumber(props.height, slideSize.height, allowPercentRange)
+    ?? coerceNumber(rawSize?.height, slideSize.height, allowPercentRange)
+    ?? coerceNumber((component as any).height, slideSize.height, allowPercentRange);
   if (width !== null) props.width = width;
   if (height !== null) props.height = height;
   if (!props.size && width !== null && height !== null) {
@@ -210,10 +280,23 @@ const normalizeComponentGeometry = (component: ComponentInstance, slideSize: Sli
   return normalizedComponent;
 };
 
+const parseSlideInput = (slide: SlideData | string | null | undefined): SlideData | null => {
+  if (!slide) return null;
+  if (typeof slide === 'string') {
+    try {
+      return JSON.parse(slide);
+    } catch {
+      return null;
+    }
+  }
+  return slide as SlideData;
+};
+
 export const normalizeSlideForRender = (
-  slide: SlideData | null | undefined,
+  slideInput: SlideData | string | null | undefined,
   fallbackSize?: SlideSize
 ): { slide: SlideData; slideSize: SlideSize } | null => {
+  const slide = parseSlideInput(slideInput);
   if (!slide) return null;
   const slideSize = resolveSlideSize(slide, fallbackSize);
   let rawComponents: any = (slide as any).components;
@@ -224,9 +307,11 @@ export const normalizeSlideForRender = (
       rawComponents = [];
     }
   }
-  const components = Array.isArray(rawComponents)
-    ? rawComponents.map((component) => normalizeComponentGeometry(component as ComponentInstance, slideSize))
-    : [];
+  const componentArray = Array.isArray(rawComponents) ? rawComponents : [];
+  const coordinateMode = detectCoordinateMode(componentArray);
+  const components = componentArray.map((component) =>
+    normalizeComponentGeometry(component as ComponentInstance, slideSize, coordinateMode)
+  );
 
   return {
     slide: {

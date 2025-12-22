@@ -31,13 +31,28 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: fixedWidth || 160, height: fixedHeight || 90 });
   const [isReady, setIsReady] = useState(!responsive); // If not responsive, ready immediately
-  const normalizedSlide = useMemo(() => {
-    const normalized = normalizeSlideForRender(slide, slideSize);
-    return normalized?.slide || slide;
+  const normalizedResult = useMemo(() => {
+    return normalizeSlideForRender(slide, slideSize);
   }, [slide, slideSize]);
+  const normalizedSlide = useMemo(() => {
+    if (normalizedResult?.slide) return normalizedResult.slide;
+    if (typeof slide === 'string') return null;
+    return slide;
+  }, [normalizedResult, slide]);
   const resolvedSlideSize = useMemo(() => {
+    if (normalizedResult?.slideSize) return normalizedResult.slideSize;
     return resolveSlideSize(normalizedSlide, slideSize);
-  }, [normalizedSlide, slideSize]);
+  }, [normalizedResult, normalizedSlide, slideSize]);
+  const safeSlide = useMemo(() => {
+    if (normalizedSlide) return normalizedSlide;
+    return {
+      id: 'thumbnail-fallback',
+      deckId: '',
+      order: 0,
+      status: 'completed',
+      components: []
+    } as SlideData;
+  }, [normalizedSlide]);
   const baseSlideWidth = resolvedSlideSize?.width || DEFAULT_SLIDE_WIDTH;
   const baseSlideHeight = resolvedSlideSize?.height || DEFAULT_SLIDE_HEIGHT;
   
@@ -76,6 +91,11 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     
     // Initial calculation
     updateDimensions();
+
+    if (typeof ResizeObserver === 'undefined') {
+      setIsReady(true);
+      return;
+    }
     
     // Set up ResizeObserver
     const resizeObserver = new ResizeObserver(updateDimensions);
@@ -178,7 +198,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
                      <ActiveSlideProvider>
                        <div className="slide-canvas" style={{ background: 'transparent' }}>
                          <Slide 
-                           slide={normalizedSlide} 
+                           slide={safeSlide} 
                            isActive={true}
                            isEditing={false}
                            isThumbnail={true}
@@ -235,7 +255,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
             >
             <ActiveSlideProvider>
               <Slide 
-                slide={normalizedSlide} 
+                slide={safeSlide} 
                 isActive={true}
                 isEditing={false}
                 isThumbnail={true}

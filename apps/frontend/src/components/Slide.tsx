@@ -14,6 +14,7 @@ import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 import GroupEditIndicator from '@/components/GroupEditIndicator';
 import { useDeckStore } from '@/stores/deckStore';
 import { isBackgroundOnlySelection } from '@/utils/selectionUtils';
+import { usePresentationStore } from '@/stores/presentationStore';
 
 interface SlideProps {
   slide: SlideData;
@@ -50,10 +51,11 @@ const SlideContent: React.FC<SlideProps> = ({
   const [isVisible, setIsVisible] = useState(false);
   const isDraggingRef = useRef(false);
   const [positionUpdateCounter, setPositionUpdateCounter] = useState(0);
+  const isPresenting = usePresentationStore(state => state.isPresenting);
   
   // Enable remote layout sync only when viewing (not editing) and not a thumbnail
   // This avoids background DOM writes fighting with local interactions while editing
-  useComponentPositionSync(isActive && !isThumbnail && !isEditing);
+  useComponentPositionSync(isActive && !isThumbnail && !isEditing && !isPresenting);
   
   // Track real-time component position updates
   useEffect(() => {
