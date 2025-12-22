@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronLeft, ChevronRight, Grid3X3, Maximize2, Minimize2 } from 'lucide-react';
 import { usePresentationStore } from '@/stores/presentationStore';
@@ -412,6 +412,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   // Defensive: ensure currentSlideIndex is valid
   const validIndex = Math.max(0, Math.min(currentSlideIndex, slides.length - 1));
   const currentSlide = slides[validIndex];
+  const slideContent = useMemo(() => {
+    if (!currentSlide) return null;
+    return renderSlide(currentSlide, validIndex, slideScale, false);
+  }, [currentSlide, renderSlide, slideScale, validIndex]);
   const viewportClamp = isMobile ? 100 : 98;
   const progressTotal = Math.max(1, slides.length);
   const slideRatio = baseSlideWidth / baseSlideHeight;
@@ -463,7 +467,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
             >
               {currentSlide && (
                 <div key={`slide-${currentSlide.id || validIndex}`} className="w-full h-full relative">
-                  {renderSlide(currentSlide, validIndex, slideScale, false)}
+                  {slideContent}
                   {/* Add watermark for view-only presentations */}
                   {isViewOnly && (
                     <Watermark 

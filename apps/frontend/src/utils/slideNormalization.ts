@@ -77,7 +77,12 @@ const percentFriendlyTypes = new Set([
   'ReactBits',
   'Shape',
   'ShapeWithText',
-  'Group'
+  'Group',
+  'Icon',
+  'Lines',
+  'Line',
+  'line',
+  'WavyLines'
 ]);
 
 const buildComponentPercentStrategies = (
@@ -272,6 +277,59 @@ const detectCoordinateMode = (components: ComponentInstance[]): CoordinateMode =
   return 'absolute';
 };
 
+const shouldForcePercentMode = (components: ComponentInstance[]) => {
+  let maxPosition = 0;
+  let maxSize = 0;
+  let numericCount = 0;
+  let percentHintCount = 0;
+
+  const trackValue = (value: any, isSize: boolean) => {
+    if (hasPercentString(value)) {
+      percentHintCount += 1;
+    }
+    const numeric = toNumber(value);
+    if (numeric === null) return;
+    numericCount += 1;
+    if (isSize) {
+      if (numeric > maxSize) maxSize = numeric;
+    } else {
+      if (numeric > maxPosition) maxPosition = numeric;
+    }
+  };
+
+  components.forEach((component) => {
+    const props: any = component?.props || {};
+    const pos = props.position || (component as any).position;
+    const size = props.size || (component as any).size;
+
+    trackValue(pos?.x, false);
+    trackValue(pos?.y, false);
+    trackValue(props.x, false);
+    trackValue(props.y, false);
+    trackValue((component as any).x, false);
+    trackValue((component as any).y, false);
+
+    trackValue(props.width, true);
+    trackValue(props.height, true);
+    trackValue(size?.width, true);
+    trackValue(size?.height, true);
+    trackValue((component as any).width, true);
+    trackValue((component as any).height, true);
+  });
+
+  if (numericCount < 4) return false;
+
+  const likelyPercent = maxPosition > 0 && maxPosition <= 120 && maxSize > 0 && maxSize <= 120;
+  const hasPercentHints = percentHintCount > 0;
+  const strongSignal = hasPercentHints || maxPosition >= 90 || maxSize >= 90;
+
+  if (hasPercentHints && maxPosition <= 200 && maxSize <= 200) {
+    return true;
+  }
+
+  return likelyPercent && strongSignal;
+};
+
 const normalizeComponentGeometry = (
   component: ComponentInstance,
   slideSize: SlideSize,
@@ -279,10 +337,41 @@ const normalizeComponentGeometry = (
   percentStrategy?: ComponentPercentStrategy
 ): ComponentInstance => {
   const props: any = component?.props && typeof component.props === 'object' ? { ...component.props } : {};
-  const allowPercentRangeForPosition = percentStrategy?.position ?? (coordinateMode === 'percent');
-  const allowPercentRangeForSize = percentStrategy?.size ?? (coordinateMode === 'percent');
+  const isBackground =
+    component?.type === 'Background' ||
+    (component?.id && component.id.toLowerCase().includes('background'));
+  let allowPercentRangeForPosition = percentStrategy?.position ?? (coordinateMode === 'percent');
+  let allowPercentRangeForSize = percentStrategy?.size ?? (coordinateMode === 'percent');
 
   const rawPosition = props.position || (component as any).position;
+  const rawSize = props.size || (component as any).size;
+
+  if (isBackground) {
+    const backgroundPositionInfo = analyzeValues([
+      rawPosition?.x,
+      rawPosition?.y,
+      props.x,
+      props.y,
+      (component as any).x,
+      (component as any).y
+    ]);
+    const backgroundSizeInfo = analyzeValues([
+      props.width,
+      props.height,
+      rawSize?.width,
+      rawSize?.height,
+      (component as any).width,
+      (component as any).height
+    ]);
+
+    if (backgroundPositionInfo.hasPercentString || backgroundPositionInfo.allPercentRange) {
+      allowPercentRangeForPosition = true;
+    }
+    if (backgroundSizeInfo.hasPercentString || backgroundSizeInfo.allPercentRange) {
+      allowPercentRangeForSize = true;
+    }
+  }
+
   const posX = coerceNumber(rawPosition?.x, slideSize.width, allowPercentRangeForPosition)
     ?? coerceNumber(props.x, slideSize.width, allowPercentRangeForPosition)
     ?? coerceNumber((component as any).x, slideSize.width, allowPercentRangeForPosition);
@@ -293,7 +382,6 @@ const normalizeComponentGeometry = (
     props.position = { x: posX ?? 0, y: posY ?? 0 };
   }
 
-  const rawSize = props.size || (component as any).size;
   const width = coerceNumber(props.width, slideSize.width, allowPercentRangeForSize)
     ?? coerceNumber(rawSize?.width, slideSize.width, allowPercentRangeForSize)
     ?? coerceNumber((component as any).width, slideSize.width, allowPercentRangeForSize);
@@ -306,7 +394,7 @@ const normalizeComponentGeometry = (
     props.size = { width, height };
   }
 
-  if (component?.type === 'Background') {
+  if (isBackground) {
     try {
       const styles = (component as any).styles || (component as any).style || {};
       const nestedBg = props.background || {};
@@ -432,7 +520,10 @@ export const normalizeSlideForRender = (
     }
   }
   const componentArray = Array.isArray(rawComponents) ? rawComponents : [];
-  const coordinateMode = detectCoordinateMode(componentArray);
+  let coordinateMode = detectCoordinateMode(componentArray);
+  if (coordinateMode === 'absolute' && shouldForcePercentMode(componentArray as ComponentInstance[])) {
+    coordinateMode = 'percent';
+  }
   const percentStrategies = buildComponentPercentStrategies(componentArray as ComponentInstance[]);
   const components = componentArray.map((component, index) => {
     const key = (component as any)?.id || `idx-${index}`;
