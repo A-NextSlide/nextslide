@@ -4,6 +4,11 @@ import type { ComponentInstance } from '@/types/components';
 
 export type SlideSize = { width: number; height: number };
 
+type ComponentPercentStrategy = {
+  position: boolean;
+  size: boolean;
+};
+
 type CoordinateMode = 'absolute' | 'percent';
 
 const isValidSize = (width?: number | null, height?: number | null) => {
@@ -22,9 +27,126 @@ const toNumber = (value: any): number | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  const cleaned = trimmed.replace(/px$/i, '');
+  const cleaned = trimmed.replace(/px$/i, '').replace(/%$/i, '');
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const hasPercentString = (value: any): boolean => {
+  return typeof value === 'string' && value.trim().endsWith('%');
+};
+
+type ValueAnalysis = {
+  hasValues: boolean;
+  hasPercentString: boolean;
+  allPercentRange: boolean;
+};
+
+const analyzeValues = (values: any[]): ValueAnalysis => {
+  const hasPercent = values.some(hasPercentString);
+  const numericValues = values
+    .map(toNumber)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+
+  const hasValues = hasPercent || numericValues.length > 0;
+  if (!hasValues) {
+    return { hasValues: false, hasPercentString: false, allPercentRange: false };
+  }
+
+  const hasLarge = numericValues.some((value) => value > 100);
+  const hasFraction = numericValues.some((value) => value > 0 && value <= 1);
+  const hasPercentRange = numericValues.some((value) => value > 1 && value <= 100);
+  const allPercentRange = !hasLarge && (hasFraction || hasPercentRange || hasPercent);
+
+  return {
+    hasValues,
+    hasPercentString: hasPercent,
+    allPercentRange
+  };
+};
+
+const percentFriendlyTypes = new Set([
+  'TiptapTextBlock',
+  'Image',
+  'Video',
+  'Chart',
+  'Table',
+  'CustomComponent',
+  'Diagram',
+  'Math',
+  'ReactBits',
+  'Shape',
+  'ShapeWithText',
+  'Group'
+]);
+
+const buildComponentPercentStrategies = (
+  components: ComponentInstance[]
+): Map<string, ComponentPercentStrategy> => {
+  const perComponent = new Map<string, { position: ValueAnalysis; size: ValueAnalysis; type: string }>();
+  let componentCount = 0;
+  let percentComponentCount = 0;
+
+  components.forEach((component, index) => {
+    if (!component) return;
+    const isBackground =
+      component?.type === 'Background' ||
+      (component?.id && component.id.toLowerCase().includes('background'));
+    if (isBackground) return;
+
+    const props: any = component?.props || {};
+    const pos = props.position || (component as any).position;
+    const size = props.size || (component as any).size;
+
+    const positionValues = [
+      pos?.x,
+      pos?.y,
+      props.x,
+      props.y,
+      (component as any).x,
+      (component as any).y
+    ];
+    const sizeValues = [
+      props.width,
+      props.height,
+      size?.width,
+      size?.height,
+      (component as any).width,
+      (component as any).height
+    ];
+
+    const positionInfo = analyzeValues(positionValues);
+    const sizeInfo = analyzeValues(sizeValues);
+    const hasValues = positionInfo.hasValues || sizeInfo.hasValues;
+
+    if (hasValues) componentCount += 1;
+    if (positionInfo.allPercentRange || sizeInfo.allPercentRange) {
+      percentComponentCount += 1;
+    }
+
+    const key = component.id || `idx-${index}`;
+    perComponent.set(key, { position: positionInfo, size: sizeInfo, type: component.type });
+  });
+
+  const slidePercentLikely =
+    componentCount > 1 && percentComponentCount / componentCount >= 0.6;
+
+  const strategies = new Map<string, ComponentPercentStrategy>();
+
+  perComponent.forEach((info, key) => {
+    const allowByType = percentFriendlyTypes.has(info.type);
+    const allowSingle = componentCount === 1 && allowByType;
+    const allowSlide = slidePercentLikely;
+
+    const positionPercent =
+      info.position.allPercentRange && (allowSlide || allowByType || allowSingle);
+    const sizePercent =
+      info.size.allPercentRange && (allowSlide || allowByType || allowSingle);
+
+    strategies.set(key, { position: positionPercent, size: sizePercent });
+  });
+
+  return strategies;
 };
 
 const coerceNumber = (value: any, axisSize?: number, allowPercentRange: boolean = false): number | null => {
@@ -153,29 +275,31 @@ const detectCoordinateMode = (components: ComponentInstance[]): CoordinateMode =
 const normalizeComponentGeometry = (
   component: ComponentInstance,
   slideSize: SlideSize,
-  coordinateMode: CoordinateMode
+  coordinateMode: CoordinateMode,
+  percentStrategy?: ComponentPercentStrategy
 ): ComponentInstance => {
   const props: any = component?.props && typeof component.props === 'object' ? { ...component.props } : {};
-  const allowPercentRange = coordinateMode === 'percent';
+  const allowPercentRangeForPosition = percentStrategy?.position ?? (coordinateMode === 'percent');
+  const allowPercentRangeForSize = percentStrategy?.size ?? (coordinateMode === 'percent');
 
   const rawPosition = props.position || (component as any).position;
-  const posX = coerceNumber(rawPosition?.x, slideSize.width, allowPercentRange)
-    ?? coerceNumber(props.x, slideSize.width, allowPercentRange)
-    ?? coerceNumber((component as any).x, slideSize.width, allowPercentRange);
-  const posY = coerceNumber(rawPosition?.y, slideSize.height, allowPercentRange)
-    ?? coerceNumber(props.y, slideSize.height, allowPercentRange)
-    ?? coerceNumber((component as any).y, slideSize.height, allowPercentRange);
+  const posX = coerceNumber(rawPosition?.x, slideSize.width, allowPercentRangeForPosition)
+    ?? coerceNumber(props.x, slideSize.width, allowPercentRangeForPosition)
+    ?? coerceNumber((component as any).x, slideSize.width, allowPercentRangeForPosition);
+  const posY = coerceNumber(rawPosition?.y, slideSize.height, allowPercentRangeForPosition)
+    ?? coerceNumber(props.y, slideSize.height, allowPercentRangeForPosition)
+    ?? coerceNumber((component as any).y, slideSize.height, allowPercentRangeForPosition);
   if (posX !== null || posY !== null) {
     props.position = { x: posX ?? 0, y: posY ?? 0 };
   }
 
   const rawSize = props.size || (component as any).size;
-  const width = coerceNumber(props.width, slideSize.width, allowPercentRange)
-    ?? coerceNumber(rawSize?.width, slideSize.width, allowPercentRange)
-    ?? coerceNumber((component as any).width, slideSize.width, allowPercentRange);
-  const height = coerceNumber(props.height, slideSize.height, allowPercentRange)
-    ?? coerceNumber(rawSize?.height, slideSize.height, allowPercentRange)
-    ?? coerceNumber((component as any).height, slideSize.height, allowPercentRange);
+  const width = coerceNumber(props.width, slideSize.width, allowPercentRangeForSize)
+    ?? coerceNumber(rawSize?.width, slideSize.width, allowPercentRangeForSize)
+    ?? coerceNumber((component as any).width, slideSize.width, allowPercentRangeForSize);
+  const height = coerceNumber(props.height, slideSize.height, allowPercentRangeForSize)
+    ?? coerceNumber(rawSize?.height, slideSize.height, allowPercentRangeForSize)
+    ?? coerceNumber((component as any).height, slideSize.height, allowPercentRangeForSize);
   if (width !== null) props.width = width;
   if (height !== null) props.height = height;
   if (!props.size && width !== null && height !== null) {
@@ -309,9 +433,17 @@ export const normalizeSlideForRender = (
   }
   const componentArray = Array.isArray(rawComponents) ? rawComponents : [];
   const coordinateMode = detectCoordinateMode(componentArray);
-  const components = componentArray.map((component) =>
-    normalizeComponentGeometry(component as ComponentInstance, slideSize, coordinateMode)
-  );
+  const percentStrategies = buildComponentPercentStrategies(componentArray as ComponentInstance[]);
+  const components = componentArray.map((component, index) => {
+    const key = (component as any)?.id || `idx-${index}`;
+    const strategy = percentStrategies.get(key);
+    return normalizeComponentGeometry(
+      component as ComponentInstance,
+      slideSize,
+      coordinateMode,
+      strategy
+    );
+  });
 
   return {
     slide: {

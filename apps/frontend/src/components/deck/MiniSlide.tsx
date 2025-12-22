@@ -161,7 +161,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       <div 
         ref={containerRef}
         className={cn(
-          "relative overflow-hidden rounded cursor-pointer transition-all w-full h-full",
+          "relative overflow-hidden rounded cursor-pointer transition-all w-full h-full slide-thumbnail",
           "hover:ring-2 hover:ring-primary/50",
           className
         )}
@@ -226,7 +226,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   return (
     <div 
       className={cn(
-        "relative overflow-hidden rounded cursor-pointer transition-all",
+        "relative overflow-hidden rounded cursor-pointer transition-all slide-thumbnail",
         "hover:ring-2 hover:ring-primary/50",
         className
       )}
