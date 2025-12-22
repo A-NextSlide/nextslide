@@ -15,6 +15,7 @@ interface PresentationModeProps {
   renderSlide: (slide: SlideData, index: number, scale?: number, isThumbnail?: boolean) => React.ReactNode;
   isViewOnly?: boolean;
   alwaysShowControls?: boolean;
+  slideSize?: { width: number; height: number };
 }
 
 const PresentationMode: React.FC<PresentationModeProps> = ({
@@ -22,7 +23,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   currentSlideIndex,
   renderSlide,
   isViewOnly = false,
-  alwaysShowControls = false
+  alwaysShowControls = false,
+  slideSize
 }) => {
   const {
     isPresenting,
@@ -66,10 +68,11 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const [isPortrait, setIsPortrait] = useState(true);
   const isExpanded = isFullscreen || isLandscapeMode;
   const shouldRotate = isExpanded && isMobile && isPortrait;
-  const baseSlideWidth = shouldRotate ? DEFAULT_SLIDE_HEIGHT : DEFAULT_SLIDE_WIDTH;
-  const baseSlideHeight = shouldRotate ? DEFAULT_SLIDE_WIDTH : DEFAULT_SLIDE_HEIGHT;
+  const baseSlideSize = slideSize || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
+  const baseSlideWidth = shouldRotate ? baseSlideSize.height : baseSlideSize.width;
+  const baseSlideHeight = shouldRotate ? baseSlideSize.width : baseSlideSize.height;
   const thumbnailHeight = isMobile ? 96 : 120;
-  const thumbnailWidth = Math.round(thumbnailHeight * (DEFAULT_SLIDE_WIDTH / DEFAULT_SLIDE_HEIGHT));
+  const thumbnailWidth = Math.round(thumbnailHeight * (baseSlideSize.width / baseSlideSize.height));
 
   // Detect mobile device - improved detection for tablets and touch devices
   useEffect(() => {
@@ -258,7 +261,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       }
       window.removeEventListener('resize', calculateScale);
     };
-  }, [isPresenting, isFullscreen, isMobile, isExpanded, shouldRotate]);
+  }, [isPresenting, isFullscreen, isMobile, isExpanded, shouldRotate, baseSlideWidth, baseSlideHeight]);
   
   // Scroll current slide into view when thumbnails open
   useEffect(() => {
@@ -423,8 +426,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
         minHeight
       };
   const slideFrameStyle = {
-    width: `${DEFAULT_SLIDE_WIDTH * slideScale}px`,
-    height: `${DEFAULT_SLIDE_HEIGHT * slideScale}px`
+    width: `${baseSlideSize.width * slideScale}px`,
+    height: `${baseSlideSize.height * slideScale}px`
   };
   const slideWrapperPadding = isExpanded && isMobile ? "p-0" : (isMobile ? "p-2" : "p-4");
 
@@ -712,6 +715,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                             height={thumbnailHeight}
                             responsive={false}
                             className="pointer-events-none rounded-none hover:ring-0"
+                            slideSize={baseSlideSize}
                           />
                         </div>
 

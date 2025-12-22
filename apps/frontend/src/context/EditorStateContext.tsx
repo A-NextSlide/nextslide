@@ -39,6 +39,7 @@ interface EditorStateProviderProps {
   onSyncUpdate?: (isSyncing: boolean, lastSyncTime: Date | null) => void;
   initialEditingState?: boolean;
   onEditingChange?: (isEditing: boolean) => void;
+  slideSizeOverride?: { width: number; height: number };
 }
 
 export const EditorStateProvider = ({
@@ -46,7 +47,8 @@ export const EditorStateProvider = ({
   syncConfig = { enabled: false, useSupabase: true },
   onSyncUpdate,
   initialEditingState = false,
-  onEditingChange
+  onEditingChange,
+  slideSizeOverride
 }: EditorStateProviderProps) => {
   const [isEditing, setIsEditingState] = useState<boolean>(initialEditingState);
   const [slideSize, setSlideSize] = useState<{ width: number; height: number }>({
@@ -65,9 +67,15 @@ export const EditorStateProvider = ({
   
   // Get deck data to determine slide size
   const deckData = useDeckStore(state => state.deckData);
+  const overrideWidth = slideSizeOverride?.width;
+  const overrideHeight = slideSizeOverride?.height;
   
   // Update slide size when deck data changes
   useEffect(() => {
+    if (overrideWidth && overrideHeight) {
+      setSlideSize({ width: overrideWidth, height: overrideHeight });
+      return;
+    }
     if (deckData.size) {
       setSlideSize(deckData.size);
     } else {
@@ -76,7 +84,7 @@ export const EditorStateProvider = ({
         height: DEFAULT_SLIDE_HEIGHT
       });
     }
-  }, [deckData.size]);
+  }, [deckData.size, overrideWidth, overrideHeight]);
   
   // Get deck data to detect transitions
   const slides = useDeckStore(state => state.deckData.slides);

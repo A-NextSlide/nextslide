@@ -119,6 +119,10 @@ const SharedDeckView: React.FC = () => {
   const [canEdit, setCanEdit] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const isMobileView = useIsMobile();
+  const deckSlideSize = React.useMemo(() => ({
+    width: deck?.size?.width || DEFAULT_SLIDE_WIDTH,
+    height: deck?.size?.height || DEFAULT_SLIDE_HEIGHT
+  }), [deck?.size?.width, deck?.size?.height]);
 
   // Email gate state
   const [requiresEmail, setRequiresEmail] = useState(false);
@@ -555,6 +559,8 @@ const SharedDeckView: React.FC = () => {
     const fallbackBackground = getSlideBackground(slide);
     const components = Array.isArray(slide.components) ? slide.components : [];
     const useLiteRenderer = isMobileView && !canEdit;
+    const baseSlideWidth = deckSlideSize.width;
+    const baseSlideHeight = deckSlideSize.height;
 
     // For thumbnails, use a much simpler rendering approach to avoid crashes on mobile
     if (isThumbnail) {
@@ -591,8 +597,10 @@ const SharedDeckView: React.FC = () => {
           <div
             className="absolute top-0 left-0 origin-top-left slide-container"
             style={{
-              width: `${DEFAULT_SLIDE_WIDTH}px`,
-              height: `${DEFAULT_SLIDE_HEIGHT}px`,
+              width: `${baseSlideWidth}px`,
+              height: `${baseSlideHeight}px`,
+              maxWidth: `${baseSlideWidth}px`,
+              maxHeight: `${baseSlideHeight}px`,
               transform: `scale(${scale})`,
               transformOrigin: 'top left',
               // Use will-change for better GPU compositing on mobile
@@ -600,8 +608,8 @@ const SharedDeckView: React.FC = () => {
               ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
             }}
             data-slide-id={slide.id}
-            data-slide-width={DEFAULT_SLIDE_WIDTH}
-            data-slide-height={DEFAULT_SLIDE_HEIGHT}
+            data-slide-width={baseSlideWidth}
+            data-slide-height={baseSlideHeight}
           >
             {/* Render components - providers are at the top level now */}
             {/* isEditing and slideId come from context (EditorStateProvider/ActiveSlideProvider) */}
@@ -637,7 +645,7 @@ const SharedDeckView: React.FC = () => {
         </div>
       </SlideErrorBoundary>
     );
-  }, [canEdit, isMobileView]);
+  }, [canEdit, deckSlideSize.height, deckSlideSize.width, isMobileView]);
 
   // Debug: Log render state
   console.log('[SharedDeckView] Rendering...', {
@@ -847,13 +855,14 @@ const SharedDeckView: React.FC = () => {
         initialSlideIndex={0}
         onSlideChange={(index) => setCurrentSlideIndex(index)}
       >
-        <EditorStateProvider initialEditingState={false}>
+        <EditorStateProvider initialEditingState={false} slideSizeOverride={deckSlideSize}>
           <ActiveSlideProvider>
             <PresentationMode
               slides={deck.slides}
               currentSlideIndex={currentSlideIndex}
               renderSlide={renderSlide}
               isViewOnly={!canEdit}
+              slideSize={deckSlideSize}
             />
           </ActiveSlideProvider>
         </EditorStateProvider>

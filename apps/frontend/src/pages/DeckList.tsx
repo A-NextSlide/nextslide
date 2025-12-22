@@ -119,7 +119,7 @@ const DeckList: React.FC = () => {
   const outlineThemeRequestsRef = useRef<Set<string>>(new Set());
   const { isAuthenticated, refreshAdminStatus } = useAuth();
   const isMobileView = useIsMobile();
-  const heroTextareaBaseHeight = isMobileView ? 44 : 48;
+  const heroTextareaBaseHeight = isMobileView ? 40 : 48;
   const hasCalledAdminCheckRef = useRef(false);
 
   // Get deck management state and functions first, before using isLoading
@@ -414,17 +414,23 @@ const DeckList: React.FC = () => {
   // Hero input state
   const [detailLevel, setDetailLevel] = useState<'quick' | 'standard' | 'detailed'>('quick');
   const [slideCount, setSlideCount] = useState<number | undefined>(undefined);
+  const typewriterPhrases = useMemo(() => (
+    isMobileView
+      ? ['a pitch deck', 'a lecture', 'a growth plan', 'a marketing proposal']
+      : [
+        'a pitch deck for my startup',
+        'a lecture on history',
+        'a strategy for world domi...\b\b\b\b\b\b\b\bgrowth',
+        'a marketing proposal'
+      ]
+  ), [isMobileView]);
   const typewriterText = useTypewriter({
-    phrases: [
-      'a pitch deck for my startup',
-      'a lecture on history',
-      'a strategy for world domi...\b\b\b\b\b\b\b\bgrowth',
-      'a marketing proposal'
-    ],
+    phrases: typewriterPhrases,
     typingSpeed: 50,
     deletingSpeed: 30,
     pauseDuration: 2000
   });
+  const heroPlaceholderPrefix = isMobileView ? 'Create' : 'I want to create';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const heroTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [isLinkPopoverOpen, setIsLinkPopoverOpen] = useState(false);
@@ -1214,6 +1220,32 @@ const DeckList: React.FC = () => {
       }
     };
   }, []); // Empty dependency array - only run on mount
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    if (isMobileView) {
+      document.documentElement.style.position = 'fixed';
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.overflow = 'hidden';
+      document.body.style.width = '100%';
+    } else {
+      document.documentElement.style.position = '';
+      document.documentElement.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.overflow = '';
+      document.body.style.width = '';
+    }
+
+    return () => {
+      document.documentElement.style.position = '';
+      document.documentElement.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.overflow = '';
+      document.body.style.width = '';
+    };
+  }, [isMobileView]);
 
   // Show appearance onboarding only on first visit to the app page
   useEffect(() => {
@@ -2280,7 +2312,7 @@ const DeckList: React.FC = () => {
                   className={cn(
                     "relative font-sans text-slate-900 dark:text-zinc-100 selection:bg-orange-100 dark:selection:bg-orange-900/30 selection:text-orange-900 dark:selection:text-orange-300",
                     isMobileView
-                      ? "w-full min-h-full flex flex-col overflow-y-auto"
+                      ? "w-full h-full flex flex-col overflow-hidden"
                       : "w-full h-full flex overflow-hidden"
                   )}
                 >
@@ -2291,29 +2323,35 @@ const DeckList: React.FC = () => {
                   <div
                     className={cn(
                       "relative z-10 flex flex-col min-w-0",
-                      isMobileView ? "w-full" : "h-full overflow-y-auto flex-1"
+                      isMobileView ? "w-full flex-none" : "h-full overflow-y-auto flex-1"
                     )}
                   >
                     <div className={cn("flex flex-col", isMobileView ? "min-h-0" : "min-h-full")}>
                       {/* Header Removed (Duplicate) */}
 
                       {/* Hero Content - Centered Vertically */}
-                      <div className="flex-1 flex flex-col justify-center items-center px-5 pt-6 pb-10 sm:p-8 sm:pb-32">
-                        <div className="max-w-3xl w-full text-center space-y-6 sm:space-y-8">
+                      <div
+                        className={cn(
+                          isMobileView
+                            ? "flex flex-col items-center px-4 pt-4 pb-4 flex-none"
+                            : "flex-1 flex flex-col justify-center items-center px-5 pt-6 pb-10 sm:p-8 sm:pb-32"
+                        )}
+                      >
+                        <div className="max-w-md sm:max-w-3xl w-full text-center space-y-4 sm:space-y-8">
                           {/* Main Heading */}
                           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                            <div className="flex flex-col items-center justify-center mb-5 sm:mb-10 space-y-4 sm:space-y-6 text-center z-10 relative">
+                            <div className="flex flex-col items-center justify-center mb-3 sm:mb-10 space-y-3 sm:space-y-6 text-center z-10 relative">
                               <h1
-                                className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
+                                className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
                                 style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
                               >
                                 TURN{' '}<RotatingWords />{' '}INTO<br />PERFECT PRESENTATIONS
                               </h1>
                               <div className="space-y-2">
-                                <p className="text-sm sm:text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
+                                <p className="text-xs sm:text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
                                   Any topic. Visualized. Perfected. In 90 seconds.
                                 </p>
-                                <p className="text-xs sm:text-sm md:text-base text-zinc-500 dark:text-zinc-400">
+                                <p className="text-[11px] sm:text-sm md:text-base text-zinc-500 dark:text-zinc-400">
                                   Type, talk, or drop a file — we handle the rest.
                                 </p>
                               </div>
@@ -2321,7 +2359,7 @@ const DeckList: React.FC = () => {
                           </div>
 
                           {/* Input Area */}
-                          <div className="relative max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-6 duration-700 delay-100">
+                          <div className="relative max-w-full sm:max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-6 duration-700 delay-100">
                             <div className="relative group">
                               <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                               <div
@@ -2360,10 +2398,10 @@ const DeckList: React.FC = () => {
                                 )}
 
                                 {/* Input Field with Typewriter Placeholder */}
-                                <div className="flex-1 relative min-h-[44px] sm:min-h-[48px]">
+                                <div className="flex-1 relative min-h-[40px] sm:min-h-[48px]">
                                   <Textarea
                                     ref={heroTextareaRef}
-                                    className="w-full border-none shadow-none focus-visible:ring-0 min-h-[44px] sm:min-h-[48px] max-h-[150px] bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-3 py-2 sm:px-4 sm:py-3 font-sans dark:text-zinc-100 resize-none overflow-y-auto text-sm sm:text-base leading-normal"
+                                    className="w-full border-none shadow-none focus-visible:ring-0 min-h-[40px] sm:min-h-[48px] max-h-[150px] bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-3 py-2 sm:px-4 sm:py-3 font-sans dark:text-zinc-100 resize-none overflow-y-auto text-sm sm:text-base leading-normal"
                                     value={heroInput}
                                     onChange={(e) => setHeroInput(e.target.value)}
                                     onKeyDown={(e) => {
@@ -2380,8 +2418,8 @@ const DeckList: React.FC = () => {
                                     }}
                                   />
                                   {!heroInput && (
-                                    <div className="absolute top-0 left-0 right-0 pointer-events-none flex items-center px-3 sm:px-4 h-[44px] sm:h-[48px] text-sm sm:text-base text-slate-400 dark:text-zinc-500 min-w-0 overflow-hidden">
-                                      <span className="whitespace-nowrap">I want to create </span>
+                                    <div className="absolute top-0 left-0 right-0 pointer-events-none flex items-center px-3 sm:px-4 h-[40px] sm:h-[48px] text-xs sm:text-base text-slate-400 dark:text-zinc-500 min-w-0 overflow-hidden">
+                                      <span className="whitespace-nowrap">{heroPlaceholderPrefix} </span>
                                       <span className="min-w-0 truncate text-slate-300 dark:text-zinc-600">{typewriterText}</span>
                                       <span className="ml-0.5 animate-pulse text-orange-500">|</span>
                                     </div>
@@ -2474,14 +2512,14 @@ const DeckList: React.FC = () => {
                                   {/* Submit Button */}
                                   <Button
                                     size="icon"
-                                    className="h-12 w-12 ml-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95"
+                                    className="h-10 w-10 sm:h-12 sm:w-12 ml-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95"
                                     onClick={() => {
                                       if (heroInput.trim() || uploadedFiles.length > 0) {
                                         openConversationalOnboarding(heroInput);
                                       }
                                     }}
                                   >
-                                    <ArrowRight size={24} />
+                                    <ArrowRight size={isMobileView ? 20 : 24} />
                                   </Button>
                                 </div>
                               </div>
@@ -2524,12 +2562,17 @@ const DeckList: React.FC = () => {
                     className={cn(
                       "bg-white/60 dark:bg-zinc-900/90 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-black/30 relative z-10 flex flex-col flex-none",
                       isMobileView
-                        ? "w-full flex-1 min-h-0 border-t border-white/50 dark:border-zinc-800/50 mt-4"
+                        ? "w-full flex-1 min-h-0 border-t border-white/50 dark:border-zinc-800/50 mt-3 overflow-hidden"
                         : "h-full border-l border-white/50 dark:border-zinc-800/50"
                     )}
                     style={{ width: isMobileView ? '100%' : `${deckListWidth}%` }}
                   >
-                    <div className="p-4 pt-6 lg:pt-20 border-b border-zinc-100 dark:border-zinc-800 flex-shrink-0">
+                    <div
+                      className={cn(
+                        "border-b border-zinc-100 dark:border-zinc-800 flex-shrink-0",
+                        isMobileView ? "p-3 pt-4" : "p-4 pt-6 lg:pt-20"
+                      )}
+                    >
                       <div className="flex flex-col gap-4">
                         <div className="relative w-full">
                           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 dark:text-zinc-400" />
@@ -2539,7 +2582,7 @@ const DeckList: React.FC = () => {
                             placeholder="Search all decks..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full bg-white/50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-800 pl-10 pr-8 h-9 rounded-lg text-sm dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                            className="w-full bg-white/50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-800 pl-9 sm:pl-10 pr-8 h-8 sm:h-9 rounded-lg text-xs sm:text-sm dark:text-zinc-100 dark:placeholder:text-zinc-500"
                           />
                           {/* Loading indicator or clear button */}
                           {isSearching ? (
@@ -2578,7 +2621,7 @@ const DeckList: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-4">
+                    <div className="flex-1 overflow-y-auto p-3 sm:p-4">
                       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full">
                         <TabsContent value="by-me" className="mt-0 h-full">
                           {isLoading ? (

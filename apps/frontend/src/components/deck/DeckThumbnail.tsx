@@ -39,6 +39,7 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData }> = React.memo(({ deck }
     <MiniSlide 
       slide={firstSlide}
       responsive={true}
+      slideSize={deck.size}
     />
   );
 }, (prevProps, nextProps) => {

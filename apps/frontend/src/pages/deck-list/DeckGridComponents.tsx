@@ -223,7 +223,7 @@ export const VirtualizedDeckGrid = React.memo(({
   }, [hasMore, isLoadingMore, onLoadMore]);
 
   return (
-    <div ref={containerRef} className="grid grid-cols-1 gap-6 auto-rows-max">
+    <div ref={containerRef} className="grid grid-cols-1 gap-4 sm:gap-6 auto-rows-max">
       {safeDecks.map((deck, index) => {
         // Only animate if this card was initially visible
         const shouldAnimate = initiallyVisibleDecks.has(index);

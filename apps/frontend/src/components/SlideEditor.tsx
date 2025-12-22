@@ -617,6 +617,9 @@ const SlideEditorContent: React.FC = () => {
 
   // Function to render slides for presentation mode
   const renderSlide = (slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
+    const deckSlideSize = deckData.size || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
+    const baseSlideWidth = deckSlideSize.width;
+    const baseSlideHeight = deckSlideSize.height;
     // Compute a defensive fallback background so presentation mode shows slide backgrounds
     const fallbackBackground = (() => {
       const normalizeHex = (hex: string) => {
@@ -705,15 +708,15 @@ const SlideEditorContent: React.FC = () => {
         <div 
           className="absolute origin-top-left"
           style={{
-            width: `${DEFAULT_SLIDE_WIDTH}px`,
-            height: `${DEFAULT_SLIDE_HEIGHT}px`,
+            width: `${baseSlideWidth}px`,
+            height: `${baseSlideHeight}px`,
             transform: `scale(${scale})`,
             transformOrigin: 'top left',
             ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
           }}
         >
           <NavigationProvider initialSlideIndex={index} onSlideChange={() => {}}>
-            <EditorStateProvider initialEditingState={false}>
+            <EditorStateProvider initialEditingState={false} slideSizeOverride={deckSlideSize}>
               <ActiveSlideProvider>
                 <Slide
                   key={slide.id}
@@ -1716,6 +1719,7 @@ const SlideEditorContent: React.FC = () => {
                   currentSlideIndex={currentSlideIndex}
                   renderSlide={renderSlide}
                   alwaysShowControls={isMobile}
+                  slideSize={deckData.size}
                 />
               )}
             </ResizablePanel>

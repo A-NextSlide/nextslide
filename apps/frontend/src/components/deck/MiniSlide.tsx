@@ -14,6 +14,7 @@ interface MiniSlideProps {
   className?: string;
   onClick?: () => void;
   responsive?: boolean; // If true, will fit to container size
+  slideSize?: { width: number; height: number };
 }
 
 // This component renders a miniature version of the slide directly
@@ -23,11 +24,14 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   height: fixedHeight,
   className = '',
   onClick,
-  responsive = true
+  responsive = true,
+  slideSize
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: fixedWidth || 160, height: fixedHeight || 90 });
   const [isReady, setIsReady] = useState(!responsive); // If not responsive, ready immediately
+  const baseSlideWidth = slideSize?.width || DEFAULT_SLIDE_WIDTH;
+  const baseSlideHeight = slideSize?.height || DEFAULT_SLIDE_HEIGHT;
   
   // Use ResizeObserver to track container size changes when responsive
   useEffect(() => {
@@ -47,7 +51,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       
       if (containerWidth > 0 && containerHeight > 0) {
         // Calculate dimensions maintaining aspect ratio
-        const aspectRatio = DEFAULT_SLIDE_WIDTH / DEFAULT_SLIDE_HEIGHT;
+        const aspectRatio = baseSlideWidth / baseSlideHeight;
         let width = containerWidth;
         let height = containerWidth / aspectRatio;
         
@@ -72,17 +76,17 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     return () => {
       resizeObserver.disconnect();
     };
-  }, [responsive, fixedWidth, fixedHeight]);
+  }, [responsive, fixedWidth, fixedHeight, baseSlideWidth, baseSlideHeight]);
   
   // Calculate scale based on current dimensions
   const scale = Math.min(
-    dimensions.width / DEFAULT_SLIDE_WIDTH,
-    dimensions.height / DEFAULT_SLIDE_HEIGHT
+    dimensions.width / baseSlideWidth,
+    dimensions.height / baseSlideHeight
   );
   
   // Calculate actual dimensions to maintain aspect ratio
-  const actualWidth = DEFAULT_SLIDE_WIDTH * scale;
-  const actualHeight = DEFAULT_SLIDE_HEIGHT * scale;
+  const actualWidth = baseSlideWidth * scale;
+  const actualHeight = baseSlideHeight * scale;
   
   // If responsive, use container ref for sizing
   // Compute a simple fallback background from the slide's Background component
@@ -149,8 +153,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
             >
               <div 
                 style={{
-                  width: `${DEFAULT_SLIDE_WIDTH}px`,
-                  height: `${DEFAULT_SLIDE_HEIGHT}px`,
+                  width: `${baseSlideWidth}px`,
+                  height: `${baseSlideHeight}px`,
                   transform: `scale(${scale})`,
                   transformOrigin: 'top left',
                   pointerEvents: 'none',
@@ -161,6 +165,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
                    <EditorStateProvider 
                      syncConfig={{ enabled: false, useRealtimeSubscription: false }} 
                      initialEditingState={false}
+                     slideSizeOverride={slideSize}
                    >
                      <ActiveSlideProvider>
                        <div className="slide-canvas" style={{ background: 'transparent' }}>
@@ -170,8 +175,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
                            isEditing={false}
                            isThumbnail={true}
                            style={{ 
-                             width: `${DEFAULT_SLIDE_WIDTH}px`, 
-                             height: `${DEFAULT_SLIDE_HEIGHT}px`,
+                             width: `${baseSlideWidth}px`, 
+                             height: `${baseSlideHeight}px`,
                              position: 'absolute',
                              top: 0,
                              left: 0
@@ -207,8 +212,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       <div 
         className="absolute inset-0"
         style={{
-          width: `${DEFAULT_SLIDE_WIDTH}px`,
-          height: `${DEFAULT_SLIDE_HEIGHT}px`,
+          width: `${baseSlideWidth}px`,
+          height: `${baseSlideHeight}px`,
           transform: `scale(${scale})`,
           transformOrigin: 'top left',
           pointerEvents: 'none'
@@ -218,6 +223,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
           <EditorStateProvider 
             syncConfig={{ enabled: false, useRealtimeSubscription: false }} 
             initialEditingState={false}
+            slideSizeOverride={slideSize}
           >
             <ActiveSlideProvider>
               <Slide 
@@ -226,8 +232,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
                 isEditing={false}
                 isThumbnail={true}
                 style={{ 
-                  width: `${DEFAULT_SLIDE_WIDTH}px`, 
-                  height: `${DEFAULT_SLIDE_HEIGHT}px`,
+                  width: `${baseSlideWidth}px`, 
+                  height: `${baseSlideHeight}px`,
                   position: 'absolute',
                   top: 0,
                   left: 0
