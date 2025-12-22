@@ -484,14 +484,15 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       {/* Floating controls overlay */}
       <AnimatePresence>
         {(showControls || alwaysShowControls) && !showThumbnails && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="absolute top-0 left-0 right-0 p-6 pointer-events-auto z-[20000]"
-            >
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="absolute inset-0 pointer-events-none z-[20000]"
+          >
+            {/* Top bar */}
+            <div className="absolute top-0 left-0 right-0 p-6 pointer-events-auto">
               <div className="flex items-center justify-between">
                 {/* Current slide indicator */}
                 <motion.div
@@ -515,6 +516,11 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                       e.stopPropagation();
                       setShowThumbnails(true);
                     }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowThumbnails(true);
+                    }}
                     className={cn(
                       "bg-black/60 rounded-full text-white/90 hover:bg-black/80 active:bg-black/90 transition-colors border border-white/20 touch-manipulation",
                       isMobile ? "p-3 min-w-[48px] min-h-[48px]" : "p-2"
@@ -531,6 +537,11 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.2 }}
                     onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleFullscreen();
+                    }}
+                    onTouchEnd={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       toggleFullscreen();
@@ -559,6 +570,15 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                         handleExitPresentation();
                       }
                     }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (isExpanded) {
+                        toggleFullscreen();
+                      } else {
+                        handleExitPresentation();
+                      }
+                    }}
                     className={cn(
                       "bg-black/60 rounded-full text-white/90 hover:bg-black/80 active:bg-black/90 transition-colors border border-white/20 touch-manipulation",
                       isMobile ? "p-3 min-w-[48px] min-h-[48px]" : "p-2"
@@ -570,24 +590,24 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                   </motion.button>
                 </div>
               </div>
-            </motion.div>
+            </div>
 
             {/* Navigation arrows - with touch support for mobile */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className={cn(
-                "absolute top-1/2 -translate-y-1/2 flex justify-between pointer-events-auto z-[20000]",
-                isMobile ? "left-2 right-2" : "left-6 right-6"
-              )}
-            >
+            <div className={cn(
+              "absolute top-1/2 -translate-y-1/2 flex justify-between pointer-events-auto",
+              isMobile ? "left-2 right-2" : "left-6 right-6"
+            )}>
               <motion.button
                 initial={{ x: -20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.1 }}
                 onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  goToPrevSlide();
+                }}
+                onTouchEnd={(e) => {
+                  if (validIndex === 0) return;
                   e.preventDefault();
                   e.stopPropagation();
                   goToPrevSlide();
@@ -614,6 +634,12 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                   e.stopPropagation();
                   goToNextSlide();
                 }}
+                onTouchEnd={(e) => {
+                  if (validIndex === slides.length - 1) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  goToNextSlide();
+                }}
                 disabled={validIndex === slides.length - 1}
                 className={cn(
                   "bg-black/60 rounded-full text-white/90 transition-all border border-white/20 touch-manipulation",
@@ -626,7 +652,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
               >
                 <ChevronRight size={isMobile ? 28 : 24} />
               </motion.button>
-            </motion.div>
+            </div>
 
             {/* Bottom progress bar */}
             <motion.div
@@ -634,7 +660,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="absolute bottom-6 left-6 right-6 pointer-events-auto z-[20000]"
+              className="absolute bottom-6 left-6 right-6 pointer-events-auto"
             >
               <div className="bg-black/40 rounded-full h-1 overflow-hidden">
                 <motion.div
@@ -644,7 +670,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 />
               </div>
             </motion.div>
-          </>
+          </motion.div>
         )}
       </AnimatePresence>
 
