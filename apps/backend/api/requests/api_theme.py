@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional, AsyncIterator
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -48,6 +49,18 @@ def _compute_outline_key(outline: DeckOutline) -> str:
     except Exception:
         # Ultimate fallback
         return f"outlinehash:{id(outline)}"
+
+
+_DOMAIN_HINT_RE = re.compile(r"\b([a-z0-9][a-z0-9\-]+\.[a-z]{2,})\b", re.IGNORECASE)
+
+
+def _guess_domain_hint(value: Optional[str]) -> Optional[str]:
+    if not value or not isinstance(value, str):
+        return None
+    match = _DOMAIN_HINT_RE.search(value)
+    if not match:
+        return None
+    return match.group(1).lower()
 
 
 @router.post("/from-outline")
@@ -100,8 +113,20 @@ async def stream_theme_from_outline(
             vibe_context_raw = getattr(style_prefs, 'vibeContext', None) if style_prefs else None
             brand_name_raw = getattr(style_prefs, 'brandName', None) if style_prefs else None
 
-            # Try direct cache lookup
-            cache_lookup_key = brand_domain or vibe_context_raw or brand_name_raw
+            outline_title = getattr(outline, "title", None)
+
+            # Try direct cache lookup (only use domain-like hints, avoid full prompt strings)
+            cache_lookup_key = brand_domain
+            if not cache_lookup_key:
+                cache_lookup_key = (
+                    _guess_domain_hint(vibe_context_raw)
+                    or _guess_domain_hint(brand_name_raw)
+                    or _guess_domain_hint(outline_title)
+                )
+            if not cache_lookup_key and brand_name_raw:
+                trimmed = " ".join(str(brand_name_raw).split()).strip()
+                if trimmed and len(trimmed) <= 64:
+                    cache_lookup_key = trimmed
             if cache_lookup_key:
                 try:
                     from services.brand_cache_direct import get_cached_brand_direct
