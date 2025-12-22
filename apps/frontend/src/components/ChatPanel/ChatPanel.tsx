@@ -41,6 +41,7 @@ export type { ExtendedChatMessageProps, ChatPanelProps };
  */
 const ChatPanel: React.FC<ChatPanelProps> = ({
   onCollapseChange,
+  onUserMessageSend,
   opacity = 1,
   newSystemMessage,
   enableResponseTabs = false,
@@ -355,8 +356,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     if (showResponseTabs) {
       setActiveTab('response');
     }
+    if (onUserMessageSend) {
+      onUserMessageSend(messageText);
+    }
     sendMessage(overrideMessage);
-  }, [input, sendMessage, showResponseTabs]);
+  }, [input, onUserMessageSend, sendMessage, showResponseTabs]);
 
   useEffect(() => {
     if (activeTab !== 'response') return;

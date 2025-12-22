@@ -18,6 +18,7 @@ export interface ExtendedChatMessageProps extends ChatMessageProps {
 
 export interface ChatPanelProps {
   onCollapseChange?: (collapsed: boolean) => void;
+  onUserMessageSend?: (message: string) => void;
   opacity?: number;
   isPending?: boolean;
   enableResponseTabs?: boolean;

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import ChatPanel from './ChatPanel';
 import DeckPanel from './DeckPanel';
@@ -126,6 +126,108 @@ const SlideEditorContent: React.FC = () => {
       setIsChatCollapsed(false);
     }
   }, [isMobile, isChatCollapsed]);
+
+  const mobileContainerRef = useRef<HTMLDivElement>(null);
+  const [mobileContainerHeight, setMobileContainerHeight] = useState(0);
+  const [mobileChatHeight, setMobileChatHeight] = useState(0);
+  const [isChatDragging, setIsChatDragging] = useState(false);
+  const [showChatDragHint, setShowChatDragHint] = useState(false);
+  const [hasShownChatDragHint, setHasShownChatDragHint] = useState(false);
+  const chatHintStorageKey = 'ns-mobile-chat-handle-hint-shown';
+
+  useEffect(() => {
+    if (!isMobile) return;
+    try {
+      setHasShownChatDragHint(localStorage.getItem(chatHintStorageKey) === '1');
+    } catch {}
+  }, [isMobile]);
+
+  useLayoutEffect(() => {
+    if (!isMobile) return;
+    const container = mobileContainerRef.current;
+    if (!container) return;
+
+    const update = () => {
+      const nextHeight = container.getBoundingClientRect().height;
+      if (nextHeight > 0) {
+        setMobileContainerHeight(nextHeight);
+      }
+    };
+    update();
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => update());
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [isMobile]);
+
+  const clampValue = useCallback((value: number, min: number, max: number) => {
+    return Math.min(Math.max(value, min), max);
+  }, []);
+
+  const minMobileChatHeight = useMemo(() => {
+    if (!mobileContainerHeight) return 180;
+    const scaled = Math.round(mobileContainerHeight * 0.22);
+    return Math.max(120, Math.min(200, scaled));
+  }, [mobileContainerHeight]);
+
+  const maxMobileChatHeight = useMemo(() => {
+    if (!mobileContainerHeight) return 420;
+    const maxByHeight = Math.max(minMobileChatHeight + 120, mobileContainerHeight - 80);
+    return Math.min(maxByHeight, mobileContainerHeight);
+  }, [mobileContainerHeight, minMobileChatHeight]);
+
+  useEffect(() => {
+    if (!isMobile || !mobileContainerHeight) return;
+    const initialHeight = clampValue(Math.round(mobileContainerHeight * 0.38), minMobileChatHeight, maxMobileChatHeight);
+    setMobileChatHeight((prev) => {
+      if (prev > 0) {
+        return clampValue(prev, minMobileChatHeight, maxMobileChatHeight);
+      }
+      return initialHeight;
+    });
+  }, [isMobile, mobileContainerHeight, minMobileChatHeight, maxMobileChatHeight, clampValue]);
+
+  const handleMobileChatHintDismiss = useCallback(() => {
+    if (!showChatDragHint) return;
+    setShowChatDragHint(false);
+  }, [showChatDragHint]);
+
+  const handleMobileFirstMessage = useCallback((message: string) => {
+    if (!isMobile || hasShownChatDragHint) return;
+    if (!message.trim()) return;
+    setShowChatDragHint(true);
+    setHasShownChatDragHint(true);
+    try {
+      localStorage.setItem(chatHintStorageKey, '1');
+    } catch {}
+  }, [hasShownChatDragHint, isMobile]);
+
+  const handleChatHandlePointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!isMobile) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handleMobileChatHintDismiss();
+
+    const startY = event.clientY;
+    const startHeight = mobileChatHeight;
+    setIsChatDragging(true);
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const delta = startY - moveEvent.clientY;
+      const nextHeight = clampValue(startHeight + delta, minMobileChatHeight, maxMobileChatHeight);
+      setMobileChatHeight(nextHeight);
+    };
+
+    const handleUp = () => {
+      setIsChatDragging(false);
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+  }, [clampValue, handleMobileChatHintDismiss, isMobile, maxMobileChatHeight, minMobileChatHeight, mobileChatHeight]);
 
   // Allow starting the tour manually via header trigger
   useEffect(() => {
@@ -1633,27 +1735,59 @@ const SlideEditorContent: React.FC = () => {
       
       <div className="flex-1 overflow-hidden pt-14">
         {isMobile ? (
-          <div className="flex h-full flex-col">
-            <div className="flex-1 min-h-0 p-2">
-              <DeckPanel 
-                deckStatus={deckStatus} 
-                isNewDeck={isNewDeck} 
-                slides={deckData.slides}
-                currentSlideIndex={currentSlideIndex}
-                hideThumbnails
-              />
+          <div
+            ref={mobileContainerRef}
+            className="relative h-full w-full overflow-hidden"
+            onPointerDownCapture={handleMobileChatHintDismiss}
+          >
+            <div className="absolute inset-0 flex flex-col">
+              <div className="flex-1 min-h-0 p-2" style={{ paddingBottom: `${minMobileChatHeight}px` }}>
+                <DeckPanel 
+                  deckStatus={deckStatus} 
+                  isNewDeck={isNewDeck} 
+                  slides={deckData.slides}
+                  currentSlideIndex={currentSlideIndex}
+                  hideThumbnails
+                />
+              </div>
             </div>
+
             <div
-              className="border-t border-border p-3"
-              style={{ height: 'clamp(180px, 38vh, 320px)' }}
+              className={`absolute inset-x-0 bottom-0 z-20 flex flex-col border-t border-border bg-background/95 backdrop-blur-md shadow-2xl ${isChatDragging ? 'cursor-row-resize' : ''}`}
+              style={{ height: `${mobileChatHeight || minMobileChatHeight}px` }}
             >
-              <ChatPanel
-                onCollapseChange={handleCollapseChange}
-                opacity={1}
-                newSystemMessage={lastSystemMessageForChat}
-                isExistingDeck={!isNewDeck || deckStatus?.state === 'completed'}
-                enableResponseTabs={true}
-              />
+              <div className="relative flex items-center justify-center h-8">
+                <div className="absolute inset-x-0 top-0 h-px bg-border/70" />
+                <button
+                  type="button"
+                  onPointerDown={handleChatHandlePointerDown}
+                  className="group relative flex items-center justify-center w-full h-full touch-none"
+                  aria-label="Resize chat"
+                >
+                  <span className="h-1.5 w-12 rounded-full bg-zinc-400/70 dark:bg-zinc-600/70 group-active:bg-zinc-500 dark:group-active:bg-zinc-500 transition-colors" />
+                </button>
+
+                {showChatDragHint && (
+                  <button
+                    type="button"
+                    onClick={handleMobileChatHintDismiss}
+                    className="absolute -top-14 left-1/2 -translate-x-1/2 px-3 py-2 rounded-lg bg-black/80 text-white text-[11px] leading-tight shadow-lg backdrop-blur-sm"
+                  >
+                    Drag the knob to resize chat. Swipe down to reveal slides.
+                  </button>
+                )}
+              </div>
+
+              <div className="flex-1 min-h-0 px-3 pb-[calc(env(safe-area-inset-bottom)+12px)]">
+                <ChatPanel
+                  onCollapseChange={handleCollapseChange}
+                  onUserMessageSend={handleMobileFirstMessage}
+                  opacity={1}
+                  newSystemMessage={lastSystemMessageForChat}
+                  isExistingDeck={!isNewDeck || deckStatus?.state === 'completed'}
+                  enableResponseTabs={true}
+                />
+              </div>
             </div>
           </div>
         ) : (
