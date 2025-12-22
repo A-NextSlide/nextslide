@@ -14,7 +14,7 @@ import { formatDistanceToNow } from 'date-fns';
 // Rotating words animation for hero heading - vertical slot machine style
 const WORDS = ['PROPOSALS', 'STRATEGIES', 'REPORTS', 'DOCS', 'NOTES', 'IDEAS'];
 
-export const RotatingWords = () => {
+export const RotatingWords = ({ compact = false }: { compact?: boolean }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const hasStartedRef = useRef(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -58,11 +58,11 @@ export const RotatingWords = () => {
     <span
       className="text-orange-500 inline-block overflow-hidden transition-[width] duration-300"
       style={{
-        height: '1em',
+        height: compact ? '0.9em' : '1em',
         width: wordWidths[WORDS[currentIndex]],
         verticalAlign: 'baseline',
         position: 'relative',
-        top: '0.15em',
+        top: compact ? '0.05em' : '0.15em',
       }}
     >
       <span
@@ -223,7 +223,7 @@ export const VirtualizedDeckGrid = React.memo(({
   }, [hasMore, isLoadingMore, onLoadMore]);
 
   return (
-    <div ref={containerRef} className="grid grid-cols-1 gap-4 sm:gap-6 auto-rows-max">
+    <div ref={containerRef} className="grid grid-cols-1 gap-3 sm:gap-6 auto-rows-max">
       {safeDecks.map((deck, index) => {
         // Only animate if this card was initially visible
         const shouldAnimate = initiallyVisibleDecks.has(index);

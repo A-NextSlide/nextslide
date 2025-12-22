@@ -177,6 +177,18 @@ const DeckList: React.FC = () => {
     })();
   }, [isAuthenticated, isLoading, refreshAdminStatus]);
 
+  useEffect(() => {
+    if (!isMobileView || typeof document === 'undefined') return;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+  }, [isMobileView]);
+
   // Search state for the main side navigation
   const { searchQuery, setSearchQuery, filteredDecks, isSearching, clearSearch } = useDeckFiltering(decks);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -416,7 +428,7 @@ const DeckList: React.FC = () => {
   const [slideCount, setSlideCount] = useState<number | undefined>(undefined);
   const typewriterPhrases = useMemo(() => (
     isMobileView
-      ? ['a pitch deck', 'a lecture', 'a growth plan', 'a marketing proposal']
+      ? ['a pitch deck', 'a lecture', 'a growth plan', 'a marketing deck']
       : [
         'a pitch deck for my startup',
         'a lecture on history',
@@ -520,10 +532,12 @@ const DeckList: React.FC = () => {
 
       setLinkInput('');
       setIsLinkPopoverOpen(false);
-      toast({
-        title: "URL added",
-        description: `${domain} will be used for branded slides`,
-      });
+      if (!isMobileView) {
+        toast({
+          title: "URL added",
+          description: `${domain} will be used for branded slides`,
+        });
+      }
     }
   };
 
@@ -2333,19 +2347,19 @@ const DeckList: React.FC = () => {
                       <div
                         className={cn(
                           isMobileView
-                            ? "flex flex-col items-center px-4 pt-4 pb-4 flex-none"
+                            ? "flex flex-col items-center px-4 pt-3 pb-2 flex-none"
                             : "flex-1 flex flex-col justify-center items-center px-5 pt-6 pb-10 sm:p-8 sm:pb-32"
                         )}
                       >
                         <div className="max-w-md sm:max-w-3xl w-full text-center space-y-4 sm:space-y-8">
                           {/* Main Heading */}
-                          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                            <div className="flex flex-col items-center justify-center mb-3 sm:mb-10 space-y-3 sm:space-y-6 text-center z-10 relative">
+                          <div className="space-y-3 sm:space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                            <div className="flex flex-col items-center justify-center mb-2 sm:mb-10 space-y-2 sm:space-y-6 text-center z-10 relative">
                               <h1
-                                className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
+                                className="text-lg sm:text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
                                 style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
                               >
-                                TURN{' '}<RotatingWords />{' '}INTO<br />PERFECT PRESENTATIONS
+                                TURN{' '}<RotatingWords compact={isMobileView} />{' '}INTO<br />PERFECT PRESENTATIONS
                               </h1>
                               <div className="space-y-2">
                                 <p className="text-xs sm:text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
@@ -2418,7 +2432,7 @@ const DeckList: React.FC = () => {
                                     }}
                                   />
                                   {!heroInput && (
-                                    <div className="absolute top-0 left-0 right-0 pointer-events-none flex items-center px-3 sm:px-4 h-[40px] sm:h-[48px] text-xs sm:text-base text-slate-400 dark:text-zinc-500 min-w-0 overflow-hidden">
+                                    <div className="absolute top-0 left-0 right-0 pointer-events-none flex items-center px-3 sm:px-4 h-[40px] sm:h-[48px] text-[10px] sm:text-base leading-tight text-slate-400 dark:text-zinc-500 min-w-0 overflow-hidden">
                                       <span className="whitespace-nowrap">{heroPlaceholderPrefix} </span>
                                       <span className="min-w-0 truncate text-slate-300 dark:text-zinc-600">{typewriterText}</span>
                                       <span className="ml-0.5 animate-pulse text-orange-500">|</span>
@@ -2562,7 +2576,7 @@ const DeckList: React.FC = () => {
                     className={cn(
                       "bg-white/60 dark:bg-zinc-900/90 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-black/30 relative z-10 flex flex-col flex-none",
                       isMobileView
-                        ? "w-full flex-1 min-h-0 border-t border-white/50 dark:border-zinc-800/50 mt-3 overflow-hidden"
+                        ? "w-full flex-1 min-h-0 border-t border-white/50 dark:border-zinc-800/50 mt-2 overflow-hidden"
                         : "h-full border-l border-white/50 dark:border-zinc-800/50"
                     )}
                     style={{ width: isMobileView ? '100%' : `${deckListWidth}%` }}
@@ -2570,7 +2584,7 @@ const DeckList: React.FC = () => {
                     <div
                       className={cn(
                         "border-b border-zinc-100 dark:border-zinc-800 flex-shrink-0",
-                        isMobileView ? "p-3 pt-4" : "p-4 pt-6 lg:pt-20"
+                        isMobileView ? "p-3 pt-3" : "p-4 pt-6 lg:pt-20"
                       )}
                     >
                       <div className="flex flex-col gap-4">
@@ -2621,7 +2635,7 @@ const DeckList: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+                    <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y p-3 sm:p-4">
                       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full">
                         <TabsContent value="by-me" className="mt-0 h-full">
                           {isLoading ? (

@@ -107,6 +107,7 @@ const DeckPanel: React.FC = () => {
             onThumbnailClick={handleThumbnailClick}
             isTransitioning={isTransitioning}
             onSlideDelete={handleSlideDelete}
+            slideSize={deckData.size}
           />
         </div>
       </div>

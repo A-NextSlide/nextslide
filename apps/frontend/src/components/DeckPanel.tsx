@@ -260,6 +260,7 @@ const DeckPanel: React.FC<DeckPanelProps> = ({ deckStatus, isNewDeck, hideThumbn
               onSlideDelete={handleSlideDelete}
               deckStatus={deckStatus}
               isNewDeck={isNewDeck}
+              slideSize={deckData.size}
             />
           </div>
         )}

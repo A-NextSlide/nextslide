@@ -6,6 +6,7 @@ import { ActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { NavigationProvider } from '@/context/NavigationContext';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { cn } from '@/lib/utils';
+import { normalizeSlideForRender, resolveSlideSize } from '@/utils/slideNormalization';
 
 interface MiniSlideProps {
   slide: SlideData;
@@ -30,8 +31,15 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: fixedWidth || 160, height: fixedHeight || 90 });
   const [isReady, setIsReady] = useState(!responsive); // If not responsive, ready immediately
-  const baseSlideWidth = slideSize?.width || DEFAULT_SLIDE_WIDTH;
-  const baseSlideHeight = slideSize?.height || DEFAULT_SLIDE_HEIGHT;
+  const normalizedSlide = useMemo(() => {
+    const normalized = normalizeSlideForRender(slide, slideSize);
+    return normalized?.slide || slide;
+  }, [slide, slideSize]);
+  const resolvedSlideSize = useMemo(() => {
+    return resolveSlideSize(normalizedSlide, slideSize);
+  }, [normalizedSlide, slideSize]);
+  const baseSlideWidth = resolvedSlideSize?.width || DEFAULT_SLIDE_WIDTH;
+  const baseSlideHeight = resolvedSlideSize?.height || DEFAULT_SLIDE_HEIGHT;
   
   // Use ResizeObserver to track container size changes when responsive
   useEffect(() => {
@@ -91,7 +99,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   // If responsive, use container ref for sizing
   // Compute a simple fallback background from the slide's Background component
   const fallbackBackground = useMemo(() => {
-    const comps = slide?.components || [];
+    const comps = normalizedSlide?.components || [];
     const bg = comps.find(
       (comp) => comp.type === 'Background' || (comp.id && comp.id.toLowerCase().includes('background'))
     );
@@ -126,7 +134,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     const directColor = props.backgroundColor || props.color || props.page?.backgroundColor;
     if (typeof directColor === 'string' && directColor) return directColor;
     return undefined as string | undefined;
-  }, [slide]);
+  }, [normalizedSlide]);
 
   if (responsive) {
     return (
@@ -165,12 +173,12 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
                    <EditorStateProvider 
                      syncConfig={{ enabled: false, useRealtimeSubscription: false }} 
                      initialEditingState={false}
-                     slideSizeOverride={slideSize}
+                     slideSizeOverride={resolvedSlideSize}
                    >
                      <ActiveSlideProvider>
                        <div className="slide-canvas" style={{ background: 'transparent' }}>
                          <Slide 
-                           slide={slide} 
+                           slide={normalizedSlide} 
                            isActive={true}
                            isEditing={false}
                            isThumbnail={true}
@@ -220,14 +228,14 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
         }}
       >
         <NavigationProvider initialSlideIndex={0}>
-          <EditorStateProvider 
-            syncConfig={{ enabled: false, useRealtimeSubscription: false }} 
-            initialEditingState={false}
-            slideSizeOverride={slideSize}
-          >
+            <EditorStateProvider 
+              syncConfig={{ enabled: false, useRealtimeSubscription: false }} 
+              initialEditingState={false}
+              slideSizeOverride={resolvedSlideSize}
+            >
             <ActiveSlideProvider>
               <Slide 
-                slide={slide} 
+                slide={normalizedSlide} 
                 isActive={true}
                 isEditing={false}
                 isThumbnail={true}

@@ -30,6 +30,7 @@ interface ThumbnailItemProps {
   onDrop: (e: React.DragEvent, destinationIndex: number) => void;
   onDragEnd: () => void;
   renderSimple?: boolean;
+  slideSize?: { width: number; height: number };
 }
 
 const getSlideFallbackBackground = (slide: SlideData): string | undefined => {
@@ -87,6 +88,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
   onDrop,
   onDragEnd,
   renderSimple = false,
+  slideSize,
 }) => {
   // Check if slide has real content (not just background)
   const hasRealContent = useMemo(() => {
@@ -142,6 +144,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
                 height={90}
                 responsive={false}
                 className={cn("pointer-events-none", renderSimple && "hover:ring-0 cursor-default")}
+                slideSize={slideSize}
               />
             ) : (
               <div
@@ -182,6 +185,7 @@ interface ThumbnailNavigatorProps {
   onSlideDelete?: (slideId: string) => void;
   deckStatus?: DeckStatus;
   isNewDeck?: boolean;
+  slideSize?: { width: number; height: number };
 }
 
 // Placeholder thumbnail component for generating slides
@@ -225,6 +229,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
   onThumbnailClick,
   onSlideDelete,
   deckStatus,
+  slideSize,
 }) => {
   const isMobile = useIsMobile();
   // Check if deck is generating
@@ -566,6 +571,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                     onDrop={handleDrop}
                     onDragEnd={handleDragEnd}
                     renderSimple={isMobile}
+                    slideSize={slideSize}
                   />
                 </motion.div>
 

@@ -34,7 +34,7 @@ import PresentationMode from '@/components/deck/PresentationMode';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useReturnBannerStore } from '@/stores/returnBannerStore';
 import { SlideData } from '@/types/SlideTypes';
-import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
+import { normalizeSlideForRender, resolveSlideSize } from '@/utils/slideNormalization';
 import Watermark from '@/components/common/Watermark';
 import { NavigationProvider } from '@/context/NavigationContext';
 import { ComponentRenderer } from '@/renderers/ComponentRenderer';
@@ -119,10 +119,9 @@ const SharedDeckView: React.FC = () => {
   const [canEdit, setCanEdit] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const isMobileView = useIsMobile();
-  const deckSlideSize = React.useMemo(() => ({
-    width: deck?.size?.width || DEFAULT_SLIDE_WIDTH,
-    height: deck?.size?.height || DEFAULT_SLIDE_HEIGHT
-  }), [deck?.size?.width, deck?.size?.height]);
+  const deckSlideSize = React.useMemo(() => {
+    return resolveSlideSize(deck?.slides?.[0], deck?.size);
+  }, [deck?.slides, deck?.size]);
 
   // Email gate state
   const [requiresEmail, setRequiresEmail] = useState(false);
@@ -373,7 +372,12 @@ const SharedDeckView: React.FC = () => {
         const cleanedSlides = Array.isArray(deckData?.slides)
           ? deckData.slides.filter((s: any) => s && s.id && !s.id.startsWith('placeholder-'))
           : [];
-        const cleanedDeckData = { ...deckData, slides: cleanedSlides };
+        const normalizedSlides = cleanedSlides.map((slide: SlideData) => {
+          const normalized = normalizeSlideForRender(slide, deckData?.size);
+          return normalized?.slide || slide;
+        });
+        const resolvedDeckSize = resolveSlideSize(normalizedSlides[0], deckData?.size);
+        const cleanedDeckData = { ...deckData, slides: normalizedSlides, size: resolvedDeckSize };
 
         // Set the deck data locally
         console.log('[SharedDeckView] Setting deck state...');
