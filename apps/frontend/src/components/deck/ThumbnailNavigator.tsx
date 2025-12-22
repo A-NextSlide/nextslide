@@ -90,14 +90,11 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
   renderSimple = false,
   slideSize,
 }) => {
-  // Check if slide has real content (not just background)
-  const hasRealContent = useMemo(() => {
-    return slide?.components?.some(
-      (c) => c.type !== 'Background' && !c.id?.toLowerCase().includes('background')
-    );
+  const hasComponents = useMemo(() => {
+    return Array.isArray(slide?.components) && slide.components.length > 0;
   }, [slide?.components]);
   const fallbackBackground = useMemo(() => getSlideFallbackBackground(slide), [slide]);
-  const shouldRenderMiniSlide = hasRealContent;
+  const shouldRenderMiniSlide = hasComponents;
 
   return (
     <ContextMenu>

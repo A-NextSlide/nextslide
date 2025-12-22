@@ -285,26 +285,39 @@ export function useAgentEvents({
     return true;
   }, [setMessages]);
 
+  const finalizeStreamingAiMessage = useCallback((preferredId?: string) => {
+    const initialId = preferredId || streamingAiMsgIdRef.current;
+    setMessages(prev => {
+      let resolvedId = initialId;
+      let target = resolvedId ? prev.find(m => m.id === resolvedId) : undefined;
+
+      if (!target) {
+        const fallback = [...prev].reverse().find(m => m.type === 'ai' && m.metadata?.isStreamingUpdate);
+        if (!fallback) return prev;
+        resolvedId = fallback.id;
+        target = fallback;
+      }
+
+      const text = String(target.message ?? '').trim();
+      if (text === '' || /^\d+$/.test(text)) {
+        return prev.filter(m => m.id !== resolvedId);
+      }
+
+      const humanized = humanizeSystemPhrases(text);
+      return prev.map(m => m.id === resolvedId ? {
+        ...m,
+        message: humanized,
+        metadata: { ...m.metadata, isStreamingUpdate: false, streamed: true }
+      } : m);
+    });
+
+    streamingAiMsgIdRef.current = null;
+  }, [setMessages]);
+
   const handleAssistantMessageComplete = useCallback((evt: any): boolean => {
     if (evt?.type !== 'assistant.message.complete') return false;
-    const doneId = (evt as any).data?.messageId || streamingAiMsgIdRef.current;
-    if (doneId) {
-      setMessages(prev => {
-        const msg = prev.find(m => m.id === doneId);
-        if (!msg) return prev;
-        const text = String(msg.message ?? '').trim();
-        if (text === '' || /^\d+$/.test(text)) {
-          return prev.filter(m => m.id !== doneId);
-        }
-        const humanized = humanizeSystemPhrases(text);
-        return prev.map(m => m.id === doneId ? {
-          ...m,
-          message: humanized,
-          metadata: { ...m.metadata, isStreamingUpdate: false, streamed: true }
-        } : m);
-      });
-    }
-    streamingAiMsgIdRef.current = null;
+    const doneId = (evt as any).data?.messageId;
+    finalizeStreamingAiMessage(doneId);
 
     clearPlanTimers();
     if (planMsgIdRef.current) {
@@ -314,7 +327,7 @@ export function useAgentEvents({
       planCreatedAtRef.current = null;
     }
     return true;
-  }, [clearPlanTimers, setMessages]);
+  }, [clearPlanTimers, finalizeStreamingAiMessage, setMessages]);
 
   const handleLinkedInProfiles = useCallback((evt: any, source: 'primary' | 'secondary'): boolean => {
     if (evt?.type !== 'assistant.linkedin_profiles') return false;
@@ -544,6 +557,8 @@ export function useAgentEvents({
         planMsgIdRef.current = null;
         planCreatedAtRef.current = null;
       }
+
+      finalizeStreamingAiMessage();
 
       if (!processedEditEventsRef.current) {
         processedEditEventsRef.current = new Set();
@@ -884,6 +899,7 @@ export function useAgentEvents({
     captureImmediateSnapshot,
     clearAgentEditTimeout,
     clearPlanTimers,
+    finalizeStreamingAiMessage,
     insertEditAppliedFallbackMessage,
     insertEditAppliedMessage,
     normalizeSlidesPayload,

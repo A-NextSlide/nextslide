@@ -425,7 +425,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                         .replace(/^(Searching the web for|Reading website|Reading page|Processing results|Analyzing|Creating outline|Thinking|Got it! Now thinking|Found info! Processing|Couldn't find info online, winging it)\s*/i, '')
                         .trim();
                       return cleanedMessage ? (
-                        <span className="text-sm text-muted-foreground">{cleanedMessage}</span>
+                        <span className="text-[12px] text-muted-foreground">{cleanedMessage}</span>
                       ) : null;
                     })()}
                   </div>
@@ -442,7 +442,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                     )}
                     {isCompleted && <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />}
                     <span className={cn(
-                      "text-sm flex-1 break-words min-w-0",
+                      "text-[12px] flex-1 break-words min-w-0",
                       isCompleted ? "text-green-600 dark:text-green-400" : "text-foreground/80"
                     )}>
                       {(/^\d+$/.test(primaryMessage.trim())) ? '' : primaryMessage}

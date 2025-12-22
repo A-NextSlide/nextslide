@@ -21,12 +21,9 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData }> = React.memo(({ deck }
     );
   }
   
-  // Check if slide has no visible components (only background or empty)
-  const hasVisibleContent = firstSlide.components && firstSlide.components.some((component: any) => 
-    component.type !== 'Background' && component.props?.src !== '/placeholder.svg'
-  );
-  
-  if (!hasVisibleContent) {
+  const hasComponents = Array.isArray(firstSlide.components) && firstSlide.components.length > 0;
+
+  if (!hasComponents) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/20 rounded-md p-4">
         <Presentation className="h-10 w-10 text-primary/50 mb-2" />

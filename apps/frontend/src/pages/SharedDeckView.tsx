@@ -35,12 +35,10 @@ import { usePresentationStore } from '@/stores/presentationStore';
 import { useReturnBannerStore } from '@/stores/returnBannerStore';
 import { SlideData } from '@/types/SlideTypes';
 import { normalizeSlideForRender, resolveSlideSize } from '@/utils/slideNormalization';
-import Watermark from '@/components/common/Watermark';
 import { NavigationProvider } from '@/context/NavigationContext';
-import { ComponentRenderer } from '@/renderers/ComponentRenderer';
 import { ActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { EditorStateProvider } from '@/context/EditorStateContext';
-import { useIsMobile } from '@/hooks/use-mobile';
+import Slide from '@/components/Slide';
 
 // Error boundary to catch component rendering errors and prevent page crashes
 interface ErrorBoundaryProps {
@@ -118,7 +116,6 @@ const SharedDeckView: React.FC = () => {
   const [deck, setDeck] = useState<any>(null);
   const [canEdit, setCanEdit] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  const isMobileView = useIsMobile();
   const deckSlideSize = React.useMemo(() => {
     return resolveSlideSize(deck?.slides?.[0], deck?.size);
   }, [deck?.slides, deck?.size]);
@@ -560,9 +557,9 @@ const SharedDeckView: React.FC = () => {
   // Memoized renderSlide function to prevent re-creation on each render
   // This is critical for mobile performance and preventing crashes
   const renderSlide = React.useCallback((slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
-    const fallbackBackground = getSlideBackground(slide);
-    const components = Array.isArray(slide.components) ? slide.components : [];
-    const useLiteRenderer = isMobileView && !canEdit;
+    const normalized = normalizeSlideForRender(slide, deckSlideSize);
+    const normalizedSlide = normalized?.slide || slide;
+    const fallbackBackground = getSlideBackground(normalizedSlide);
     const baseSlideWidth = deckSlideSize.width;
     const baseSlideHeight = deckSlideSize.height;
 
@@ -599,57 +596,31 @@ const SharedDeckView: React.FC = () => {
       >
         <div className="w-full h-full relative overflow-hidden" style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
           <div
-            className="absolute top-0 left-0 origin-top-left slide-container"
+            className="absolute top-0 left-0 origin-top-left"
             style={{
               width: `${baseSlideWidth}px`,
               height: `${baseSlideHeight}px`,
-              maxWidth: `${baseSlideWidth}px`,
-              maxHeight: `${baseSlideHeight}px`,
               transform: `scale(${scale})`,
               transformOrigin: 'top left',
-              // Use will-change for better GPU compositing on mobile
               willChange: 'transform',
               ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
             }}
-            data-slide-id={slide.id}
-            data-slide-width={baseSlideWidth}
-            data-slide-height={baseSlideHeight}
           >
-            {/* Render components - providers are at the top level now */}
-            {/* isEditing and slideId come from context (EditorStateProvider/ActiveSlideProvider) */}
-            {components.map((component) => {
-              if (!component || !component.id) return null;
-              try {
-                return (
-                  <ComponentRenderer
-                    key={component.id}
-                    component={component}
-                    isSelected={false}
-                    onSelect={() => {}}
-                    allComponents={components}
-                    isThumbnail={useLiteRenderer}
-                  />
-                );
-              } catch (err) {
-                console.error(`[SharedDeckView] Error rendering component ${component.id}:`, err);
-                return null;
-              }
-            })}
-            {/* Add watermark for view-only decks */}
-            {!canEdit && (
-              <Watermark
-                text="VIEW ONLY"
-                opacity={0.08}
-                fontSize={80}
-                rotation={-30}
-                repeat={true}
-              />
-            )}
+            <Slide
+              key={normalizedSlide.id}
+              slide={normalizedSlide}
+              isActive={true}
+              direction={null}
+              isEditing={false}
+              onSave={() => {}}
+              selectedComponentId={undefined}
+              onComponentSelect={() => {}}
+            />
           </div>
         </div>
       </SlideErrorBoundary>
     );
-  }, [canEdit, deckSlideSize.height, deckSlideSize.width, isMobileView]);
+  }, [deckSlideSize.height, deckSlideSize.width]);
 
   // Debug: Log render state
   console.log('[SharedDeckView] Rendering...', {

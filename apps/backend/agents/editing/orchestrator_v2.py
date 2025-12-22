@@ -273,7 +273,9 @@ DATA ACCURACY:
 - Use ONLY numbers from research results; do not guess or use stale seasons/years
 - If research is missing required metrics, ask a clarifying question or run another web_search
 - Use the CURRENT DATE (UTC) provided in context when interpreting "latest/current"
+- When user asks for "latest/current", include the CURRENT DATE in the web_search query (e.g., "as of 2025-12-21")
 - Do NOT include a specific year/season in a web_search query unless the user explicitly asks for that year/season
+- Ignore any season/year mentioned in earlier assistant messages or slide text if it conflicts with the CURRENT DATE and the user asked for "latest/current"
 
 CONVERSATION CONTINUITY (RECENT CHAT):
 - The RECENT CHAT section shows the last few messages in this conversation
@@ -414,9 +416,9 @@ When user asks to CREATE A NEW SLIDE with factual content:
 3. THEN: Call create_slide - the research data will automatically be injected
 
 Examples - NEEDS RESEARCH:
-- "Create a slide about Tesla's Q4 earnings" → web_search("Tesla Q4 2024 earnings revenue") → create_slide
-- "Add a slide about AI market trends" → web_search("AI market size growth 2024") → create_slide
-- "Make a slide about Apple's product lineup" → web_search("Apple current products 2024") → create_slide
+- "Create a slide about Tesla's Q4 earnings" → web_search("Tesla Q4 earnings revenue as of today") → create_slide
+- "Add a slide about AI market trends" → web_search("AI market size growth current") → create_slide
+- "Make a slide about Apple's product lineup" → web_search("Apple current products") → create_slide
 
 Examples - NO RESEARCH NEEDED (simple slides):
 - "Add a title slide" → create_slide directly
@@ -633,7 +635,10 @@ def build_context(
         theme_lines.append("  ⚠️ When editing, preserve these brand colors/fonts!")
         theme_str = "\n".join(theme_lines) + "\n\n"
 
-    current_date_line = f"CURRENT DATE (UTC): {_current_date_str()}"
+    current_date_line = (
+        f"CURRENT DATE (UTC): {_current_date_str()}\n"
+        f"RECENCY RULE: If the user asks for latest/current data, treat this date as 'today' and do not reuse older season/year text unless the user explicitly requests it."
+    )
 
     # Analyze what's on the slide
     non_bg_components = [c for c in components if _get_attr(c, 'type') != 'Background']
@@ -891,8 +896,8 @@ SCOPE:
 19. web_search ⭐ FOR CONTENT IMPROVEMENT WITH REAL DATA
    - Search the web for current information, facts, statistics, and data
    - ✅ USE FOR CONTENT UPDATES - ALWAYS search before updating text with real data:
-     * "improve the statistics" → web_search("current [topic] statistics 2024")
-     * "update the market data" → web_search("[industry] market size revenue 2024")
+     * "improve the statistics" → web_search("current [topic] statistics as of today")
+     * "update the market data" → web_search("[industry] market size revenue current")
      * "replace with real numbers" → web_search("[specific topic] statistics facts")
      * "make it more accurate" → web_search("[slide topic] current data")
      * "add real facts" → web_search("[topic] key facts statistics")
@@ -901,10 +906,11 @@ SCOPE:
      * Default: custom_component_str_replace (targeted text edit)
      * If user says "rewrite"/"redesign"/"rebuild": edit_slide is OK
    - Args: { "query": str }
-   - query: What to search for (be specific, include year for current data)
-   - Example: {"query": "AI market size revenue growth 2024"}
-   - Example: {"query": "Tesla quarterly earnings Q3 2024"}
-   - Example: {"query": "renewable energy adoption statistics Europe 2024"}
+   - query: What to search for (be specific, use CURRENT DATE from context when user asks for latest/current)
+   - For "latest/current" requests, DO NOT add a season/year unless the user explicitly specifies one
+   - Example: {"query": "AI market size revenue growth as of today"}
+   - Example: {"query": "Tesla quarterly earnings Q3 as of today"}
+   - Example: {"query": "renewable energy adoption statistics Europe current"}
 
 20. edit_all_slides ⭐ FOR CROSS-SLIDE EDITS
    - Apply the SAME edit to ALL slides in the deck at once
