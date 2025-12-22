@@ -480,19 +480,31 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
 
   // Scroll current thumbnail into view
   React.useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
 
-    const thumbnails = containerRef.current.querySelectorAll('.slide-thumbnail');
+    const thumbnails = container.querySelectorAll('.slide-thumbnail');
     if (thumbnails.length <= currentSlideIndex) return;
 
-    const thumbnail = thumbnails[currentSlideIndex] as HTMLElement;
+    const thumbnail = thumbnails[currentSlideIndex] as HTMLElement | undefined;
     if (!thumbnail) return;
 
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const thumbnailCenter = thumbnail.offsetLeft + thumbnail.offsetWidth / 2;
-    const scrollPosition = thumbnailCenter - containerRect.width / 2;
+    const containerRect = container.getBoundingClientRect();
+    const thumbRect = thumbnail.getBoundingClientRect();
+    const thumbLeft = thumbRect.left - containerRect.left + container.scrollLeft;
+    const thumbRight = thumbLeft + thumbRect.width;
+    const visibleLeft = container.scrollLeft;
+    const visibleRight = visibleLeft + container.clientWidth;
 
-    containerRef.current.scrollLeft = Math.max(0, scrollPosition);
+    if (thumbLeft >= visibleLeft && thumbRight <= visibleRight) {
+      return;
+    }
+
+    const targetLeft = thumbLeft - (container.clientWidth - thumbRect.width) / 2;
+    container.scrollTo({
+      left: Math.max(0, targetLeft),
+      behavior: 'smooth',
+    });
   }, [currentSlideIndex]);
 
   return (
