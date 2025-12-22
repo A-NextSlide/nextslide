@@ -69,12 +69,12 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 
   return (
     <div className="sticky bottom-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-md border-t border-zinc-200 dark:border-zinc-800">
-      <div className="px-4 py-3 sm:px-6 sm:py-4">
+      <div className="px-3 py-2 sm:px-6 sm:py-4">
         <PendingFilesPreview files={uploadedFiles} onRemove={onRemoveFile} />
 
         <div
           className={cn(
-            'flex gap-2 sm:gap-3 items-end bg-white dark:bg-zinc-800 rounded-xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-700 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors',
+            'flex flex-col sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-end bg-white dark:bg-zinc-800 rounded-xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-700 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors',
             isDraggingOver && 'border-orange-400 dark:border-orange-500 bg-orange-50 dark:bg-orange-950/20'
           )}
           onDragOver={onDragOver}
@@ -110,12 +110,12 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
               onKeyDown={onKeyDown}
               placeholder={placeholder}
               disabled={isProcessing}
-              className="w-full bg-transparent border-0 text-[#383636] dark:text-gray-200 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 pt-3 pb-3 pl-3 pr-2 sm:pt-4 sm:pb-4 sm:pl-4 resize-none text-base overflow-y-auto max-h-[400px] min-h-[52px] sm:min-h-[60px] font-sans"
+              className="w-full bg-transparent border-0 text-[#383636] dark:text-gray-200 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 pt-2 pb-2 pl-3 pr-2 sm:pt-4 sm:pb-4 sm:pl-4 resize-none text-base overflow-y-auto max-h-[400px] min-h-[52px] sm:min-h-[60px] font-sans"
               rows={1}
             />
           </div>
 
-          <div className="flex items-center gap-2 pb-2 pr-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 pb-2 pr-2 w-full sm:w-auto justify-end">
             <input
               ref={fileInputRef}
               type="file"
@@ -130,7 +130,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
               size="icon"
               variant="ghost"
               className={cn(
-                'h-8 w-8 rounded-lg relative transition-colors',
+                'h-7 w-7 sm:h-8 sm:w-8 rounded-lg relative transition-colors',
                 uploadedFiles.length > 0
                   ? 'text-orange-600 dark:text-orange-400 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-900/20'
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700'
@@ -148,7 +148,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
               disabled={isProcessing}
               size="icon"
               variant="ghost"
-              className="h-8 w-8 rounded-lg text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700"
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700"
             >
               <LinkIcon className="w-4 h-4" />
             </Button>
@@ -160,13 +160,13 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
               disabled={isProcessing || isAgentTyping}
               size="sm"
               variant="minimal"
-              className="h-8 w-8 rounded-lg"
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg"
             />
             <Button
               onClick={() => onSend()}
               disabled={(!input.trim() && uploadedFiles.length === 0) || isAgentTyping || isProcessing}
               size="icon"
-              className="h-9 w-9 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl bg-orange-500 hover:bg-orange-600 shrink-0 disabled:opacity-50"
+              className="h-10 w-10 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl bg-orange-500 hover:bg-orange-600 shrink-0 disabled:opacity-50"
             >
               {isProcessing ? (
                 <Sparkles className="w-4 h-4 animate-pulse" />

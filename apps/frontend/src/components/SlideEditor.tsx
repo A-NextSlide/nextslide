@@ -168,7 +168,7 @@ const SlideEditorContent: React.FC = () => {
   const minMobileChatHeight = useMemo(() => {
     if (!mobileContainerHeight) return 180;
     const scaled = Math.round(mobileContainerHeight * 0.22);
-    return Math.max(120, Math.min(200, scaled));
+    return Math.max(160, Math.min(220, scaled));
   }, [mobileContainerHeight]);
 
   const maxMobileChatHeight = useMemo(() => {

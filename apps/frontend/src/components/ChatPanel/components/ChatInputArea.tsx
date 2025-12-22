@@ -99,10 +99,10 @@ export function ChatInputArea({
   deckData,
 }: ChatInputAreaProps) {
   return (
-    <div className="px-2.5 pb-2.5 pt-6 min-w-0">
+    <div className="px-2.5 pt-4 pb-[calc(env(safe-area-inset-bottom)+10px)] sm:pt-6 sm:pb-2.5 min-w-0">
       <div
         className={
-          `relative border rounded-xl px-3.5 pb-3.5 flex flex-col justify-between min-h-[230px] min-w-0 transition-colors ${isDraggingOver ? 'border-orange-500 border-dashed border-2 bg-orange-50/10 dark:bg-orange-900/10' : 'border-zinc-300 dark:border-[#929292]'
+          `relative border rounded-xl px-3 pb-3 sm:px-3.5 sm:pb-3.5 flex flex-col justify-between min-h-[120px] sm:min-h-[230px] min-w-0 transition-colors ${isDraggingOver ? 'border-orange-500 border-dashed border-2 bg-orange-50/10 dark:bg-orange-900/10' : 'border-zinc-300 dark:border-[#929292]'
           }`
         }
         onDragEnter={onDragEnter}
@@ -157,7 +157,7 @@ export function ChatInputArea({
             </div>
           )}
 
-          <div className={cn('flex items-center min-w-0', selectedMentions.length > 0 ? 'mt-2' : 'mt-4')}>
+          <div className={cn('flex items-center min-w-0', selectedMentions.length > 0 ? 'mt-2' : 'mt-3 sm:mt-4')}>
             <div className="w-px mr-2 h-8" style={{ backgroundColor: COLORS.SUGGESTION_PINK }}></div>
             <Textarea
               ref={inputRef}
