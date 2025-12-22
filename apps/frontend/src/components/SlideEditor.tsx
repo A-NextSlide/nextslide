@@ -1785,7 +1785,6 @@ const SlideEditorContent: React.FC = () => {
                   opacity={1}
                   newSystemMessage={lastSystemMessageForChat}
                   isExistingDeck={!isNewDeck || deckStatus?.state === 'completed'}
-                  enableResponseTabs={true}
                 />
               </div>
             </div>
