@@ -370,7 +370,7 @@ const SharedDeckView: React.FC = () => {
           ? deckData.slides.filter((s: any) => s && s.id && !s.id.startsWith('placeholder-'))
           : [];
         const normalizedSlides = cleanedSlides.map((slide: SlideData) => {
-          const normalized = normalizeSlideForRender(slide, deckData?.size);
+          const normalized = normalizeSlideForRender(slide, deckData?.size, { preferFallbackSize: true });
           return normalized?.slide || slide;
         });
         const resolvedDeckSize = resolveSlideSize(normalizedSlides[0], deckData?.size);
@@ -557,7 +557,7 @@ const SharedDeckView: React.FC = () => {
   // Memoized renderSlide function to prevent re-creation on each render
   // This is critical for mobile performance and preventing crashes
   const renderSlide = React.useCallback((slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
-    const normalized = normalizeSlideForRender(slide, deckSlideSize);
+    const normalized = normalizeSlideForRender(slide, deckSlideSize, { preferFallbackSize: true });
     const normalizedSlide = normalized?.slide || slide;
     const fallbackBackground = getSlideBackground(normalizedSlide);
     const baseSlideWidth = deckSlideSize.width;

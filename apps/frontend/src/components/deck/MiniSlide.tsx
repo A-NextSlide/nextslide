@@ -32,7 +32,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   const [dimensions, setDimensions] = useState({ width: fixedWidth || 160, height: fixedHeight || 90 });
   const [isReady, setIsReady] = useState(!responsive); // If not responsive, ready immediately
   const normalizedResult = useMemo(() => {
-    return normalizeSlideForRender(slide, slideSize);
+    return normalizeSlideForRender(slide, slideSize, { preferFallbackSize: true });
   }, [slide, slideSize]);
   const normalizedSlide = useMemo(() => {
     if (normalizedResult?.slide) return normalizedResult.slide;

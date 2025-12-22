@@ -3,6 +3,9 @@ import type { SlideData } from '@/types/SlideTypes';
 import type { ComponentInstance } from '@/types/components';
 
 export type SlideSize = { width: number; height: number };
+export type NormalizeSlideOptions = {
+  preferFallbackSize?: boolean;
+};
 
 type ComponentPercentStrategy = {
   position: boolean;
@@ -321,13 +324,12 @@ const shouldForcePercentMode = (components: ComponentInstance[]) => {
 
   const likelyPercent = maxPosition > 0 && maxPosition <= 120 && maxSize > 0 && maxSize <= 120;
   const hasPercentHints = percentHintCount > 0;
-  const strongSignal = hasPercentHints || maxPosition >= 90 || maxSize >= 90;
 
   if (hasPercentHints && maxPosition <= 200 && maxSize <= 200) {
     return true;
   }
 
-  return likelyPercent && strongSignal;
+  return likelyPercent;
 };
 
 const normalizeComponentGeometry = (
@@ -506,11 +508,17 @@ const parseSlideInput = (slide: SlideData | string | null | undefined): SlideDat
 
 export const normalizeSlideForRender = (
   slideInput: SlideData | string | null | undefined,
-  fallbackSize?: SlideSize
+  fallbackSize?: SlideSize,
+  options?: NormalizeSlideOptions
 ): { slide: SlideData; slideSize: SlideSize } | null => {
   const slide = parseSlideInput(slideInput);
   if (!slide) return null;
-  const slideSize = resolveSlideSize(slide, fallbackSize);
+  const safeFallback: SlideSize = isValidSize(fallbackSize?.width, fallbackSize?.height)
+    ? (fallbackSize as SlideSize)
+    : { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
+  const slideSize = options?.preferFallbackSize
+    ? safeFallback
+    : resolveSlideSize(slide, safeFallback);
   let rawComponents: any = (slide as any).components;
   if (typeof rawComponents === 'string') {
     try {

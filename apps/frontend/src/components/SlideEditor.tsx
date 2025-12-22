@@ -28,6 +28,7 @@ import type { ChatPanelProps } from './ChatPanel';
 import PresentationMode from './deck/PresentationMode';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
+import { normalizeSlideForRender } from '@/utils/slideNormalization';
 import Slide from './Slide';
 import { useSlideGenerationFlow } from './slide-editor/useSlideGenerationFlow';
 import { useSlideImageAutomation } from './slide-editor/useSlideImageAutomation';
@@ -720,8 +721,11 @@ const SlideEditorContent: React.FC = () => {
   // Function to render slides for presentation mode
   const renderSlide = (slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
     const deckSlideSize = deckData.size || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
-    const baseSlideWidth = deckSlideSize.width;
-    const baseSlideHeight = deckSlideSize.height;
+    const normalized = normalizeSlideForRender(slide, deckSlideSize, { preferFallbackSize: true });
+    const normalizedSlide = normalized?.slide || slide;
+    const renderSlideSize = normalized?.slideSize || deckSlideSize;
+    const baseSlideWidth = renderSlideSize.width;
+    const baseSlideHeight = renderSlideSize.height;
     // Compute a defensive fallback background so presentation mode shows slide backgrounds
     const fallbackBackground = (() => {
       const normalizeHex = (hex: string) => {
@@ -751,7 +755,7 @@ const SlideEditorContent: React.FC = () => {
         return hex;
       };
       try {
-        const components = Array.isArray(slide.components) ? slide.components : [];
+        const components = Array.isArray(normalizedSlide.components) ? normalizedSlide.components : [];
         const bg = components.find(c => c && (c.type === 'Background' || (c.id && c.id.toLowerCase().includes('background'))));
         const props: any = bg?.props || {};
         // If a generic CSS background string is provided, prefer it
@@ -780,10 +784,10 @@ const SlideEditorContent: React.FC = () => {
           }
         }
         // Solid color fallbacks
-        const directColor = props.backgroundColor || props.color || props.page?.backgroundColor || (slide as any).backgroundColor;
+        const directColor = props.backgroundColor || props.color || props.page?.backgroundColor || (normalizedSlide as any).backgroundColor;
         if (typeof directColor === 'string' && directColor) return normalizeHex(directColor as string);
         // Slide-level background image (legacy)
-        const slideBgImg = (slide as any).backgroundImage;
+        const slideBgImg = (normalizedSlide as any).backgroundImage;
         if (typeof slideBgImg === 'string' && slideBgImg) return `url(${slideBgImg})`;
       } catch {}
       return undefined as string | undefined;
@@ -804,25 +808,25 @@ const SlideEditorContent: React.FC = () => {
       );
     }
 
-    return (
-      <div className="w-full h-full relative overflow-hidden" style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
-        {/* Scale wrapper to fit slide content into presentation container */}
-        <div 
-          className="absolute origin-top-left"
-          style={{
-            width: `${baseSlideWidth}px`,
-            height: `${baseSlideHeight}px`,
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left',
-            ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
-          }}
-        >
-          <NavigationProvider initialSlideIndex={index} onSlideChange={() => {}}>
-            <EditorStateProvider initialEditingState={false} slideSizeOverride={deckSlideSize}>
+      return (
+        <div className="w-full h-full relative overflow-hidden" style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
+          {/* Scale wrapper to fit slide content into presentation container */}
+          <div 
+            className="absolute origin-top-left"
+            style={{
+              width: `${baseSlideWidth}px`,
+              height: `${baseSlideHeight}px`,
+              transform: `scale(${scale})`,
+              transformOrigin: 'top left',
+              ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
+            }}
+          >
+            <NavigationProvider initialSlideIndex={index} onSlideChange={() => {}}>
+            <EditorStateProvider initialEditingState={false} slideSizeOverride={renderSlideSize}>
               <ActiveSlideProvider>
                 <Slide
-                  key={slide.id}
-                  slide={slide}
+                  key={normalizedSlide.id}
+                  slide={normalizedSlide}
                   isActive={true}
                   direction={null}
                   isEditing={false}

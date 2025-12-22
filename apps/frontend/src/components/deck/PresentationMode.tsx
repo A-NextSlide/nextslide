@@ -407,8 +407,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     };
   }, [isPresenting, showThumbnails, setShowControls, handleExitPresentation, goToNextSlide, goToPrevSlide, isExpanded, toggleFullscreen, safeOrientationUnlock]);
 
-  if (!isPresenting) return null;
-
   // Defensive: ensure currentSlideIndex is valid
   const validIndex = Math.max(0, Math.min(currentSlideIndex, slides.length - 1));
   const currentSlide = slides[validIndex];
@@ -416,6 +414,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     if (!currentSlide) return null;
     return renderSlide(currentSlide, validIndex, slideScale, false);
   }, [currentSlide, renderSlide, slideScale, validIndex]);
+
+  if (!isPresenting) return null;
   const viewportClamp = isMobile ? 100 : 98;
   const progressTotal = Math.max(1, slides.length);
   const slideRatio = baseSlideWidth / baseSlideHeight;

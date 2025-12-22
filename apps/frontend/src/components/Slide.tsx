@@ -119,6 +119,7 @@ const SlideContent: React.FC<SlideProps> = ({
   // Check if we're inside an ActiveSlideProvider by trying to use the context
   // If not, just use the slide data directly without throwing errors
   const activeSlideContext = React.useContext(ActiveSlideContext);
+  const shouldUseContext = !!activeSlideContext && !isPresenting;
 
   // REAL-TIME FIX: Subscribe directly to store for non-edit mode updates
   // This ensures AI agent edits show immediately without needing edit mode
@@ -129,12 +130,12 @@ const SlideContent: React.FC<SlideProps> = ({
   });
 
 
-  if (activeSlideContext) {
+  if (shouldUseContext) {
     // Context is available, use it
     activeComponents = activeSlideContext.activeComponents;
     updateComponent = activeSlideContext.updateComponent;
   } else {
-    // Context not available (like in thumbnails), use slide components directly
+    // Context not available (like in thumbnails) or presenting: use slide components directly
     activeComponents = slide.components || [];
   }
 
@@ -235,7 +236,7 @@ const SlideContent: React.FC<SlideProps> = ({
 
     if (isActive && isEditing) {
       components = activeComponents;
-    } else if (storeSlideComponents) {
+    } else if (storeSlideComponents && !isPresenting) {
       // Real-time store subscription for non-edit mode
       components = storeSlideComponents;
     } else {
@@ -243,7 +244,7 @@ const SlideContent: React.FC<SlideProps> = ({
     }
 
     return Array.isArray(components) ? components : [];
-  }, [isActive, isEditing, activeComponents, slideData.components, storeSlideComponents]);
+  }, [isActive, isEditing, activeComponents, slideData.components, storeSlideComponents, isPresenting]);
   
   // PERFORMANCE: Skip loading components if explicitly told to
   // This helps with edit mode performance when there are many slides in a deck
