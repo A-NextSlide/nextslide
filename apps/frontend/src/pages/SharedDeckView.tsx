@@ -36,7 +36,7 @@ import { useReturnBannerStore } from '@/stores/returnBannerStore';
 import { SlideData } from '@/types/SlideTypes';
 import { normalizeSlideForRender, resolveSlideSize } from '@/utils/slideNormalization';
 import { NavigationProvider } from '@/context/NavigationContext';
-import { ActiveSlideProvider } from '@/context/ActiveSlideContext';
+import { ActiveSlideProvider, StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { EditorStateProvider } from '@/context/EditorStateContext';
 import Slide from '@/components/Slide';
 
@@ -559,9 +559,10 @@ const SharedDeckView: React.FC = () => {
   const renderSlide = React.useCallback((slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
     const normalized = normalizeSlideForRender(slide, deckSlideSize, { preferFallbackSize: true });
     const normalizedSlide = normalized?.slide || slide;
+    const renderSlideSize = normalized?.slideSize || deckSlideSize;
     const fallbackBackground = getSlideBackground(normalizedSlide);
-    const baseSlideWidth = deckSlideSize.width;
-    const baseSlideHeight = deckSlideSize.height;
+    const baseSlideWidth = renderSlideSize.width;
+    const baseSlideHeight = renderSlideSize.height;
 
     // For thumbnails, use a much simpler rendering approach to avoid crashes on mobile
     if (isThumbnail) {
@@ -606,16 +607,18 @@ const SharedDeckView: React.FC = () => {
               ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
             }}
           >
-            <Slide
-              key={normalizedSlide.id}
-              slide={normalizedSlide}
-              isActive={true}
-              direction={null}
-              isEditing={false}
-              onSave={() => {}}
-              selectedComponentId={undefined}
-              onComponentSelect={() => {}}
-            />
+            <StaticActiveSlideProvider slide={normalizedSlide}>
+              <Slide
+                key={normalizedSlide.id}
+                slide={normalizedSlide}
+                isActive={true}
+                direction={null}
+                isEditing={false}
+                onSave={() => {}}
+                selectedComponentId={undefined}
+                onComponentSelect={() => {}}
+              />
+            </StaticActiveSlideProvider>
           </div>
         </div>
       </SlideErrorBoundary>

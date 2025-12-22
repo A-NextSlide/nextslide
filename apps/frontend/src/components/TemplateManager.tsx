@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import SlideComponent from '@/components/Slide';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
-import { ActiveSlideProvider } from '@/context/ActiveSlideContext';
+import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { EditorStateProvider } from '@/context/EditorStateContext';
 import { NavigationProvider } from '@/context/NavigationContext';
 import LoadingDisplay from '@/components/common/LoadingDisplay';
@@ -399,13 +399,13 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({ onBack }) => {
                         position: 'absolute',
                         overflow: 'hidden',
                       }}
-                    >
-                      <NavigationProvider 
-                        initialSlideIndex={0} 
-                        onSlideChange={() => {}}
                       >
-                        <EditorStateProvider initialEditingState={false}>
-                          <ActiveSlideProvider>
+                        <NavigationProvider 
+                          initialSlideIndex={0} 
+                          onSlideChange={() => {}}
+                        >
+                          <EditorStateProvider initialEditingState={false}>
+                          <StaticActiveSlideProvider slide={createRenderableSlide(selectedTemplate)!}>
                             <SlideComponent
                               slide={createRenderableSlide(selectedTemplate)!}
                               isActive={true}
@@ -413,7 +413,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({ onBack }) => {
                               isEditing={false}
                               isThumbnail={false}
                             />
-                          </ActiveSlideProvider>
+                          </StaticActiveSlideProvider>
                         </EditorStateProvider>
                       </NavigationProvider>
                     </div>

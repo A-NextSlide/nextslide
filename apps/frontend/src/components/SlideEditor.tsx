@@ -13,7 +13,7 @@ import { useSlideNavigation } from '@/hooks/useSlideNavigation';
 import { useEditor } from '@/hooks/useEditor';
 import { NavigationProvider } from '@/context/NavigationContext';
 import { EditorStateProvider } from '@/context/EditorStateContext';
-import { ActiveSlideProvider } from '@/context/ActiveSlideContext';
+import { ActiveSlideProvider, StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { VersionHistoryProvider, useVersionHistory } from '@/context/VersionHistoryContext';
 import { deckSyncService } from '@/lib/deckSyncService';
 import VersionHistoryPanel from './VersionHistoryPanel';
@@ -823,7 +823,7 @@ const SlideEditorContent: React.FC = () => {
           >
             <NavigationProvider initialSlideIndex={index} onSlideChange={() => {}}>
             <EditorStateProvider initialEditingState={false} slideSizeOverride={renderSlideSize}>
-              <ActiveSlideProvider>
+              <StaticActiveSlideProvider slide={normalizedSlide}>
                 <Slide
                   key={normalizedSlide.id}
                   slide={normalizedSlide}
@@ -834,7 +834,7 @@ const SlideEditorContent: React.FC = () => {
                   selectedComponentId={undefined}
                   onComponentSelect={() => {}}
                 />
-              </ActiveSlideProvider>
+              </StaticActiveSlideProvider>
             </EditorStateProvider>
           </NavigationProvider>
         </div>

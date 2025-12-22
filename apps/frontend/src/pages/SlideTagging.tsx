@@ -15,7 +15,7 @@ import { saveAs } from 'file-saver';
 import typeboxSchemas from '@/config/typeboxSchemas';
 import SlideComponent from '@/components/Slide';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
-import { ActiveSlideProvider } from '@/context/ActiveSlideContext';
+import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { EditorStateProvider } from '@/context/EditorStateContext';
 import { NavigationProvider } from '@/context/NavigationContext';
 import { SlideTemplateService } from '@/services/SlideTemplateService';
@@ -2080,7 +2080,7 @@ const SlideTagging: React.FC = () => {
                                 onSlideChange={() => {}}
                               >
                                 <EditorStateProvider key={`editor-${currentSlideIndex}-${Date.now()}`} initialEditingState={false}>
-                                  <ActiveSlideProvider key={`active-${currentSlideIndex}-${Date.now()}`}>
+                                  <StaticActiveSlideProvider slide={createRenderableSlide(translatedData.slides[currentSlideIndex])} key={`active-${currentSlideIndex}-${Date.now()}`}>
                                     <SlideComponent
                                       key={`slide-component-${currentSlideIndex}-${Date.now()}`}
                                       slide={createRenderableSlide(translatedData.slides[currentSlideIndex])}
@@ -2089,7 +2089,7 @@ const SlideTagging: React.FC = () => {
                                       isEditing={false}
                                       isThumbnail={false}
                                     />
-                                  </ActiveSlideProvider>
+                                  </StaticActiveSlideProvider>
                                 </EditorStateProvider>
                               </NavigationProvider>
                             </div>
@@ -2155,7 +2155,7 @@ const SlideTagging: React.FC = () => {
                                       onSlideChange={() => {}}
                                     >
                                       <EditorStateProvider initialEditingState={false}>
-                                        <ActiveSlideProvider>
+                                        <StaticActiveSlideProvider slide={createRenderableSlide(selectedSearchTemplate.slides[0])}>
                                           <SlideComponent
                                             slide={createRenderableSlide(selectedSearchTemplate.slides[0])}
                                             isActive={true}
@@ -2163,7 +2163,7 @@ const SlideTagging: React.FC = () => {
                                             isEditing={false}
                                             isThumbnail={false}
                                           />
-                                        </ActiveSlideProvider>
+                                        </StaticActiveSlideProvider>
                                       </EditorStateProvider>
                                     </NavigationProvider>
                                   </div>

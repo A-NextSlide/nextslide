@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import VersionHistoryTree from './VersionHistoryTree';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
+import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 
 const VersionHistoryPanel: React.FC = () => {
   const [versions, setVersions] = useState<DeckVersion[]>([]);
@@ -421,11 +422,13 @@ const VersionHistoryPanel: React.FC = () => {
                   className="overflow-hidden rounded-md relative border shadow-sm"
                 > 
                   {selectedVersion.data.slides && selectedVersion.data.slides[selectedSlideIndex] ? (
-                    <Slide 
-                      slide={selectedVersion.data.slides[selectedSlideIndex]} 
-                      isActive={true}
-                      direction={null}
-                    />
+                    <StaticActiveSlideProvider slide={selectedVersion.data.slides[selectedSlideIndex]}>
+                      <Slide 
+                        slide={selectedVersion.data.slides[selectedSlideIndex]} 
+                        isActive={true}
+                        direction={null}
+                      />
+                    </StaticActiveSlideProvider>
                   ) : (
                     <div className="flex items-center justify-center h-full text-muted-foreground p-4">
                       <div className="text-center">

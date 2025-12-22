@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SlideData } from '@/types/SlideTypes';
 import Slide from '@/components/Slide';
 import { EditorStateProvider } from '@/context/EditorStateContext';
-import { ActiveSlideProvider } from '@/context/ActiveSlideContext';
+import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { NavigationProvider } from '@/context/NavigationContext';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { cn } from '@/lib/utils';
@@ -195,7 +195,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
                      initialEditingState={false}
                      slideSizeOverride={resolvedSlideSize}
                    >
-                     <ActiveSlideProvider>
+                     <StaticActiveSlideProvider slide={safeSlide}>
                        <div className="slide-canvas" style={{ background: 'transparent' }}>
                          <Slide 
                            slide={safeSlide} 
@@ -211,7 +211,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
                            }}
                          />
                        </div>
-                     </ActiveSlideProvider>
+                     </StaticActiveSlideProvider>
                    </EditorStateProvider>
                  </NavigationProvider>
               </div>
@@ -253,7 +253,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
               initialEditingState={false}
               slideSizeOverride={resolvedSlideSize}
             >
-            <ActiveSlideProvider>
+            <StaticActiveSlideProvider slide={safeSlide}>
               <Slide 
                 slide={safeSlide} 
                 isActive={true}
@@ -267,7 +267,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
                   left: 0
                 }}
               />
-            </ActiveSlideProvider>
+            </StaticActiveSlideProvider>
           </EditorStateProvider>
         </NavigationProvider>
       </div>

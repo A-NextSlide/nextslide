@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronLeft, ChevronRight, Grid3X3, Maximize2, Minimize2 } from 'lucide-react';
 import { usePresentationStore } from '@/stores/presentationStore';
@@ -6,6 +6,7 @@ import { useNavigation } from '@/context/NavigationContext';
 import { SlideData } from '@/types/SlideTypes';
 import { cn } from '@/lib/utils';
 import { DEFAULT_SLIDE_HEIGHT, DEFAULT_SLIDE_WIDTH } from '@/utils/deckUtils';
+import { normalizeSlideForRender } from '@/utils/slideNormalization';
 import Watermark from '@/components/common/Watermark';
 import MiniSlide from './MiniSlide';
 
@@ -69,11 +70,24 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const [isPortrait, setIsPortrait] = useState(true);
   const isExpanded = isFullscreen || isLandscapeMode;
   const shouldRotate = isExpanded && isMobile && isPortrait;
-  const baseSlideSize = slideSize || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
-  const baseSlideWidth = shouldRotate ? baseSlideSize.height : baseSlideSize.width;
-  const baseSlideHeight = shouldRotate ? baseSlideSize.width : baseSlideSize.height;
+  const deckSlideSize = useMemo(
+    () => slideSize || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT },
+    [slideSize]
+  );
+  const validIndex = useMemo(() => {
+    if (!slides.length) return 0;
+    return Math.max(0, Math.min(currentSlideIndex, slides.length - 1));
+  }, [currentSlideIndex, slides.length]);
+  const currentSlide = useMemo(() => (slides.length ? slides[validIndex] : null), [slides, validIndex]);
+  const normalizedResult = useMemo(() => {
+    if (!currentSlide) return null;
+    return normalizeSlideForRender(currentSlide, deckSlideSize, { preferFallbackSize: true });
+  }, [currentSlide, deckSlideSize]);
+  const resolvedSlideSize = normalizedResult?.slideSize || deckSlideSize;
+  const baseSlideWidth = shouldRotate ? resolvedSlideSize.height : resolvedSlideSize.width;
+  const baseSlideHeight = shouldRotate ? resolvedSlideSize.width : resolvedSlideSize.height;
   const thumbnailHeight = isMobile ? 96 : 120;
-  const thumbnailWidth = Math.round(thumbnailHeight * (baseSlideSize.width / baseSlideSize.height));
+  const thumbnailWidth = Math.round(thumbnailHeight * (deckSlideSize.width / deckSlideSize.height));
 
   // Detect mobile device - improved detection for tablets and touch devices
   useEffect(() => {
@@ -418,12 +432,13 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   }, [isPresenting, showThumbnails, setShowControls, handleExitPresentation, goToNextSlide, goToPrevSlide, isExpanded, toggleFullscreen, safeOrientationUnlock]);
 
   // Defensive: ensure currentSlideIndex is valid
+  const slideContent = useMemo(() => {
+    if (!isPresenting) return null;
+    if (!currentSlide) return null;
+    return renderSlide(currentSlide, validIndex, slideScale, false);
+  }, [currentSlide, isPresenting, renderSlide, slideScale, validIndex]);
+
   if (!isPresenting) return null;
-  const validIndex = Math.max(0, Math.min(currentSlideIndex, slides.length - 1));
-  const currentSlide = slides[validIndex];
-  const slideContent = currentSlide
-    ? renderSlide(currentSlide, validIndex, slideScale, false)
-    : null;
   const viewportClamp = isMobile ? 100 : 98;
   const progressTotal = Math.max(1, slides.length);
   const slideRatio = baseSlideWidth / baseSlideHeight;
@@ -440,8 +455,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
         minHeight
       };
   const slideFrameStyle = {
-    width: `${baseSlideSize.width * slideScale}px`,
-    height: `${baseSlideSize.height * slideScale}px`
+    width: `${resolvedSlideSize.width * slideScale}px`,
+    height: `${resolvedSlideSize.height * slideScale}px`
   };
   const slideWrapperPadding = isExpanded && isMobile ? "p-0" : (isMobile ? "p-2" : "p-4");
 
@@ -760,7 +775,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                             height={thumbnailHeight}
                             responsive={false}
                             className="pointer-events-none rounded-none hover:ring-0"
-                            slideSize={baseSlideSize}
+                            slideSize={deckSlideSize}
                           />
                         </div>
 
