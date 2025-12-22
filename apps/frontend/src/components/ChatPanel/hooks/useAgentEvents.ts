@@ -102,6 +102,85 @@ export function useAgentEvents({
     }, 8000);
   }, [clearAgentEditTimeout]);
 
+  const getCustomComponentUpdateTargets = useCallback((diff?: DeckDiff | null): Array<{ slideId: string; componentId: string }> => {
+    if (!diff) return [];
+    const targets: Array<{ slideId: string; componentId: string }> = [];
+    (diff.slides_to_update || []).forEach((slideDiff: any) => {
+      const slideId = slideDiff?.slide_id || slideDiff?.id;
+      if (!slideId) return;
+      (slideDiff.components_to_update || []).forEach((compDiff: any) => {
+        if (!compDiff?.id) return;
+        const hasRender = typeof compDiff?.props?.render === 'string';
+        const isCustomType = compDiff?.type === 'CustomComponent';
+        if (hasRender || isCustomType) {
+          targets.push({ slideId, componentId: compDiff.id });
+        }
+      });
+    });
+    return targets;
+  }, []);
+
+  const schedulePostApplyRefresh = useCallback((options: {
+    diff?: DeckDiff | null;
+    editedSlideId?: string | null;
+    preEditSnapshot?: any;
+  }) => {
+    const { diff, editedSlideId, preEditSnapshot } = options;
+    const targets = getCustomComponentUpdateTargets(diff);
+    if (targets.length === 0) return;
+
+    setTimeout(async () => {
+      try {
+        const deckStore = useDeckStore.getState();
+        const deckIdToRefresh = deckStore.deckData?.uuid || (deckStore.deckData as any)?.id;
+        if (!deckIdToRefresh) return;
+
+        const targetSlideId = editedSlideId || targets[0]?.slideId;
+        const currentSlide = targetSlideId
+          ? deckStore.deckData?.slides?.find((s: any) => s.id === targetSlideId)
+          : null;
+        const prevSlide = targetSlideId
+          ? preEditSnapshot
+          : null;
+
+        let hasLocalChange = false;
+        if (currentSlide && prevSlide) {
+          targets.forEach((target) => {
+            if (target.slideId !== currentSlide.id) return;
+            const currentComp = currentSlide.components?.find((c: any) => c.id === target.componentId);
+            const prevComp = prevSlide.components?.find((c: any) => c.id === target.componentId);
+            if (!currentComp) return;
+            if (!prevComp) {
+              hasLocalChange = true;
+              return;
+            }
+            if (currentComp.props?.render !== prevComp.props?.render) {
+              hasLocalChange = true;
+            }
+          });
+        }
+
+        if (hasLocalChange) return;
+
+        const latest = await deckSyncService.getFullDeck(String(deckIdToRefresh));
+        if (latest && (latest as any).slides) {
+          deckStore.updateDeckData(latest as any, { skipBackend: true, isRealtimeUpdate: true });
+        }
+
+        if (typeof window !== 'undefined' && (window as any).__isEditMode) {
+          const navContext = (window as any).__navigationContext;
+          const currentSlideIdx = navContext?.currentSlideIndex || 0;
+          const refreshSlideId = targetSlideId || deckStore.deckData?.slides?.[currentSlideIdx]?.id;
+          if (refreshSlideId) {
+            const editorStore = useEditorStore.getState();
+            editorStore.clearDraftComponents(refreshSlideId);
+            editorStore.initializeDraftComponents(refreshSlideId);
+          }
+        }
+      } catch { }
+    }, 900);
+  }, [getCustomComponentUpdateTargets]);
+
   const animatePlanMessage = useCallback((steps: string[]) => {
     if (!steps || steps.length === 0) return;
     clearPlanTimers();
@@ -450,6 +529,7 @@ export function useAgentEvents({
   const handleDeckEditApplied = useCallback((evt: any, source: 'primary' | 'secondary'): boolean => {
     if (evt?.type !== 'deck.edit.applied') return false;
     const isPrimary = source === 'primary';
+    let appliedDiff: DeckDiff | null = null;
 
     try {
       clearAgentEditTimeout();
@@ -481,6 +561,7 @@ export function useAgentEvents({
 
       const deckDiff = (evt as any).data?.deck_diff;
       if (deckDiff && isValidDeckDiff(deckDiff)) {
+        appliedDiff = deckDiff;
         applyDeckDiffRespectingEditMode(deckDiff, true);
       }
       if (appliedMessageId) {
@@ -579,6 +660,7 @@ export function useAgentEvents({
           }
 
           if (diff) {
+            appliedDiff = diff as DeckDiff;
             applyDeckDiffRespectingEditMode(diff, true);
 
             setTimeout(() => {
@@ -661,6 +743,7 @@ export function useAgentEvents({
               diff = (evt as any).data.deck_diff;
             }
             if (diff) {
+              appliedDiff = diff as DeckDiff;
               applyDeckDiffRespectingEditMode(diff, true);
 
               try {
@@ -780,6 +863,9 @@ export function useAgentEvents({
         } catch { }
       }
 
+      if (isPrimary) {
+        schedulePostApplyRefresh({ diff: appliedDiff, editedSlideId, preEditSnapshot });
+      }
       return true;
     } catch (handlerError) {
       const errorLabel = isPrimary ? '[ChatPanel:primary]' : '[ChatPanel:secondary]';
@@ -801,6 +887,7 @@ export function useAgentEvents({
     insertEditAppliedFallbackMessage,
     insertEditAppliedMessage,
     normalizeSlidesPayload,
+    schedulePostApplyRefresh,
     setCurrentSlideIndexSafe,
     setMessages,
   ]);

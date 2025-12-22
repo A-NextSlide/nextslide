@@ -27,9 +27,11 @@ This allows any integration to feed data into slide creation without hardcoding.
 """
 
 import os
+import re
 from typing import Dict, List, Optional, Any, Callable
 import logging
 import asyncio
+from datetime import datetime, timezone
 
 from models.deck import DeckDiff, DeckDiffBase
 from models.registry import ComponentRegistry
@@ -84,7 +86,33 @@ def web_search(
         }
         return diff
 
-    logger.info(f"[WebSearch] Searching for: {query}")
+    def _current_date_str() -> str:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    def _needs_recent(q: str) -> bool:
+        ql = (q or "").lower()
+        return any(
+            phrase in ql
+            for phrase in (
+                "latest",
+                "most recent",
+                "recent",
+                "last game",
+                "today",
+                "current",
+                "this season",
+                "as of",
+                "updated",
+            )
+        )
+
+    today = _current_date_str()
+    recency_filter = "week" if _needs_recent(query) else "month"
+    augmented_query = query
+    if _needs_recent(query) and today not in query:
+        augmented_query = f"{query} as of {today}"
+
+    logger.info(f"[WebSearch] Searching for: {augmented_query}")
 
     # Check if Perplexity API key is available
     if not (os.getenv("PPLX_API_KEY") or os.getenv("PERPLEXITY_API_KEY")):
@@ -103,21 +131,23 @@ def web_search(
         client, model = get_client("perplexity-sonar", wrap_with_instructor=False)
 
         # Focused prompt for slide content improvement
-        system_prompt = """You are a research assistant helping improve presentation content.
+        system_prompt = f"""You are a research assistant helping improve presentation content.
 Provide accurate, current information with specific facts, numbers, and statistics.
 Focus on concrete data that can be directly used to update slide text.
-Keep responses concise and factual - just the key points and data."""
+Keep responses concise and factual - just the key points and data.
+Today's date (UTC): {today}. If the query asks for "latest/current/most recent", use sources as of this date and include dates in the answer.
+Do not guess; if data is unavailable, say so."""
 
         response = client.chat.completions.create(
             model="sonar",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query}
+                {"role": "user", "content": augmented_query}
             ],
             max_tokens=5000,
             extra_body={
                 "return_citations": True,
-                "search_recency_filter": "month"
+                "search_recency_filter": recency_filter
             }
         )
 

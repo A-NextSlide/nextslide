@@ -6,6 +6,7 @@ Simple, focused prompts for creating presentation outlines.
 
 from typing import Dict, Any, Optional, List
 import json
+from datetime import datetime, timezone
 
 STRUCTURED_OUTPUT_HEADER = """
 
@@ -120,6 +121,10 @@ STRUCTURED_OUTPUT_FOOTER = """
 Choose the chart type that best reveals the pattern in your data. Use variety across slides!"""
 
 
+def _current_date_line() -> str:
+    return f"Today (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+
+
 def get_flow_requirements(slide_count: Optional[int]) -> str:
     """Get flow requirements based on slide count."""
     if slide_count:
@@ -138,6 +143,7 @@ def get_outline_planning_prompt(user_prompt: str, style_context: Optional[str], 
     context_inst = f"Context: {style_context}" if style_context else ""
 
     return (
+        f"{_current_date_line()}\n"
         f"Create a slide outline plan for: {user_prompt}\n"
         f"{count_inst}\n"
         f"{detail_inst}\n"
@@ -162,6 +168,7 @@ def get_slide_content_prompt(
     _ = chart_type_descriptions
 
     lines = [
+        _current_date_line(),
         f"Slide: {slide_title}",
         f"Topic: {user_prompt}",
         f"Presentation: {presentation_title}",

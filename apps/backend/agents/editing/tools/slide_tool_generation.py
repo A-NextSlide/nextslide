@@ -3,6 +3,7 @@
 from typing import Any, Dict, List
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from models.deck import DeckDiff, DeckDiffBase
 from models.component import ComponentDiffBase
@@ -32,6 +33,11 @@ from agents.editing.tools.struct_utils import get_attr as _get_attr
 from agents.generation.image_processing import apply_tagged_media_to_images
 
 logger = logging.getLogger(__name__)
+
+
+def _current_date_note() -> str:
+    """Return a short current-date note for prompt grounding."""
+    return f"CURRENT DATE (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
 
 
 def edit_slide(
@@ -208,7 +214,9 @@ def _generate_slide_content(
         None
     )
 
-    prompt = f"""{SLIDE_GENERATOR_PROMPT}
+    prompt = f"""{_current_date_note()}
+
+{SLIDE_GENERATOR_PROMPT}
 
 EXISTING BACKGROUND: {_get_attr(background, 'props') if background else 'None - create a dark gradient background'}
 
@@ -292,7 +300,9 @@ def _edit_standard_components(
     """Edit standard components or replace with CustomComponent."""
     logger.info(f"[_edit_standard_components] Editing {len(components)} components")
 
-    prompt = f"""{SLIDE_GENERATOR_PROMPT}
+    prompt = f"""{_current_date_note()}
+
+{SLIDE_GENERATOR_PROMPT}
 
 {SLIDE_EDIT_PROMPT.format(
     current_components=_format_components_for_prompt(components),
@@ -443,7 +453,9 @@ def create_slide(
 
         generated = run_async(
             gen.generate(
-                content=f"""CREATE NEW SLIDE: {instruction}{att_context}{chat_context}{instruction_note}
+                content=f"""{_current_date_note()}
+
+CREATE NEW SLIDE: {instruction}{att_context}{chat_context}{instruction_note}
 
 IMPORTANT:
 - Create a complete, beautiful slide that fills the entire 1920x1080 canvas.

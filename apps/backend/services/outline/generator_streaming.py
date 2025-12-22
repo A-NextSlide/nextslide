@@ -3,6 +3,7 @@ import json
 import re
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, AsyncGenerator, List, Optional
 
 from agents.ai.clients import get_client, get_max_tokens_for_model, invoke
@@ -384,7 +385,10 @@ Return JSON:
 
                     full_context = "\n\n".join(context_parts)
 
+                    today_line = f"Today (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+
                     research_prompt = f"""Research this slide topic and provide rich, data-heavy facts with sources.
+{today_line}
 
 Presentation: {presentation_title}
 Slide: {slide_title}

@@ -3,6 +3,7 @@
 from typing import Any, Dict, List
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from models.deck import DeckDiff, DeckDiffBase
 from models.component import ComponentDiffBase
@@ -23,6 +24,11 @@ from agents.editing.tools.slide_tool_models import _ReplacePlan
 from agents.editing.tools.struct_utils import get_attr as _get_attr
 
 logger = logging.getLogger(__name__)
+
+
+def _current_date_note() -> str:
+    """Return a short current-date note for prompt grounding."""
+    return f"CURRENT DATE (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
 
 
 def _generate_full_bleed_custom_component(
@@ -128,7 +134,9 @@ def _targeted_custom_component_edit(
     typography = theme.get("typography") or {}
     att_hint = _build_attachment_context(attachments, "FILES AVAILABLE:") if attachments else ""
 
-    prompt = f"""You are a precise HTML editor. You must make a SMALL, TARGETED change without redesigning.
+    prompt = f"""{_current_date_note()}
+
+You are a precise HTML editor. You must make a SMALL, TARGETED change without redesigning.
 
 RULES:
 - Do NOT rewrite the whole HTML.
@@ -381,7 +389,9 @@ IMPORTANT:
         system_prompt = "You are an expert HTML/CSS designer. Modify the CustomComponent with high quality and theme consistency. Fill 1920x1080."
         logger.warning(f"[custom_component_rewrite] Failed to build generator prompt, using fallback: {e}")
 
-    user_prompt = f"""CURRENT CUSTOMCOMPONENT HTML:
+    user_prompt = f"""{_current_date_note()}
+
+CURRENT CUSTOMCOMPONENT HTML:
 {current_html[:25000]}
 
 REFERENCE IMAGE URLS (if any): {', '.join(reference_images) if reference_images else 'none'}

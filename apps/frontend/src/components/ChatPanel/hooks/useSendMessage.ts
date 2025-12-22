@@ -183,6 +183,23 @@ export function useSendMessage({
     }
   }, [messages, onOutlineAgentToolCall, onOutlineChatGeneratingChange, setIsGenerating, setMessages]);
 
+  const isDeckWideRequest = useCallback((text: string): boolean => {
+    const normalized = (text || '').toLowerCase();
+    return (
+      normalized.includes('all slides') ||
+      normalized.includes('every slide') ||
+      normalized.includes('entire deck') ||
+      normalized.includes('whole deck') ||
+      normalized.includes('update the deck') ||
+      normalized.includes('across the deck') ||
+      normalized.includes('entire presentation') ||
+      normalized.includes('whole presentation') ||
+      normalized.includes('across all slides') ||
+      normalized.includes('across the slides') ||
+      normalized.includes('all pages')
+    );
+  }, []);
+
   const sendMessage = useCallback(async (overrideMessage?: string) => {
     const messageText = (overrideMessage ?? input).trim();
     if (!messageText) return;
@@ -848,8 +865,19 @@ export function useSendMessage({
         domPath: s.slideId ? `#slide_${s.slideId} [data-component-id="${s.elementId}"]` : `[data-component-id="${s.elementId}"]`
       }));
 
-      const effectiveSelections = (selectionContext.length > 0 || !slideId)
-        ? selectionContext
+      const deckScope = isDeckWideRequest(messageText);
+      let filteredSelections = selectionContext;
+      if (slideId && selectionContext.length > 0) {
+        const selectionsOnCurrentSlide = selectionContext.filter(sel => !sel.slideId || sel.slideId === slideId);
+        if (selectionsOnCurrentSlide.length > 0) {
+          filteredSelections = selectionsOnCurrentSlide;
+        } else {
+          filteredSelections = [];
+        }
+      }
+
+      const effectiveSelections = (filteredSelections.length > 0 || !slideId || deckScope)
+        ? filteredSelections
         : [{
           elementId: slideId,
           elementType: 'Slide',
@@ -953,6 +981,8 @@ export function useSendMessage({
             slide_id: slideId || undefined,
             current_slide_index: currentSlideIndex,
             deck_data: deckData,
+            scope: deckScope ? 'deck' : 'slide',
+            apply_to_all_slides: deckScope,
             selected_linkedin_profile: selectedProfileForContinuationRef.current || selectedLinkedInProfile || undefined,
           },
         });
@@ -1050,6 +1080,7 @@ export function useSendMessage({
     currentSlideIndex,
     ensureAgentSession,
     input,
+    isDeckWideRequest,
     messages,
     onOutlineAgentToolCall,
     onOutlineChatGeneratingChange,

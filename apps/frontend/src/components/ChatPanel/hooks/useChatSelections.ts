@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { getOverlappingComponentIds, getComponentBounds } from '@/utils/overlapDetection';
 import { useDeckStore } from '@/stores/deckStore';
 import { useEditor } from '@/hooks/useEditor';
+import { useNavigation } from '@/context/NavigationContext';
 import type { SelectedElement } from '../types';
 
 interface UseChatSelectionsReturn {
@@ -18,6 +19,10 @@ export function useChatSelections(): UseChatSelectionsReturn {
   const [isSelecting, setIsSelecting] = useState(false);
   const [hoveredElementId, setHoveredElementId] = useState<string | null>(null);
   const { isEditing: isSlideEditing } = useEditor();
+  const { currentSlideIndex } = useNavigation();
+  const slides = useDeckStore(state => state.deckData.slides);
+  const currentSlideId = slides?.[currentSlideIndex]?.id || null;
+  const lastSlideIdRef = useRef<string | null>(currentSlideId);
 
   const removeSelection = useCallback((elementId: string) => {
     setSelectedElements(prev => prev.filter(s => s.elementId !== elementId));
@@ -265,6 +270,19 @@ export function useChatSelections(): UseChatSelectionsReturn {
       clearSelections();
     }
   }, [isSlideEditing]);
+
+  useEffect(() => {
+    const prev = lastSlideIdRef.current;
+    if (prev && currentSlideId && prev !== currentSlideId) {
+      if (isSelecting) {
+        setIsSelecting(false);
+      }
+      if (selectedElements.length > 0) {
+        clearSelections();
+      }
+    }
+    lastSlideIdRef.current = currentSlideId;
+  }, [currentSlideId, isSelecting, selectedElements.length, clearSelections]);
 
   useEffect(() => {
     try {

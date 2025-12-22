@@ -13,6 +13,7 @@ import json
 from pydantic import BaseModel, Field, create_model
 import logging
 import uuid
+from datetime import datetime, timezone
 
 import re
 
@@ -237,6 +238,13 @@ def _get_attr(obj, key, default=None):
     return getattr(obj, key, default)
 
 
+def _current_date_str() -> str:
+    """Return current date in UTC for prompt grounding."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # SYSTEM PROMPT - Keep it simple and direct
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -259,6 +267,13 @@ RULES:
 3. For creative requests (like "make a slide about X"), use edit_slide or create_slide
 4. You can and SHOULD call multiple tools in one response when needed
 5. Always provide a conversational response with your tool calls
+
+DATA ACCURACY:
+- If user asks for "latest", "current", "most recent", or "as of" data, you MUST call web_search first
+- Use ONLY numbers from research results; do not guess or use stale seasons/years
+- If research is missing required metrics, ask a clarifying question or run another web_search
+- Use the CURRENT DATE (UTC) provided in context when interpreting "latest/current"
+- Do NOT include a specific year/season in a web_search query unless the user explicitly asks for that year/season
 
 CONVERSATION CONTINUITY (RECENT CHAT):
 - The RECENT CHAT section shows the last few messages in this conversation
@@ -618,6 +633,8 @@ def build_context(
         theme_lines.append("  ⚠️ When editing, preserve these brand colors/fonts!")
         theme_str = "\n".join(theme_lines) + "\n\n"
 
+    current_date_line = f"CURRENT DATE (UTC): {_current_date_str()}"
+
     # Analyze what's on the slide
     non_bg_components = [c for c in components if _get_attr(c, 'type') != 'Background']
     has_custom = any(_get_attr(c, 'type') == 'CustomComponent' for c in components)
@@ -712,7 +729,8 @@ def build_context(
         history_lines = [f"  {m.get('role', 'user')}: {str(m.get('content', ''))[:250]}" for m in recent]
         history_str = f"\n\nRECENT CHAT:\n" + "\n".join(history_lines)
 
-    context = f"""{theme_str}CURRENT SLIDE: {slide_id}
+    context = f"""{theme_str}{current_date_line}
+CURRENT SLIDE: {slide_id}
 STATUS: {slide_status}
 
 COMPONENTS:
@@ -727,6 +745,10 @@ COMPONENTS:
 
 TOOL_DESCRIPTIONS = """
 AVAILABLE TOOLS:
+
+SCOPE:
+- If [CONTEXT] indicates scope=deck or apply_to_all_slides=true, apply the change across all slides
+- Use view_slide to inspect other slides, then edit each relevant slide
 
 1. custom_component_str_replace ⭐ PREFERRED FOR TARGETED EDITS
    - Make a SINGLE targeted edit to a CustomComponent
@@ -1227,6 +1249,8 @@ Respond with the tool_calls to execute."""
 
                         if item_lines:
                             header = f"[{integration_name.upper()} DATA - USE THESE DETAILS AND URLs IN THE SLIDE]:"
+                            if data_type == "research":
+                                header = f"[{integration_name.upper()} RESEARCH - USE ONLY THESE FACTS/NUMBERS; DO NOT INVENT]:"
                             context_blocks.append(header + "\n" + "\n".join(item_lines))
                             logger.info(f"[ORCHESTRATOR] 💉 Injected {len(items)} {data_type} from {integration_name} into {tool_name} instruction")
 
@@ -1418,6 +1442,7 @@ Respond with the tool_calls to execute."""
 
     # Pass 1: execute initial tool calls
     deck_diff, edit_summaries, observations, needs_user_confirmation = _execute_tool_calls(response.tool_calls)
+    all_observations = list(observations or [])
 
     # PAUSE FOR USER SELECTION: If we found multiple profiles and need user to pick one
     # Don't emit a message - just return silently and let frontend handle the UX
@@ -1437,7 +1462,7 @@ Respond with the tool_calls to execute."""
     # immediately feed the observation back in and ask for actionable tool calls.
     # This prevents the frustrating "we viewed it, now user must re-ask" loop.
     logger.info(f"[ORCHESTRATOR] Pass 2 check: observations={bool(observations)}, is_empty_deckdiff={_is_empty_deckdiff(deck_diff)}")
-    if observations and _is_empty_deckdiff(deck_diff):
+    if all_observations and _is_empty_deckdiff(deck_diff):
         logger.info(f"[ORCHESTRATOR] 🔄 Starting follow-up pass - agent only viewed, need actionable edits")
         try:
             followup_prompt = f"""{context}
@@ -1448,9 +1473,11 @@ Respond with the tool_calls to execute."""
 USER REQUEST: {clean_message}
 
 You already executed read-only tools and obtained these observations (JSON):
-{json.dumps(observations, ensure_ascii=False)[:24000]}
+{json.dumps(all_observations, ensure_ascii=False)[:24000]}
 
 Now propose the NEXT tool_calls needed to actually satisfy the user request.
+- If research data is provided above, ONLY use those numbers (do not invent or assume older seasons/years)
+- If required metrics are missing, run web_search again with a focused query
 - Do NOT call view_component again - you already have the component HTML in the observations above.
 - For IMAGE REPLACEMENT requests ("replace images", "fix images", "new images"):
   → Use search_images tool - call it ONCE per image you need to replace
@@ -1513,14 +1540,56 @@ Respond with the tool_calls to execute."""
                 dd2, summaries2, _obs2, _needs_confirm = _execute_tool_calls(followup.tool_calls)
                 deck_diff = deck_diff.merge(dd2)
                 edit_summaries.extend(summaries2)
+                if _obs2:
+                    all_observations.extend(_obs2)
                 logger.info(f"[ORCHESTRATOR] 🔄 Follow-up complete: {len(summaries2)} summaries, empty_diff={_is_empty_deckdiff(deck_diff)}")
                 # Use follow-up message if provided
                 followup_msg = getattr(followup, 'message', '') or ''
                 if followup_msg:
                     response.message = followup_msg
+                if all_observations and _is_empty_deckdiff(deck_diff):
+                    logger.info("[ORCHESTRATOR] 🔄 Starting second follow-up - observations only, forcing edits")
+                    followup_prompt_2 = f"""{context}
+
+{video_hint}
+{TOOL_DESCRIPTIONS}
+
+USER REQUEST: {clean_message}
+
+You already have the observations below (JSON). APPLY THEM NOW:
+{json.dumps(all_observations, ensure_ascii=False)[:24000]}
+
+Now propose tool_calls that UPDATE the slide(s) using the observed data.
+- Do NOT call web_search or view_component
+- Use custom_component_str_replace or edit_slide to apply the updated metrics
+- Use ONLY numbers from the observations; do not invent any values
+
+Respond with the tool_calls to execute."""
+
+                    followup2 = invoke(
+                        client=client,
+                        model=actual_model,
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": followup_prompt_2},
+                        ],
+                        response_model=OrchestratorResponse,
+                        max_tokens=4096,
+                    )
+                    if followup2.tool_calls:
+                        logger.info(f"[ORCHESTRATOR] 🔄 Executing {len(followup2.tool_calls)} second follow-up tool calls")
+                        dd3, summaries3, _obs3, _needs_confirm = _execute_tool_calls(followup2.tool_calls)
+                        deck_diff = deck_diff.merge(dd3)
+                        edit_summaries.extend(summaries3)
+                        if _obs3:
+                            all_observations.extend(_obs3)
+                        logger.info(f"[ORCHESTRATOR] 🔄 Second follow-up complete: {len(summaries3)} summaries, empty_diff={_is_empty_deckdiff(deck_diff)}")
+                        followup2_msg = getattr(followup2, 'message', '') or ''
+                        if followup2_msg:
+                            response.message = followup2_msg
             else:
                 # Log debug info when no tool calls are returned
-                obs_str = json.dumps(observations, ensure_ascii=False)
+                obs_str = json.dumps(all_observations, ensure_ascii=False)
                 followup_msg = getattr(followup, 'message', '') or ''
                 logger.warning(f"[ORCHESTRATOR] 🔄 Follow-up returned NO tool calls - agent may need more guidance")
                 logger.warning(f"[ORCHESTRATOR] 🔄 Observations length: {len(obs_str)} chars, followup message: {followup_msg[:200] if followup_msg else '(empty)'}")

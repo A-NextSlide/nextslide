@@ -1003,6 +1003,13 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
     sess = sb.table("agent_sessions").select("deck_id, slide_id").eq("id", session_id).single().execute().data
     deck_id = sess.get("deck_id")
     slide_id = sess.get("slide_id")
+    try:
+        if isinstance(context, dict):
+            context_slide_id = context.get("slide_id") or context.get("targetSlideId")
+            if context_slide_id:
+                slide_id = context_slide_id
+    except Exception:
+        pass
     from utils.supabase import get_deck
     deck_data = get_deck(deck_id)
     import api.chat_server as server
@@ -1033,6 +1040,17 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
     # Determine current slide for orchestrator
     # CRITICAL FIX: Use the user's actual selection from this message, not the saved session slide_id
     # This ensures the agent targets the correct slide when user selects a different slide
+    def _selection_slide_id(sel: Dict[str, Any]) -> Optional[str]:
+        return sel.get("slideId") or sel.get("slide_id")
+
+    if selections and slide_id:
+        selections_on_current = [s for s in selections if not _selection_slide_id(s) or _selection_slide_id(s) == slide_id]
+        if selections_on_current:
+            selections = selections_on_current
+        else:
+            logger.info(f"[AgentChat] Dropping selections from other slides (current={slide_id})")
+            selections = []
+
     selected_slide_id = None
     try:
         if selections and len(selections) > 0:
@@ -1187,6 +1205,9 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                 "styleFromSlideId",
                 "targetSlideId",
                 "preferredInsertAfterSlideId",
+                "scope",
+                "apply_to_all_slides",
+                "current_date",
             ]
             ctx = {k: context.get(k) for k in keys if context.get(k) is not None}
             if ctx:
@@ -1738,4 +1759,3 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
     else:
         # No deck_id: cannot apply; keep behavior (no-op apply path)
         return {"messageId": message_id}
-
