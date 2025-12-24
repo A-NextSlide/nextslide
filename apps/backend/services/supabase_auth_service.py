@@ -635,7 +635,7 @@ class SupabaseAuthService:
             if search_query:
                 print(f"[get_user_decks] Fetching decks for search: '{search_query}'")
                 # Use first_slide and slide_count instead of full slides array
-                select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count"
+                select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,data"
                 # Fetch a larger batch and filter locally
                 query = self.supabase.table("decks").select(select_columns).eq("user_id", user_id).order("created_at", desc=True).limit(200)
                 owned_response = query.execute()
@@ -660,14 +660,14 @@ class SupabaseAuthService:
                 # Use first_slide and slide_count columns instead of full slides array
                 try:
                     # Attempt to use the optimized view
-                    select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count"
+                    select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,data"
                     query = self.supabase.table("decks_optimized").select(select_columns, count="planned").eq("user_id", user_id)
                     owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
                     print(f"[get_user_decks] Using optimized view")
                 except Exception as e:
                     # Fallback to regular table - use first_slide and slide_count columns
                     print(f"[get_user_decks] Optimized view unavailable or timed out, using fallback on decks: {str(e)}")
-                    select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count"
+                    select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,data"
                     query = self.supabase.table("decks").select(select_columns, count="planned").eq("user_id", user_id)
                     owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
             
@@ -689,7 +689,9 @@ class SupabaseAuthService:
                     "is_owner": True,
                     # Use first_slide and slide_count columns directly
                     "first_slide": deck.get("first_slide"),
-                    "slide_count": deck.get("slide_count", 0) or 0
+                    "slide_count": deck.get("slide_count", 0) or 0,
+                    # Include data field for API source filtering
+                    "data": deck.get("data")
                 }
 
                 decks.append(deck_data)
