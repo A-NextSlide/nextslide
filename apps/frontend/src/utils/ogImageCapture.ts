@@ -51,8 +51,39 @@ async function waitForImages(element: HTMLElement, timeout = 5000): Promise<void
 }
 
 /**
+ * Finds parent elements with transforms and returns their original transform values
+ */
+function neutralizeParentTransforms(element: HTMLElement): Map<HTMLElement, string> {
+  const originalTransforms = new Map<HTMLElement, string>();
+  let parent = element.parentElement;
+
+  while (parent && parent !== document.body) {
+    const computedStyle = window.getComputedStyle(parent);
+    const transform = computedStyle.transform;
+
+    if (transform && transform !== 'none') {
+      originalTransforms.set(parent, parent.style.transform);
+      parent.style.transform = 'none';
+    }
+
+    parent = parent.parentElement;
+  }
+
+  return originalTransforms;
+}
+
+/**
+ * Restores the original transforms to parent elements
+ */
+function restoreParentTransforms(originalTransforms: Map<HTMLElement, string>): void {
+  originalTransforms.forEach((originalValue, element) => {
+    element.style.transform = originalValue;
+  });
+}
+
+/**
  * Captures a slide as an OG-optimized thumbnail.
- * Creates an offscreen clone at native resolution to avoid CSS transform issues.
+ * Temporarily neutralizes parent transforms to capture at native resolution.
  * The image is sized to 1200x630 (standard OG dimensions).
  *
  * @param slideElementOrId - Either an HTMLElement or a slide ID string
@@ -70,7 +101,7 @@ export async function captureOGThumbnail(
     return null;
   }
 
-  let cloneContainer: HTMLDivElement | null = null;
+  let originalTransforms: Map<HTMLElement, string> | null = null;
 
   try {
     console.log('[OG Capture] Starting capture for slide:', slideContainer.getAttribute('data-slide-id'));
@@ -79,50 +110,24 @@ export async function captureOGThumbnail(
     await new Promise(resolve => setTimeout(resolve, 300));
     await waitForImages(slideContainer);
 
-    // Create an offscreen container at native resolution
-    cloneContainer = document.createElement('div');
-    cloneContainer.style.cssText = `
-      position: fixed;
-      left: -9999px;
-      top: 0;
-      width: ${NATIVE_WIDTH}px;
-      height: ${NATIVE_HEIGHT}px;
-      overflow: hidden;
-      background: white;
-      z-index: -1;
-    `;
-    document.body.appendChild(cloneContainer);
+    // Temporarily neutralize parent transforms
+    originalTransforms = neutralizeParentTransforms(slideContainer);
+    console.log('[OG Capture] Neutralized', originalTransforms.size, 'parent transforms');
 
-    // Clone the slide content
-    const clone = slideContainer.cloneNode(true) as HTMLElement;
+    // Force layout recalculation
+    void slideContainer.offsetHeight;
 
-    // Reset any transforms and ensure full native size
-    clone.style.cssText = `
-      width: ${NATIVE_WIDTH}px !important;
-      height: ${NATIVE_HEIGHT}px !important;
-      transform: none !important;
-      position: relative !important;
-      top: 0 !important;
-      left: 0 !important;
-      margin: 0 !important;
-      padding: 0 !important;
-    `;
+    // Wait a frame for the transform changes to take effect
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Remove data-slide-id to avoid confusion
-    clone.removeAttribute('data-slide-id');
-
-    cloneContainer.appendChild(clone);
-
-    // Wait for clone to render
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    console.log('[OG Capture] Clone created, dimensions:', {
-      cloneWidth: clone.offsetWidth,
-      cloneHeight: clone.offsetHeight
+    console.log('[OG Capture] Slide dimensions:', {
+      offsetWidth: slideContainer.offsetWidth,
+      offsetHeight: slideContainer.offsetHeight
     });
 
-    // Capture the clone using html2canvas (same approach as SimpleThumbnail)
-    const canvas = await html2canvas(clone, {
+    // Capture using html2canvas (same approach as SimpleThumbnail)
+    const canvas = await html2canvas(slideContainer, {
       scale: OG_WIDTH / NATIVE_WIDTH, // 0.625 - Scale to OG width
       useCORS: true,
       allowTaint: true,
@@ -181,9 +186,9 @@ export async function captureOGThumbnail(
     console.error('[OG Capture] Failed to capture:', error);
     return null;
   } finally {
-    // Clean up the offscreen container
-    if (cloneContainer && cloneContainer.parentNode) {
-      cloneContainer.parentNode.removeChild(cloneContainer);
+    // Restore parent transforms
+    if (originalTransforms) {
+      restoreParentTransforms(originalTransforms);
     }
   }
 }
