@@ -36,6 +36,7 @@ interface ThemeChatBlockProps {
   isLoading?: boolean;
   loadingLabel?: string;
   className?: string;
+  hideHeader?: boolean; // Hide the header row (useful when parent already has section header)
 }
 
 // Helper to normalize color values (handle arrays from backend)
@@ -54,6 +55,7 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
   isLoading = false,
   loadingLabel,
   className,
+  hideHeader = false,
 }) => {
   // Normalize color data in case backend sends arrays
   const data = {
@@ -176,24 +178,26 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
       className
     )}>
       <div className="relative z-10">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-100/80 dark:border-zinc-800/80">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-              Theme
-            </span>
-            {data.brandName && (
-              <span className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 truncate">
-                {data.brandName}
+        {!hideHeader && (
+          <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-100/80 dark:border-zinc-800/80">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                Theme
               </span>
-            )}
+              {data.brandName && (
+                <span className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 truncate">
+                  {data.brandName}
+                </span>
+              )}
+            </div>
+            <span className={cn(
+              "text-[10px] font-medium",
+              isEditable ? "text-emerald-500" : "text-zinc-400"
+            )}>
+              {isEditable ? 'Editable' : 'Locked'}
+            </span>
           </div>
-          <span className={cn(
-            "text-[10px] font-medium",
-            isEditable ? "text-emerald-500" : "text-zinc-400"
-          )}>
-            {isEditable ? 'Editable' : 'Locked'}
-          </span>
-        </div>
+        )}
 
         {/* Color bars with logo */}
         <div className="flex h-14">

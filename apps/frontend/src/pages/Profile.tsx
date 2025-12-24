@@ -53,6 +53,7 @@ import { WelcomeModal } from '@/components/billing/WelcomeModal';
 import { CancellationModal } from '@/components/billing/CancellationModal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import ThemeChatBlock from '@/components/chat/blocks/ThemeChatBlock';
 import {
   Select,
   SelectContent,
@@ -2453,105 +2454,51 @@ const Profile: React.FC = () => {
               </div>
 
               {/* Brand Settings Section */}
-              <div className="space-y-4 pt-4 border-t">
-                <Label className="text-base font-medium">Brand Settings</Label>
-                <p className="text-xs text-muted-foreground -mt-2">
-                  These colors and fonts will be applied to all presentations created with this API key.
-                </p>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="brand-primary">Primary Color</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="brand-primary"
-                        type="color"
-                        className="w-12 h-9 p-1 cursor-pointer"
-                        value={selectedKey.brand_settings?.primary_color || '#FFFFFF'}
-                        onChange={(e) => setSelectedKey(prev => prev ? {
-                          ...prev,
-                          brand_settings: { ...prev.brand_settings, primary_color: e.target.value }
-                        } : null)}
-                      />
-                      <Input
-                        type="text"
-                        placeholder="#FFFFFF"
-                        value={selectedKey.brand_settings?.primary_color || ''}
-                        onChange={(e) => setSelectedKey(prev => prev ? {
-                          ...prev,
-                          brand_settings: { ...prev.brand_settings, primary_color: e.target.value }
-                        } : null)}
-                        className="flex-1"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="brand-secondary">Accent Color</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="brand-secondary"
-                        type="color"
-                        className="w-12 h-9 p-1 cursor-pointer"
-                        value={selectedKey.brand_settings?.secondary_color || '#2563EB'}
-                        onChange={(e) => setSelectedKey(prev => prev ? {
-                          ...prev,
-                          brand_settings: { ...prev.brand_settings, secondary_color: e.target.value }
-                        } : null)}
-                      />
-                      <Input
-                        type="text"
-                        placeholder="#2563EB"
-                        value={selectedKey.brand_settings?.secondary_color || ''}
-                        onChange={(e) => setSelectedKey(prev => prev ? {
-                          ...prev,
-                          brand_settings: { ...prev.brand_settings, secondary_color: e.target.value }
-                        } : null)}
-                        className="flex-1"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="brand-font">Font Family</Label>
-                  <select
-                    id="brand-font"
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
-                    value={selectedKey.brand_settings?.font_family || ''}
-                    onChange={(e) => setSelectedKey(prev => prev ? {
-                      ...prev,
-                      brand_settings: { ...prev.brand_settings, font_family: e.target.value }
-                    } : null)}
-                  >
-                    <option value="">Default (Montserrat / Poppins)</option>
-                    <option value="Inter">Inter</option>
-                    <option value="Roboto">Roboto</option>
-                    <option value="Open Sans">Open Sans</option>
-                    <option value="Lato">Lato</option>
-                    <option value="Playfair Display">Playfair Display</option>
-                    <option value="Source Sans Pro">Source Sans Pro</option>
-                    <option value="Raleway">Raleway</option>
-                    <option value="Nunito">Nunito</option>
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="brand-logo">Logo URL</Label>
-                  <Input
-                    id="brand-logo"
-                    type="url"
-                    placeholder="https://example.com/logo.png"
-                    value={selectedKey.brand_settings?.logo_url || ''}
-                    onChange={(e) => setSelectedKey(prev => prev ? {
-                      ...prev,
-                      brand_settings: { ...prev.brand_settings, logo_url: e.target.value }
-                    } : null)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Your logo will appear on title slides.
+              <div className="space-y-3 pt-4 border-t">
+                <div>
+                  <Label className="text-base font-medium">Brand Settings</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    These colors and fonts will be applied to all presentations created with this API key.
                   </p>
                 </div>
+
+                <ThemeChatBlock
+                  data={{
+                    colors: {
+                      background: selectedKey.brand_settings?.primary_color || '#FFFFFF',
+                      text: '#1A1A1A',
+                      accent: selectedKey.brand_settings?.secondary_color || '#2563EB',
+                    },
+                    fonts: {
+                      heading: selectedKey.brand_settings?.font_family || 'Montserrat',
+                      body: selectedKey.brand_settings?.font_family || 'Poppins',
+                    },
+                    logo: selectedKey.brand_settings?.logo_url || undefined,
+                  }}
+                  onColorChange={(key, hex) => {
+                    setSelectedKey(prev => {
+                      if (!prev) return null;
+                      const newBrand = { ...prev.brand_settings };
+                      if (key === 'background') newBrand.primary_color = hex;
+                      if (key === 'accent') newBrand.secondary_color = hex;
+                      return { ...prev, brand_settings: newBrand };
+                    });
+                  }}
+                  onFontChange={(type, font) => {
+                    setSelectedKey(prev => prev ? {
+                      ...prev,
+                      brand_settings: { ...prev.brand_settings, font_family: font }
+                    } : null);
+                  }}
+                  onLogoChange={(url) => {
+                    setSelectedKey(prev => prev ? {
+                      ...prev,
+                      brand_settings: { ...prev.brand_settings, logo_url: url }
+                    } : null);
+                  }}
+                  isEditable={true}
+                  className="max-w-full"
+                />
               </div>
 
               <div className="space-y-2">

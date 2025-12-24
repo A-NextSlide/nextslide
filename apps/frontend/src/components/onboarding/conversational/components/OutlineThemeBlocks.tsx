@@ -92,6 +92,7 @@ const OutlineThemeBlocks: React.FC<OutlineThemeBlocksProps> = ({
           isEditable={isThemeEditable}
           isLoading={isThemeLoading}
           loadingLabel={themeLoadingLabel}
+          hideHeader
         />
       )}
 
