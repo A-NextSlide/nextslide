@@ -317,7 +317,7 @@ const DeveloperAPI: React.FC = () => {
           <div className="space-y-3">
             <EndpointCard
               method="POST"
-              path="/api/v1/decks"
+              path="/v1/decks"
               description="Create a new presentation"
               requestBody={`{
   "topic": "string",              // Required
@@ -340,7 +340,7 @@ const DeveloperAPI: React.FC = () => {
 
             <EndpointCard
               method="GET"
-              path="/api/v1/decks/{id}/status"
+              path="/v1/decks/{id}/status"
               description="Poll generation status"
               responseBody={`{
   "deck_id": "uuid",
@@ -356,7 +356,7 @@ const DeveloperAPI: React.FC = () => {
 
             <EndpointCard
               method="GET"
-              path="/api/v1/decks/{id}"
+              path="/v1/decks/{id}"
               description="Get complete deck data including slides"
               responseBody={`{
   "uuid": "...",
@@ -371,7 +371,7 @@ const DeveloperAPI: React.FC = () => {
 
             <EndpointCard
               method="GET"
-              path="/api/v1/decks"
+              path="/v1/decks"
               description="List all API-created decks"
               responseBody={`{
   "decks": [...],
@@ -385,7 +385,7 @@ const DeveloperAPI: React.FC = () => {
 
             <EndpointCard
               method="DELETE"
-              path="/api/v1/decks/{id}"
+              path="/v1/decks/{id}"
               description="Permanently delete a deck"
               responseBody={`{
   "success": true,

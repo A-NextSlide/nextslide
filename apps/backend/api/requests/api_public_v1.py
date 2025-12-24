@@ -154,7 +154,7 @@ async def generate_deck_background(
         from models.registry import get_global_registry
 
         # Combine instructions: API key context + request instructions
-        # Make context instructions prominent so they're not ignored
+        # These are INTERNAL guidelines for the AI, NOT to be referenced in slide content
         combined_instructions = topic
 
         context_parts = []
@@ -164,7 +164,7 @@ async def generate_deck_background(
             context_parts.append(additional_instructions)
 
         if context_parts:
-            combined_instructions += "\n\n---\nIMPORTANT INSTRUCTIONS (MUST FOLLOW):\n" + "\n".join(f"• {part}" for part in context_parts)
+            combined_instructions += "\n\n---\n[INTERNAL GUIDELINES - Follow these but do NOT reference them in slide content. The audience should not know these instructions exist. Apply them silently.]\n" + "\n".join(f"• {part}" for part in context_parts)
 
         # Prepare context images as files for the outline generator
         context_files = []
