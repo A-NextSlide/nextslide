@@ -17,11 +17,16 @@ class ImageStorageService:
 
     def __init__(self):
         """Initialize the image storage service."""
-        self.supabase = get_supabase_client()
+        self._supabase = None
         self.bucket_name = "slide-media"
         self.session = None
         self._cache = {}  # URL -> Supabase URL cache
         self._session_owner = False  # Track if we created the session
+
+    @property
+    def supabase(self):
+        """Get a fresh Supabase client to avoid stale/closed connections."""
+        return get_supabase_client()
 
     def _get_clean_public_url(self, file_path: str) -> str:
         """Get public URL and strip trailing '?' that Supabase sometimes adds."""
@@ -190,7 +195,7 @@ class ImageStorageService:
                 if is_protected and "403" in str(last_error):
                     logger.warning(f"Image download blocked by hotlink protection: {self._truncate_data_url(image_url)}")
                 else:
-                    logger.error(f"Failed to download image after all retries: {self._truncate_data_url(image_url)} ({last_error})")
+                    logger.warning(f"Failed to download image after all retries: {self._truncate_data_url(image_url)} ({last_error})")
                 raise Exception(f"Failed to download image: {last_error}")
 
             # CRITICAL: Validate that we actually got an image, not HTML/redirect
@@ -251,7 +256,21 @@ class ImageStorageService:
         except Exception as e:
             # Truncate data URLs to avoid logging huge base64 strings
             display_url = self._truncate_data_url(image_url)
-            logger.error(f"Error uploading image {display_url}: {str(e)}")
+            error_msg = str(e)
+            expected_download_errors = (
+                "Failed to download image",
+                "Downloaded HTML redirect page instead of image",
+                "Server returned HTML instead of image",
+                "Content-type is HTML",
+                "Downloaded content too small",
+                "Cannot connect to host",
+                "SSL",
+                "HTTP 202",
+            )
+            if any(tok in error_msg for tok in expected_download_errors):
+                logger.warning(f"Error uploading image {display_url}: {error_msg}")
+            else:
+                logger.error(f"Error uploading image {display_url}: {error_msg}")
             # Return original URL as fallback
             return {'url': image_url, 'error': str(e)}
     
@@ -385,4 +404,30 @@ class ImageStorageService:
         if self.session and not self.session.closed:
             await self.session.close()
             self.session = None
-            self._session_owner = False 
+            self._session_owner = False
+
+    def __del__(self):
+        """Best-effort cleanup if the service is garbage collected."""
+        try:
+            if self.session and not self.session.closed:
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        loop.create_task(self.session.close())
+                    else:
+                        loop.run_until_complete(self.session.close())
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
+_image_storage_service: Optional[ImageStorageService] = None
+
+
+def get_image_storage_service() -> ImageStorageService:
+    """Get a shared ImageStorageService instance."""
+    global _image_storage_service
+    if _image_storage_service is None:
+        _image_storage_service = ImageStorageService()
+    return _image_storage_service

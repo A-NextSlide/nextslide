@@ -57,6 +57,10 @@ class BrandfetchService:
         """
         if not self.session:
             raise RuntimeError("Service must be used as async context manager")
+
+        if not self.brand_api_key:
+            logger.warning("Brandfetch API key missing - skipping brand fetch")
+            return {"error": "missing_api_key", "identifier": identifier}
         
         # Clean identifier - handle various input formats
         clean_identifier = self._clean_identifier(identifier)
@@ -74,6 +78,10 @@ class BrandfetchService:
                 elif response.status == 404:
                     logger.warning(f"Brand not found in Brandfetch: {clean_identifier}")
                     return {"error": "brand_not_found", "identifier": clean_identifier}
+                elif response.status in (401, 403):
+                    error_text = await response.text()
+                    logger.warning(f"Brandfetch auth error {response.status}: {error_text}")
+                    return {"error": f"auth_error_{response.status}", "message": error_text}
                 else:
                     error_text = await response.text()
                     logger.error(f"Brandfetch API error {response.status}: {error_text}")
@@ -93,6 +101,9 @@ class BrandfetchService:
         """
         if not self.session:
             raise RuntimeError("Service must be used as async context manager")
+        if not self.brand_api_key:
+            logger.warning("Brandfetch API key missing - skipping brand search")
+            return []
 
         headers = self._get_headers(use_logo_api=False)
         results: List[Dict[str, Any]] = []

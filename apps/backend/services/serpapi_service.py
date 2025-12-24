@@ -252,7 +252,7 @@ class SerpAPIService:
                     results = await response.json()
                     logger.debug(f"SERPAPI response for '{query}': {len(results.get('images_results', []))} images")
                     if 'error' in results:
-                        logger.error(f"SERPAPI API ERROR: {results.get('error')}")
+                        logger.warning(f"SERPAPI API WARNING: {results.get('error')}")
                     return self._process_image_results(results)
                 else:
                     error_text = await response.text()

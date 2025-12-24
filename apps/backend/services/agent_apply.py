@@ -955,4 +955,3 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
     logger.debug("[APPLY_DECKDIFF] Complete (persisted=%s version=%s)", len(changed_slide_ids), version)
     return version
 
-

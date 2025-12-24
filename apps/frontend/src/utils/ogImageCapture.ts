@@ -18,8 +18,7 @@ export function findSlideElement(slideId: string): HTMLElement | null {
 
 /**
  * Captures the first slide of a deck as an OG-optimized thumbnail.
- * The image is sized to 1200x630 (standard OG dimensions) and uses
- * a letterboxed approach to maintain slide aspect ratio.
+ * The image is sized to 1200x630 (standard OG dimensions).
  *
  * @param slideElementOrId - Either an HTMLElement or a slide ID string
  */
@@ -35,87 +34,50 @@ export async function captureOGThumbnail(
     console.warn('[OG Capture] Slide element not found');
     return null;
   }
+
   try {
-    // Find the actual slide content (the scaled div)
-    const slideContent = slideElement.querySelector('div[style*="transform"]') as HTMLElement;
+    // Wait for any images/fonts to render
+    await new Promise(resolve => setTimeout(resolve, 200));
 
-    if (!slideContent) {
-      console.warn('[OG Capture] No slide content found');
-      return null;
+    // Capture the slide directly (matches SimpleThumbnail approach)
+    const canvas = await html2canvas(slideElement, {
+      scale: OG_WIDTH / 1920, // Scale to OG width
+      backgroundColor: '#ffffff',
+      width: 1920,
+      height: 1080,
+      logging: false,
+      useCORS: true,
+      allowTaint: true,
+      imageTimeout: 3000,
+    });
+
+    // The captured canvas is ~1200x675, crop to 1200x630 for OG dimensions
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = OG_WIDTH;
+    finalCanvas.height = OG_HEIGHT;
+    const ctx = finalCanvas.getContext('2d');
+
+    if (!ctx) {
+      throw new Error('Could not get canvas context');
     }
 
-    // Clone the slide content to avoid modifying the original
-    const clone = slideContent.cloneNode(true) as HTMLElement;
+    // Fill with white background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, OG_WIDTH, OG_HEIGHT);
 
-    // Create a temporary container at 1920x1080 (slide dimensions)
-    const slideContainer = document.createElement('div');
-    slideContainer.style.position = 'absolute';
-    slideContainer.style.left = '-9999px';
-    slideContainer.style.top = '0';
-    slideContainer.style.width = '1920px';
-    slideContainer.style.height = '1080px';
-    slideContainer.style.backgroundColor = '#ffffff';
-    slideContainer.style.overflow = 'hidden';
+    // Center the slide vertically (slight crop from top/bottom)
+    const sourceHeight = canvas.height;
+    const sourceWidth = canvas.width;
+    const cropAmount = Math.max(0, (sourceHeight - OG_HEIGHT) / 2);
 
-    // Reset transform on the clone
-    clone.style.transform = 'none';
-    clone.style.position = 'relative';
-    clone.style.width = '1920px';
-    clone.style.height = '1080px';
+    ctx.drawImage(
+      canvas,
+      0, cropAmount, sourceWidth, Math.min(sourceHeight, OG_HEIGHT),
+      0, 0, OG_WIDTH, OG_HEIGHT
+    );
 
-    slideContainer.appendChild(clone);
-    document.body.appendChild(slideContainer);
-
-    try {
-      // Wait for any images/fonts to render
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      // Capture at a scale that gives us OG dimensions
-      // 1920 -> 1200 = 0.625 scale
-      const canvas = await html2canvas(slideContainer, {
-        scale: OG_WIDTH / 1920,
-        backgroundColor: '#ffffff',
-        width: 1920,
-        height: 1080,
-        logging: false,
-        useCORS: true,
-        allowTaint: true,
-        imageTimeout: 3000,
-      });
-
-      // The captured canvas is 1200x675, we need to letterbox to 1200x630
-      // Create final canvas at exact OG dimensions
-      const finalCanvas = document.createElement('canvas');
-      finalCanvas.width = OG_WIDTH;
-      finalCanvas.height = OG_HEIGHT;
-      const ctx = finalCanvas.getContext('2d');
-
-      if (!ctx) {
-        throw new Error('Could not get canvas context');
-      }
-
-      // Fill with white background
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, OG_WIDTH, OG_HEIGHT);
-
-      // Calculate positioning to center the slide (slight crop from top/bottom)
-      const sourceHeight = canvas.height;
-      const sourceWidth = canvas.width;
-
-      // Center the slide vertically (crop equally from top and bottom)
-      const cropAmount = (sourceHeight - OG_HEIGHT) / 2;
-
-      ctx.drawImage(
-        canvas,
-        0, cropAmount, sourceWidth, OG_HEIGHT, // Source: crop from center
-        0, 0, OG_WIDTH, OG_HEIGHT              // Dest: full canvas
-      );
-
-      // Return as JPEG for smaller file size
-      return finalCanvas.toDataURL('image/jpeg', 0.9);
-    } finally {
-      document.body.removeChild(slideContainer);
-    }
+    // Return as JPEG for smaller file size
+    return finalCanvas.toDataURL('image/jpeg', 0.9);
   } catch (error) {
     console.error('[OG Capture] Failed to capture:', error);
     return null;

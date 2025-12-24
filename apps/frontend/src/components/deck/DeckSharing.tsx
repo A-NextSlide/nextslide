@@ -297,12 +297,13 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
   };
 
   /**
-   * Captures the first slide as an OG thumbnail and uploads it.
+   * Captures a slide as an OG thumbnail and uploads it.
+   * Tries first slide, falls back to current slide if not in DOM.
    * Runs in background, non-blocking.
    */
   const captureAndUploadOGThumbnail = async (shareId: string, shortCode: string) => {
     try {
-      // Get first slide from deck store
+      // Get slides from deck store
       const deckData = useDeckStore.getState().deckData;
       const slides = deckData?.slides || [];
 
@@ -311,15 +312,22 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
         return;
       }
 
-      const firstSlideId = slides[0].id;
+      // Try to find first slide, fall back to any visible slide
+      let slideElement: HTMLElement | null = null;
 
-      // Find the slide element in the DOM
-      const slideElement = document.querySelector(
+      // Try first slide
+      const firstSlideId = slides[0].id;
+      slideElement = document.querySelector(
         `[data-slide-id="${firstSlideId}"]`
       ) as HTMLElement;
 
+      // If first slide not in DOM, try to find any slide that is rendered
       if (!slideElement) {
-        console.log('[DeckSharing] First slide element not found in DOM');
+        slideElement = document.querySelector('[data-slide-id]') as HTMLElement;
+      }
+
+      if (!slideElement) {
+        console.log('[DeckSharing] No slide element found in DOM');
         return;
       }
 

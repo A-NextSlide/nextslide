@@ -108,7 +108,11 @@ class DeckSharingService:
                 raise Exception("Failed to create share link - no data returned")
 
         except Exception as e:
-            logger.error(f"Error creating share link: {str(e)}")
+            error_msg = str(e)
+            if "deck_shares_deck_uuid_fkey" in error_msg or "23503" in error_msg:
+                logger.warning(f"Error creating share link (deck missing): {error_msg}")
+            else:
+                logger.error(f"Error creating share link: {error_msg}")
             raise
     
     def get_deck_by_share_code(self, short_code: str) -> Optional[Dict[str, Any]]:

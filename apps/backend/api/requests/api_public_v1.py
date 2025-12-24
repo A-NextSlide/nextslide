@@ -524,7 +524,7 @@ async def create_deck(
             edit_url = f"https://nextslide.ai/e/{edit_share['short_code']}"
 
     except Exception as e:
-        logger.error(f"Failed to create share links: {e}")
+        logger.warning(f"Failed to create share links: {e}")
         # Fallback to direct URLs
         view_url = f"https://nextslide.ai/deck/{deck_uuid}"
         edit_url = f"https://nextslide.ai/deck/{deck_uuid}" if api_key_record.include_edit_link else None

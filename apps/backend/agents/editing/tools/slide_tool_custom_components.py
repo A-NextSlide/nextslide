@@ -250,13 +250,24 @@ Return a JSON object with EXACT old_string matches:
         )
 
     if applied == 0:
-        # Still no matches - raise error instead of silently doing full rewrite
-        # The orchestrator can decide to use custom_component_rewrite explicitly if needed
-        raise ValueError(
-            f"Could not find matching text in CustomComponent HTML. "
-            f"The requested edit '{instruction[:100]}...' could not be applied as a targeted replacement. "
-            f"Consider using edit_slide for a full rewrite if needed."
+        # Still no matches - return observation so the orchestrator can retry or pick a rewrite tool
+        logger.warning(
+            "Targeted CustomComponent edit failed; no matching text found for instruction: %s",
+            instruction[:120],
         )
+        dd = DeckDiff(DeckDiffBase())
+        obs = {
+            "error": "custom_component_str_replace_failed",
+            "component_id": comp_id,
+            "instruction": instruction,
+            "html_preview": current_html[:2000],
+            "failed_old_strings": [op.old_string[:200] for op in (failed_ops or [])[:3] if op.old_string],
+        }
+        try:
+            setattr(dd, "observation", obs)
+        except Exception:
+            pass
+        return dd
 
     deck_diff = DeckDiff(DeckDiffBase())
     deck_diff.update_component(
