@@ -213,7 +213,27 @@ async def generate_deck_background(
             ]
         )
 
-        # Inject brand settings as theme if available
+        # Build stylePreferences from brand_settings and context_images
+        # This ensures logo, colors, fonts, and reference images flow through to slide generation
+        from models.requests import StylePreferencesItem, ColorConfigItem
+
+        style_prefs_data = {
+            "initialIdea": topic,
+            "vibeContext": style or topic,
+        }
+
+        # Add context images as reference images for slide generation to use
+        if api_key_record.context_images:
+            # Filter out any base64/data URLs - only keep actual URLs
+            reference_urls = [
+                url for url in api_key_record.context_images
+                if url and not url.startswith("data:") and len(url) < 2048
+            ]
+            if reference_urls:
+                style_prefs_data["referenceImages"] = reference_urls
+                logger.info(f"Added {len(reference_urls)} reference images to stylePreferences")
+
+        # Inject brand settings if available
         if api_key_record.brand_settings:
             brand = api_key_record.brand_settings
 
@@ -237,6 +257,20 @@ async def generate_deck_background(
                 body_font = brand.get("font_family", "Poppins")
                 logo_url = brand.get("logo_url")
 
+            # Add to stylePreferences (this is how normal generation flow works)
+            style_prefs_data["font"] = heading_font
+            style_prefs_data["bodyFont"] = body_font
+            style_prefs_data["colors"] = ColorConfigItem(
+                type="custom",
+                background=bg_color,
+                text=text_color,
+                accent1=accent_color
+            )
+            # Logo URL - must be an actual URL, not base64
+            if logo_url and not logo_url.startswith("data:"):
+                style_prefs_data["logoUrl"] = logo_url
+
+            # Also build theme dict for ThemeResolver (notes.theme path)
             theme_dict = {
                 "theme_name": "Brand Theme",
                 "design_philosophy": "Brand-focused design",
@@ -255,17 +289,22 @@ async def generate_deck_background(
                 "visual_effects": {},
                 "image_treatment": {},
                 "brandInfo": {
-                    "logo_url": logo_url,
+                    "logo_url": logo_url if logo_url and not logo_url.startswith("data:") else None,
                     "primary_color": bg_color,
                     "accent_color": accent_color,
                     "text_color": text_color,
                     "heading_font": heading_font,
                     "body_font": body_font
-                }
+                },
+                # Include reference images in theme for additional context
+                "reference_images": style_prefs_data.get("referenceImages", [])
             }
-            # Set the theme in deck_outline.notes for ThemeResolver to pick up
             deck_outline.notes = {"theme": theme_dict}
-            logger.info(f"Injected brand theme: {brand}")
+            logger.info(f"Injected brand theme with logo: {bool(logo_url)}")
+
+        # Set stylePreferences on deck_outline - this flows through to slide generation
+        deck_outline.stylePreferences = StylePreferencesItem(**style_prefs_data)
+        logger.info(f"Set stylePreferences: font={style_prefs_data.get('font')}, referenceImages={len(style_prefs_data.get('referenceImages', []))}")
 
         # Get registry
         registry = get_global_registry()
