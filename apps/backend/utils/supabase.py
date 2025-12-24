@@ -299,9 +299,18 @@ def upload_deck_force(deck_data: Dict[str, Any], deck_uuid: str) -> Dict[str, An
         Dict containing the uploaded deck data including the UUID
     """
     supabase = get_supabase_client()
-    
-    # Extract theme and style data for the data column
-    data_field = {}
+
+    # Get existing data to preserve fields like source, api_key_id
+    existing_data = {}
+    try:
+        existing_deck = supabase.table("decks").select("data").eq("uuid", deck_uuid).execute()
+        if existing_deck.data and len(existing_deck.data) > 0:
+            existing_data = existing_deck.data[0].get("data", {}) or {}
+    except Exception:
+        pass  # If we can't get existing data, start fresh
+
+    # Extract theme and style data for the data column, preserving existing fields
+    data_field = dict(existing_data)  # Start with existing data
     if "theme" in deck_data:
         data_field["theme"] = deck_data["theme"]
     if "style_spec" in deck_data:
