@@ -74,18 +74,24 @@ export const useDeckManagement = (): UseDeckManagementReturn => {
       
       const result = await deckSyncService.getAllDecks(20, 0);
       console.log('[useDeckManagement] Loaded decks:', result.decks.length, result);
-      
+
+      // Filter out API-created decks (they show in their own tab)
+      const nonApiDecks = result.decks.filter(deck => {
+        const deckData = (deck as any).data || {};
+        return deckData.source !== 'api';
+      });
+
       // Debug: Check the structure of returned decks
-      if (result.decks.length > 0) {
+      if (nonApiDecks.length > 0) {
         console.log('[useDeckManagement] First deck structure:', {
-          uuid: result.decks[0].uuid,
-          id: (result.decks[0] as any).id,
-          name: result.decks[0].name,
-          keys: Object.keys(result.decks[0])
+          uuid: nonApiDecks[0].uuid,
+          id: (nonApiDecks[0] as any).id,
+          name: nonApiDecks[0].name,
+          keys: Object.keys(nonApiDecks[0])
         });
       }
-      
-      setDecks(result.decks);
+
+      setDecks(nonApiDecks);
       setHasMore(result.has_more);
       setCurrentOffset(result.decks.length);
     } catch (err) {
@@ -113,9 +119,15 @@ export const useDeckManagement = (): UseDeckManagementReturn => {
       console.log('[useDeckManagement] Loading more decks from offset:', currentOffset);
       const result = await deckSyncService.getAllDecks(20, currentOffset);
       console.log('[useDeckManagement] Loaded more decks:', result.decks.length);
-      
-      if (result.decks.length > 0) {
-        setDecks(prev => [...prev, ...result.decks]);
+
+      // Filter out API-created decks (they show in their own tab)
+      const nonApiDecks = result.decks.filter(deck => {
+        const deckData = (deck as any).data || {};
+        return deckData.source !== 'api';
+      });
+
+      if (nonApiDecks.length > 0) {
+        setDecks(prev => [...prev, ...nonApiDecks]);
         setCurrentOffset(prev => prev + result.decks.length);
         setHasMore(result.has_more);
       } else {
