@@ -240,9 +240,9 @@ class MockShareService {
   }
   
   getShareUrl(shortCode: string, shareType: 'view' | 'edit'): string {
-    const baseUrl = window.location.origin;
+    // Use API domain so bots get OG meta tags, real users get redirected to frontend
     const path = shareType === 'view' ? `/p/${shortCode}` : `/e/${shortCode}`;
-    return `${baseUrl}${path}`;
+    return `https://api.nextslide.ai${path}`;
   }
 }
 
