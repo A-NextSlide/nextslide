@@ -62,7 +62,7 @@ const MessageList: React.FC<MessageListProps> = ({
 }) => {
   const isSlideModeBlocked = isThemeLoading || isOutlinePrefetching;
   const blockingLabel = isThemeLoading
-    ? 'Fetching brand images...'
+    ? (themeBlock?.loadingMessage || 'Generating theme...')
     : (isOutlinePrefetching ? 'Generating your outline...' : undefined);
   const hasOutline = Boolean(outlineBlock?.slides?.length);
 

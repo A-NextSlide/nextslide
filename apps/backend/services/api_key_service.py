@@ -42,12 +42,11 @@ class ApiKeyService:
     KEY_LENGTH = 32  # Characters after prefix
 
     def __init__(self):
-        self._client = None
+        pass
 
     def _get_client(self):
-        if self._client is None:
-            self._client = get_supabase_client()
-        return self._client
+        # Always get a fresh client to avoid "client has been closed" errors
+        return get_supabase_client()
 
     def generate_api_key(self) -> Tuple[str, str, str]:
         """

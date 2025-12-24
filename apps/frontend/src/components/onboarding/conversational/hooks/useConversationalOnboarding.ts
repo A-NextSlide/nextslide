@@ -951,7 +951,8 @@ export const useConversationalOnboarding = ({
     }
 
     if (themeState.isThemeLoadingRef.current) {
-      agentStatus.actions.setStatusMessage('Fetching brand images...');
+      const loadingMsg = themeState.themeBlock?.loadingMessage || 'Generating theme...';
+      agentStatus.actions.setStatusMessage(loadingMsg);
       agentStatus.actions.setStatusPhase('fetching_brand');
       agentStatus.actions.setIsAgentTyping(true);
 
@@ -1132,7 +1133,7 @@ export const useConversationalOnboarding = ({
     const blockingLabel = isOutlinePrefetching
       ? 'Generating your outline...'
       : themeState.isThemeLoading
-        ? 'Fetching brand images...'
+        ? (themeState.themeBlock?.loadingMessage || 'Generating theme...')
         : 'Preparing your deck...';
     const lockedLabel = needsBrandConfirmation
       ? 'Confirm the brand domain to unlock generation.'

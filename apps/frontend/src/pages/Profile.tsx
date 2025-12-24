@@ -146,7 +146,13 @@ const Profile: React.FC = () => {
     name: '',
     context_instructions: '',
     webhook_url: '',
-    include_edit_link: false
+    include_edit_link: false,
+    brand_settings: {
+      primary_color: '',
+      secondary_color: '',
+      font_family: '',
+      logo_url: ''
+    }
   });
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
   const [creatingKey, setCreatingKey] = useState(false);
@@ -548,11 +554,18 @@ const Profile: React.FC = () => {
   const handleCreateApiKey = async () => {
     setCreatingKey(true);
     try {
+      // Only include brand_settings if any field has a value
+      const hasBrandSettings = newKeyForm.brand_settings.primary_color ||
+        newKeyForm.brand_settings.secondary_color ||
+        newKeyForm.brand_settings.font_family ||
+        newKeyForm.brand_settings.logo_url;
+
       const response = await developerApiService.createKey({
         name: newKeyForm.name || 'Default',
         context_instructions: newKeyForm.context_instructions || null,
         webhook_url: newKeyForm.webhook_url || null,
-        include_edit_link: newKeyForm.include_edit_link
+        include_edit_link: newKeyForm.include_edit_link,
+        brand_settings: hasBrandSettings ? newKeyForm.brand_settings : null
       });
       setNewKeyData(response);
       await loadApiKeys();
@@ -636,7 +649,13 @@ const Profile: React.FC = () => {
       name: '',
       context_instructions: '',
       webhook_url: '',
-      include_edit_link: false
+      include_edit_link: false,
+      brand_settings: {
+        primary_color: '',
+        secondary_color: '',
+        font_family: '',
+        logo_url: ''
+      }
     });
     setNewKeyData(null);
     setShowCreateKeyDialog(false);
@@ -2345,6 +2364,107 @@ const Profile: React.FC = () => {
                   checked={newKeyForm.include_edit_link}
                   onCheckedChange={(checked) => setNewKeyForm(prev => ({ ...prev, include_edit_link: checked }))}
                 />
+              </div>
+
+              {/* Brand Settings Section */}
+              <div className="space-y-3 pt-3 border-t">
+                <div>
+                  <Label className="text-sm font-medium">Brand Settings (optional)</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Set colors and fonts for presentations created with this key.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="create-brand-primary" className="text-xs">Primary Color</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="create-brand-primary"
+                        type="color"
+                        className="w-10 h-8 p-1 cursor-pointer"
+                        value={newKeyForm.brand_settings.primary_color || '#FFFFFF'}
+                        onChange={(e) => setNewKeyForm(prev => ({
+                          ...prev,
+                          brand_settings: { ...prev.brand_settings, primary_color: e.target.value }
+                        }))}
+                      />
+                      <Input
+                        type="text"
+                        placeholder="#FFFFFF"
+                        value={newKeyForm.brand_settings.primary_color}
+                        onChange={(e) => setNewKeyForm(prev => ({
+                          ...prev,
+                          brand_settings: { ...prev.brand_settings, primary_color: e.target.value }
+                        }))}
+                        className="flex-1 h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="create-brand-secondary" className="text-xs">Accent Color</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="create-brand-secondary"
+                        type="color"
+                        className="w-10 h-8 p-1 cursor-pointer"
+                        value={newKeyForm.brand_settings.secondary_color || '#2563EB'}
+                        onChange={(e) => setNewKeyForm(prev => ({
+                          ...prev,
+                          brand_settings: { ...prev.brand_settings, secondary_color: e.target.value }
+                        }))}
+                      />
+                      <Input
+                        type="text"
+                        placeholder="#2563EB"
+                        value={newKeyForm.brand_settings.secondary_color}
+                        onChange={(e) => setNewKeyForm(prev => ({
+                          ...prev,
+                          brand_settings: { ...prev.brand_settings, secondary_color: e.target.value }
+                        }))}
+                        className="flex-1 h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="create-brand-font" className="text-xs">Font Family</Label>
+                  <select
+                    id="create-brand-font"
+                    className="w-full h-8 rounded-md border border-input bg-background px-2 py-1 text-xs"
+                    value={newKeyForm.brand_settings.font_family}
+                    onChange={(e) => setNewKeyForm(prev => ({
+                      ...prev,
+                      brand_settings: { ...prev.brand_settings, font_family: e.target.value }
+                    }))}
+                  >
+                    <option value="">Default</option>
+                    <option value="Inter">Inter</option>
+                    <option value="Roboto">Roboto</option>
+                    <option value="Open Sans">Open Sans</option>
+                    <option value="Lato">Lato</option>
+                    <option value="Playfair Display">Playfair Display</option>
+                    <option value="Montserrat">Montserrat</option>
+                    <option value="Poppins">Poppins</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="create-brand-logo" className="text-xs">Logo URL</Label>
+                  <Input
+                    id="create-brand-logo"
+                    type="url"
+                    placeholder="https://example.com/logo.png"
+                    value={newKeyForm.brand_settings.logo_url}
+                    onChange={(e) => setNewKeyForm(prev => ({
+                      ...prev,
+                      brand_settings: { ...prev.brand_settings, logo_url: e.target.value }
+                    }))}
+                    className="h-8 text-xs"
+                  />
+                </div>
               </div>
 
               <DialogFooter>

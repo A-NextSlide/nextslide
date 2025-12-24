@@ -20,6 +20,8 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
   const [isThemeLoading, setIsThemeLoading] = useState(false);
   const [lastThemeVibeContext, setLastThemeVibeContext] = useState<string | null>(null);
   const isThemeLoadingRef = useRef(false);
+  // Stable outline ID to prevent creating new temp IDs on every call
+  const stableOutlineIdRef = useRef<string | null>(null);
   const { loadThemeFonts } = useFontLoader();
 
   useEffect(() => {
@@ -138,7 +140,11 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
 
     try {
       const { outlineApi } = await import('@/services/outlineApi');
-      const tempOutlineId = `temp-${Date.now()}`;
+      // Use stable outline ID to prevent duplicate theme generation calls
+      if (!stableOutlineIdRef.current) {
+        stableOutlineIdRef.current = `theme-${Date.now()}`;
+      }
+      const tempOutlineId = stableOutlineIdRef.current;
       const themeSlides = slides && slides.length > 0
         ? slides.map((slide, index) => ({
           id: `slide-${index}`,
@@ -268,11 +274,21 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
 
   const prefetchThemeFromPrompt = useCallback((prompt: string, styleContext?: string) => {
     if (!prompt) return;
+    // Skip if we already have explicit colors (theme has been generated)
+    if (themeBlock?.hasExplicitColors) {
+      console.log('[useThemeBlock] Skipping prefetch - theme already has explicit colors');
+      return;
+    }
     const domainFromPrompt = extractDomainFromText(prompt);
     const domainFromStyle = extractDomainFromText(styleContext);
     const vibeContext = domainFromPrompt || domainFromStyle || styleContext || prompt;
     if (!vibeContext) return;
     if (isThemeLoadingRef.current) return;
+    // Skip if we've already generated a theme for this context
+    if (lastThemeVibeContext && vibeContext.toLowerCase() === lastThemeVibeContext.toLowerCase()) {
+      console.log('[useThemeBlock] Skipping prefetch - same vibe context:', vibeContext);
+      return;
+    }
 
     const seedOutline: OutlineData = {
       action: 'generate_outline',
@@ -299,7 +315,7 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
       availableVideos: [],
       stylePreferences: seedOutline.stylePreferences,
     });
-  }, [loadThemeFonts, triggerThemeGeneration]);
+  }, [lastThemeVibeContext, loadThemeFonts, themeBlock?.hasExplicitColors, triggerThemeGeneration]);
 
   return {
     themeBlock,
