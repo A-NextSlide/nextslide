@@ -562,7 +562,7 @@ async def create_deck(
         status="generating",
         view_url=view_url,
         edit_url=edit_url,
-        poll_url=f"/api/v1/decks/{deck_uuid}/status",
+        poll_url=f"/v1/decks/{deck_uuid}/status",
         estimated_seconds=120,  # ~2 minutes
         message="Deck creation started. Poll the status endpoint or wait for webhook."
     )
