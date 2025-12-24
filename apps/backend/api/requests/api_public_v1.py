@@ -213,6 +213,41 @@ async def generate_deck_background(
             ]
         )
 
+        # Inject brand settings as theme if available
+        if api_key_record.brand_settings:
+            brand = api_key_record.brand_settings
+            theme_dict = {
+                "theme_name": "Brand Theme",
+                "design_philosophy": "Brand-focused design",
+                "color_palette": {
+                    "source": "brand",
+                    "primary_background": brand.get("primary_color", "#FFFFFF"),
+                    "primary_text": "#1A1A1A",
+                    "accent_1": brand.get("secondary_color", "#2563EB"),
+                    "colors": [
+                        brand.get("primary_color", "#FFFFFF"),
+                        "#1A1A1A",
+                        brand.get("secondary_color", "#2563EB")
+                    ]
+                },
+                "typography": {
+                    "hero_title": {"family": brand.get("font_family", "Montserrat"), "weight": 700},
+                    "body_text": {"family": brand.get("font_family", "Poppins"), "weight": 400}
+                },
+                "layout_style": "modern",
+                "visual_effects": {},
+                "image_treatment": {},
+                "brandInfo": {
+                    "logo_url": brand.get("logo_url"),
+                    "primary_color": brand.get("primary_color"),
+                    "secondary_color": brand.get("secondary_color"),
+                    "font_family": brand.get("font_family")
+                }
+            }
+            # Set the theme in deck_outline.notes for ThemeResolver to pick up
+            deck_outline.notes = {"theme": theme_dict}
+            logger.info(f"Injected brand theme: {brand}")
+
         # Get registry
         registry = get_global_registry()
 

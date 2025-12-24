@@ -11,12 +11,20 @@ import { API_BASE } from '@/config/environment';
 // Types
 // =============================================================================
 
+export interface BrandSettings {
+  logo_url?: string | null;
+  primary_color?: string | null;
+  secondary_color?: string | null;
+  font_family?: string | null;
+}
+
 export interface ApiKey {
   id: string;
   key_prefix: string;
   name: string;
   context_instructions: string | null;
   context_images: string[];
+  brand_settings: BrandSettings | null;
   webhook_url: string | null;
   include_edit_link: boolean;
   created_at: string;
@@ -29,6 +37,7 @@ export interface CreateApiKeyRequest {
   name: string;
   context_instructions?: string | null;
   context_images?: string[];
+  brand_settings?: BrandSettings | null;
   webhook_url?: string | null;
   include_edit_link?: boolean;
 }
@@ -42,6 +51,7 @@ export interface UpdateApiKeyRequest {
   name?: string;
   context_instructions?: string | null;
   context_images?: string[];
+  brand_settings?: BrandSettings | null;
   webhook_url?: string | null;
   include_edit_link?: boolean;
 }

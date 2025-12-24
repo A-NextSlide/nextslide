@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS api_keys (
   context_instructions TEXT,          -- Custom prompt/instructions
   context_images JSONB DEFAULT '[]',  -- Array of image URLs from storage
 
+  -- Brand settings (logo, colors, fonts)
+  brand_settings JSONB DEFAULT NULL,  -- {logo_url, primary_color, secondary_color, font_family}
+
   -- Settings
   webhook_url TEXT,                   -- Callback URL when deck completes
   include_edit_link BOOLEAN DEFAULT false,

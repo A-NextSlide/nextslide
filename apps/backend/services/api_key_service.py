@@ -26,6 +26,7 @@ class ApiKeyRecord:
     name: str
     context_instructions: Optional[str]
     context_images: List[str]
+    brand_settings: Optional[dict]
     webhook_url: Optional[str]
     include_edit_link: bool
     created_at: str
@@ -160,6 +161,7 @@ class ApiKeyService:
         name: str = "Default",
         context_instructions: Optional[str] = None,
         context_images: Optional[List[str]] = None,
+        brand_settings: Optional[dict] = None,
         webhook_url: Optional[str] = None,
         include_edit_link: bool = False
     ) -> Tuple[str, ApiKeyRecord]:
@@ -171,6 +173,7 @@ class ApiKeyService:
             name: A name/label for the key
             context_instructions: Custom instructions for deck generation
             context_images: List of image URLs for context
+            brand_settings: Brand settings (logo, colors, fonts)
             webhook_url: URL to call when deck generation completes
             include_edit_link: Whether to include edit link in responses
 
@@ -190,6 +193,7 @@ class ApiKeyService:
                 "name": name,
                 "context_instructions": context_instructions,
                 "context_images": context_images or [],
+                "brand_settings": brand_settings,
                 "webhook_url": webhook_url,
                 "include_edit_link": include_edit_link,
                 "is_active": True,
@@ -287,7 +291,7 @@ class ApiKeyService:
         # Allowed fields to update
         allowed_fields = {
             "name", "context_instructions", "context_images",
-            "webhook_url", "include_edit_link"
+            "brand_settings", "webhook_url", "include_edit_link"
         }
 
         # Filter to only allowed fields
@@ -382,6 +386,7 @@ class ApiKeyService:
             name=data.get("name", "Default"),
             context_instructions=data.get("context_instructions"),
             context_images=data.get("context_images") or [],
+            brand_settings=data.get("brand_settings"),
             webhook_url=data.get("webhook_url"),
             include_edit_link=data.get("include_edit_link", False),
             created_at=data["created_at"],

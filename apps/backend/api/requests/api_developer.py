@@ -26,11 +26,20 @@ router = APIRouter(prefix="/api/developer", tags=["Developer API"])
 # Request/Response Models
 # =============================================================================
 
+class BrandSettings(BaseModel):
+    """Brand settings for API-generated decks."""
+    logo_url: Optional[str] = Field(default=None)
+    primary_color: Optional[str] = Field(default=None, pattern=r'^#[0-9A-Fa-f]{6}$')
+    secondary_color: Optional[str] = Field(default=None, pattern=r'^#[0-9A-Fa-f]{6}$')
+    font_family: Optional[str] = Field(default=None)
+
+
 class CreateApiKeyRequest(BaseModel):
     """Request to create a new API key."""
     name: str = Field(default="Default", max_length=100)
     context_instructions: Optional[str] = Field(default=None, max_length=5000)
     context_images: Optional[List[str]] = Field(default=None)
+    brand_settings: Optional[BrandSettings] = Field(default=None)
     webhook_url: Optional[str] = Field(default=None, max_length=500)
     include_edit_link: bool = Field(default=False)
 
@@ -40,6 +49,7 @@ class UpdateApiKeyRequest(BaseModel):
     name: Optional[str] = Field(default=None, max_length=100)
     context_instructions: Optional[str] = Field(default=None, max_length=5000)
     context_images: Optional[List[str]] = Field(default=None)
+    brand_settings: Optional[BrandSettings] = Field(default=None)
     webhook_url: Optional[str] = Field(default=None, max_length=500)
     include_edit_link: Optional[bool] = Field(default=None)
 
@@ -51,6 +61,7 @@ class ApiKeyResponse(BaseModel):
     name: str
     context_instructions: Optional[str]
     context_images: List[str]
+    brand_settings: Optional[dict]
     webhook_url: Optional[str]
     include_edit_link: bool
     created_at: str
@@ -120,6 +131,7 @@ def record_to_response(record: ApiKeyRecord) -> ApiKeyResponse:
         name=record.name,
         context_instructions=record.context_instructions,
         context_images=record.context_images,
+        brand_settings=record.brand_settings,
         webhook_url=record.webhook_url,
         include_edit_link=record.include_edit_link,
         created_at=record.created_at,
@@ -169,6 +181,7 @@ async def create_api_key(
             name=request.name,
             context_instructions=request.context_instructions,
             context_images=request.context_images,
+            brand_settings=request.brand_settings.dict() if request.brand_settings else None,
             webhook_url=request.webhook_url,
             include_edit_link=request.include_edit_link
         )
@@ -225,6 +238,8 @@ async def update_api_key(
         updates["context_instructions"] = request.context_instructions
     if request.context_images is not None:
         updates["context_images"] = request.context_images
+    if request.brand_settings is not None:
+        updates["brand_settings"] = request.brand_settings.dict()
     if request.webhook_url is not None:
         updates["webhook_url"] = request.webhook_url
     if request.include_edit_link is not None:
