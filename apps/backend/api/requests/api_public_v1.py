@@ -154,14 +154,33 @@ async def generate_deck_background(
         from models.registry import get_global_registry
 
         # Combine instructions: API key context + request instructions
+        # Make context instructions prominent so they're not ignored
         combined_instructions = topic
+
+        context_parts = []
         if api_key_record.context_instructions:
-            combined_instructions += "\n\nContext: " + api_key_record.context_instructions
+            context_parts.append(api_key_record.context_instructions)
         if additional_instructions:
-            combined_instructions += "\n\nAdditional instructions: " + additional_instructions
+            context_parts.append(additional_instructions)
+
+        if context_parts:
+            combined_instructions += "\n\n---\nIMPORTANT INSTRUCTIONS (MUST FOLLOW):\n" + "\n".join(f"• {part}" for part in context_parts)
+
+        # Prepare context images as files for the outline generator
+        context_files = []
+        if api_key_record.context_images:
+            for img_url in api_key_record.context_images:
+                if img_url:
+                    context_files.append({
+                        "type": "image",
+                        "url": img_url,
+                        "name": "context_image",
+                        "source": "api_key_context"
+                    })
 
         # Generate outline
         logger.info(f"Generating outline for deck {deck_uuid}")
+        logger.info(f"Combined instructions: {combined_instructions[:200]}...")
         registry = get_global_registry()
         generator = OutlineGenerator(registry)
 
@@ -169,7 +188,8 @@ async def generate_deck_background(
             prompt=combined_instructions,
             slide_count=num_slides,
             style_context=style,
-            async_images=False  # Auto-apply images for API
+            async_images=False,  # Auto-apply images for API
+            files=context_files if context_files else []
         )
 
         outline_result = await generator.generate(options)

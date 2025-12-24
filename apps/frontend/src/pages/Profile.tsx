@@ -2397,6 +2397,62 @@ const Profile: React.FC = () => {
               </div>
 
               <div className="space-y-2">
+                <Label>Context Images (brand guidelines, logos, etc.)</Label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {(selectedKey.context_images || []).map((url, idx) => (
+                    <div key={idx} className="relative group">
+                      <img src={url} alt={`Context ${idx + 1}`} className="w-16 h-16 object-cover rounded border" />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            // Extract path from URL
+                            const path = url.split('/').slice(-2).join('/');
+                            await developerApiService.deleteImage(selectedKey.id, path);
+                            setSelectedKey(prev => prev ? {
+                              ...prev,
+                              context_images: prev.context_images.filter((_, i) => i !== idx)
+                            } : null);
+                            toast({ title: 'Image removed' });
+                          } catch (e) {
+                            toast({ title: 'Failed to remove image', variant: 'destructive' });
+                          }
+                        }}
+                        className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                      >
+                        x
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        const result = await developerApiService.uploadImage(selectedKey.id, file);
+                        setSelectedKey(prev => prev ? {
+                          ...prev,
+                          context_images: [...(prev.context_images || []), result.url]
+                        } : null);
+                        toast({ title: 'Image uploaded' });
+                        e.target.value = '';
+                      } catch (err) {
+                        toast({ title: 'Upload failed', variant: 'destructive' });
+                      }
+                    }}
+                    className="text-sm"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Upload brand images that will be analyzed for style/branding guidance.
+                </p>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="edit-webhook">Webhook URL</Label>
                 <Input
                   id="edit-webhook"
@@ -2425,6 +2481,7 @@ const Profile: React.FC = () => {
                 <Button onClick={() => handleUpdateApiKey(selectedKey.id, {
                   name: selectedKey.name,
                   context_instructions: selectedKey.context_instructions,
+                  context_images: selectedKey.context_images,
                   webhook_url: selectedKey.webhook_url,
                   include_edit_link: selectedKey.include_edit_link
                 })}>
