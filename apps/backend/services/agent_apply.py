@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime
 import logging
+import re
 
 from utils.supabase import get_deck
 from agents.persistence.deck_persistence import DeckPersistence
@@ -72,27 +73,177 @@ def _normalize_gradient_payload(gradient_payload: Dict[str, Any] | None) -> Dict
         return {"type": "linear", "angle": 135, "stops": []}
 
 
+def _apply_custom_component_text_color(comp: Dict[str, Any], color: str) -> bool:
+    """Fast path: edit CustomComponent HTML to change title/heading text colors.
+
+    Uses regex to find and update color styles on h1, h2, h3 and elements with
+    title/heading classes. This is a quick edit that doesn't require AI.
+    """
+    props = comp.get("props", {})
+    html = props.get("render", "")
+    if not html or not color:
+        return False
+
+    original_html = html
+
+    # Patterns to match title/heading elements and update their color
+    # Match h1-h3 tags with existing style attribute containing color
+    html = re.sub(
+        r'(<h[1-3][^>]*style="[^"]*?)color:\s*[^;"]+(;?)([^"]*")',
+        rf'\1color: {color}\2\3',
+        html,
+        flags=re.IGNORECASE
+    )
+
+    # Match h1-h3 tags with style attribute but no color - add color
+    def add_color_to_style(match):
+        tag = match.group(1)
+        style_content = match.group(2)
+        rest = match.group(3)
+        if 'color:' not in style_content.lower():
+            # Add color to existing style
+            new_style = f'color: {color}; {style_content}'
+            return f'{tag}style="{new_style}"{rest}'
+        return match.group(0)
+
+    html = re.sub(
+        r'(<h[1-3][^>]*)(style=")([^"]*"[^>]*>)',
+        add_color_to_style,
+        html,
+        flags=re.IGNORECASE
+    )
+
+    # Match h1-h3 tags without style attribute - add style with color
+    html = re.sub(
+        r'(<h[1-3])(\s+[^>]*>|>)',
+        rf'\1 style="color: {color};"\2',
+        html,
+        flags=re.IGNORECASE
+    )
+
+    # Clean up double spaces
+    html = re.sub(r'\s+style=', ' style=', html)
+
+    if html != original_html:
+        props["render"] = html
+        logger.info(f"[FastPath] Applied text color {color} to CustomComponent HTML")
+        return True
+
+    return False
+
+
+def _apply_custom_component_background_color(comp: Dict[str, Any], color: str) -> bool:
+    """Fast path: edit CustomComponent HTML to change background color.
+
+    Updates the body or main container background-color in the HTML.
+    """
+    props = comp.get("props", {})
+    html = props.get("render", "")
+    if not html or not color:
+        return False
+
+    original_html = html
+
+    # Update body background-color if it exists
+    html = re.sub(
+        r'(<body[^>]*style="[^"]*?)background-color:\s*[^;"]+(;?)([^"]*")',
+        rf'\1background-color: {color}\2\3',
+        html,
+        flags=re.IGNORECASE
+    )
+
+    # Update body background (shorthand) if it exists
+    html = re.sub(
+        r'(<body[^>]*style="[^"]*?)background:\s*[^;"]+(;?)([^"]*")',
+        rf'\1background: {color}\2\3',
+        html,
+        flags=re.IGNORECASE
+    )
+
+    # If body has style but no background, add it
+    def add_bg_to_body_style(match):
+        before = match.group(1)
+        style_content = match.group(2)
+        after = match.group(3)
+        if 'background' not in style_content.lower():
+            new_style = f'background-color: {color}; {style_content}'
+            return f'{before}style="{new_style}"{after}'
+        return match.group(0)
+
+    html = re.sub(
+        r'(<body[^>]*)(style=")([^"]*")',
+        add_bg_to_body_style,
+        html,
+        flags=re.IGNORECASE
+    )
+
+    # If body has no style attribute, add one
+    if '<body' in html.lower() and html == original_html:
+        html = re.sub(
+            r'(<body)(\s*>)',
+            rf'\1 style="background-color: {color};"\2',
+            html,
+            flags=re.IGNORECASE
+        )
+
+    # Also try updating main container div (often has class like "slide", "container", etc.)
+    # Update existing background-color in first major div
+    html = re.sub(
+        r'(<div[^>]*class="[^"]*(?:slide|container|wrapper|main)[^"]*"[^>]*style="[^"]*?)background-color:\s*[^;"]+(;?)([^"]*")',
+        rf'\1background-color: {color}\2\3',
+        html,
+        flags=re.IGNORECASE
+    )
+
+    if html != original_html:
+        props["render"] = html
+        logger.info(f"[FastPath] Applied background color {color} to CustomComponent HTML")
+        return True
+
+    return False
+
+
 def _apply_update_component_style(slide: Dict[str, Any], component_id: str, style: Dict[str, Any]) -> bool:
     comp = _find_component(slide, component_id)
     if not comp:
         # Only consider slide-level fallbacks when targeting the actual slide id
         if component_id != slide.get("id"):
             return False
-        # Fallback: if targeting a slide, apply to ALL Background components when present
+
+        # Gather components by type
         background_components: List[Dict[str, Any]] = []
+        custom_components: List[Dict[str, Any]] = []
         for c in (slide.get("components", []) or []):
-            if c.get("type") == "Background" or (isinstance(c.get("props"), dict) and c["props"].get("kind") == "background"):
+            ctype = c.get("type")
+            if ctype == "Background" or (isinstance(c.get("props"), dict) and c["props"].get("kind") == "background"):
                 background_components.append(c)
-        if background_components:
-            applied_any = False
-            background_payload = style.get("background") if isinstance(style, dict) else None
-            # Apply background normalization to all background components if a background payload provided
-            if background_payload is not None:
+            elif ctype == "CustomComponent":
+                custom_components.append(c)
+
+        applied_any = False
+        background_payload = style.get("background") if isinstance(style, dict) else None
+
+        # Handle background changes - CustomComponent HTML takes priority
+        if background_payload is not None:
+            btype = (background_payload or {}).get("type")
+            color = None
+            if btype == "solid":
+                color = background_payload.get("color") or background_payload.get("backgroundColor")
+
+            # PRIORITY: Edit CustomComponent HTML background - this is what the user sees
+            custom_comp_updated = False
+            if color:
+                for c in custom_components:
+                    if _apply_custom_component_background_color(c, color):
+                        applied_any = True
+                        custom_comp_updated = True
+
+            # Only update Background component if no CustomComponent was updated
+            # (CustomComponent covers the whole slide, so Background is not visible)
+            if not custom_comp_updated and background_components:
                 for bc in background_components:
                     bprops = bc.setdefault("props", {})
-                    btype = (background_payload or {}).get("type")
                     if btype == "solid":
-                        color = background_payload.get("color") or background_payload.get("backgroundColor")
                         if color:
                             bprops["backgroundType"] = "color"
                             bprops["backgroundColor"] = color
@@ -116,21 +267,25 @@ def _apply_update_component_style(slide: Dict[str, Any], component_id: str, styl
                         # Unknown type - write legacy field for compatibility
                         bprops["background"] = background_payload
                         applied_any = True
-            # If only textColor present at slide level, propagate to text components
-            elif isinstance(style, dict) and style.get("textColor"):
-                color_to_apply = style.get("textColor")
-                for c in (slide.get("components", []) or []):
-                    cprops = c.setdefault("props", {})
-                    ctype = c.get("type")
-                    if ctype in ["TextBlock", "Title"]:
-                        cprops["textColor"] = color_to_apply
+
+        # If only textColor present at slide level, propagate to text components
+        elif isinstance(style, dict) and style.get("textColor"):
+            color_to_apply = style.get("textColor")
+            for c in (slide.get("components", []) or []):
+                cprops = c.setdefault("props", {})
+                ctype = c.get("type")
+                if ctype in ["TextBlock", "Title"]:
+                    cprops["textColor"] = color_to_apply
+                    applied_any = True
+                elif ctype == "TiptapTextBlock":
+                    _apply_tiptap_text_color(slide, c.get("id"), color_to_apply)
+                    applied_any = True
+                elif ctype == "CustomComponent":
+                    # Fast path: edit HTML to change title/heading colors
+                    if _apply_custom_component_text_color(c, color_to_apply):
                         applied_any = True
-                    elif ctype == "TiptapTextBlock":
-                        _apply_tiptap_text_color(slide, c.get("id"), color_to_apply)
-                        applied_any = True
-            return applied_any
-        # No matching component and no backgrounds to update
-        return False
+
+        return applied_any
     props = comp.setdefault("props", {})
     # Normalize backgrounds: prefer props.background for Background component, else props.style.background
     comp_type = (comp or {}).get("type")

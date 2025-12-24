@@ -219,6 +219,17 @@ const syncConfig = {
   useRealtimeSubscription: true
 };
 
+// Scroll to top on route change
+const ScrollToTop = () => {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
+};
+
 // Component to monitor deck changes
 const DeckMonitor = ({ onChange }: { onChange: (data: CompleteDeckData) => void }) => {
   const deckData = useDeckStore(state => state.deckData);
@@ -321,6 +332,7 @@ const AppContent = () => {
 
   return (
     <RegistryProvider>
+      <ScrollToTop />
       <ServerMonitor />
       <ComponentStateProvider>
         {/* Font optimization removed */}

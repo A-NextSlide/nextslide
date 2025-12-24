@@ -164,6 +164,8 @@ const Profile: React.FC = () => {
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
   const [creatingKey, setCreatingKey] = useState(false);
   const [deletingKeyId, setDeletingKeyId] = useState<string | null>(null);
+  const [showBrandSettings, setShowBrandSettings] = useState(false);
+  const [showEditBrandSettings, setShowEditBrandSettings] = useState(false);
 
   // Team states
   const [teams, setTeams] = useState<Team[]>([]);
@@ -558,24 +560,82 @@ const Profile: React.FC = () => {
     }
   }, [activeTab, user, authLoading]);
 
+  // Auto-enable brand settings toggle when values are modified from defaults (Create dialog)
+  useEffect(() => {
+    const bs = newKeyForm.brand_settings;
+    const hasBrandSettings = Boolean(
+      bs.logo ||
+      bs.colors.background !== '#FFFFFF' ||
+      bs.colors.text !== '#1a1a1a' ||
+      bs.colors.accent !== '#6366f1' ||
+      bs.fonts.heading !== 'Montserrat' ||
+      bs.fonts.body !== 'Inter'
+    );
+    if (hasBrandSettings && !showBrandSettings) {
+      setShowBrandSettings(true);
+    }
+  }, [newKeyForm.brand_settings, showBrandSettings]);
+
+  // Auto-enable brand settings toggle when brand_settings exists (Edit dialog)
+  useEffect(() => {
+    if (!selectedKey) return;
+    if (selectedKey.brand_settings && !showEditBrandSettings) {
+      setShowEditBrandSettings(true);
+    }
+  }, [selectedKey?.brand_settings, showEditBrandSettings]);
+
+  // Convert frontend brand_settings to API legacy format
+  const toApiBrandSettings = (bs: typeof newKeyForm.brand_settings | null) => {
+    if (!bs) return null;
+    return {
+      primary_color: bs.colors?.accent || null,
+      secondary_color: bs.colors?.text || null,
+      font_family: bs.fonts?.heading || null,
+      logo_url: bs.logo || null,
+      // Also send new format in case API supports it
+      colors: bs.colors,
+      fonts: bs.fonts,
+      logo: bs.logo,
+    };
+  };
+
+  // Convert API legacy format to frontend brand_settings
+  const fromApiBrandSettings = (bs: any) => {
+    if (!bs) return null;
+    // Check if new format exists
+    if (bs.colors && bs.fonts) {
+      return {
+        colors: bs.colors,
+        fonts: bs.fonts,
+        logo: bs.logo || bs.logo_url || '',
+      };
+    }
+    // Fall back to legacy format
+    return {
+      colors: {
+        background: '#FFFFFF',
+        text: bs.secondary_color || '#1a1a1a',
+        accent: bs.primary_color || '#6366f1',
+      },
+      fonts: {
+        heading: bs.font_family || 'Montserrat',
+        body: 'Inter',
+      },
+      logo: bs.logo_url || '',
+    };
+  };
+
   const handleCreateApiKey = async () => {
     setCreatingKey(true);
     try {
-      // Only include brand_settings if user modified from defaults
-      const bs = newKeyForm.brand_settings;
-      const hasBrandSettings = bs.logo ||
-        bs.colors.background !== '#FFFFFF' ||
-        bs.colors.text !== '#1a1a1a' ||
-        bs.colors.accent !== '#6366f1' ||
-        bs.fonts.heading !== 'Montserrat' ||
-        bs.fonts.body !== 'Inter';
-
+      // Include brand_settings if toggle is ON (user explicitly enabled it)
+      const brandSettingsToSave = showBrandSettings ? toApiBrandSettings(newKeyForm.brand_settings) : null;
       const response = await developerApiService.createKey({
         name: newKeyForm.name || 'Default',
         context_instructions: newKeyForm.context_instructions || null,
         webhook_url: newKeyForm.webhook_url || null,
         include_edit_link: newKeyForm.include_edit_link,
-        brand_settings: hasBrandSettings ? bs : null
+        brand_settings: brandSettingsToSave
       });
       setNewKeyData(response);
       await loadApiKeys();
@@ -675,6 +735,7 @@ const Profile: React.FC = () => {
     });
     setNewKeyData(null);
     setShowCreateKeyDialog(false);
+    setShowBrandSettings(false);
   };
 
   const currentPlan = billingSubscription?.plan_id || billingBalance?.plan_id;
@@ -1774,7 +1835,14 @@ const Profile: React.FC = () => {
                                     size="icon"
                                     className="h-8 w-8"
                                     onClick={() => {
-                                      setSelectedKey(key);
+                                      // Convert legacy format to frontend format
+                                      const convertedBrandSettings = fromApiBrandSettings(key.brand_settings);
+                                      setSelectedKey({
+                                        ...key,
+                                        brand_settings: convertedBrandSettings
+                                      });
+                                      // Show brand settings if key has any brand settings saved
+                                      setShowEditBrandSettings(Boolean(convertedBrandSettings));
                                       setShowEditKeyDialog(true);
                                     }}
                                   >
@@ -2280,7 +2348,7 @@ const Profile: React.FC = () => {
         if (!open) resetCreateKeyForm();
         else setShowCreateKeyDialog(true);
       }}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{newKeyData ? 'API Key Created' : 'Create API Key'}</DialogTitle>
             <DialogDescription>
@@ -2384,40 +2452,48 @@ const Profile: React.FC = () => {
 
               {/* Brand Settings Section */}
               <div className="space-y-3 pt-3 border-t">
-                <div>
-                  <Label className="text-sm font-medium">Brand Settings (optional)</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Set colors and fonts for presentations created with this key.
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm font-medium">Brand Settings (optional)</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Set colors and fonts for presentations created with this key.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={showBrandSettings}
+                    onCheckedChange={setShowBrandSettings}
+                  />
                 </div>
 
-                <ThemeChatBlock
-                  data={{
-                    colors: newKeyForm.brand_settings.colors,
-                    fonts: newKeyForm.brand_settings.fonts,
-                    logo: newKeyForm.brand_settings.logo || undefined
-                  }}
-                  onColorChange={(key, hex) => setNewKeyForm(prev => ({
-                    ...prev,
-                    brand_settings: {
-                      ...prev.brand_settings,
-                      colors: { ...prev.brand_settings.colors, [key]: hex }
-                    }
-                  }))}
-                  onFontChange={(type, font) => setNewKeyForm(prev => ({
-                    ...prev,
-                    brand_settings: {
-                      ...prev.brand_settings,
-                      fonts: { ...prev.brand_settings.fonts, [type]: font }
-                    }
-                  }))}
-                  onLogoChange={(url) => setNewKeyForm(prev => ({
-                    ...prev,
-                    brand_settings: { ...prev.brand_settings, logo: url || '' }
-                  }))}
-                  isEditable={true}
-                  hideHeader
-                />
+                {showBrandSettings && (
+                  <ThemeChatBlock
+                    data={{
+                      colors: newKeyForm.brand_settings.colors,
+                      fonts: newKeyForm.brand_settings.fonts,
+                      logo: newKeyForm.brand_settings.logo || undefined
+                    }}
+                    onColorChange={(key, hex) => setNewKeyForm(prev => ({
+                      ...prev,
+                      brand_settings: {
+                        ...prev.brand_settings,
+                        colors: { ...prev.brand_settings.colors, [key]: hex }
+                      }
+                    }))}
+                    onFontChange={(type, font) => setNewKeyForm(prev => ({
+                      ...prev,
+                      brand_settings: {
+                        ...prev.brand_settings,
+                        fonts: { ...prev.brand_settings.fonts, [type]: font }
+                      }
+                    }))}
+                    onLogoChange={(url) => setNewKeyForm(prev => ({
+                      ...prev,
+                      brand_settings: { ...prev.brand_settings, logo: url || '' }
+                    }))}
+                    isEditable={true}
+                    hideHeader
+                  />
+                )}
               </div>
 
               <DialogFooter>
@@ -2440,7 +2516,7 @@ const Profile: React.FC = () => {
 
       {/* Edit API Key Dialog */}
       <Dialog open={showEditKeyDialog} onOpenChange={setShowEditKeyDialog}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit API Key</DialogTitle>
             <DialogDescription>
@@ -2527,62 +2603,70 @@ const Profile: React.FC = () => {
 
               {/* Brand Settings Section */}
               <div className="space-y-3 pt-4 border-t">
-                <div>
-                  <Label className="text-base font-medium">Brand Settings</Label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    These colors and fonts will be applied to all presentations created with this API key.
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-base font-medium">Brand Settings</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      These colors and fonts will be applied to all presentations created with this API key.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={showEditBrandSettings}
+                    onCheckedChange={setShowEditBrandSettings}
+                  />
                 </div>
 
-                <ThemeChatBlock
-                  data={{
-                    colors: selectedKey.brand_settings?.colors || {
-                      background: '#FFFFFF',
-                      text: '#1a1a1a',
-                      accent: '#6366f1'
-                    },
-                    fonts: selectedKey.brand_settings?.fonts || {
-                      heading: 'Montserrat',
-                      body: 'Inter'
-                    },
-                    logo: selectedKey.brand_settings?.logo || undefined
-                  }}
-                  onColorChange={(key, hex) => setSelectedKey(prev => prev ? {
-                    ...prev,
-                    brand_settings: {
-                      ...prev.brand_settings,
-                      colors: {
-                        ...(prev.brand_settings?.colors || { background: '#FFFFFF', text: '#1a1a1a', accent: '#6366f1' }),
-                        [key]: hex
+                {showEditBrandSettings && (
+                  <ThemeChatBlock
+                    data={{
+                      colors: selectedKey.brand_settings?.colors || {
+                        background: '#FFFFFF',
+                        text: '#1a1a1a',
+                        accent: '#6366f1'
                       },
-                      fonts: prev.brand_settings?.fonts || { heading: 'Montserrat', body: 'Inter' },
-                      logo: prev.brand_settings?.logo || ''
-                    }
-                  } : null)}
-                  onFontChange={(type, font) => setSelectedKey(prev => prev ? {
-                    ...prev,
-                    brand_settings: {
-                      ...prev.brand_settings,
-                      colors: prev.brand_settings?.colors || { background: '#FFFFFF', text: '#1a1a1a', accent: '#6366f1' },
-                      fonts: {
-                        ...(prev.brand_settings?.fonts || { heading: 'Montserrat', body: 'Inter' }),
-                        [type]: font
+                      fonts: selectedKey.brand_settings?.fonts || {
+                        heading: 'Montserrat',
+                        body: 'Inter'
                       },
-                      logo: prev.brand_settings?.logo || ''
-                    }
-                  } : null)}
-                  onLogoChange={(url) => setSelectedKey(prev => prev ? {
-                    ...prev,
-                    brand_settings: {
-                      ...prev.brand_settings,
-                      colors: prev.brand_settings?.colors || { background: '#FFFFFF', text: '#1a1a1a', accent: '#6366f1' },
-                      fonts: prev.brand_settings?.fonts || { heading: 'Montserrat', body: 'Inter' },
-                      logo: url || ''
-                    }
-                  } : null)}
-                  isEditable={true}
-                  hideHeader
-                />
+                      logo: selectedKey.brand_settings?.logo || undefined
+                    }}
+                    onColorChange={(key, hex) => setSelectedKey(prev => prev ? {
+                      ...prev,
+                      brand_settings: {
+                        ...prev.brand_settings,
+                        colors: {
+                          ...(prev.brand_settings?.colors || { background: '#FFFFFF', text: '#1a1a1a', accent: '#6366f1' }),
+                          [key]: hex
+                        },
+                        fonts: prev.brand_settings?.fonts || { heading: 'Montserrat', body: 'Inter' },
+                        logo: prev.brand_settings?.logo || ''
+                      }
+                    } : null)}
+                    onFontChange={(type, font) => setSelectedKey(prev => prev ? {
+                      ...prev,
+                      brand_settings: {
+                        ...prev.brand_settings,
+                        colors: prev.brand_settings?.colors || { background: '#FFFFFF', text: '#1a1a1a', accent: '#6366f1' },
+                        fonts: {
+                          ...(prev.brand_settings?.fonts || { heading: 'Montserrat', body: 'Inter' }),
+                          [type]: font
+                        },
+                        logo: prev.brand_settings?.logo || ''
+                      }
+                    } : null)}
+                    onLogoChange={(url) => setSelectedKey(prev => prev ? {
+                      ...prev,
+                      brand_settings: {
+                        ...prev.brand_settings,
+                        colors: prev.brand_settings?.colors || { background: '#FFFFFF', text: '#1a1a1a', accent: '#6366f1' },
+                        fonts: prev.brand_settings?.fonts || { heading: 'Montserrat', body: 'Inter' },
+                        logo: url || ''
+                      }
+                    } : null)}
+                    isEditable={true}
+                    hideHeader
+                  />
+                )}
               </div>
 
               <div className="space-y-2">
@@ -2611,14 +2695,23 @@ const Profile: React.FC = () => {
 
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowEditKeyDialog(false)}>Cancel</Button>
-                <Button onClick={() => handleUpdateApiKey(selectedKey.id, {
-                  name: selectedKey.name,
-                  context_instructions: selectedKey.context_instructions,
-                  context_images: selectedKey.context_images,
-                  brand_settings: selectedKey.brand_settings,
-                  webhook_url: selectedKey.webhook_url,
-                  include_edit_link: selectedKey.include_edit_link
-                })}>
+                <Button onClick={() => {
+                  const brandSettingsToSave = showEditBrandSettings
+                    ? toApiBrandSettings(selectedKey.brand_settings as any || {
+                        colors: { background: '#FFFFFF', text: '#1a1a1a', accent: '#6366f1' },
+                        fonts: { heading: 'Montserrat', body: 'Inter' },
+                        logo: ''
+                      })
+                    : null;
+                  handleUpdateApiKey(selectedKey.id, {
+                    name: selectedKey.name,
+                    context_instructions: selectedKey.context_instructions,
+                    context_images: selectedKey.context_images,
+                    brand_settings: brandSettingsToSave,
+                    webhook_url: selectedKey.webhook_url,
+                    include_edit_link: selectedKey.include_edit_link
+                  });
+                }}>
                   Save Changes
                 </Button>
               </DialogFooter>

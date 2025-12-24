@@ -181,6 +181,7 @@ Return a JSON object with:
     # Apply ops
     new_html = current_html
     applied = 0
+    failed_ops = []
     for op in (plan.ops or [])[:3]:
         if not op.old_string:
             continue
@@ -192,19 +193,66 @@ Return a JSON object with:
                 {"missing_preview": op.old_string[:120], "component_id": comp_id},
                 runId="pre-fix",
             )
-            break
+            failed_ops.append(op)
+            continue  # Try remaining ops instead of breaking
         new_html = new_html.replace(op.old_string, op.new_string or "", 1)
         applied += 1
 
+    if applied == 0 and failed_ops:
+        # RETRY: Ask AI for exact strings with more context about what failed
+        retry_prompt = f"""{_current_date_note()}
+
+You are a precise HTML editor. Your previous replacement suggestions did not match the HTML exactly.
+
+RULES:
+- old_string MUST be an EXACT substring from the HTML (copy-paste, including whitespace)
+- Look for the specific text/element mentioned in the user request
+- Keep changes minimal - just the specific edit requested
+
+CURRENT HTML (truncated to 25k):
+{current_html[:25000]}
+
+USER REQUEST:
+{instruction}
+
+PREVIOUS FAILED ATTEMPTS (these strings were NOT found verbatim):
+{chr(10).join(f'- "{op.old_string[:200]}"' for op in failed_ops[:3])}
+
+Return a JSON object with EXACT old_string matches:
+{{"ops":[{{"old_string":"...", "new_string":"..."}}], "note":"..."}}"""
+
+        retry_plan = invoke_with_fallback(
+            client=client,
+            model=model,
+            messages=[{"role": "user", "content": retry_prompt}],
+            response_model=_ReplacePlan,
+            max_tokens=8000,
+            log_prefix="SLIDE_TOOLS",
+        )
+
+        # Try retry ops
+        for op in (retry_plan.ops or [])[:3]:
+            if not op.old_string:
+                continue
+            if op.old_string in new_html:
+                new_html = new_html.replace(op.old_string, op.new_string or "", 1)
+                applied += 1
+
+        _dbg(
+            "B",
+            "slide_tools.py:_targeted_custom_component_edit",
+            "retry_result",
+            {"applied_after_retry": applied, "component_id": comp_id},
+            runId="pre-fix",
+        )
+
     if applied == 0:
-        # Fallback: do NOT rewrite unless the request strongly implies redesign.
-        # If we can't apply targeted changes, use the higher-quality rewrite (CustomComponentGenerator prompt).
-        return custom_component_rewrite(
-            args={"slide_id": slide_id, "component_id": comp_id, "instruction": instruction},
-            deck_data=deck_data,
-            current_slide={"id": slide_id, "components": [custom_component]},
-            registry=None,
-            attachments=attachments,
+        # Still no matches - raise error instead of silently doing full rewrite
+        # The orchestrator can decide to use custom_component_rewrite explicitly if needed
+        raise ValueError(
+            f"Could not find matching text in CustomComponent HTML. "
+            f"The requested edit '{instruction[:100]}...' could not be applied as a targeted replacement. "
+            f"Consider using edit_slide for a full rewrite if needed."
         )
 
     deck_diff = DeckDiff(DeckDiffBase())

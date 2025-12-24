@@ -248,32 +248,41 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   useEffect(() => {
     if (!isPresenting) return;
 
-    const handleMouseMove = () => {
+    const handleMouseMove = (e: MouseEvent) => {
       const now = Date.now();
       if (now - lastMouseMove.current < 100) return;
       lastMouseMove.current = now;
 
       if (!showThumbnails) {
-        setShowControls(true);
+        // Show controls when cursor is within 10% of any edge
+        const edgeThreshold = 0.1;
+        const x = e.clientX / window.innerWidth;
+        const y = e.clientY / window.innerHeight;
+
+        const nearEdge = x < edgeThreshold || x > (1 - edgeThreshold) ||
+                         y < edgeThreshold || y > (1 - edgeThreshold);
+
+        if (nearEdge) {
+          setShowControls(true);
+        }
       }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       switch (e.key) {
         case 'Escape':
-          if (isFullscreen) {
-            toggleFullscreen();
-          } else {
-            handleExitPresentation();
-          }
+          e.preventDefault();
+          handleExitPresentation();
           break;
         case 'ArrowRight':
         case ' ':
           e.preventDefault();
+          setShowControls(true);
           goToNextSlide();
           break;
         case 'ArrowLeft':
           e.preventDefault();
+          setShowControls(true);
           goToPrevSlide();
           break;
         case 'g':

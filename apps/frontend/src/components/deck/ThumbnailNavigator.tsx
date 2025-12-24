@@ -242,6 +242,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
   const { toast } = useToast();
   const containerRef = useRef<HTMLDivElement>(null);
   const lastOperationRef = useRef<number>(0);
+  const isUserClickRef = useRef<boolean>(false);
 
   // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -478,8 +479,20 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
     }, 2000);
   }, []);
 
-  // Scroll current thumbnail into view
+  // Handle thumbnail click - set flag to prevent auto-scroll
+  const handleThumbnailClick = useCallback((index: number) => {
+    isUserClickRef.current = true;
+    onThumbnailClick(index);
+  }, [onThumbnailClick]);
+
+  // Scroll current thumbnail into view (only for programmatic changes, not user clicks)
   React.useEffect(() => {
+    // Skip scroll if this was a user click
+    if (isUserClickRef.current) {
+      isUserClickRef.current = false;
+      return;
+    }
+
     const container = containerRef.current;
     if (!container) return;
 
@@ -570,7 +583,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                     slide={slide}
                     index={index}
                     isSelected={index === currentSlideIndex}
-                    onSelect={onThumbnailClick}
+                    onSelect={handleThumbnailClick}
                     onDelete={handleDelete}
                     onDuplicate={handleDuplicate}
                     onAddAfter={handleAddAfter}
@@ -618,7 +631,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                     <PlaceholderThumbnail
                       index={index}
                       isSelected={index === currentSlideIndex}
-                      onSelect={onThumbnailClick}
+                      onSelect={handleThumbnailClick}
                     />
                   </motion.div>
                 );
