@@ -24,7 +24,7 @@ from models.registry import get_global_registry
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1", tags=["Public API v1"])
+router = APIRouter(tags=["Public API v1"])
 
 
 # =============================================================================

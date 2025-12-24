@@ -294,7 +294,9 @@ app.include_router(file_analysis_router, prefix="/api/files", tags=["File Analys
 app.include_router(billing_router, prefix="/api", tags=["Billing"])
 app.include_router(speech_to_text_router)
 app.include_router(developer_router, tags=["Developer API"])
-app.include_router(public_api_v1_router, tags=["Public API v1"])
+# Mount public API at /v1 (clean URLs for api.nextslide.ai) and /api/v1 (backward compatibility)
+app.include_router(public_api_v1_router, prefix="/v1", tags=["Public API v1"])
+app.include_router(public_api_v1_router, prefix="/api/v1", tags=["Public API v1"])
 
 # Global registry storage
 REGISTRY = None

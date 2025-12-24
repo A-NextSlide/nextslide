@@ -331,7 +331,7 @@ const DeveloperAPI: React.FC = () => {
   "status": "generating",
   "view_url": "https://nextslide.ai/p/abc123",
   "edit_url": "https://nextslide.ai/e/xyz789",
-  "poll_url": "/api/v1/decks/{id}/status",
+  "poll_url": "https://api.nextslide.ai/v1/decks/{id}/status",
   "estimated_seconds": 120
 }`}
               onCopy={handleCopy}
