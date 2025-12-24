@@ -53,12 +53,12 @@ export function DeckStoreInitializer({
 
   // Track if we've already initialized to prevent duplicate runs in StrictMode
   const hasInitializedRef = useRef(false);
-  
+
     // Initialize the store when the component mounts
   useEffect(() => {
     // Skip if already initialized (StrictMode protection)
     if (hasInitializedRef.current) return;
-    
+
     // Extract deckId from URL if present
     const extractDeckIdFromUrl = () => {
       const pathParts = location.pathname.split('/');

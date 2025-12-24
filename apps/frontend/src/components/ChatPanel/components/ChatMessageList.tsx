@@ -122,7 +122,7 @@ export function ChatMessageList({
     });
 
     return { sortedMessages, editAppliedMap };
-  }, [messages, messages.length, messages.map(m => `${m.id}:${m.type}:${m.metadata?.type || ''}:${(m.message || '').slice(0, 20)}`).join(',')]);
+  }, [messages]);
 
   const getSlideNumber = (slideId: string | undefined): number | null => {
     if (!slideId || !deckData?.slides) return null;

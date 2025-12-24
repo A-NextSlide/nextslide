@@ -216,32 +216,51 @@ async def generate_deck_background(
         # Inject brand settings as theme if available
         if api_key_record.brand_settings:
             brand = api_key_record.brand_settings
+
+            # Handle new format (colors, fonts, logo) vs legacy (primary_color, etc.)
+            if "colors" in brand:
+                # New format from ThemeChatBlock
+                colors = brand.get("colors", {})
+                fonts = brand.get("fonts", {})
+                bg_color = colors.get("background", "#FFFFFF")
+                text_color = colors.get("text", "#1a1a1a")
+                accent_color = colors.get("accent", "#6366f1")
+                heading_font = fonts.get("heading", "Montserrat")
+                body_font = fonts.get("body", "Inter")
+                logo_url = brand.get("logo")
+            else:
+                # Legacy format
+                bg_color = brand.get("primary_color", "#FFFFFF")
+                text_color = "#1A1A1A"
+                accent_color = brand.get("secondary_color", "#2563EB")
+                heading_font = brand.get("font_family", "Montserrat")
+                body_font = brand.get("font_family", "Poppins")
+                logo_url = brand.get("logo_url")
+
             theme_dict = {
                 "theme_name": "Brand Theme",
                 "design_philosophy": "Brand-focused design",
                 "color_palette": {
                     "source": "brand",
-                    "primary_background": brand.get("primary_color", "#FFFFFF"),
-                    "primary_text": "#1A1A1A",
-                    "accent_1": brand.get("secondary_color", "#2563EB"),
-                    "colors": [
-                        brand.get("primary_color", "#FFFFFF"),
-                        "#1A1A1A",
-                        brand.get("secondary_color", "#2563EB")
-                    ]
+                    "primary_background": bg_color,
+                    "primary_text": text_color,
+                    "accent_1": accent_color,
+                    "colors": [bg_color, text_color, accent_color]
                 },
                 "typography": {
-                    "hero_title": {"family": brand.get("font_family", "Montserrat"), "weight": 700},
-                    "body_text": {"family": brand.get("font_family", "Poppins"), "weight": 400}
+                    "hero_title": {"family": heading_font, "weight": 700},
+                    "body_text": {"family": body_font, "weight": 400}
                 },
                 "layout_style": "modern",
                 "visual_effects": {},
                 "image_treatment": {},
                 "brandInfo": {
-                    "logo_url": brand.get("logo_url"),
-                    "primary_color": brand.get("primary_color"),
-                    "secondary_color": brand.get("secondary_color"),
-                    "font_family": brand.get("font_family")
+                    "logo_url": logo_url,
+                    "primary_color": bg_color,
+                    "accent_color": accent_color,
+                    "text_color": text_color,
+                    "heading_font": heading_font,
+                    "body_font": body_font
                 }
             }
             # Set the theme in deck_outline.notes for ThemeResolver to pick up

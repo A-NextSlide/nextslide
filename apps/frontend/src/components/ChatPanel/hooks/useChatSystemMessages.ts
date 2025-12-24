@@ -33,12 +33,7 @@ export function useChatSystemMessages({
   const handleCompletion = useCallback((metadata?: Record<string, any>) => {
     // Prevent duplicate completion handling from multiple events
     if (completionHandledRef.current) {
-      // Only update if there's actually a progress message to remove
-      setMessages(prev => {
-        const hasProgress = prev.some(msg => msg.id === 'generation-progress');
-        if (!hasProgress) return prev; // Return same reference to avoid re-render
-        return prev.filter(msg => msg.id !== 'generation-progress');
-      });
+      // Already handled - just return without any state updates to prevent re-renders
       return;
     }
     completionHandledRef.current = true;

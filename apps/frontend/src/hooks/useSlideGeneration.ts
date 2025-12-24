@@ -655,6 +655,37 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
     };
   }, [handleProgress]);
 
+  // CRITICAL: Reset all refs when deckId changes to prevent stale data from previous deck
+  useEffect(() => {
+    // Clear all tracking refs when switching to a different deck
+    processedSlidesRef.current.clear();
+    slidesInProgressRef.current.clear();
+    completedSlidesRef.current.clear();
+    placeholdersCreatedRef.current = false;
+    startedAtRef.current = null;
+    lastMessageRef.current = { message: '', progress: -1, timestamp: 0 };
+    resetThemeRelay();
+
+    // Reset state
+    setDeckStatus(null);
+    setLastSystemMessage(null);
+
+    // Check if new deck has an active generation
+    if (deckId && coordinator.isGenerating(deckId)) {
+      setIsGenerating(true);
+      setDeckStatus({
+        state: 'creating',
+        progress: 0,
+        message: 'Initializing deck generation...',
+        currentSlide: 0,
+        totalSlides: 0,
+        startedAt: new Date().toISOString()
+      });
+    } else {
+      setIsGenerating(false);
+    }
+  }, [deckId, coordinator, resetThemeRelay]);
+
   // Listen to coordinator progress bus so events from other entry points (e.g., DeckList) are reflected
   useEffect(() => {
     const onProgressEvent = (e: Event) => {

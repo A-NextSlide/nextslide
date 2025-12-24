@@ -12,6 +12,17 @@ import { API_BASE } from '@/config/environment';
 // =============================================================================
 
 export interface BrandSettings {
+  colors?: {
+    background: string;
+    text: string;
+    accent: string;
+  };
+  fonts?: {
+    heading: string;
+    body: string;
+  };
+  logo?: string;
+  // Legacy fields (for backward compatibility with old data)
   logo_url?: string | null;
   primary_color?: string | null;
   secondary_color?: string | null;

@@ -78,6 +78,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { teamsApi, Team, TeamMember } from '@/services/teamsApi';
+import ThemeChatBlock from '@/components/chat/blocks/ThemeChatBlock';
 
 type SettingsTab = 'profile' | 'security' | 'notifications' | 'billing' | 'integrations' | 'api' | 'team';
 
@@ -148,10 +149,16 @@ const Profile: React.FC = () => {
     webhook_url: '',
     include_edit_link: false,
     brand_settings: {
-      primary_color: '',
-      secondary_color: '',
-      font_family: '',
-      logo_url: ''
+      colors: {
+        background: '#FFFFFF',
+        text: '#1a1a1a',
+        accent: '#6366f1'
+      },
+      fonts: {
+        heading: 'Montserrat',
+        body: 'Inter'
+      },
+      logo: ''
     }
   });
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
@@ -554,18 +561,21 @@ const Profile: React.FC = () => {
   const handleCreateApiKey = async () => {
     setCreatingKey(true);
     try {
-      // Only include brand_settings if any field has a value
-      const hasBrandSettings = newKeyForm.brand_settings.primary_color ||
-        newKeyForm.brand_settings.secondary_color ||
-        newKeyForm.brand_settings.font_family ||
-        newKeyForm.brand_settings.logo_url;
+      // Only include brand_settings if user modified from defaults
+      const bs = newKeyForm.brand_settings;
+      const hasBrandSettings = bs.logo ||
+        bs.colors.background !== '#FFFFFF' ||
+        bs.colors.text !== '#1a1a1a' ||
+        bs.colors.accent !== '#6366f1' ||
+        bs.fonts.heading !== 'Montserrat' ||
+        bs.fonts.body !== 'Inter';
 
       const response = await developerApiService.createKey({
         name: newKeyForm.name || 'Default',
         context_instructions: newKeyForm.context_instructions || null,
         webhook_url: newKeyForm.webhook_url || null,
         include_edit_link: newKeyForm.include_edit_link,
-        brand_settings: hasBrandSettings ? newKeyForm.brand_settings : null
+        brand_settings: hasBrandSettings ? bs : null
       });
       setNewKeyData(response);
       await loadApiKeys();
@@ -651,10 +661,16 @@ const Profile: React.FC = () => {
       webhook_url: '',
       include_edit_link: false,
       brand_settings: {
-        primary_color: '',
-        secondary_color: '',
-        font_family: '',
-        logo_url: ''
+        colors: {
+          background: '#FFFFFF',
+          text: '#1a1a1a',
+          accent: '#6366f1'
+        },
+        fonts: {
+          heading: 'Montserrat',
+          body: 'Inter'
+        },
+        logo: ''
       }
     });
     setNewKeyData(null);
@@ -2375,96 +2391,33 @@ const Profile: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="create-brand-primary" className="text-xs">Primary Color</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="create-brand-primary"
-                        type="color"
-                        className="w-10 h-8 p-1 cursor-pointer"
-                        value={newKeyForm.brand_settings.primary_color || '#FFFFFF'}
-                        onChange={(e) => setNewKeyForm(prev => ({
-                          ...prev,
-                          brand_settings: { ...prev.brand_settings, primary_color: e.target.value }
-                        }))}
-                      />
-                      <Input
-                        type="text"
-                        placeholder="#FFFFFF"
-                        value={newKeyForm.brand_settings.primary_color}
-                        onChange={(e) => setNewKeyForm(prev => ({
-                          ...prev,
-                          brand_settings: { ...prev.brand_settings, primary_color: e.target.value }
-                        }))}
-                        className="flex-1 h-8 text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="create-brand-secondary" className="text-xs">Accent Color</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="create-brand-secondary"
-                        type="color"
-                        className="w-10 h-8 p-1 cursor-pointer"
-                        value={newKeyForm.brand_settings.secondary_color || '#2563EB'}
-                        onChange={(e) => setNewKeyForm(prev => ({
-                          ...prev,
-                          brand_settings: { ...prev.brand_settings, secondary_color: e.target.value }
-                        }))}
-                      />
-                      <Input
-                        type="text"
-                        placeholder="#2563EB"
-                        value={newKeyForm.brand_settings.secondary_color}
-                        onChange={(e) => setNewKeyForm(prev => ({
-                          ...prev,
-                          brand_settings: { ...prev.brand_settings, secondary_color: e.target.value }
-                        }))}
-                        className="flex-1 h-8 text-xs"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="create-brand-font" className="text-xs">Font Family</Label>
-                  <select
-                    id="create-brand-font"
-                    className="w-full h-8 rounded-md border border-input bg-background px-2 py-1 text-xs"
-                    value={newKeyForm.brand_settings.font_family}
-                    onChange={(e) => setNewKeyForm(prev => ({
-                      ...prev,
-                      brand_settings: { ...prev.brand_settings, font_family: e.target.value }
-                    }))}
-                  >
-                    <option value="">Default</option>
-                    <option value="Inter">Inter</option>
-                    <option value="Roboto">Roboto</option>
-                    <option value="Open Sans">Open Sans</option>
-                    <option value="Lato">Lato</option>
-                    <option value="Playfair Display">Playfair Display</option>
-                    <option value="Montserrat">Montserrat</option>
-                    <option value="Poppins">Poppins</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="create-brand-logo" className="text-xs">Logo URL</Label>
-                  <Input
-                    id="create-brand-logo"
-                    type="url"
-                    placeholder="https://example.com/logo.png"
-                    value={newKeyForm.brand_settings.logo_url}
-                    onChange={(e) => setNewKeyForm(prev => ({
-                      ...prev,
-                      brand_settings: { ...prev.brand_settings, logo_url: e.target.value }
-                    }))}
-                    className="h-8 text-xs"
-                  />
-                </div>
+                <ThemeChatBlock
+                  data={{
+                    colors: newKeyForm.brand_settings.colors,
+                    fonts: newKeyForm.brand_settings.fonts,
+                    logo: newKeyForm.brand_settings.logo || undefined
+                  }}
+                  onColorChange={(key, hex) => setNewKeyForm(prev => ({
+                    ...prev,
+                    brand_settings: {
+                      ...prev.brand_settings,
+                      colors: { ...prev.brand_settings.colors, [key]: hex }
+                    }
+                  }))}
+                  onFontChange={(type, font) => setNewKeyForm(prev => ({
+                    ...prev,
+                    brand_settings: {
+                      ...prev.brand_settings,
+                      fonts: { ...prev.brand_settings.fonts, [type]: font }
+                    }
+                  }))}
+                  onLogoChange={(url) => setNewKeyForm(prev => ({
+                    ...prev,
+                    brand_settings: { ...prev.brand_settings, logo: url || '' }
+                  }))}
+                  isEditable={true}
+                  hideHeader
+                />
               </div>
 
               <DialogFooter>
@@ -2581,99 +2534,55 @@ const Profile: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="brand-primary">Primary Color</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="brand-primary"
-                        type="color"
-                        className="w-12 h-9 p-1 cursor-pointer"
-                        value={selectedKey.brand_settings?.primary_color || '#FFFFFF'}
-                        onChange={(e) => setSelectedKey(prev => prev ? {
-                          ...prev,
-                          brand_settings: { ...prev.brand_settings, primary_color: e.target.value }
-                        } : null)}
-                      />
-                      <Input
-                        type="text"
-                        placeholder="#FFFFFF"
-                        value={selectedKey.brand_settings?.primary_color || ''}
-                        onChange={(e) => setSelectedKey(prev => prev ? {
-                          ...prev,
-                          brand_settings: { ...prev.brand_settings, primary_color: e.target.value }
-                        } : null)}
-                        className="flex-1"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="brand-secondary">Accent Color</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="brand-secondary"
-                        type="color"
-                        className="w-12 h-9 p-1 cursor-pointer"
-                        value={selectedKey.brand_settings?.secondary_color || '#2563EB'}
-                        onChange={(e) => setSelectedKey(prev => prev ? {
-                          ...prev,
-                          brand_settings: { ...prev.brand_settings, secondary_color: e.target.value }
-                        } : null)}
-                      />
-                      <Input
-                        type="text"
-                        placeholder="#2563EB"
-                        value={selectedKey.brand_settings?.secondary_color || ''}
-                        onChange={(e) => setSelectedKey(prev => prev ? {
-                          ...prev,
-                          brand_settings: { ...prev.brand_settings, secondary_color: e.target.value }
-                        } : null)}
-                        className="flex-1"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="brand-font">Font Family</Label>
-                  <select
-                    id="brand-font"
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
-                    value={selectedKey.brand_settings?.font_family || ''}
-                    onChange={(e) => setSelectedKey(prev => prev ? {
-                      ...prev,
-                      brand_settings: { ...prev.brand_settings, font_family: e.target.value }
-                    } : null)}
-                  >
-                    <option value="">Default (Montserrat / Poppins)</option>
-                    <option value="Inter">Inter</option>
-                    <option value="Roboto">Roboto</option>
-                    <option value="Open Sans">Open Sans</option>
-                    <option value="Lato">Lato</option>
-                    <option value="Playfair Display">Playfair Display</option>
-                    <option value="Source Sans Pro">Source Sans Pro</option>
-                    <option value="Raleway">Raleway</option>
-                    <option value="Nunito">Nunito</option>
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="brand-logo">Logo URL</Label>
-                  <Input
-                    id="brand-logo"
-                    type="url"
-                    placeholder="https://example.com/logo.png"
-                    value={selectedKey.brand_settings?.logo_url || ''}
-                    onChange={(e) => setSelectedKey(prev => prev ? {
-                      ...prev,
-                      brand_settings: { ...prev.brand_settings, logo_url: e.target.value }
-                    } : null)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Your logo will appear on title slides.
-                  </p>
-                </div>
+                <ThemeChatBlock
+                  data={{
+                    colors: selectedKey.brand_settings?.colors || {
+                      background: '#FFFFFF',
+                      text: '#1a1a1a',
+                      accent: '#6366f1'
+                    },
+                    fonts: selectedKey.brand_settings?.fonts || {
+                      heading: 'Montserrat',
+                      body: 'Inter'
+                    },
+                    logo: selectedKey.brand_settings?.logo || undefined
+                  }}
+                  onColorChange={(key, hex) => setSelectedKey(prev => prev ? {
+                    ...prev,
+                    brand_settings: {
+                      ...prev.brand_settings,
+                      colors: {
+                        ...(prev.brand_settings?.colors || { background: '#FFFFFF', text: '#1a1a1a', accent: '#6366f1' }),
+                        [key]: hex
+                      },
+                      fonts: prev.brand_settings?.fonts || { heading: 'Montserrat', body: 'Inter' },
+                      logo: prev.brand_settings?.logo || ''
+                    }
+                  } : null)}
+                  onFontChange={(type, font) => setSelectedKey(prev => prev ? {
+                    ...prev,
+                    brand_settings: {
+                      ...prev.brand_settings,
+                      colors: prev.brand_settings?.colors || { background: '#FFFFFF', text: '#1a1a1a', accent: '#6366f1' },
+                      fonts: {
+                        ...(prev.brand_settings?.fonts || { heading: 'Montserrat', body: 'Inter' }),
+                        [type]: font
+                      },
+                      logo: prev.brand_settings?.logo || ''
+                    }
+                  } : null)}
+                  onLogoChange={(url) => setSelectedKey(prev => prev ? {
+                    ...prev,
+                    brand_settings: {
+                      ...prev.brand_settings,
+                      colors: prev.brand_settings?.colors || { background: '#FFFFFF', text: '#1a1a1a', accent: '#6366f1' },
+                      fonts: prev.brand_settings?.fonts || { heading: 'Montserrat', body: 'Inter' },
+                      logo: url || ''
+                    }
+                  } : null)}
+                  isEditable={true}
+                  hideHeader
+                />
               </div>
 
               <div className="space-y-2">
