@@ -8,6 +8,8 @@ import { v4 as uuidv4 } from 'uuid';
  */
 const OG_WIDTH = 1200;
 const OG_HEIGHT = 630;
+const SLIDE_WIDTH = 1920;
+const SLIDE_HEIGHT = 1080;
 
 /**
  * Finds a slide element by its ID using the data-slide-id attribute.
@@ -18,6 +20,7 @@ export function findSlideElement(slideId: string): HTMLElement | null {
 
 /**
  * Captures the first slide of a deck as an OG-optimized thumbnail.
+ * Handles both regular slides and iframe-based CustomComponents.
  * The image is sized to 1200x630 (standard OG dimensions).
  *
  * @param slideElementOrId - Either an HTMLElement or a slide ID string
@@ -26,32 +29,95 @@ export async function captureOGThumbnail(
   slideElementOrId: HTMLElement | string
 ): Promise<string | null> {
   // Resolve slide element if a string ID was passed
-  const slideElement = typeof slideElementOrId === 'string'
+  const slideContainer = typeof slideElementOrId === 'string'
     ? findSlideElement(slideElementOrId)
     : slideElementOrId;
 
-  if (!slideElement) {
+  if (!slideContainer) {
     console.warn('[OG Capture] Slide element not found');
     return null;
   }
 
   try {
-    // Wait for any images/fonts to render
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // Wait for rendering to complete
+    await new Promise(resolve => setTimeout(resolve, 300));
 
-    // Capture the slide directly (matches SimpleThumbnail approach)
-    const canvas = await html2canvas(slideElement, {
-      scale: OG_WIDTH / 1920, // Scale to OG width
-      backgroundColor: '#ffffff',
-      width: 1920,
-      height: 1080,
-      logging: false,
-      useCORS: true,
-      allowTaint: true,
-      imageTimeout: 3000,
-    });
+    let canvas: HTMLCanvasElement;
 
-    // The captured canvas is ~1200x675, crop to 1200x630 for OG dimensions
+    // Check for iframe-based CustomComponent
+    const iframe = slideContainer.querySelector('iframe[srcdoc]') as HTMLIFrameElement;
+
+    if (iframe && iframe.contentDocument?.body) {
+      // CustomComponent: Capture directly from iframe's internal document
+      console.log('[OG Capture] Capturing from iframe contentDocument');
+      canvas = await html2canvas(iframe.contentDocument.body, {
+        scale: OG_WIDTH / SLIDE_WIDTH,
+        backgroundColor: '#ffffff',
+        width: SLIDE_WIDTH,
+        height: SLIDE_HEIGHT,
+        logging: false,
+        useCORS: true,
+        allowTaint: true,
+        imageTimeout: 5000,
+      });
+    } else {
+      // Regular slide: Clone and reset transforms
+      console.log('[OG Capture] Capturing regular slide');
+      const slideContent = slideContainer.querySelector('div[style*="transform"]') as HTMLElement;
+
+      if (!slideContent) {
+        // Fallback: try to capture the container directly
+        console.log('[OG Capture] No transform div found, capturing container');
+        canvas = await html2canvas(slideContainer, {
+          scale: OG_WIDTH / SLIDE_WIDTH,
+          backgroundColor: '#ffffff',
+          width: SLIDE_WIDTH,
+          height: SLIDE_HEIGHT,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          imageTimeout: 5000,
+        });
+      } else {
+        // Clone to avoid modifying the original
+        const tempContainer = document.createElement('div');
+        tempContainer.style.position = 'absolute';
+        tempContainer.style.left = '-9999px';
+        tempContainer.style.top = '0';
+        tempContainer.style.width = `${SLIDE_WIDTH}px`;
+        tempContainer.style.height = `${SLIDE_HEIGHT}px`;
+        tempContainer.style.backgroundColor = '#ffffff';
+        tempContainer.style.overflow = 'hidden';
+
+        const clone = slideContent.cloneNode(true) as HTMLElement;
+        clone.style.transform = 'none';
+        clone.style.position = 'relative';
+        clone.style.width = `${SLIDE_WIDTH}px`;
+        clone.style.height = `${SLIDE_HEIGHT}px`;
+        tempContainer.appendChild(clone);
+        document.body.appendChild(tempContainer);
+
+        try {
+          // Wait for cloned content to render
+          await new Promise(resolve => setTimeout(resolve, 100));
+
+          canvas = await html2canvas(tempContainer, {
+            scale: OG_WIDTH / SLIDE_WIDTH,
+            backgroundColor: '#ffffff',
+            width: SLIDE_WIDTH,
+            height: SLIDE_HEIGHT,
+            logging: false,
+            useCORS: true,
+            allowTaint: true,
+            imageTimeout: 5000,
+          });
+        } finally {
+          document.body.removeChild(tempContainer);
+        }
+      }
+    }
+
+    // Crop to OG dimensions (1200x630)
     const finalCanvas = document.createElement('canvas');
     finalCanvas.width = OG_WIDTH;
     finalCanvas.height = OG_HEIGHT;
@@ -65,7 +131,7 @@ export async function captureOGThumbnail(
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, OG_WIDTH, OG_HEIGHT);
 
-    // Center the slide vertically (slight crop from top/bottom)
+    // Center the slide vertically (crop equally from top/bottom)
     const sourceHeight = canvas.height;
     const sourceWidth = canvas.width;
     const cropAmount = Math.max(0, (sourceHeight - OG_HEIGHT) / 2);
@@ -76,7 +142,7 @@ export async function captureOGThumbnail(
       0, 0, OG_WIDTH, OG_HEIGHT
     );
 
-    // Return as JPEG for smaller file size
+    console.log('[OG Capture] Successfully captured slide');
     return finalCanvas.toDataURL('image/jpeg', 0.9);
   } catch (error) {
     console.error('[OG Capture] Failed to capture:', error);
