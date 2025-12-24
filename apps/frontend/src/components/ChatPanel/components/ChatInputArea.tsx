@@ -243,6 +243,7 @@ export function ChatInputArea({
               ) : (
                 <VoiceRecorder
                   onTranscript={onVoiceTranscript}
+                  onStreamingTranscript={onVoiceTranscript}
                   onRecordingStart={onVoiceStart}
                   onRecordingEnd={onVoiceEnd}
                   onError={onVoiceError}

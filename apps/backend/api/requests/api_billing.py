@@ -122,11 +122,15 @@ class CancelRequest(BaseModel):
 @router.get("/balance", response_model=CreditBalanceResponse)
 async def get_credit_balance(user: dict = Depends(get_current_user)):
     """Get current user's credit balance."""
+    logger.info(f"Getting balance for user {user['id']}")
     billing = get_billing_service()
     balance = await billing.get_user_balance(user["id"])
 
     if not balance:
+        logger.warning(f"Balance not found for user {user['id']}")
         raise HTTPException(status_code=404, detail="Balance not found")
+
+    logger.info(f"Balance for user {user['id']}: plan={balance.plan_id}, plan_name={balance.plan_name}")
 
     # Check for Friends & Family (unlimited credits = -1)
     is_friends_family = balance.monthly_credits == -1
@@ -184,8 +188,10 @@ async def get_usage_stats(user: dict = Depends(get_current_user)):
 @router.get("/subscription", response_model=SubscriptionResponse)
 async def get_subscription(user: dict = Depends(get_current_user)):
     """Get current subscription details."""
+    logger.info(f"Getting subscription for user {user['id']}")
     billing = get_billing_service()
     sub = await billing.get_subscription(user["id"])
+    logger.info(f"Subscription result for user {user['id']}: {sub is not None}")
 
     # Default features by plan
     default_features = {

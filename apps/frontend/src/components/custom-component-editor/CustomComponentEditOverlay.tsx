@@ -223,7 +223,24 @@ export function generateEditModeScript(componentId: string): string {
     const style = getComputedStyle(el);
     const strategy = detectPositioningStrategy(el, style);
     const backgroundImage = extractBackgroundImage(style);
-    const src = el.tagName.toLowerCase() === 'img' ? el.src : backgroundImage;
+    const tag = el.tagName.toLowerCase();
+    let src = '';
+    if (tag === 'img') {
+      src = el.src;
+    } else if (tag === 'svg') {
+      const svgImage = el.querySelector('image');
+      if (svgImage) {
+        src = svgImage.getAttribute('href') || svgImage.getAttribute('xlink:href') || '';
+      }
+      if (!src) {
+        const svgUse = el.querySelector('use');
+        if (svgUse) {
+          src = svgUse.getAttribute('href') || svgUse.getAttribute('xlink:href') || '';
+        }
+      }
+    } else {
+      src = backgroundImage;
+    }
 
     return {
       id: el.dataset.nsId,
@@ -291,6 +308,7 @@ export function generateEditModeScript(componentId: string): string {
 
     let textIndex = 0;
     let containerIndex = 0;
+    let imageIndex = 0;
 
     // Text elements - more comprehensive detection
     const textSelectors = 'h1, h2, h3, h4, h5, h6, p, span, a, li, td, th, label, button, figcaption, blockquote, cite, em, strong, b, i, u, sub, sup, small, mark, del, ins, q';
@@ -329,7 +347,7 @@ export function generateEditModeScript(componentId: string): string {
     });
 
     // Image elements - include SVGs and background images
-    document.querySelectorAll('img, svg, [style*="background-image"]').forEach((el, index) => {
+    var markImageElement = function(el) {
       if (el.dataset.nsId) return;
       const rect = el.getBoundingClientRect();
       if (rect.width < 20 || rect.height < 20) return;
@@ -339,9 +357,33 @@ export function generateEditModeScript(componentId: string): string {
         rect.width >= window.innerWidth * 0.98 &&
         rect.height >= window.innerHeight * 0.98;
       if (tag === 'body' || tag === 'html' || isFullBleedBg) return;
-      el.dataset.nsId = 'img-' + index;
+      if (tag === 'img') {
+        const src = (el.getAttribute('src') || '').trim();
+        const alt = (el.getAttribute('alt') || '').trim();
+        const dataProp = (el.getAttribute('data-prop') || '').trim();
+        if (!src && !alt && !dataProp) return;
+      }
+      if (tag === 'svg') {
+        const hasImageChild = !!el.querySelector('image, img, use');
+        if (!hasImageChild) return;
+      }
+      if (tag !== 'img' && tag !== 'svg') {
+        const bg = extractBackgroundImage(getComputedStyle(el));
+        if (!bg) return;
+      }
+      el.dataset.nsId = 'img-' + imageIndex++;
       el.classList.add('ns-editable-image');
+    };
+
+    document.querySelectorAll('img, svg, [style*="background-image"]').forEach((el) => {
+      markImageElement(el);
     });
+
+    // Background images via computed styles (not inline)
+    document.querySelectorAll('div, section, article, figure, span, a, button, header, footer, main, aside, nav, li')
+      .forEach((el) => {
+        markImageElement(el);
+      });
 
     // Container/Box elements - much more comprehensive
     // ANY div, section, or styled element that isn't already marked
@@ -821,7 +863,7 @@ const ElementInteractionLayer: React.FC<{
   onDragEnd: (bounds: Bounds, styles: Record<string, string>) => void;
   onResizeChange: (bounds: Bounds, styles: Record<string, string>) => void;
   onResizeEnd: (bounds: Bounds, styles: Record<string, string>) => void;
-  onDoubleClick: () => void;
+  onDoubleClick: (x: number, y: number) => void;
   onClickNested: (x: number, y: number) => void;
 }> = ({ element, coordinator, iframeRef, onPositionChange, onDragEnd, onResizeChange, onResizeEnd, onDoubleClick, onClickNested }) => {
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -1091,7 +1133,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     return nextId;
   }, [clearSelection, setSelectedElementId]);
 
-  const selectAtPoint = useCallback((point: { x: number; y: number }) => {
+  const selectAtPoint = useCallback((point: { x: number; y: number }, forceNextDepth = false) => {
     const nextPath = getSelectionPathAtPoint(point);
     if (nextPath.length === 0) {
       applySelectionPath([], null, 0);
@@ -1111,7 +1153,13 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       Math.hypot(lastAnchor.x - point.x, lastAnchor.y - point.y) <= 8);
 
     let nextIndex = 0;
-    if (isSamePath && isSameAnchor) {
+    if (forceNextDepth) {
+      if (isSameRoot) {
+        nextIndex = Math.min(currentIndex + 1, deepestIndex);
+      } else {
+        nextIndex = Math.min(1, deepestIndex);
+      }
+    } else if (isSamePath && isSameAnchor) {
       nextIndex = Math.min(currentIndex + 1, deepestIndex);
     } else if (isSameRoot && currentIndex > 0) {
       nextIndex = Math.min(currentIndex, deepestIndex);
@@ -1537,15 +1585,24 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   }, [iframeRef, onElementSelect, clearSelection]);
 
   // Handle double-click - for TEXT: enter edit mode, for IMAGE: open settings
-  const handleDoubleClick = useCallback((element: VirtualElement) => {
-    if (element.type === 'text') {
-      handleStartTextEdit(element);
+  const handleDoubleClick = useCallback((element: VirtualElement, cursorX?: number, cursorY?: number) => {
+    const point = {
+      x: cursorX ?? (element.bounds.x + element.bounds.width / 2),
+      y: cursorY ?? (element.bounds.y + element.bounds.height / 2),
+    };
+    const selected = selectAtPoint(point, true);
+    if (selected?.type === 'text') {
+      handleStartTextEdit(selected);
+      return;
+    }
+    if (selected) {
+      skipNextSelectionNotifyRef.current = true;
+      onElementSelect(toDetectedElement(selected), point.x, point.y);
     } else if (element.type === 'image') {
-      // Could open image settings or similar
       skipNextSelectionNotifyRef.current = true;
       onElementSelect(toDetectedElement(element));
     }
-  }, [handleStartTextEdit, onElementSelect]);
+  }, [handleStartTextEdit, onElementSelect, selectAtPoint]);
 
   // Handle click on nested element (when clicking inside selected element's bounds)
   const handleClickNested = useCallback((x: number, y: number) => {
@@ -1841,7 +1898,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
               }}
               isSelected={element.id === selectedElementId}
               onSelect={(cursorX, cursorY) => handleSelectElement(element.id, cursorX, cursorY)}
-              onDoubleClick={() => handleDoubleClick(element)}
+              onDoubleClick={(cursorX, cursorY) => handleDoubleClick(element, cursorX, cursorY)}
               disabled={!!editingTextId || isBoxSelecting}
               hideForSelection={element.id === selectedElementId}
             />
@@ -1874,7 +1931,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           onDragEnd={handleDragEnd}
           onResizeChange={handleResizeChange}
           onResizeEnd={handleResizeEnd}
-          onDoubleClick={() => handleDoubleClick(selectedElement)}
+          onDoubleClick={(cursorX, cursorY) => handleDoubleClick(selectedElement, cursorX, cursorY)}
           onClickNested={handleClickNested}
         />
       )}

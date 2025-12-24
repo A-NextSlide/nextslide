@@ -52,6 +52,180 @@ VAGUE_QUERY_TERMS = {
     'growth', 'teamwork', 'collaboration', 'excellence', 'quality'
 }
 
+JS_IMAGE_TYPES = {"img", "image", "photo", "picture"}
+
+
+def _iter_js_objects(text: str):
+    objects = []
+    depth = 0
+    start = None
+    in_string = None
+    escape = False
+    idx = 0
+    length = len(text)
+
+    while idx < length:
+        ch = text[idx]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == in_string:
+                in_string = None
+        else:
+            if ch in ("'", '"'):
+                in_string = ch
+            elif ch == "{":
+                if depth == 0:
+                    start = idx
+                depth += 1
+            elif ch == "}":
+                if depth > 0:
+                    depth -= 1
+                    if depth == 0 and start is not None:
+                        objects.append((start, idx + 1, text[start:idx + 1]))
+                        start = None
+        idx += 1
+
+    return objects
+
+
+def _object_is_image_like(obj_text: str) -> bool:
+    type_match = re.search(r'\btype\s*:\s*([\'"])([^\'"]+)\1', obj_text, re.IGNORECASE)
+    if not type_match:
+        return True
+    type_value = type_match.group(2).strip().lower()
+    return type_value in JS_IMAGE_TYPES
+
+
+def _extract_js_image_objects(script_content: str) -> List[Dict[str, Any]]:
+    objects: List[Dict[str, Any]] = []
+    for start, end, obj_text in _iter_js_objects(script_content):
+        if not _object_is_image_like(obj_text):
+            continue
+        alt = ""
+        alt_match = re.search(r'\balt\s*:\s*([\'"])(.*?)\1', obj_text, re.IGNORECASE | re.DOTALL)
+        if alt_match:
+            alt = alt_match.group(2).strip()
+        label = ""
+        if not alt:
+            label_match = re.search(r'\b(title|name|label|heading)\s*:\s*([\'"])(.*?)\2', obj_text, re.IGNORECASE | re.DOTALL)
+            if label_match:
+                label = label_match.group(3).strip()
+        if not alt and not label:
+            continue
+        if alt.startswith("${") or alt.startswith("props."):
+            alt = ""
+        if label.startswith("${") or label.startswith("props."):
+            label = ""
+        if not alt and not label:
+            continue
+        src_match = re.search(r'\bsrc\s*:\s*(?:(["\'])(?P<src>.*?)\1|(?P<src_unquoted>[^,\n}]+))', obj_text, re.IGNORECASE | re.DOTALL)
+        if not src_match:
+            continue
+        src = (src_match.group('src') or src_match.group('src_unquoted') or "").strip()
+        objects.append({
+            "alt": alt,
+            "label": label,
+            "src": src,
+            "start": start,
+            "end": end,
+            "text": obj_text,
+        })
+    return objects
+
+
+def _replace_js_object_src(script_content: str, obj: Dict[str, Any], new_url: str) -> Tuple[str, bool]:
+    src_pattern = r'(\bsrc\s*:\s*)(?:(["\'])(?P<src>.*?)\2|(?P<src_unquoted>[^,\n}]+))'
+
+    def replace_src(match):
+        prefix = match.group(1)
+        quote = match.group(2) or '"'
+        return f"{prefix}{quote}{new_url}{quote}"
+
+    new_obj, count = re.subn(src_pattern, replace_src, obj["text"], count=1, flags=re.IGNORECASE | re.DOTALL)
+    if not count:
+        return script_content, False
+    updated = f"{script_content[:obj['start']]}{new_obj}{script_content[obj['end']:]}"
+    return updated, True
+
+
+def _replace_js_image_object_by_query(
+    html: str,
+    query: str,
+    new_url: str,
+    image_index: Optional[int],
+) -> Tuple[str, bool]:
+    script_pattern = re.compile(r'(<script[^>]*>)([\s\S]*?)(</script>)', re.IGNORECASE)
+    query_words = set(query.lower().split())
+    generic_words = {'logo', 'image', 'photo', 'picture', 'icon', 'img', 'graphic'}
+    specific_words = query_words - generic_words
+
+    best = None
+    best_score = -1
+    script_blocks = []
+
+    for idx, match in enumerate(script_pattern.finditer(html)):
+        script_blocks.append(match)
+        script_content = match.group(2)
+        objects = _extract_js_image_objects(script_content)
+        if not objects:
+            continue
+
+        for obj_idx, obj in enumerate(objects):
+            alt_text = (obj.get("alt") or obj.get("label") or "").lower()
+            score = 0
+            specific_matched = False
+
+            if alt_text == query.lower():
+                score += 10
+
+            for word in query_words:
+                if len(word) < 3:
+                    continue
+                is_specific = word in specific_words
+                if word in alt_text:
+                    score += 5 if is_specific else 2
+                    if is_specific:
+                        specific_matched = True
+
+            if specific_matched:
+                score += 5
+
+            if image_index is not None and obj_idx == image_index:
+                score += 0.5
+
+            logger.info("[SEARCH_IMAGES] JS object %s: score=%s label='%s'", obj_idx, score, alt_text[:40])
+
+            if score > best_score:
+                best_score = score
+                best = (idx, obj_idx, objects)
+
+    if not best:
+        return html, False
+
+    script_idx, obj_idx, objects = best
+    match = script_blocks[script_idx]
+    script_content = match.group(2)
+    obj = objects[obj_idx]
+
+    updated_content, replaced = _replace_js_object_src(script_content, obj, new_url)
+    if not replaced:
+        return html, False
+
+    parts = []
+    last = 0
+    for idx, block in enumerate(script_blocks):
+        parts.append(html[last:block.start()])
+        start_tag, _, end_tag = block.groups()
+        content = updated_content if idx == script_idx else block.group(2)
+        parts.append(f"{start_tag}{content}{end_tag}")
+        last = block.end()
+    parts.append(html[last:])
+
+    return "".join(parts), True
+
 
 def _extract_slide_context(current_slide: Dict, render_html: str = None) -> Dict[str, str]:
     """Extract slide title and content for context-aware image search."""
@@ -379,149 +553,159 @@ def search_images(
                                     # Replace specific URL
                                     new_html = render_html.replace(old_url, best_image_url)
                                 else:
-                                    # Find all images: both <img> tags AND CSS background-image URLs
-                                    # Pattern 1: <img src="...">
-                                    img_pattern = r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>'
-                                    # Pattern 2: background-image: url('...') or url("...")
-                                    bg_pattern = r'background-image:\s*url\(["\']?([^"\')\s]+)["\']?\)'
-                                    # Pattern 3: style="...background-image: url('...')..." inline
-                                    inline_bg_pattern = r'style=["\'][^"\']*background-image:\s*url\(["\']?([^"\')\s]+)["\']?\)[^"\']*["\']'
-
-                                    img_matches = list(re.finditer(img_pattern, render_html))
-                                    bg_matches = list(re.finditer(bg_pattern, render_html))
-                                    inline_bg_matches = list(re.finditer(inline_bg_pattern, render_html))
-
-                                    # Combine all matches, keeping track of their positions
-                                    # CRITICAL: Deduplicate by URL to avoid double-counting
-                                    # bg_pattern and inline_bg_pattern can match the same URL
-                                    all_matches = []
-                                    seen_urls = set()
-
-                                    # Add img matches first (these are unique - <img> tags)
-                                    for m in img_matches:
-                                        url = m.group(1)
-                                        if url not in seen_urls:
-                                            all_matches.append((m.start(), m, 'img'))
-                                            seen_urls.add(url)
-
-                                    # For background images, prefer inline_bg matches (more context)
-                                    # over bare bg_pattern matches
-                                    for m in inline_bg_matches:
-                                        url = m.group(1)
-                                        if url not in seen_urls:
-                                            all_matches.append((m.start(), m, 'inline_bg'))
-                                            seen_urls.add(url)
-
-                                    # Only add bg_pattern matches if not already seen
-                                    for m in bg_matches:
-                                        url = m.group(1)
-                                        if url not in seen_urls:
-                                            all_matches.append((m.start(), m, 'bg'))
-                                            seen_urls.add(url)
-
-                                    # Sort by position to maintain order
-                                    all_matches.sort(key=lambda x: x[0])
-                                    matches = [m[1] for m in all_matches]
-
-                                    logger.info(f"[SEARCH_IMAGES] Found {len(matches)} unique images ({len(img_matches)} <img> tags, {len(bg_matches)} CSS bg, {len(inline_bg_matches)} inline bg - deduplicated)")
-
-                                    if not matches:
-                                        logger.warning(f"[SEARCH_IMAGES] No images found in CustomComponent HTML (checked <img> tags and CSS background-images)")
-                                        return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-                                    # Log what each image index maps to (helpful for debugging)
-                                    for idx, m in enumerate(matches):
-                                        url = m.group(1)
-                                        # Get surrounding context for logging
-                                        ctx_start = max(0, m.start() - 100)
-                                        ctx_end = min(len(render_html), m.end() + 100)
-                                        ctx = re.sub(r'<[^>]+>', ' ', render_html[ctx_start:ctx_end])
-                                        ctx = ' '.join(ctx.split())[:80]
-                                        logger.info(f"[SEARCH_IMAGES] Index {idx}: {url[:60]}... context: '{ctx}'")
-
-                                    # If only one image, just replace it
-                                    if len(matches) == 1:
-                                        old_url = matches[0].group(1)
-                                        new_html = render_html.replace(old_url, best_image_url, 1)
-                                        logger.info(f"[SEARCH_IMAGES] Replacing only image: {old_url[:50]}... -> {best_image_url[:50]}...")
+                                    js_html, js_replaced = _replace_js_image_object_by_query(
+                                        render_html,
+                                        query,
+                                        best_image_url,
+                                        image_index,
+                                    )
+                                    if js_replaced:
+                                        new_html = js_html
+                                        logger.info("[SEARCH_IMAGES] Replaced JS image object for query '%s'", query)
                                     else:
-                                        # ALWAYS use smart scoring for multiple images
-                                        # The LLM's image_index guesses are often wrong (it doesn't know
-                                        # that index 0 might be a logo, not a card background)
-                                        # image_index is used as a hint/tiebreaker, not an override
-                                        # Multiple images - score each by relevance to query
-                                        query_words = set(query.lower().split())
-                                        # Identify generic words that shouldn't dominate scoring
-                                        generic_words = {'logo', 'image', 'photo', 'picture', 'icon', 'img', 'graphic'}
-                                        specific_words = query_words - generic_words
+                                        # Find all images: both <img> tags AND CSS background-image URLs
+                                        # Pattern 1: <img src="...">
+                                        img_pattern = r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>'
+                                        # Pattern 2: background-image: url('...') or url("...")
+                                        bg_pattern = r'background-image:\s*url\(["\']?([^"\')\s]+)["\']?\)'
+                                        # Pattern 3: style="...background-image: url('...')..." inline
+                                        inline_bg_pattern = r'style=["\'][^"\']*background-image:\s*url\(["\']?([^"\')\s]+)["\']?\)[^"\']*["\']'
 
-                                        best_match_idx = 0
-                                        best_score = -1
+                                        img_matches = list(re.finditer(img_pattern, render_html))
+                                        bg_matches = list(re.finditer(bg_pattern, render_html))
+                                        inline_bg_matches = list(re.finditer(inline_bg_pattern, render_html))
 
-                                        for idx, match in enumerate(matches):
-                                            full_tag = match.group(0)
-                                            img_url = match.group(1)
-                                            score = 0
-                                            specific_word_matched = False
+                                        # Combine all matches, keeping track of their positions
+                                        # CRITICAL: Deduplicate by URL to avoid double-counting
+                                        # bg_pattern and inline_bg_pattern can match the same URL
+                                        all_matches = []
+                                        seen_urls = set()
 
-                                            # Extract alt text
-                                            alt_match = re.search(r'alt=["\']([^"\']*)["\']', full_tag)
-                                            alt_text = alt_match.group(1).lower() if alt_match else ""
+                                        # Add img matches first (these are unique - <img> tags)
+                                        for m in img_matches:
+                                            url = m.group(1)
+                                            if url not in seen_urls:
+                                                all_matches.append((m.start(), m, 'img'))
+                                                seen_urls.add(url)
 
-                                            # Extract class names
-                                            class_match = re.search(r'class=["\']([^"\']*)["\']', full_tag)
-                                            class_text = class_match.group(1).lower() if class_match else ""
+                                        # For background images, prefer inline_bg matches (more context)
+                                        # over bare bg_pattern matches
+                                        for m in inline_bg_matches:
+                                            url = m.group(1)
+                                            if url not in seen_urls:
+                                                all_matches.append((m.start(), m, 'inline_bg'))
+                                                seen_urls.add(url)
 
-                                            # Get WIDE surrounding context (500 chars before/after to catch titles)
-                                            start = max(0, match.start() - 500)
-                                            end = min(len(render_html), match.end() + 500)
-                                            context = render_html[start:end].lower()
+                                        # Only add bg_pattern matches if not already seen
+                                        for m in bg_matches:
+                                            url = m.group(1)
+                                            if url not in seen_urls:
+                                                all_matches.append((m.start(), m, 'bg'))
+                                                seen_urls.add(url)
 
-                                            # Also extract visible text content from context (strip HTML tags)
-                                            text_content = re.sub(r'<[^>]+>', ' ', context)
-                                            text_content = ' '.join(text_content.split()).lower()
+                                        # Sort by position to maintain order
+                                        all_matches.sort(key=lambda x: x[0])
+                                        matches = [m[1] for m in all_matches]
 
-                                            # Score based on query word matches
-                                            for word in query_words:
-                                                if len(word) < 3:
-                                                    continue
+                                        logger.info(f"[SEARCH_IMAGES] Found {len(matches)} unique images ({len(img_matches)} <img> tags, {len(bg_matches)} CSS bg, {len(inline_bg_matches)} inline bg - deduplicated)")
 
-                                                is_specific = word in specific_words
-                                                word_score = 0
+                                        if not matches:
+                                            logger.warning(f"[SEARCH_IMAGES] No images found in CustomComponent HTML (checked <img> tags and CSS background-images)")
+                                            return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-                                                if word in alt_text:
-                                                    word_score += 5 if is_specific else 2  # Specific words in alt are gold
-                                                    if is_specific:
-                                                        specific_word_matched = True
-                                                if word in class_text:
-                                                    word_score += 2 if is_specific else 1
-                                                if word in text_content:
-                                                    word_score += 4 if is_specific else 1  # Text content (like card titles)
-                                                    if is_specific:
-                                                        specific_word_matched = True
-                                                if word in img_url.lower():
-                                                    word_score += 3 if is_specific else 1
+                                        # Log what each image index maps to (helpful for debugging)
+                                        for idx, m in enumerate(matches):
+                                            url = m.group(1)
+                                            # Get surrounding context for logging
+                                            ctx_start = max(0, m.start() - 100)
+                                            ctx_end = min(len(render_html), m.end() + 100)
+                                            ctx = re.sub(r'<[^>]+>', ' ', render_html[ctx_start:ctx_end])
+                                            ctx = ' '.join(ctx.split())[:80]
+                                            logger.info(f"[SEARCH_IMAGES] Index {idx}: {url[:60]}... context: '{ctx}'")
 
-                                                score += word_score
+                                        # If only one image, just replace it
+                                        if len(matches) == 1:
+                                            old_url = matches[0].group(1)
+                                            new_html = render_html.replace(old_url, best_image_url, 1)
+                                            logger.info(f"[SEARCH_IMAGES] Replacing only image: {old_url[:50]}... -> {best_image_url[:50]}...")
+                                        else:
+                                            # ALWAYS use smart scoring for multiple images
+                                            # The LLM's image_index guesses are often wrong (it doesn't know
+                                            # that index 0 might be a logo, not a card background)
+                                            # image_index is used as a hint/tiebreaker, not an override
+                                            # Multiple images - score each by relevance to query
+                                            query_words = set(query.lower().split())
+                                            # Identify generic words that shouldn't dominate scoring
+                                            generic_words = {'logo', 'image', 'photo', 'picture', 'icon', 'img', 'graphic'}
+                                            specific_words = query_words - generic_words
 
-                                            # Bonus if we matched a specific (non-generic) word
-                                            if specific_word_matched:
-                                                score += 5
+                                            best_match_idx = 0
+                                            best_score = -1
 
-                                            # Small tiebreaker bonus if LLM's image_index matches
-                                            # This shouldn't override strong matches but helps when scores are equal
-                                            if image_index is not None and idx == image_index:
-                                                score += 0.5  # Small bonus, not enough to override real matches
+                                            for idx, match in enumerate(matches):
+                                                full_tag = match.group(0)
+                                                img_url = match.group(1)
+                                                score = 0
+                                                specific_word_matched = False
 
-                                            logger.info(f"[SEARCH_IMAGES] Image {idx}: score={score}, specific_match={specific_word_matched}, alt='{alt_text[:30]}', text_near='{text_content[:50]}...'")
+                                                # Extract alt text
+                                                alt_match = re.search(r'alt=["\']([^"\']*)["\']', full_tag)
+                                                alt_text = alt_match.group(1).lower() if alt_match else ""
 
-                                            if score > best_score:
-                                                best_score = score
-                                                best_match_idx = idx
+                                                # Extract class names
+                                                class_match = re.search(r'class=["\']([^"\']*)["\']', full_tag)
+                                                class_text = class_match.group(1).lower() if class_match else ""
 
-                                        old_url = matches[best_match_idx].group(1)
-                                        new_html = render_html.replace(old_url, best_image_url, 1)
-                                        logger.info(f"[SEARCH_IMAGES] Best match (idx={best_match_idx}, score={best_score}): {old_url[:50]}... -> {best_image_url[:50]}...")
+                                                # Get WIDE surrounding context (500 chars before/after to catch titles)
+                                                start = max(0, match.start() - 500)
+                                                end = min(len(render_html), match.end() + 500)
+                                                context = render_html[start:end].lower()
+
+                                                # Also extract visible text content from context (strip HTML tags)
+                                                text_content = re.sub(r'<[^>]+>', ' ', context)
+                                                text_content = ' '.join(text_content.split()).lower()
+
+                                                # Score based on query word matches
+                                                for word in query_words:
+                                                    if len(word) < 3:
+                                                        continue
+
+                                                    is_specific = word in specific_words
+                                                    word_score = 0
+
+                                                    if word in alt_text:
+                                                        word_score += 5 if is_specific else 2  # Specific words in alt are gold
+                                                        if is_specific:
+                                                            specific_word_matched = True
+                                                    if word in class_text:
+                                                        word_score += 2 if is_specific else 1
+                                                    if word in text_content:
+                                                        word_score += 4 if is_specific else 1  # Text content (like card titles)
+                                                        if is_specific:
+                                                            specific_word_matched = True
+                                                    if word in img_url.lower():
+                                                        word_score += 3 if is_specific else 1
+
+                                                    score += word_score
+
+                                                # Bonus if we matched a specific (non-generic) word
+                                                if specific_word_matched:
+                                                    score += 5
+
+                                                # Small tiebreaker bonus if LLM's image_index matches
+                                                # This shouldn't override strong matches but helps when scores are equal
+                                                if image_index is not None and idx == image_index:
+                                                    score += 0.5  # Small bonus, not enough to override real matches
+
+                                                logger.info(f"[SEARCH_IMAGES] Image {idx}: score={score}, specific_match={specific_word_matched}, alt='{alt_text[:30]}', text_near='{text_content[:50]}...'")
+
+                                                if score > best_score:
+                                                    best_score = score
+                                                    best_match_idx = idx
+
+                                            old_url = matches[best_match_idx].group(1)
+                                            new_html = render_html.replace(old_url, best_image_url, 1)
+                                            logger.info(f"[SEARCH_IMAGES] Best match (idx={best_match_idx}, score={best_score}): {old_url[:50]}... -> {best_image_url[:50]}...")
 
                                 if new_html != render_html:
                                     logger.info(f"[SEARCH_IMAGES] ✅ RETURNING DeckDiff: slide_id={target_slide_id}, component_id={component_id}, html_len={len(new_html)}")

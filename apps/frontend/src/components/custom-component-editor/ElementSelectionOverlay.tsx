@@ -22,7 +22,7 @@ interface ElementSelectionOverlayProps {
   resizeDelta?: { width: number; height: number; x: number; y: number };
   onDragStart: (e: React.MouseEvent) => void;
   onResizeStart: (e: React.MouseEvent, direction: ResizeDirection) => void;
-  onDoubleClick?: () => void;
+  onDoubleClick?: (x: number, y: number) => void;
   overlayRef: React.RefObject<HTMLDivElement>;
 }
 
@@ -132,7 +132,7 @@ export const ElementSelectionOverlay: React.FC<ElementSelectionOverlayProps> = (
             console.log('[ElementSelectionOverlay] Drag area doubleClick');
             e.stopPropagation();
             e.preventDefault();
-            onDoubleClick?.();
+            onDoubleClick?.(e.clientX, e.clientY);
           }}
         />
       )}

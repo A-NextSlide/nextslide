@@ -18,8 +18,10 @@ class BrandfetchService:
     """Service for fetching comprehensive brand data from Brandfetch API."""
     
     def __init__(self, brand_api_key: Optional[str] = None, logo_api_key: Optional[str] = None):
-        self.brand_api_key = brand_api_key or os.getenv('BRANDFETCH_BRAND_API_KEY', 'dgRlli7Uvwe07jhUZTdaGfZfJOiqSwlxkM7rje3ZyzE=')
-        self.logo_api_key = logo_api_key or os.getenv('BRANDFETCH_LOGO_API_KEY', '1idvSUbEOW-TPQW5G_y')
+        self.brand_api_key = brand_api_key or os.getenv('BRANDFETCH_BRAND_API_KEY')
+        self.logo_api_key = logo_api_key or os.getenv('BRANDFETCH_LOGO_API_KEY')
+        if not self.brand_api_key:
+            logger.warning("BRANDFETCH_BRAND_API_KEY not configured - brand extraction may fail")
         self.base_url = "https://api.brandfetch.io/v2"
         self.session: Optional[aiohttp.ClientSession] = None
     

@@ -162,3 +162,18 @@ class ComponentRegistry:
         Validate deck diff data against the deck diff model
         """
         return self.DeckDiffModel.model_validate(deck_diff_data)
+
+
+# Global registry singleton
+_global_registry: Optional[ComponentRegistry] = None
+
+
+def set_global_registry(registry: ComponentRegistry) -> None:
+    """Set the global registry instance."""
+    global _global_registry
+    _global_registry = registry
+
+
+def get_global_registry() -> Optional[ComponentRegistry]:
+    """Get the global registry instance."""
+    return _global_registry

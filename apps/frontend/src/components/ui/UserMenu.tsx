@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/context/SupabaseAuthContext';
-import { User, LogOut, Settings, HelpCircle, Shield, Users, Plug } from 'lucide-react';
+import { User, LogOut, Settings, HelpCircle, Shield, Plug } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '@/services/authService';
 import { IntegrationsDialog } from '@/components/integrations';
@@ -126,10 +126,6 @@ export function UserMenu() {
             <DropdownMenuSeparator className="my-1" />
           </>
         )}
-        <DropdownMenuItem onClick={() => navigate('/team')} className="cursor-pointer text-xs py-1.5 px-2">
-          <Users className="mr-2 h-3.5 w-3.5" />
-          <span>Team Settings</span>
-        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate('/profile')} className="cursor-pointer text-xs py-1.5 px-2">
           <Settings className="mr-2 h-3.5 w-3.5" />
           <span>Profile Settings</span>

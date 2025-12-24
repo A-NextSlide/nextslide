@@ -154,6 +154,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
             </Button>
             <VoiceRecorder
               onTranscript={onVoiceTranscript}
+              onStreamingTranscript={onVoiceTranscript}
               onError={(error) => {
                 console.error('Voice recording error:', error);
               }}

@@ -1,18 +1,22 @@
 /**
  * VoiceRecorder Component
  *
- * Elegant voice recording with multiple interaction modes:
+ * Real-time streaming voice recording with Gemini Live API.
+ * Features:
  * - Click & hold: Record while holding
  * - Shift+click: Toggle recording (like Wispr Flow)
  * - Quick click: Shows helpful hint
+ * - Streaming transcription: See words as you speak
+ * - Smooth mic permission flow
  */
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Mic, MicOff } from 'lucide-react';
+import { Mic } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { API_CONFIG } from '@/config/environment';
 
 interface VoiceRecorderProps {
   onTranscript: (text: string) => void;
+  onStreamingTranscript?: (text: string) => void;
   onRecordingStart?: () => void;
   onRecordingEnd?: () => void;
   onError?: (error: string) => void;
@@ -21,6 +25,51 @@ interface VoiceRecorderProps {
   size?: 'sm' | 'md' | 'lg';
   variant?: 'default' | 'minimal' | 'mic';
 }
+
+// Mic permission dialog component
+const MicPermissionDialog: React.FC<{
+  show: boolean;
+  onAllow: () => void;
+  onDeny: () => void;
+}> = ({ show, onAllow, onDeny }) => {
+  if (!show) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
+        {/* Header with gradient */}
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-6 text-white">
+          <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Mic size={32} />
+          </div>
+          <h3 className="text-xl font-semibold text-center">Enable Microphone</h3>
+        </div>
+
+        {/* Content */}
+        <div className="p-6">
+          <p className="text-zinc-600 dark:text-zinc-400 text-center mb-6">
+            Allow microphone access to use voice input. Your audio is processed in real-time and never stored.
+          </p>
+
+          <div className="space-y-3">
+            <button
+              onClick={onAllow}
+              className="w-full py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors"
+            >
+              Allow Microphone
+            </button>
+            <button
+              onClick={onDeny}
+              className="w-full py-2.5 px-4 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 font-medium transition-colors"
+            >
+              Not now
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Animated ring that pulses with audio
 const PulseRing: React.FC<{ level: number; isActive: boolean }> = ({ level, isActive }) => {
@@ -118,8 +167,10 @@ const RecordingWave: React.FC<{ audioLevel: number }> = ({ audioLevel }) => {
   );
 };
 
+
 export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   onTranscript,
+  onStreamingTranscript,
   onRecordingStart,
   onRecordingEnd,
   onError,
@@ -130,21 +181,35 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [showHint, setShowHint] = useState(false);
-  const [isLocked, setIsLocked] = useState(false); // Shift+click toggle mode
+  const [isLocked, setIsLocked] = useState(false);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
   const smoothedLevelRef = useRef(0);
   const pointerDownTimeRef = useRef(0);
   const isHoldingRef = useRef(false);
   const recordingDelayRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingStartRef = useRef<(() => void) | null>(null);
+
+  // Check if mic permission was previously granted
+  const checkMicPermission = useCallback(async (): Promise<boolean> => {
+    try {
+      const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+      return result.state === 'granted';
+    } catch {
+      // Permissions API not supported, assume not granted
+      return false;
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -152,6 +217,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       if (recordingDelayRef.current) clearTimeout(recordingDelayRef.current);
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
       if (audioContextRef.current?.state !== 'closed') audioContextRef.current?.close();
+      if (wsRef.current) wsRef.current.close();
     };
   }, []);
 
@@ -180,44 +246,125 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   }, [isRecording]);
 
   const startRecording = useCallback(async () => {
-    if (disabled || isProcessing || isRecording) return;
+    if (disabled || isProcessing || isRecording || isConnecting) return;
+
+    setIsConnecting(true);
 
     try {
+      // Get microphone access
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 16000,
+        }
       });
 
       streamRef.current = stream;
       setPermissionDenied(false);
       smoothedLevelRef.current = 0;
 
-      audioContextRef.current = new AudioContext();
-      const source = audioContextRef.current.createMediaStreamSource(stream);
-      analyserRef.current = audioContextRef.current.createAnalyser();
+      // Create WebSocket connection
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${API_CONFIG.AGENT_BASE_URL.replace(/^https?:/, wsProtocol)}/api/speech/stream`;
+
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      // Set up audio context for PCM conversion
+      const audioContext = new AudioContext({ sampleRate: 16000 });
+      audioContextRef.current = audioContext;
+
+      const source = audioContext.createMediaStreamSource(stream);
+
+      // Create analyser for visualization
+      analyserRef.current = audioContext.createAnalyser();
       analyserRef.current.fftSize = 256;
       analyserRef.current.smoothingTimeConstant = 0.3;
       source.connect(analyserRef.current);
 
-      let mimeType = 'audio/webm';
-      for (const fmt of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']) {
-        if (MediaRecorder.isTypeSupported(fmt)) { mimeType = fmt; break; }
-      }
+      // Create processor for PCM data
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
 
-      const mediaRecorder = new MediaRecorder(stream, { mimeType });
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      processor.onaudioprocess = (e) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          const inputData = e.inputBuffer.getChannelData(0);
+          // Convert float32 to int16
+          const pcmData = new Int16Array(inputData.length);
+          for (let i = 0; i < inputData.length; i++) {
+            const s = Math.max(-1, Math.min(1, inputData[i]));
+            pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          }
+          ws.send(pcmData.buffer);
+        }
       };
 
-      mediaRecorder.start(100);
-      setIsRecording(true);
-      onRecordingStart?.();
-      animationFrameRef.current = requestAnimationFrame(analyzeAudio);
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      // Handle WebSocket events
+      ws.onopen = () => {
+        console.log('Speech WebSocket connected');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'ready') {
+            setIsConnecting(false);
+            setIsRecording(true);
+            onRecordingStart?.();
+            animationFrameRef.current = requestAnimationFrame(analyzeAudio);
+          } else if (data.type === 'transcript') {
+            // Stream partial transcripts directly to the input field
+            if (data.text) {
+              onStreamingTranscript?.(data.text);
+            }
+          } else if (data.type === 'final') {
+            // Final transcript - this goes to the input field
+            if (data.text?.trim()) {
+              onTranscript(data.text.trim());
+            }
+            // Close WebSocket after receiving final transcript
+            if (wsRef.current) {
+              wsRef.current.close();
+              wsRef.current = null;
+            }
+            setIsProcessing(false);
+          } else if (data.type === 'error') {
+            console.error('Transcription error:', data.message);
+            onError?.(data.message);
+            // Close WebSocket on error too
+            if (wsRef.current) {
+              wsRef.current.close();
+              wsRef.current = null;
+            }
+            setIsProcessing(false);
+          }
+        } catch (e) {
+          console.error('Error parsing WebSocket message:', e);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setIsConnecting(false);
+        onError?.('Connection error');
+        stopRecording();
+      };
+
+      ws.onclose = () => {
+        console.log('Speech WebSocket closed');
+        setIsConnecting(false);
+      };
 
     } catch (error) {
       console.error('Recording failed:', error);
+      setIsConnecting(false);
+
       if ((error as Error).name === 'NotAllowedError') {
         setPermissionDenied(true);
         onError?.('Microphone access denied');
@@ -225,19 +372,31 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         onError?.('Failed to start recording');
       }
     }
-  }, [disabled, isProcessing, isRecording, onRecordingStart, onError, analyzeAudio]);
+  }, [disabled, isProcessing, isRecording, isConnecting, onRecordingStart, onError, analyzeAudio, onTranscript, onStreamingTranscript]);
 
   const stopRecording = useCallback(async () => {
-    if (!mediaRecorderRef.current || !isRecording) return;
+    if (!isRecording && !isConnecting) return;
 
     setIsRecording(false);
     setIsLocked(false);
     setAudioLevel(0);
+    setIsProcessing(true); // Show processing state while waiting for transcript
     onRecordingEnd?.();
 
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
+    }
+
+    // Signal end of audio to server - don't close, wait for transcript in onmessage
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'end' }));
+    }
+
+    // Stop audio processing
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
     }
 
     streamRef.current?.getTracks().forEach(t => t.stop());
@@ -247,50 +406,42 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       await audioContextRef.current?.close();
       audioContextRef.current = null;
     }
+  }, [isRecording, isConnecting, onRecordingEnd]);
 
-    return new Promise<void>((resolve) => {
-      if (!mediaRecorderRef.current) return resolve();
+  const handleAllowMic = useCallback(async () => {
+    setShowPermissionDialog(false);
+    if (pendingStartRef.current) {
+      pendingStartRef.current();
+      pendingStartRef.current = null;
+    }
+  }, []);
 
-      mediaRecorderRef.current.onstop = async () => {
-        const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
-        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+  const handleDenyMic = useCallback(() => {
+    setShowPermissionDialog(false);
+    pendingStartRef.current = null;
+  }, []);
 
-        if (blob.size < 1000) { resolve(); return; }
+  const initiateRecording = useCallback(async (isShiftClick: boolean) => {
+    // Check if permission is already granted
+    const hasPermission = await checkMicPermission();
 
-        let ext = '.webm';
-        if (mimeType.includes('mp4')) ext = '.mp4';
-        else if (mimeType.includes('ogg')) ext = '.ogg';
-
-        setIsProcessing(true);
-
-        try {
-          const formData = new FormData();
-          formData.append('audio', blob, `recording${ext}`);
-
-          const res = await fetch(`${API_CONFIG.AGENT_BASE_URL}/api/speech/transcribe`, {
-            method: 'POST',
-            body: formData,
-          });
-
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.detail || `Error ${res.status}`);
-          }
-
-          const { text } = await res.json();
-          if (text?.trim()) onTranscript(text.trim());
-        } catch (e) {
-          console.error('Transcription error:', e);
-          onError?.((e as Error).message || 'Transcription failed');
-        } finally {
-          setIsProcessing(false);
-          resolve();
+    if (!hasPermission) {
+      // Show permission dialog
+      setShowPermissionDialog(true);
+      pendingStartRef.current = () => {
+        if (isShiftClick) {
+          setIsLocked(true);
         }
+        startRecording();
       };
+      return;
+    }
 
-      mediaRecorderRef.current.stop();
-    });
-  }, [isRecording, onRecordingEnd, onTranscript, onError]);
+    if (isShiftClick) {
+      setIsLocked(true);
+    }
+    startRecording();
+  }, [checkMicPermission, startRecording]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -301,8 +452,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       if (isRecording) {
         stopRecording();
       } else {
-        setIsLocked(true);
-        startRecording();
+        initiateRecording(true);
       }
       return;
     }
@@ -315,10 +465,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     // Start recording after a short delay (allows quick click detection)
     recordingDelayRef.current = setTimeout(() => {
       if (isHoldingRef.current) {
-        startRecording();
+        initiateRecording(false);
       }
     }, 150);
-  }, [isRecording, startRecording, stopRecording]);
+  }, [isRecording, initiateRecording, stopRecording]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -386,7 +536,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   };
 
   // Common button for all variants
-  const buttonContent = isProcessing ? (
+  const buttonContent = isProcessing || isConnecting ? (
     <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
   ) : isRecording ? (
     <RecordingWave audioLevel={audioLevel} />
@@ -395,45 +545,53 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   );
 
   return (
-    <div className="relative">
-      <HintTooltip show={showHint} onHide={hideHint} />
+    <>
+      <MicPermissionDialog
+        show={showPermissionDialog}
+        onAllow={handleAllowMic}
+        onDeny={handleDenyMic}
+      />
 
-      <button
-        type="button"
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        onPointerLeave={handlePointerLeave}
-        disabled={disabled || isProcessing || permissionDenied}
-        className={cn(
-          "relative flex items-center justify-center rounded-xl transition-all duration-150",
-          "touch-none select-none cursor-pointer",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50",
-          sizeConfig[size],
-          isRecording
-            ? "!bg-orange-500 !text-white shadow-lg shadow-orange-500/30"
-            : isProcessing
-            ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-400"
-            : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-100 active:bg-orange-500 active:text-white",
-          (disabled || permissionDenied) && "opacity-50 cursor-not-allowed",
-          className
+      <div className="relative">
+        <HintTooltip show={showHint} onHide={hideHint} />
+
+        <button
+          type="button"
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onPointerLeave={handlePointerLeave}
+          disabled={disabled || isProcessing || permissionDenied}
+          className={cn(
+            "relative flex items-center justify-center rounded-xl transition-all duration-150",
+            "touch-none select-none cursor-pointer",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50",
+            sizeConfig[size],
+            isRecording || isConnecting
+              ? "!bg-orange-500 !text-white shadow-lg shadow-orange-500/30"
+              : isProcessing
+              ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-400"
+              : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-100 active:bg-orange-500 active:text-white",
+            (disabled || permissionDenied) && "opacity-50 cursor-not-allowed",
+            className
+          )}
+          title={
+            permissionDenied ? "Microphone denied"
+              : isProcessing || isConnecting ? "Connecting..."
+              : isLocked ? "Click to stop"
+              : "Hold to record (Shift+click to lock)"
+          }
+        >
+          <PulseRing level={audioLevel} isActive={isRecording} />
+          <span className="relative z-10">{buttonContent}</span>
+        </button>
+
+        {/* Lock indicator */}
+        {isLocked && isRecording && (
+          <div className="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full border-2 border-white dark:border-zinc-900 animate-pulse" />
         )}
-        title={
-          permissionDenied ? "Microphone denied"
-            : isProcessing ? "Transcribing..."
-            : isLocked ? "Click to stop"
-            : "Hold to record (Shift+click to lock)"
-        }
-      >
-        <PulseRing level={audioLevel} isActive={isRecording} />
-        <span className="relative z-10">{buttonContent}</span>
-      </button>
-
-      {/* Lock indicator */}
-      {isLocked && isRecording && (
-        <div className="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full border-2 border-white dark:border-zinc-900 animate-pulse" />
-      )}
-    </div>
+      </div>
+    </>
   );
 };
 

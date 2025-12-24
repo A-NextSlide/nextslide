@@ -44,6 +44,11 @@ async def process_custom_component_images(
                 src = src_match.group(1) if src_match else ""
                 alt = alt_match.group(1) if alt_match else ""
 
+                if src.startswith("${") or src.startswith("props."):
+                    continue
+                if alt.startswith("${") or alt.startswith("props."):
+                    continue
+
                 is_already_ours = src and ("supabase" in src.lower() or "nextslide" in src.lower())
                 if is_already_ours:
                     continue

@@ -98,7 +98,6 @@ from services.perplexity_image_service import PerplexityImageService
 from services.gemini_image_service import GeminiImageService
 from services.openai_image_service import OpenAIImageService
 from agents.config import IMAGE_PROVIDER, IMAGE_TRANSPARENT_DEFAULT_SUPPORTING, IMAGE_SEARCH_PROVIDER
-from services.unsplash_service import UnsplashService  # Keep for future use
 from services.image_storage_service import ImageStorageService
 from services.image_validator import ImageValidator
 from utils.token_bucket import TokenBucket
@@ -134,7 +133,6 @@ class CombinedImageService:
         self.perplexity = PerplexityImageService()
         # Provider switch for AI generation
         self.ai_generator = GeminiImageService() if IMAGE_PROVIDER == 'gemini' else OpenAIImageService()
-        # self.unsplash = UnsplashService()  # Disabled for now
         self.storage = ImageStorageService()
         self.validator = ImageValidator()
         

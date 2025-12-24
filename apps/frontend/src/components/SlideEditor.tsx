@@ -719,6 +719,7 @@ const SlideEditorContent: React.FC = () => {
   };
 
   // Function to render slides for presentation mode
+  // Renders at full resolution - PresentationMode handles scaling via CSS transform
   const renderSlide = (slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
     const deckSlideSize = deckData.size || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
     const normalized = normalizeSlideForRender(slide, deckSlideSize, { preferFallbackSize: true });
@@ -726,6 +727,7 @@ const SlideEditorContent: React.FC = () => {
     const renderSlideSize = normalized?.slideSize || deckSlideSize;
     const baseSlideWidth = renderSlideSize.width;
     const baseSlideHeight = renderSlideSize.height;
+
     // Compute a defensive fallback background so presentation mode shows slide backgrounds
     const fallbackBackground = (() => {
       const normalizeHex = (hex: string) => {
@@ -808,36 +810,32 @@ const SlideEditorContent: React.FC = () => {
       );
     }
 
-      return (
-        <div className="w-full h-full relative overflow-hidden" style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
-          {/* Scale wrapper to fit slide content into presentation container */}
-          <div 
-            className="absolute origin-top-left"
-            style={{
-              width: `${baseSlideWidth}px`,
-              height: `${baseSlideHeight}px`,
-              transform: `scale(${scale})`,
-              transformOrigin: 'top left',
-              ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
-            }}
-          >
-            <NavigationProvider initialSlideIndex={index} onSlideChange={() => {}}>
-            <EditorStateProvider initialEditingState={false} slideSizeOverride={renderSlideSize}>
-              <StaticActiveSlideProvider slide={normalizedSlide}>
-                <Slide
-                  key={normalizedSlide.id}
-                  slide={normalizedSlide}
-                  isActive={true}
-                  direction={null}
-                  isEditing={false}
-                  onSave={() => {}}
-                  selectedComponentId={undefined}
-                  onComponentSelect={() => {}}
-                />
-              </StaticActiveSlideProvider>
-            </EditorStateProvider>
-          </NavigationProvider>
-        </div>
+    // Render at full resolution - PresentationMode handles scaling
+    return (
+      <div
+        className="w-full h-full relative overflow-hidden"
+        style={{
+          width: `${baseSlideWidth}px`,
+          height: `${baseSlideHeight}px`,
+          ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
+        }}
+      >
+        <NavigationProvider initialSlideIndex={index} onSlideChange={() => {}}>
+          <EditorStateProvider initialEditingState={false} slideSizeOverride={renderSlideSize}>
+            <StaticActiveSlideProvider slide={normalizedSlide}>
+              <Slide
+                key={normalizedSlide.id}
+                slide={normalizedSlide}
+                isActive={true}
+                direction={null}
+                isEditing={false}
+                onSave={() => {}}
+                selectedComponentId={undefined}
+                onComponentSelect={() => {}}
+              />
+            </StaticActiveSlideProvider>
+          </EditorStateProvider>
+        </NavigationProvider>
       </div>
     );
   };

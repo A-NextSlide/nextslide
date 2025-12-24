@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronLeft, ChevronRight, Grid3X3, Maximize2, Minimize2 } from 'lucide-react';
 import { usePresentationStore } from '@/stores/presentationStore';
@@ -36,217 +36,90 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     setShowThumbnails
   } = usePresentationStore();
 
-  // Use NavigationContext directly for reliable navigation
   const { setCurrentSlideIndex } = useNavigation();
 
-  // Create navigation functions that work with the slides prop
-  const goToNextSlide = () => {
+  // Navigation functions
+  const goToNextSlide = useCallback(() => {
     if (currentSlideIndex < slides.length - 1) {
       setCurrentSlideIndex(currentSlideIndex + 1);
     }
-  };
+  }, [currentSlideIndex, slides.length, setCurrentSlideIndex]);
 
-  const goToPrevSlide = () => {
+  const goToPrevSlide = useCallback(() => {
     if (currentSlideIndex > 0) {
       setCurrentSlideIndex(currentSlideIndex - 1);
     }
-  };
+  }, [currentSlideIndex, setCurrentSlideIndex]);
 
-  const goToSlide = (index: number) => {
+  const goToSlide = useCallback((index: number) => {
     if (index >= 0 && index < slides.length) {
       setCurrentSlideIndex(index);
     }
-  };
-  const lastMouseMove = useRef<number>(0);
-  const mouseMoveTimeout = useRef<NodeJS.Timeout | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isLandscapeMode, setIsLandscapeMode] = useState(false);
-  const thumbnailScrollRef = useRef<HTMLDivElement>(null);
-  const slideContainerRef = useRef<HTMLDivElement>(null);
+  }, [slides.length, setCurrentSlideIndex]);
+
+  // Refs
   const presentationRef = useRef<HTMLDivElement>(null);
-  const [slideScale, setSlideScale] = useState(0.8); // Start with a conservative scale
+  const slideContainerRef = useRef<HTMLDivElement>(null);
+  const thumbnailScrollRef = useRef<HTMLDivElement>(null);
+  const lastMouseMove = useRef<number>(0);
   const lastScaleRef = useRef<number | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
-  const [isPortrait, setIsPortrait] = useState(true);
-  const isExpanded = isFullscreen || isLandscapeMode;
-  const shouldRotate = isExpanded && isMobile && isPortrait;
+
+  // State
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [slideScale, setSlideScale] = useState(1);
+
+  // Computed values
   const deckSlideSize = useMemo(
     () => slideSize || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT },
     [slideSize]
   );
+
   const validIndex = useMemo(() => {
     if (!slides.length) return 0;
     return Math.max(0, Math.min(currentSlideIndex, slides.length - 1));
   }, [currentSlideIndex, slides.length]);
-  const currentSlide = useMemo(() => (slides.length ? slides[validIndex] : null), [slides, validIndex]);
+
+  const currentSlide = useMemo(
+    () => (slides.length ? slides[validIndex] : null),
+    [slides, validIndex]
+  );
+
   const normalizedResult = useMemo(() => {
     if (!currentSlide) return null;
     return normalizeSlideForRender(currentSlide, deckSlideSize, { preferFallbackSize: true });
   }, [currentSlide, deckSlideSize]);
+
   const resolvedSlideSize = normalizedResult?.slideSize || deckSlideSize;
-  const baseSlideWidth = shouldRotate ? resolvedSlideSize.height : resolvedSlideSize.width;
-  const baseSlideHeight = shouldRotate ? resolvedSlideSize.width : resolvedSlideSize.height;
-  const thumbnailHeight = isMobile ? 96 : 120;
+  const baseSlideWidth = resolvedSlideSize.width;
+  const baseSlideHeight = resolvedSlideSize.height;
+
+  // Thumbnail dimensions
+  const thumbnailHeight = 120;
   const thumbnailWidth = Math.round(thumbnailHeight * (deckSlideSize.width / deckSlideSize.height));
 
-  // Detect mobile device - improved detection for tablets and touch devices
-  useEffect(() => {
-    const checkMobile = () => {
-      if (typeof window === 'undefined') return;
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-      const isNarrow = width <= 1024; // Include tablets
-      const isLandscapeMobile = isTouch && height < 500; // Phone in landscape
-
-      setIsMobile(isTouch && (isNarrow || isLandscapeMobile));
-      setIsPortrait(height >= width);
-    };
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    window.addEventListener('orientationchange', checkMobile);
-    return () => {
-      window.removeEventListener('resize', checkMobile);
-      window.removeEventListener('orientationchange', checkMobile);
-    };
-  }, []);
-
-  // Safe orientation lock/unlock helpers that won't crash on unsupported devices
-  const safeOrientationLock = React.useCallback(async (orientation: string) => {
-    if (typeof window === 'undefined') return false;
-    try {
-      const screenApi = window.screen as any;
-      if (screenApi?.orientation && typeof screenApi.orientation.lock === 'function') {
-        await screenApi.orientation.lock(orientation);
-        return true;
-      }
-    } catch {
-      // Orientation lock not supported - expected on many devices
-    }
-    return false;
-  }, []);
-
-  const safeOrientationUnlock = React.useCallback(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const screenApi = window.screen as any;
-      if (screenApi?.orientation && typeof screenApi.orientation.unlock === 'function') {
-        screenApi.orientation.unlock();
-      }
-    } catch {
-      // Orientation unlock not supported - expected on many devices
-    }
-  }, []);
-
-  // Handle fullscreen/landscape toggle
-  const toggleFullscreen = React.useCallback(async () => {
-    const elem = presentationRef.current || document.documentElement;
-
-    if (isExpanded) {
-      try {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if ((document as any).webkitExitFullscreen) {
-          (document as any).webkitExitFullscreen();
-        }
-      } catch {
-        // Ignore exit fullscreen errors - still unlock orientation below
-      }
-      safeOrientationUnlock();
-      setIsLandscapeMode(false);
-      return;
-    }
-
-    try {
-      if (elem.requestFullscreen) {
-        await elem.requestFullscreen();
-      } else if ((elem as any).webkitRequestFullscreen) {
-        (elem as any).webkitRequestFullscreen();
-      }
-    } catch {
-      // Fullscreen failed, continue with orientation/manual fallback below
-    }
-
-    const locked = await safeOrientationLock('landscape');
-    if (locked) {
-      setIsLandscapeMode(true);
-      return;
-    }
-
-    // Manual landscape fallback for mobile browsers without fullscreen/orientation lock
-    if (isMobile) {
-      setIsLandscapeMode(true);
-    }
-  }, [isExpanded, isMobile, safeOrientationLock, safeOrientationUnlock]);
-
-  const handleExitPresentation = React.useCallback(() => {
-    safeOrientationUnlock();
-    setIsLandscapeMode(false);
-    exitPresentation();
-  }, [exitPresentation, safeOrientationUnlock]);
-  
-  // Dispatch slidechange event when slide changes in presentation mode
-  // This ensures chart animations are triggered properly
-  useEffect(() => {
-    if (!isPresenting) return;
-    
-    const currentSlide = slides[currentSlideIndex];
-    if (!currentSlide?.id) return;
-    
-    // Use requestAnimationFrame to ensure the slide is rendered before dispatching the event
-    let raf1: number | null = null;
-    let raf2: number | null = null;
-    
-    raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
-        // Dispatch the slidechange event
-        const event = new CustomEvent('slidechange', {
-          detail: { slideId: currentSlide.id, index: currentSlideIndex }
-        });
-        document.dispatchEvent(event);
-        
-        // Also update the global window state for chart animations
-        if (typeof window !== 'undefined') {
-          (window as any).__lastSlideChangeDispatch = { 
-            slideId: currentSlide.id, 
-            ts: Date.now() 
-          };
-        }
-      });
-    });
-    
-    return () => {
-      if (raf1 !== null) cancelAnimationFrame(raf1);
-      if (raf2 !== null) cancelAnimationFrame(raf2);
-    };
-  }, [currentSlideIndex, slides, isPresenting]);
-  
-  // Calculate slide scale based on container size
+  // Calculate slide scale to fit container
   useLayoutEffect(() => {
-    const getScaleTarget = () => (isMobile ? presentationRef.current : slideContainerRef.current);
-    const calculateScale = () => {
-      if (!isPresenting) return;
+    if (!isPresenting) return;
 
-      const container = getScaleTarget();
+    const calculateScale = () => {
+      const container = slideContainerRef.current;
       if (!container) return;
 
-      // Use try-catch for extra safety during orientation changes
       try {
         const rect = container.getBoundingClientRect();
         const containerWidth = rect.width || window.innerWidth;
         const containerHeight = rect.height || window.innerHeight;
-        const padding = isMobile ? (isExpanded ? 0 : 8) : 0;
-        const availableWidth = Math.max(0, containerWidth - padding * 2);
-        const availableHeight = Math.max(0, containerHeight - padding * 2);
 
         // Skip if container has no dimensions yet
-        if (!availableWidth || !availableHeight || availableWidth === 0 || availableHeight === 0) return;
+        if (!containerWidth || !containerHeight) return;
 
         // Calculate scale to fit the slide within the container
-        const scaleX = availableWidth / baseSlideWidth;
-        const scaleY = availableHeight / baseSlideHeight;
+        const scaleX = containerWidth / baseSlideWidth;
+        const scaleY = containerHeight / baseSlideHeight;
         const scale = Math.min(scaleX, scaleY);
+
         if (!Number.isFinite(scale) || scale <= 0) return;
+
         const normalizedScale = Math.round(scale * 1000) / 1000;
         if (lastScaleRef.current === normalizedScale) return;
         lastScaleRef.current = normalizedScale;
@@ -256,44 +129,36 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
         console.warn('[PresentationMode] Scale calculation failed:', error);
       }
     };
-    
-    // Use requestAnimationFrame to ensure DOM is ready
-    const rafId = requestAnimationFrame(() => {
-      calculateScale();
-    });
-    
-    // Also calculate after a small delay as a fallback
+
+    // Initial calculation
+    const rafId = requestAnimationFrame(calculateScale);
     const timeoutId = setTimeout(calculateScale, 100);
-    
-    // Use ResizeObserver for better dimension tracking
+
+    // ResizeObserver for dynamic updates
     let resizeObserver: ResizeObserver | null = null;
-    const resizeTarget = getScaleTarget();
-    if (resizeTarget && 'ResizeObserver' in window) {
-      resizeObserver = new ResizeObserver(() => {
-        calculateScale();
-      });
-      resizeObserver.observe(resizeTarget);
+    const container = slideContainerRef.current;
+    if (container && 'ResizeObserver' in window) {
+      resizeObserver = new ResizeObserver(calculateScale);
+      resizeObserver.observe(container);
     }
-    
+
     window.addEventListener('resize', calculateScale);
-    
+
     return () => {
       cancelAnimationFrame(rafId);
       clearTimeout(timeoutId);
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
+      if (resizeObserver) resizeObserver.disconnect();
       window.removeEventListener('resize', calculateScale);
     };
-  }, [isPresenting, isFullscreen, isMobile, isExpanded, shouldRotate, baseSlideWidth, baseSlideHeight]);
-  
+  }, [isPresenting, baseSlideWidth, baseSlideHeight]);
+
   // Scroll current slide into view when thumbnails open
   useEffect(() => {
     if (showThumbnails && thumbnailScrollRef.current) {
       const container = thumbnailScrollRef.current;
-      const slides = container.querySelectorAll('button');
-              const currentSlideElement = slides[currentSlideIndex];
-      
+      const slideButtons = container.querySelectorAll('button');
+      const currentSlideElement = slideButtons[currentSlideIndex];
+
       if (currentSlideElement) {
         currentSlideElement.scrollIntoView({
           behavior: 'smooth',
@@ -311,77 +176,92 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     } else {
       document.body.classList.remove('presentation-mode');
     }
-    
+
     return () => {
       document.body.classList.remove('presentation-mode');
     };
   }, [isPresenting]);
 
-  // Handle mouse/touch movement and keyboard
+  // Dispatch slidechange event when slide changes (for chart animations)
+  useEffect(() => {
+    if (!isPresenting) return;
+    if (!currentSlide?.id) return;
+
+    let raf1: number | null = null;
+    let raf2: number | null = null;
+
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const event = new CustomEvent('slidechange', {
+          detail: { slideId: currentSlide.id, index: currentSlideIndex }
+        });
+        document.dispatchEvent(event);
+
+        if (typeof window !== 'undefined') {
+          (window as any).__lastSlideChangeDispatch = {
+            slideId: currentSlide.id,
+            ts: Date.now()
+          };
+        }
+      });
+    });
+
+    return () => {
+      if (raf1 !== null) cancelAnimationFrame(raf1);
+      if (raf2 !== null) cancelAnimationFrame(raf2);
+    };
+  }, [currentSlideIndex, currentSlide?.id, isPresenting]);
+
+  // Fullscreen toggle
+  const toggleFullscreen = useCallback(async () => {
+    const elem = presentationRef.current || document.documentElement;
+
+    if (isFullscreen) {
+      try {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          (document as any).webkitExitFullscreen();
+        }
+      } catch {
+        // Ignore exit fullscreen errors
+      }
+      return;
+    }
+
+    try {
+      if (elem.requestFullscreen) {
+        await elem.requestFullscreen();
+      } else if ((elem as any).webkitRequestFullscreen) {
+        (elem as any).webkitRequestFullscreen();
+      }
+    } catch {
+      // Fullscreen not supported
+    }
+  }, [isFullscreen]);
+
+  const handleExitPresentation = useCallback(() => {
+    exitPresentation();
+  }, [exitPresentation]);
+
+  // Event handlers
   useEffect(() => {
     if (!isPresenting) return;
 
-    let touchStartX = 0;
-    let touchStartY = 0;
-
-    const handleMouseMove = (e: MouseEvent) => {
+    const handleMouseMove = () => {
       const now = Date.now();
-
-      // Throttle mouse move events
       if (now - lastMouseMove.current < 100) return;
       lastMouseMove.current = now;
 
-      // Don't show controls if thumbnails are open
-      if (showThumbnails) return;
-
-      // Show controls
-      setShowControls(true);
-    };
-
-    // Touch support for mobile
-    const handleTouchStart = (e: TouchEvent) => {
-      // Guard against empty touches array
-      if (!e.touches || e.touches.length === 0) return;
-
-      touchStartX = e.touches[0].clientX;
-      touchStartY = e.touches[0].clientY;
-
-      // Show controls on touch
       if (!showThumbnails) {
         setShowControls(true);
       }
     };
 
-    const handleTouchEnd = (e: TouchEvent) => {
-      if (showThumbnails) return;
-
-      // Guard against empty touches array - prevents crash on certain gesture combinations
-      if (!e.changedTouches || e.changedTouches.length === 0) return;
-
-      const touchEndX = e.changedTouches[0].clientX;
-      const touchEndY = e.changedTouches[0].clientY;
-      const deltaX = touchEndX - touchStartX;
-      const deltaY = touchEndY - touchStartY;
-
-      // Only trigger swipe if horizontal movement is greater than vertical
-      // and the swipe distance is significant (> 50px)
-      if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
-        if (deltaX < 0) {
-          // Swipe left -> next slide
-          goToNextSlide();
-        } else {
-          // Swipe right -> previous slide
-          goToPrevSlide();
-        }
-      }
-    };
-
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isPresenting) return;
-
       switch (e.key) {
         case 'Escape':
-          if (isExpanded) {
+          if (isFullscreen) {
             toggleFullscreen();
           } else {
             handleExitPresentation();
@@ -404,61 +284,84 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       }
     };
 
-    // Handle fullscreen changes (including webkit prefix for Safari)
     const handleFullscreenChange = () => {
       const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
-      if (!isFS) {
-        safeOrientationUnlock();
-        setIsLandscapeMode(false);
-      }
       setIsFullscreen(isFS);
     };
 
+    // Touch/swipe support
+    let touchStartX = 0;
+    let touchStartY = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (!e.touches || e.touches.length === 0) return;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+
+      if (!showThumbnails) {
+        setShowControls(true);
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (showThumbnails) return;
+      if (!e.changedTouches || e.changedTouches.length === 0) return;
+
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      const deltaX = touchEndX - touchStartX;
+      const deltaY = touchEndY - touchStartY;
+
+      // Only trigger swipe if horizontal movement is greater than vertical and significant
+      if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+        if (deltaX < 0) {
+          goToNextSlide();
+        } else {
+          goToPrevSlide();
+        }
+      }
+    };
+
     window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('touchstart', handleTouchStart, { passive: true });
     window.addEventListener('touchend', handleTouchEnd, { passive: true });
-    window.addEventListener('keydown', handleKeyDown);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
-      window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
     };
-  }, [isPresenting, showThumbnails, setShowControls, handleExitPresentation, goToNextSlide, goToPrevSlide, isExpanded, toggleFullscreen, safeOrientationUnlock]);
+  }, [
+    isPresenting,
+    showThumbnails,
+    isFullscreen,
+    goToNextSlide,
+    goToPrevSlide,
+    toggleFullscreen,
+    handleExitPresentation,
+    setShowControls,
+    setShowThumbnails
+  ]);
 
-  // Defensive: ensure currentSlideIndex is valid
+  // Render slide content at scale=1, we apply CSS transform for scaling
   const slideContent = useMemo(() => {
-    if (!isPresenting) return null;
-    if (!currentSlide) return null;
-    return renderSlide(currentSlide, validIndex, slideScale, false);
-  }, [currentSlide, isPresenting, renderSlide, slideScale, validIndex]);
+    if (!isPresenting || !currentSlide) return null;
+    return renderSlide(currentSlide, validIndex, 1, false);
+  }, [currentSlide, isPresenting, renderSlide, validIndex]);
 
   if (!isPresenting) return null;
-  const viewportClamp = isMobile ? 100 : 98;
+
   const progressTotal = Math.max(1, slides.length);
-  const slideRatio = baseSlideWidth / baseSlideHeight;
-  const maxWidth = `min(${viewportClamp}vw, calc(${viewportClamp}dvh * ${slideRatio}))`;
-  const minHeight = `min(calc(${viewportClamp}vw / ${slideRatio}), ${viewportClamp}dvh)`;
-  const scaledViewportWidth = baseSlideWidth * slideScale;
-  const scaledViewportHeight = baseSlideHeight * slideScale;
-  const slideViewportStyle = isMobile
-    ? { width: `${scaledViewportWidth}px`, height: `${scaledViewportHeight}px` }
-    : {
-        width: '100%',
-        maxWidth,
-        aspectRatio: `${baseSlideWidth} / ${baseSlideHeight}`,
-        minHeight
-      };
-  const slideFrameStyle = {
-    width: `${resolvedSlideSize.width * slideScale}px`,
-    height: `${resolvedSlideSize.height * slideScale}px`
-  };
-  const slideWrapperPadding = isExpanded && isMobile ? "p-0" : (isMobile ? "p-2" : "p-4");
+
+  // Calculate the scaled dimensions for the wrapper
+  const scaledWidth = baseSlideWidth * slideScale;
+  const scaledHeight = baseSlideHeight * slideScale;
 
   return (
     <motion.div
@@ -467,45 +370,47 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[100] bg-black"
-      style={{ height: '100dvh' }} // Use dvh for mobile Safari compatibility
+      style={{ height: '100dvh' }}
     >
-      {/* Main slide display */}
-      <div className={cn(
-        "relative w-full h-full flex items-center justify-center",
-        slideWrapperPadding
-      )}>
+      {/* Main slide display - container for measuring available space */}
+      <div
+        ref={slideContainerRef}
+        className="relative w-full h-full flex items-center justify-center"
+      >
+        {/* Outer wrapper sized to the scaled dimensions for proper centering */}
         <div
-          ref={slideContainerRef}
-          className={cn(
-            "relative overflow-hidden",
-            isExpanded && isMobile ? "rounded-none" : "rounded-lg"
-          )}
-          style={slideViewportStyle}
+          className="relative overflow-hidden rounded-lg"
+          style={{
+            width: `${scaledWidth}px`,
+            height: `${scaledHeight}px`
+          }}
         >
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div
-              className={cn(
-                "relative overflow-hidden",
-                shouldRotate && "rotate-90"
-              )}
-              style={slideFrameStyle}
-            >
-              {currentSlide && (
-                <div key={`slide-${currentSlide.id || validIndex}`} className="w-full h-full relative">
-                  {slideContent}
-                  {/* Add watermark for view-only presentations */}
-                  {isViewOnly && (
-                    <Watermark 
-                      text="VIEW ONLY"
-                      opacity={0.06}
-                      fontSize={120}
-                      rotation={-30}
-                      repeat={false}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
+          {/* Inner content at full resolution, scaled via CSS transform */}
+          <div
+            className="absolute top-0 left-0 origin-top-left"
+            style={{
+              width: `${baseSlideWidth}px`,
+              height: `${baseSlideHeight}px`,
+              transform: `scale(${slideScale})`,
+            }}
+          >
+            {currentSlide && (
+              <div
+                key={`slide-${currentSlide.id || validIndex}`}
+                className="w-full h-full relative"
+              >
+                {slideContent}
+                {isViewOnly && (
+                  <Watermark
+                    text="VIEW ONLY"
+                    opacity={0.06}
+                    fontSize={120}
+                    rotation={-30}
+                    repeat={false}
+                  />
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -535,151 +440,77 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
                 {/* Right controls */}
                 <div className="flex items-center gap-2">
-                  {/* Grid view button - with touch support for mobile */}
+                  {/* Grid view button */}
                   <motion.button
                     initial={{ y: -20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.15 }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setShowThumbnails(true);
-                    }}
-                    onTouchEnd={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setShowThumbnails(true);
-                    }}
-                    className={cn(
-                      "bg-black/60 rounded-full text-white/90 hover:bg-black/80 active:bg-black/90 transition-colors border border-white/20 touch-manipulation",
-                      isMobile ? "p-3 min-w-[48px] min-h-[48px]" : "p-2"
-                    )}
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    onClick={() => setShowThumbnails(true)}
+                    className="bg-black/60 rounded-full p-2 text-white/90 hover:bg-black/80 transition-colors border border-white/20"
                     title="Show all slides (G)"
                   >
-                    <Grid3X3 size={isMobile ? 22 : 18} />
+                    <Grid3X3 size={18} />
                   </motion.button>
 
-                  {/* Fullscreen toggle - with touch support for mobile */}
+                  {/* Fullscreen toggle */}
                   <motion.button
                     initial={{ y: -20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.2 }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      toggleFullscreen();
-                    }}
-                    onTouchEnd={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      toggleFullscreen();
-                    }}
-                    className={cn(
-                      "bg-black/60 rounded-full text-white/90 hover:bg-black/80 active:bg-black/90 transition-colors border border-white/20 touch-manipulation",
-                      isMobile ? "p-3 min-w-[48px] min-h-[48px]" : "p-2"
-                    )}
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
-                    title={isExpanded ? "Exit Full Screen" : "Full Screen"}
+                    onClick={toggleFullscreen}
+                    className="bg-black/60 rounded-full p-2 text-white/90 hover:bg-black/80 transition-colors border border-white/20"
+                    title={isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
                   >
-                    {isExpanded ? <Minimize2 size={isMobile ? 22 : 18} /> : <Maximize2 size={isMobile ? 22 : 18} />}
+                    {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
                   </motion.button>
 
-                  {/* Exit button - with touch support for mobile */}
+                  {/* Exit button */}
                   <motion.button
                     initial={{ y: -20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.25 }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (isExpanded) {
-                        toggleFullscreen();
-                      } else {
-                        handleExitPresentation();
-                      }
-                    }}
-                    onTouchEnd={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (isExpanded) {
-                        toggleFullscreen();
-                      } else {
-                        handleExitPresentation();
-                      }
-                    }}
-                    className={cn(
-                      "bg-black/60 rounded-full text-white/90 hover:bg-black/80 active:bg-black/90 transition-colors border border-white/20 touch-manipulation",
-                      isMobile ? "p-3 min-w-[48px] min-h-[48px]" : "p-2"
-                    )}
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
-                    title={isExpanded ? "Exit landscape" : "Exit presentation (ESC)"}
+                    onClick={handleExitPresentation}
+                    className="bg-black/60 rounded-full p-2 text-white/90 hover:bg-black/80 transition-colors border border-white/20"
+                    title="Exit presentation (ESC)"
                   >
-                    <X size={isMobile ? 22 : 18} />
+                    <X size={18} />
                   </motion.button>
                 </div>
               </div>
             </div>
 
-            {/* Navigation arrows - with touch support for mobile */}
-            <div className={cn(
-              "absolute top-1/2 -translate-y-1/2 flex justify-between pointer-events-auto",
-              isMobile ? "left-2 right-2" : "left-6 right-6"
-            )}>
+            {/* Navigation arrows */}
+            <div className="absolute top-1/2 -translate-y-1/2 left-6 right-6 flex justify-between pointer-events-auto">
               <motion.button
                 initial={{ x: -20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.1 }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  goToPrevSlide();
-                }}
-                onTouchEnd={(e) => {
-                  if (validIndex === 0) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  goToPrevSlide();
-                }}
+                onClick={goToPrevSlide}
                 disabled={validIndex === 0}
                 className={cn(
-                  "bg-black/60 rounded-full text-white/90 transition-all border border-white/20 touch-manipulation",
-                  isMobile ? "p-4 min-w-[56px] min-h-[56px]" : "p-3",
+                  'bg-black/60 rounded-full p-3 text-white/90 transition-all border border-white/20',
                   validIndex === 0
-                    ? "opacity-30 cursor-not-allowed"
-                    : "hover:bg-black/80 hover:scale-110 active:scale-95 active:bg-black/90"
+                    ? 'opacity-30 cursor-not-allowed'
+                    : 'hover:bg-black/80 hover:scale-110'
                 )}
-                style={{ WebkitTapHighlightColor: 'transparent' }}
               >
-                <ChevronLeft size={isMobile ? 28 : 24} />
+                <ChevronLeft size={24} />
               </motion.button>
 
               <motion.button
                 initial={{ x: 20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.1 }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  goToNextSlide();
-                }}
-                onTouchEnd={(e) => {
-                  if (validIndex === slides.length - 1) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  goToNextSlide();
-                }}
+                onClick={goToNextSlide}
                 disabled={validIndex === slides.length - 1}
                 className={cn(
-                  "bg-black/60 rounded-full text-white/90 transition-all border border-white/20 touch-manipulation",
-                  isMobile ? "p-4 min-w-[56px] min-h-[56px]" : "p-3",
+                  'bg-black/60 rounded-full p-3 text-white/90 transition-all border border-white/20',
                   validIndex === slides.length - 1
-                    ? "opacity-30 cursor-not-allowed"
-                    : "hover:bg-black/80 hover:scale-110 active:scale-95 active:bg-black/90"
+                    ? 'opacity-30 cursor-not-allowed'
+                    : 'hover:bg-black/80 hover:scale-110'
                 )}
-                style={{ WebkitTapHighlightColor: 'transparent' }}
               >
-                <ChevronRight size={isMobile ? 28 : 24} />
+                <ChevronRight size={24} />
               </motion.button>
             </div>
 
@@ -695,7 +526,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 <motion.div
                   className="bg-white/80 h-full rounded-full"
                   animate={{ width: `${((validIndex + 1) / progressTotal) * 100}%` }}
-                  transition={{ duration: 0.3, ease: "easeInOut" }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
                 />
               </div>
             </motion.div>
@@ -713,8 +544,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
             className="absolute inset-0 bg-black/98 z-[20000] overflow-y-auto"
             onClick={() => setShowThumbnails(false)}
           >
-                        <div className="flex flex-col h-full" onClick={(e) => e.stopPropagation()}>
-              {/* Thin thumbnail bar at top */}
+            <div className="flex flex-col h-full" onClick={(e) => e.stopPropagation()}>
+              {/* Thumbnail bar at top */}
               <div className="bg-black/90 backdrop-blur-sm border-b border-white/10">
                 {/* Header row */}
                 <div className="flex items-center justify-between px-6 py-3">
@@ -731,78 +562,79 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 <div className="relative">
                   {/* Left gradient */}
                   <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-black/90 to-transparent pointer-events-none z-10" />
-                  
+
                   {/* Right gradient */}
                   <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-black/90 to-transparent pointer-events-none z-10" />
-                  
+
                   {/* Scrollable container */}
-                  <div 
+                  <div
                     ref={thumbnailScrollRef}
                     className="flex items-center overflow-x-auto overflow-y-hidden thumbnail-scroll px-6 pb-4"
                   >
                     <div className="flex gap-4 items-center">
-                  {slides.map((slide, index) => {
-                    // Skip placeholder slides
-                    if (!slide || !slide.id || slide.id.startsWith('placeholder-')) {
-                      return null;
-                    }
-                    
-                                          return (
-                        <motion.button
-                          key={slide.id}
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ delay: Math.min(index * 0.05, 0.5) }}
-                          onClick={() => {
-                            goToSlide(index);
-                            setShowThumbnails(false);
-                          }}
-                          className={cn(
-                            "relative group flex-shrink-0 overflow-hidden rounded-md transition-all bg-gray-800",
-                            "ring-1 ring-transparent hover:ring-white/50 hover:scale-105",
-                            validIndex === index && "ring-2 ring-white scale-105"
-                          )}
-                        style={{
-                          height: `${thumbnailHeight}px`,
-                          width: `${thumbnailWidth}px`
-                        }}
-                      >
-                        {/* Slide thumbnail - use isThumbnail=true for lighter rendering */}
-                        <div className="relative bg-white w-full h-full overflow-hidden">
-                          <MiniSlide
-                            slide={slide}
-                            width={thumbnailWidth}
-                            height={thumbnailHeight}
-                            responsive={false}
-                            className="pointer-events-none rounded-none hover:ring-0"
-                            slideSize={deckSlideSize}
-                          />
-                        </div>
+                      {slides.map((slide, index) => {
+                        if (!slide || !slide.id || slide.id.startsWith('placeholder-')) {
+                          return null;
+                        }
 
-                        {/* Slide number overlay */}
-                        <div className="absolute top-1 left-1 bg-black/70 backdrop-blur-sm rounded-full px-2 py-0.5 text-white text-xs font-medium">
-                          {index + 1}
-                        </div>
+                        return (
+                          <motion.button
+                            key={slide.id}
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: Math.min(index * 0.05, 0.5) }}
+                            onClick={() => {
+                              goToSlide(index);
+                              setShowThumbnails(false);
+                            }}
+                            className={cn(
+                              'relative group flex-shrink-0 overflow-hidden rounded-md transition-all bg-gray-800',
+                              'ring-1 ring-transparent hover:ring-white/50 hover:scale-105',
+                              validIndex === index && 'ring-2 ring-white scale-105'
+                            )}
+                            style={{
+                              height: `${thumbnailHeight}px`,
+                              width: `${thumbnailWidth}px`
+                            }}
+                          >
+                            <div className="relative bg-white w-full h-full overflow-hidden">
+                              <MiniSlide
+                                slide={slide}
+                                width={thumbnailWidth}
+                                height={thumbnailHeight}
+                                responsive={false}
+                                className="pointer-events-none rounded-none hover:ring-0"
+                                slideSize={deckSlideSize}
+                              />
+                            </div>
 
-                        {/* Current slide indicator */}
-                        {validIndex === index && (
-                          <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-white rounded-full px-2 py-0.5 text-black text-xs font-bold">
-                            Current
-                          </div>
-                        )}
+                            {/* Slide number overlay */}
+                            <div className="absolute top-1 left-1 bg-black/70 backdrop-blur-sm rounded-full px-2 py-0.5 text-white text-xs font-medium">
+                              {index + 1}
+                            </div>
 
-                        {/* Hover overlay */}
-                        <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </motion.button>
-                    );
-                  })}
+                            {/* Current slide indicator */}
+                            {validIndex === index && (
+                              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-white rounded-full px-2 py-0.5 text-black text-xs font-bold">
+                                Current
+                              </div>
+                            )}
+
+                            {/* Hover overlay */}
+                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </motion.button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
               </div>
-              
+
               {/* Dark background area below thumbnails */}
-              <div className="flex-1 bg-black/60 backdrop-blur-sm" onClick={() => setShowThumbnails(false)} />
+              <div
+                className="flex-1 bg-black/60 backdrop-blur-sm"
+                onClick={() => setShowThumbnails(false)}
+              />
             </div>
           </motion.div>
         )}
@@ -811,4 +643,4 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   );
 };
 
-export default PresentationMode; 
+export default PresentationMode;

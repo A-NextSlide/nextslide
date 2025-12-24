@@ -64,6 +64,7 @@ import ParticleAnimation from '@/components/visuals/ParticleAnimation';
 import { CreditWarningDialog } from '@/components/billing/CreditWarningDialog';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { RotatingWords, VirtualizedDeckGrid, VirtualizedPopupDeckGrid } from './deck-list/DeckGridComponents';
+import { developerApiService } from '@/services/developerApiService';
 
 // Component instance counter for debugging
 let componentInstanceCount = 0;
@@ -428,12 +429,12 @@ const DeckList: React.FC = () => {
   const [slideCount, setSlideCount] = useState<number | undefined>(undefined);
   const typewriterPhrases = useMemo(() => (
     isMobileView
-      ? ['a pitch deck', 'a lecture', 'a growth plan', 'a marketing deck']
+      ? ['\u00A0a pitch deck', '\u00A0a lecture', '\u00A0a growth plan', '\u00A0a marketing deck']
       : [
-        'a pitch deck for my startup',
-        'a lecture on history',
-        'a strategy for world domi...\b\b\b\b\b\b\b\bgrowth',
-        'a marketing proposal'
+        '\u00A0a pitch deck for my startup',
+        '\u00A0a lecture on history',
+        '\u00A0a strategy for world domi...\b\b\b\b\b\b\b peace',
+        '\u00A0a marketing proposal'
       ]
   ), [isMobileView]);
   const typewriterText = useTypewriter({
@@ -546,6 +547,11 @@ const DeckList: React.FC = () => {
   const [isLoadingShared, setIsLoadingShared] = useState(false);
   const [sharedDecksError, setSharedDecksError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('by-me');
+
+  // State for API-created decks
+  const [apiDecks, setApiDecks] = useState<CompleteDeckData[]>([]);
+  const [isLoadingApiDecks, setIsLoadingApiDecks] = useState(false);
+  const [hasApiKeys, setHasApiKeys] = useState(false);
 
   const createDefaultDeckForOutline = useDeckStore(state => state.createDefaultDeck);
   const updateDeckDataForOutline = useDeckStore(state => state.updateDeckData);
@@ -1080,6 +1086,48 @@ const DeckList: React.FC = () => {
   useEffect(() => {
     loadSharedDecks();
   }, [loadSharedDecks]);
+
+  // Load API-created decks (filter from existing decks by source)
+  const loadApiDecks = useCallback(async () => {
+    setIsLoadingApiDecks(true);
+    try {
+      // Fetch decks and filter for API-created ones
+      const result = await deckSyncService.getAllDecks(100, 0, 'owned');
+      const apiCreated = result.decks.filter(deck => {
+        // Check if deck was created via API (source stored in data field)
+        const deckData = (deck as any).data || {};
+        return deckData.source === 'api';
+      });
+      setApiDecks(apiCreated);
+    } catch (error) {
+      console.error('[DeckList] Error loading API decks:', error);
+    } finally {
+      setIsLoadingApiDecks(false);
+    }
+  }, []);
+
+  // Load API decks when tab is selected
+  useEffect(() => {
+    if (activeTab === 'api') {
+      loadApiDecks();
+    }
+  }, [activeTab, loadApiDecks]);
+
+  // Check if user has API keys (to conditionally show API tab)
+  useEffect(() => {
+    const checkApiKeys = async () => {
+      try {
+        const keys = await developerApiService.listApiKeys();
+        setHasApiKeys(keys.length > 0);
+      } catch {
+        // Silently fail - user may not have access or not be pro
+        setHasApiKeys(false);
+      }
+    };
+    if (isAuthenticated) {
+      checkApiKeys();
+    }
+  }, [isAuthenticated]);
 
   // Lifted from OutlineEditor
   const {
@@ -2433,7 +2481,7 @@ const DeckList: React.FC = () => {
                                   />
                                   {!heroInput && (
                                     <div className="absolute top-0 left-0 right-0 pointer-events-none flex items-center px-3 sm:px-4 h-[40px] sm:h-[48px] text-[10px] sm:text-base leading-tight text-slate-400 dark:text-zinc-500 min-w-0 overflow-hidden">
-                                      <span className="whitespace-nowrap">{heroPlaceholderPrefix} </span>
+                                      <span className="whitespace-nowrap">{heroPlaceholderPrefix}</span>
                                       <span className="min-w-0 truncate text-slate-300 dark:text-zinc-600">{typewriterText}</span>
                                       <span className="ml-0.5 animate-pulse text-orange-500">|</span>
                                     </div>
@@ -2584,7 +2632,7 @@ const DeckList: React.FC = () => {
                     <div
                       className={cn(
                         "border-b border-zinc-100 dark:border-zinc-800 flex-shrink-0",
-                        isMobileView ? "p-3 pt-3" : "p-4 pt-6 lg:pt-20"
+                        isMobileView ? "p-3 pt-3" : "p-4 pt-4"
                       )}
                     >
                       <div className="flex flex-col gap-4">
@@ -2616,14 +2664,17 @@ const DeckList: React.FC = () => {
                         </div>
 
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                          <TabsList className="w-full bg-zinc-100/50 dark:bg-zinc-800/50 p-1 rounded-lg grid grid-cols-2">
+                          <TabsList className={cn("w-full bg-zinc-100/50 dark:bg-zinc-800/50 p-1 rounded-lg grid", hasApiKeys ? "grid-cols-3" : "grid-cols-2")}>
                             <TabsTrigger value="by-me" className="rounded-md text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100">My Decks</TabsTrigger>
                             <TabsTrigger value="shared" className="rounded-md text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100">Shared</TabsTrigger>
+                            {hasApiKeys && (
+                              <TabsTrigger value="api" className="rounded-md text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100">API</TabsTrigger>
+                            )}
                           </TabsList>
                         </Tabs>
 
                         {/* View All button */}
-                        <div className="flex justify-end mt-2">
+                        <div className="flex justify-end -mt-1">
                           <button
                             onClick={() => handleDialogOpenChange(true)}
                             className="group flex items-center gap-1 text-[10px] font-semibold tracking-wider text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 transition-colors"
@@ -2645,7 +2696,7 @@ const DeckList: React.FC = () => {
                               ))}
                             </div>
                           ) : filteredDecks.length === 0 ? (
-                            <EmptyDeckList searchQuery={searchQuery} onCreateDeck={handleCreateDeck} authError={authError} onReload={loadDecks} />
+                            <EmptyDeckList searchQuery={searchQuery} onCreateDeck={handleCreateDeck} authError={authError} onReload={loadDecks} isSearching={isSearching} />
                           ) : (
                             <VirtualizedDeckGrid
                               decks={filteredDecks}
@@ -2676,6 +2727,25 @@ const DeckList: React.FC = () => {
                             />
                           )}
                         </TabsContent>
+                        {hasApiKeys && (
+                          <TabsContent value="api" className="mt-0 h-full">
+                            {isLoadingApiDecks ? (
+                              <div className="flex justify-center py-12"><Loader2 className="animate-spin text-orange-500" /></div>
+                            ) : apiDecks.length === 0 ? (
+                              <div className="text-center py-12 text-zinc-500 dark:text-zinc-400 text-sm">No API-created presentations yet.</div>
+                            ) : (
+                              <VirtualizedDeckGrid
+                                decks={apiDecks}
+                                onEdit={handleEditDeck}
+                                onShowDeleteDialog={handleShowDeleteDialog}
+                                onLoadMore={() => { }}
+                                hasMore={false}
+                                isLoadingMore={false}
+                                isInitialLoad={false}
+                              />
+                            )}
+                          </TabsContent>
+                        )}
                       </Tabs>
                     </div>
 
@@ -2742,6 +2812,14 @@ const DeckList: React.FC = () => {
                               >
                                 Shared with Me
                               </TabsTrigger>
+                              {hasApiKeys && (
+                                <TabsTrigger
+                                  value="api"
+                                  className="relative bg-transparent px-0 py-3 text-sm font-medium text-zinc-500 dark:text-zinc-400 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100 data-[state=active]:shadow-none rounded-none transition-colors after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-orange-500 after:scale-x-0 after:transition-transform after:duration-200 data-[state=active]:after:scale-x-100"
+                                >
+                                  API Decks
+                                </TabsTrigger>
+                              )}
                             </TabsList>
                           </div>
 
@@ -2831,6 +2909,39 @@ const DeckList: React.FC = () => {
                                   />
                                 )}
                               </TabsContent>
+                              {hasApiKeys && (
+                                <TabsContent value="api" className="mt-0 data-[state=active]:flex data-[state=active]:flex-col">
+                                  {isLoadingApiDecks ? (
+                                    <div className="flex flex-col items-center justify-center py-20">
+                                      <div className="relative">
+                                        <div className="absolute inset-0 bg-orange-500/20 rounded-full blur-xl animate-pulse" />
+                                        <Loader2 className="relative h-8 w-8 text-orange-500 animate-spin" />
+                                      </div>
+                                      <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-6 font-light">Loading API presentations...</p>
+                                    </div>
+                                  ) : apiDecks.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-20">
+                                      <div className="w-16 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-4">
+                                        <Grid className="h-7 w-7 text-zinc-400 dark:text-zinc-500" />
+                                      </div>
+                                      <p className="text-lg font-light text-zinc-600 dark:text-zinc-300">No API presentations</p>
+                                      <p className="text-sm text-zinc-400 dark:text-zinc-500 mt-1">Presentations created via the API will appear here</p>
+                                    </div>
+                                  ) : (
+                                    <VirtualizedPopupDeckGrid
+                                      decks={apiDecks}
+                                      onEdit={(deck) => {
+                                        handleEditDeck(deck);
+                                        setShowGallery(false);
+                                      }}
+                                      onShowDeleteDialog={handleShowDeleteDialog}
+                                      onLoadMore={() => { }}
+                                      hasMore={false}
+                                      isLoadingMore={false}
+                                    />
+                                  )}
+                                </TabsContent>
+                              )}
                             </div>
                           </div>
                         </Tabs>

@@ -317,7 +317,10 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
       
       // If in a text input field OR text editing mode, don't process shortcuts
       if (isInput || isContentEditable || isTextEditing) return;
-      
+
+      // Don't toggle edit mode when in presentation mode
+      if (document.body.classList.contains('presentation-mode')) return;
+
       // Use 'e' key to toggle edit mode
       if (e.key === 'e') {
         setIsEditing(!isEditingMode);

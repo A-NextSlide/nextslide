@@ -104,7 +104,7 @@ sentry_sdk.init(
 
 from models.requests import ChatRequest, ChatResponse, RegistryUpdateRequest, QualityEvaluationRequest, QualityEvaluationResponse, DeckOutline, DeckOutlineResponse, SlideOutline, DeckComposeRequest
 from models.deck import DeckBase
-from models.registry import ComponentRegistry
+from models.registry import ComponentRegistry, set_global_registry
 
 from api.requests.api_chat import process_api_chat
 from api.requests.api_registry import api_registry
@@ -163,6 +163,8 @@ from api.requests.api_integrations import router as integrations_router
 from api.requests.api_file_analysis import router as file_analysis_router
 from api.requests.api_billing import router as billing_router
 from api.requests.api_speech_to_text import router as speech_to_text_router
+from api.requests.api_developer import router as developer_router
+from api.requests.api_public_v1 import router as public_api_v1_router
 from fastapi import Depends
 
 # Middleware imports removed - files were deleted
@@ -291,6 +293,8 @@ app.include_router(theme_router)
 app.include_router(file_analysis_router, prefix="/api/files", tags=["File Analysis"])
 app.include_router(billing_router, prefix="/api", tags=["Billing"])
 app.include_router(speech_to_text_router)
+app.include_router(developer_router, tags=["Developer API"])
+app.include_router(public_api_v1_router, tags=["Public API v1"])
 
 # Global registry storage
 REGISTRY = None
@@ -313,6 +317,7 @@ def load_registry_on_startup():
                 schemas = json.load(f)
             
             REGISTRY = ComponentRegistry(schemas)
+            set_global_registry(REGISTRY)  # Make available globally
             if not QUIET_REGISTRY:
                 print(f"✅ Registry loaded from {schemas_path} ({len(schemas)} schemas)")
             return True
@@ -426,6 +431,7 @@ async def api_registry_endpoint(request: RegistryUpdateRequest):
         # Store the registry data in our global variable
         global REGISTRY
         REGISTRY = await api_registry(request)
+        set_global_registry(REGISTRY)  # Make available globally
 
         return {
             "status": "success",

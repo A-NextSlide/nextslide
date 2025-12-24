@@ -19,7 +19,6 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ResetPassword from "./pages/ResetPassword";
 import Profile from "./pages/Profile";
-import TeamSettings from "./pages/TeamSettings";
 import TeamInvite from "./pages/TeamInvite";
 import EmailVerification from "./pages/EmailVerification";
 import AuthCallback from "./pages/AuthCallback";
@@ -51,6 +50,7 @@ import AdminProtectedRoute from './components/AdminProtectedRoute';
 import TemporaryPasswordGate from './components/TemporaryPasswordGate';
 import SmartGallery from './pages/SmartGallery';
 import Pricing from './pages/Pricing';
+import DeveloperAPI from './pages/DeveloperAPI';
 import { CreditsProvider } from './context/CreditsContext';
 import { OnboardingProvider, useOnboarding } from './context/OnboardingContext';
 import UpgradePrompt from './components/billing/UpgradePrompt';
@@ -420,11 +420,7 @@ const AppContent = () => {
               />
               <Route
                 path="/team"
-                element={
-                  <ProtectedRoute>
-                    <TeamSettings />
-                  </ProtectedRoute>
-                }
+                element={<Navigate to="/profile?tab=team" replace />}
               />
               {/* Team invitation acceptance */}
               <Route
@@ -536,6 +532,7 @@ const AppContent = () => {
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/smart-gallery" element={<SmartGallery />} />
+              <Route path="/developers" element={<DeveloperAPI />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </TemporaryPasswordGate>

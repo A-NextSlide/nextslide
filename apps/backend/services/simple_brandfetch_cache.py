@@ -33,10 +33,11 @@ class SimpleBrandfetchCache:
     async def __aenter__(self):
         """Async context manager entry."""
         # Initialize database connection pool
+        # Reduced pool size for horizontal scaling (100 instances × 3 = 300 connections)
         self.db_pool = await asyncpg.create_pool(
             self.db_connection_string,
-            min_size=2,
-            max_size=10,
+            min_size=1,
+            max_size=3,
             command_timeout=30,
             # Disable prepared statement cache for PgBouncer transaction/statement pooling
             # to avoid "prepared statement __asyncpg_stmt_X__ already exists" errors

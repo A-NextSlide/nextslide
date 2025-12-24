@@ -119,16 +119,24 @@ class BillingService:
 
             balance = balance_result.data[0]
 
-            # Get subscription/plan - also avoid .single()
-            sub_result = client.table("subscriptions").select("*, pricing_plans(*)").eq("user_id", user_id).execute()
+            # Get subscription/plan
+            sub_result = client.table("subscriptions") \
+                .select("*, pricing_plans(*)") \
+                .eq("user_id", user_id) \
+                .execute()
 
             plan_id = "free"
             plan_name = "Free"
             if sub_result.data and len(sub_result.data) > 0:
-                sub_data = sub_result.data[0]
+                # Prefer active subscription
+                active_subs = [s for s in sub_result.data if s.get("status") == "active"]
+                sub_data = active_subs[0] if active_subs else sub_result.data[0]
                 plan_id = sub_data.get("plan_id", "free")
-                if sub_data.get("pricing_plans"):
-                    plan_name = sub_data["pricing_plans"].get("name", "Free")
+                if sub_data.get("pricing_plans") and sub_data["pricing_plans"].get("name"):
+                    plan_name = sub_data["pricing_plans"].get("name")
+                else:
+                    # Fallback to plan_id title case if pricing_plans lookup failed
+                    plan_name = plan_id.title() if plan_id != "free" else "Free"
 
             # Check if period has expired and reset credits (for free users without Stripe)
             # Paid users get reset via invoice.paid webhook, but free users need this
@@ -512,16 +520,30 @@ class BillingService:
         """Get user's subscription details."""
         try:
             client = self._get_client()
+            logger.info(f"Getting subscription for user {user_id}")
+
+            # Simple query - get all subscriptions for user
             result = client.table("subscriptions") \
                 .select("*, pricing_plans(*)") \
                 .eq("user_id", user_id) \
                 .execute()
 
             if result.data and len(result.data) > 0:
-                return result.data[0]
+                # Prefer active subscription
+                active_subs = [s for s in result.data if s.get("status") == "active"]
+                if active_subs:
+                    sub = active_subs[0]
+                    logger.info(f"Found active subscription for user {user_id}: plan={sub.get('plan_id')}")
+                    return sub
+                # Fall back to any subscription
+                sub = result.data[0]
+                logger.info(f"Found subscription for user {user_id}: plan={sub.get('plan_id')}, status={sub.get('status')}")
+                return sub
+
+            logger.info(f"No subscription found for user {user_id}")
             return None
         except Exception as e:
-            logger.error(f"Error getting subscription: {e}")
+            logger.error(f"Error getting subscription for user {user_id}: {e}", exc_info=True)
             return None
 
     async def get_pricing_plans(self) -> List[Dict[str, Any]]:

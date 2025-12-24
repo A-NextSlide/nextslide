@@ -51,8 +51,8 @@ def _get_auth_httpx_client() -> httpx.Client:
             _auth_httpx_client = httpx.Client(
                 http2=True,
                 limits=httpx.Limits(
-                    max_connections=10,
-                    max_keepalive_connections=5,
+                    max_connections=5,  # Reduced for horizontal scaling
+                    max_keepalive_connections=3,
                     keepalive_expiry=30.0
                 ),
                 timeout=httpx.Timeout(

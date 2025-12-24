@@ -223,7 +223,7 @@ export const VirtualizedDeckGrid = React.memo(({
   }, [hasMore, isLoadingMore, onLoadMore]);
 
   return (
-    <div ref={containerRef} className="grid grid-cols-1 gap-3 sm:gap-6 auto-rows-max">
+    <div ref={containerRef} className="grid grid-cols-1 gap-3 auto-rows-max">
       {safeDecks.map((deck, index) => {
         // Only animate if this card was initially visible
         const shouldAnimate = initiallyVisibleDecks.has(index);
@@ -236,7 +236,6 @@ export const VirtualizedDeckGrid = React.memo(({
               if (el) itemRefs.current.set(index, el);
             }}
             data-index={index}
-            className="min-h-[200px]" // Reserve space for the card
           >
             {shouldRender ? (
               <DeckCard
@@ -247,14 +246,7 @@ export const VirtualizedDeckGrid = React.memo(({
                 shouldAnimate={shouldAnimate}
               />
             ) : (
-              // Placeholder to maintain scroll position
-              <div>
-                <div className="aspect-[16/9] bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
-                <div className="mt-3 space-y-2">
-                  <div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-3/4"></div>
-                  <div className="h-3 bg-zinc-200 dark:bg-zinc-800 rounded w-1/2"></div>
-                </div>
-              </div>
+              <div className="aspect-[16/9] bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
             )}
           </div>
         );
@@ -386,18 +378,27 @@ export const VirtualizedPopupDeckGrid = React.memo(({
             if (el) itemRefs.current.set(index, el);
           }}
           data-index={index}
-          className="min-h-[150px]"
         >
           {visibleDecks.has(index) ? (
             <div
-              className="group relative cursor-pointer border border-zinc-200 dark:border-zinc-800 hover:shadow-md dark:hover:shadow-black/40 transition-all duration-300 rounded-lg overflow-hidden bg-white dark:bg-zinc-900"
+              className="group relative cursor-pointer ring-1 ring-zinc-200 dark:ring-zinc-700 hover:shadow-md dark:hover:shadow-black/40 transition-all duration-300 rounded-lg overflow-hidden"
               onClick={() => onEdit(deck)}
             >
               <div className="relative aspect-[16/9] w-full overflow-hidden bg-muted">
                 <div className="absolute inset-0 w-full h-full flex items-center justify-center">
                   <DeckThumbnail deck={deck} />
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-zinc-800/70 dark:from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-end p-2">
+                {/* Text overlay at bottom */}
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent pt-6 pb-2 px-3">
+                  <h3 className="text-xs font-bold text-white truncate" title={deck.name || 'Untitled presentation'}>
+                    {deck.name || 'Untitled presentation'}
+                  </h3>
+                  <span className="text-[10px] text-white/70 whitespace-nowrap">
+                    Updated {formatDistanceToNow(new Date(deck.lastModified), { addSuffix: true })}
+                  </span>
+                </div>
+                {/* Hover overlay with actions */}
+                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-end p-2">
                   <div className="flex gap-1">
                     <Button
                       variant="ghost"
@@ -413,24 +414,10 @@ export const VirtualizedPopupDeckGrid = React.memo(({
                   </div>
                 </div>
               </div>
-              <div className="p-3 bg-white dark:bg-zinc-900">
-                <div className="flex flex-col items-start">
-                  <h3 className="text-xs font-black text-foreground break-words border-0">
-                    {deck.name || 'Untitled presentation'}
-                  </h3>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap mt-0.5">
-                    Updated {formatDistanceToNow(new Date(deck.lastModified), { addSuffix: true })}
-                  </span>
-                </div>
-              </div>
             </div>
           ) : (
             <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
               <div className="aspect-[16/9] bg-zinc-200 dark:bg-zinc-800"></div>
-              <div className="p-3 space-y-2 bg-white dark:bg-zinc-900">
-                <div className="h-3 bg-zinc-200 dark:bg-zinc-800 rounded w-3/4"></div>
-                <div className="h-2 bg-zinc-200 dark:bg-zinc-800 rounded w-1/2"></div>
-              </div>
             </div>
           )}
         </div>

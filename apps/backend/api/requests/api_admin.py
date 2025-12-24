@@ -2341,43 +2341,7 @@ async def get_services_health(
             error=f"Cache unavailable: {str(e)[:50]}"
         ))
 
-    # 5. Unsplash API
-    unsplash_key = os.getenv("UNSPLASH_ACCESS_KEY")
-    if unsplash_key:
-        unsplash_status = await check_http(
-            "Unsplash API",
-            "https://api.unsplash.com/photos/random?count=1",
-            headers={"Authorization": f"Client-ID {unsplash_key}"}
-        )
-        unsplash_status.details = {"type": "Stock Photos"}
-        services.append(unsplash_status)
-    else:
-        services.append(ServiceStatus(
-            name="Unsplash API",
-            status="unknown",
-            last_checked=checked_at,
-            error="API key not configured"
-        ))
-
-    # 6. Pexels API
-    pexels_key = os.getenv("PEXELS_API_KEY")
-    if pexels_key:
-        pexels_status = await check_http(
-            "Pexels API",
-            "https://api.pexels.com/v1/curated?per_page=1",
-            headers={"Authorization": pexels_key}
-        )
-        pexels_status.details = {"type": "Stock Photos & Videos"}
-        services.append(pexels_status)
-    else:
-        services.append(ServiceStatus(
-            name="Pexels API",
-            status="unknown",
-            last_checked=checked_at,
-            error="API key not configured"
-        ))
-
-    # 7. SerpAPI
+    # 5. SerpAPI
     serpapi_key = os.getenv("SERPAPI_API_KEY") or os.getenv("SERPAPI_KEY")
     if serpapi_key:
         services.append(ServiceStatus(

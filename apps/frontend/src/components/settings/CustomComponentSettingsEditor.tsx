@@ -29,7 +29,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useCustomComponentEditStore } from '@/stores/customComponentEditStore';
 import { VirtualElement } from '@/components/custom-component-editor/types';
 import { LayersPanel } from '@/components/settings/LayersPanel';
-import { getElementDisplayName, getImagePropLabel } from '@/utils/customComponentLabels';
+import { getElementDisplayName, getImagePropLabel, isGenericImageLabel } from '@/utils/customComponentLabels';
 
 interface CustomComponentSettingsEditorProps {
   component: ComponentInstance;
@@ -620,6 +620,19 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   const isActiveComponent = activeComponentId === component.id;
   const activeDetectedElements = isActiveComponent ? detectedElements : [];
   const activeSelectedElement = isActiveComponent ? selectedElement : null;
+  const imageElements = useMemo(() => {
+    return activeDetectedElements.filter((element) => {
+      if (element.type !== 'image') return false;
+      const src = (element.src || '').trim();
+      const alt = (element.alt || '').trim();
+      const label = (element.label || '').trim();
+      const normalizedSrc = src.toLowerCase();
+      const hasSrc = !!src && !normalizedSrc.includes('placeholder');
+      const hasAlt = alt.length > 1 && !isGenericImageLabel(alt);
+      const hasLabel = label.length > 1 && !isGenericImageLabel(label);
+      return hasSrc || hasAlt || hasLabel;
+    });
+  }, [activeDetectedElements]);
 
   const htmlSyncRef = useRef<NodeJS.Timeout | null>(null);
   const scheduleHtmlSync = useCallback(() => {
@@ -954,6 +967,8 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
     return groups;
   }, [variables]);
 
+  const showPropImages = groupedVariables.image.length > 0 && !isHtmlComponent;
+
   // Detect ALL images in HTML documents (for iframe mode) - both placeholders and real images
   const htmlPlaceholderImages = useMemo(() => {
     if (!renderCode) {
@@ -1136,7 +1151,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                 <DynamicImageEditor
                   element={activeSelectedElement}
                   componentId={component.id}
-                  elementIndex={activeDetectedElements.filter(e => e.type === 'image').findIndex(e => e.id === activeSelectedElement.id)}
+                  elementIndex={imageElements.findIndex(e => e.id === activeSelectedElement.id)}
                   onImageUpdate={handleElementImage}
                   onStyleUpdate={handleElementStyle}
                   onSave={saveComponentToHistory}
@@ -1158,7 +1173,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
           {/* Collapsible sections - ALWAYS visible regardless of selection */}
             <div className="space-y-1.5 border-t pt-2">
             {/* Image Elements */}
-            {activeDetectedElements.filter(e => e.type === 'image').length > 0 && (
+            {imageElements.length > 0 && (
               <div className="space-y-2">
                 <button
                   onClick={() => setExpandedSections(prev => ({ ...prev, images: !prev.images }))}
@@ -1166,12 +1181,12 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                 >
                   {expandedSections.images ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                   <Image className="w-3 h-3 text-green-500" />
-                  <span className="text-[11px] font-medium">Images ({activeDetectedElements.filter(e => e.type === 'image').length})</span>
+                  <span className="text-[11px] font-medium">Images ({imageElements.length})</span>
                 </button>
 
                 {expandedSections.images && (
                   <div className="space-y-2 pl-3">
-                    {activeDetectedElements.filter(e => e.type === 'image').map((element, index) => (
+                    {imageElements.map((element, index) => (
                       <div key={element.id} className="space-y-1.5 pb-1.5 border-b last:border-0">
                         <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
                           {getElementDisplayName(element, index)}
@@ -1306,7 +1321,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
           )}
 
           {/* Image Properties (from parsed props) */}
-          {groupedVariables.image.length > 0 && (
+          {showPropImages && (
             <div className="space-y-2">
               <h4 className="text-[11px] font-medium text-muted-foreground">Image Properties</h4>
               <div className="grid grid-cols-1 gap-3">

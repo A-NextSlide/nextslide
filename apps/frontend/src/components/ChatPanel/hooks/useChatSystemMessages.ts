@@ -18,6 +18,17 @@ export function useChatSystemMessages({
 }: UseChatSystemMessagesOptions) {
   // Track if completion was already handled to prevent duplicate processing
   const completionHandledRef = useRef(false);
+  const isFreshGenerationSignal = (message: string, metadata?: Record<string, any>): boolean => {
+    const phase = String(metadata?.phase || metadata?.stage || '').toLowerCase();
+    const state = String(metadata?.state || '').toLowerCase();
+    const progress = typeof metadata?.progress === 'number' ? metadata.progress : null;
+
+    if (state === 'pending' || state === 'creating' || state === 'generating') return true;
+    if (phase === 'initialization' || phase === 'theme_generation' || phase === 'layout_design' || phase === 'image_collection' || phase === 'slide_generation') return true;
+    if (progress !== null && progress < 5) return true;
+    if (message && /(preparing|initializing|starting|creating)\b/i.test(message)) return true;
+    return false;
+  };
 
   const handleCompletion = useCallback((metadata?: Record<string, any>) => {
     // Prevent duplicate completion handling from multiple events
@@ -45,13 +56,18 @@ export function useChatSystemMessages({
       // If already have completion message, just return without progress message
       if (hasCompletion) return updated;
 
+      const completionMetadata = { ...metadata };
+      delete completionMetadata.isStreamingUpdate;
+      delete completionMetadata.isTyping;
+      delete completionMetadata.thinkingPhase;
+
       const completionMessage: ExtendedChatMessageProps = {
         id: 'generation-complete',
         type: 'ai',
         message: 'Your presentation is ready!',
         timestamp: new Date(),
         feedback: null,
-        metadata: { ...metadata, type: 'generation_complete', stage: 'generation_complete', progress: 100 }
+        metadata: { ...completionMetadata, type: 'generation_complete', stage: 'generation_complete', progress: 100 }
       } as any;
 
       return [...updated, completionMessage];
@@ -120,6 +136,13 @@ export function useChatSystemMessages({
     }
 
     if (metadata?.isStreamingUpdate) {
+      if (completionHandledRef.current) {
+        if (isFreshGenerationSignal(message, metadata)) {
+          completionHandledRef.current = false;
+        } else {
+          return;
+        }
+      }
       upsertStreamingMessage(message, metadata);
       return;
     }

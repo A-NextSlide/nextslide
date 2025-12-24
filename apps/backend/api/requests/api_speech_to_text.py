@@ -1,66 +1,168 @@
 """
-Speech-to-Text API endpoint using Groq Whisper
-Fast, accurate, and cost-effective transcription for voice input functionality.
-Groq is 3-18x cheaper than OpenAI ($0.02-0.11/hr vs $0.36/hr)
+Speech-to-Text API endpoint using OpenAI Whisper.
+Fast, reliable transcription.
 """
 import os
 import logging
+import asyncio
+import json
 import tempfile
-import subprocess
-import shutil
 from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel
-from groq import Groq
+from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/speech", tags=["Speech"])
-
-# Check if ffmpeg is available
-FFMPEG_PATH = shutil.which("ffmpeg")
-
-
-def convert_to_mp3(input_path: str) -> str | None:
-    """Convert audio to mp3 using ffmpeg. Returns output path or None if failed."""
-    if not FFMPEG_PATH:
-        logger.warning("ffmpeg not available for audio conversion")
-        return None
-
-    output_path = input_path.rsplit(".", 1)[0] + ".mp3"
-
-    try:
-        result = subprocess.run(
-            [
-                FFMPEG_PATH, "-y", "-i", input_path,
-                "-vn",  # No video
-                "-ar", "16000",  # 16kHz sample rate (good for speech)
-                "-ac", "1",  # Mono
-                "-b:a", "64k",  # 64kbps bitrate
-                "-f", "mp3",
-                output_path
-            ],
-            capture_output=True,
-            timeout=30
-        )
-
-        if result.returncode == 0 and os.path.exists(output_path):
-            logger.info(f"Converted audio to mp3: {os.path.getsize(output_path)} bytes")
-            return output_path
-        else:
-            logger.warning(f"ffmpeg conversion failed: {result.stderr.decode()[:200]}")
-            return None
-
-    except Exception as e:
-        logger.warning(f"ffmpeg conversion error: {e}")
-        return None
 
 
 class TranscriptionResponse(BaseModel):
     text: str
     language: Optional[str] = None
     duration: Optional[float] = None
+
+
+def get_openai_client():
+    """Get OpenAI client with API key."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not configured")
+    return AsyncOpenAI(api_key=api_key)
+
+
+@router.websocket("/stream")
+async def websocket_stream_transcription(websocket: WebSocket):
+    """
+    WebSocket endpoint for speech-to-text using OpenAI Whisper.
+
+    Collects audio chunks, then transcribes when recording ends.
+    Not true streaming, but fast and reliable.
+
+    Protocol:
+    1. Client connects
+    2. Server sends: {"type": "ready"}
+    3. Client sends audio chunks as binary (PCM 16-bit, 16kHz, mono)
+    4. Client sends: {"type": "end"} to signal end of audio
+    5. Server transcribes and sends: {"type": "final", "text": "..."}
+    """
+    await websocket.accept()
+    logger.info("Speech WebSocket connected")
+
+    audio_chunks = []
+
+    try:
+        client = get_openai_client()
+
+        # Send ready signal
+        await websocket.send_json({"type": "ready"})
+        logger.info("Ready for audio")
+
+        # Collect audio chunks
+        while True:
+            try:
+                message = await websocket.receive()
+
+                if message["type"] == "websocket.disconnect":
+                    break
+
+                # Handle binary audio data
+                if "bytes" in message:
+                    audio_chunks.append(message["bytes"])
+
+                # Handle JSON control messages
+                elif "text" in message:
+                    data = json.loads(message["text"])
+
+                    if data.get("type") == "end":
+                        logger.info(f"Recording ended, received {len(audio_chunks)} chunks")
+                        break
+
+            except WebSocketDisconnect:
+                logger.info("Client disconnected")
+                break
+            except Exception as e:
+                logger.error(f"Error receiving message: {e}")
+                break
+
+        # Transcribe if we have audio
+        if audio_chunks:
+            # Combine all PCM chunks
+            pcm_data = b''.join(audio_chunks)
+            logger.info(f"Total audio: {len(pcm_data)} bytes")
+
+            # Convert PCM to WAV format for Whisper
+            import wave
+            import io
+
+            wav_buffer = io.BytesIO()
+            with wave.open(wav_buffer, 'wb') as wav_file:
+                wav_file.setnchannels(1)  # Mono
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(16000)  # 16kHz
+                wav_file.writeframes(pcm_data)
+
+            wav_buffer.seek(0)
+            wav_data = wav_buffer.read()
+
+            # Write to temp file for OpenAI
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                tmp.write(wav_data)
+                tmp_path = tmp.name
+
+            try:
+                # Transcribe with Whisper
+                with open(tmp_path, 'rb') as audio_file:
+                    transcript = await client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=audio_file,
+                        response_format="text"
+                    )
+
+                text = transcript.strip() if transcript else ""
+                logger.info(f"Transcribed: {text[:100] if text else 'empty'}")
+
+                if text:
+                    await websocket.send_json({
+                        "type": "final",
+                        "text": text
+                    })
+                else:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "No speech detected"
+                    })
+
+            finally:
+                # Clean up temp file
+                os.unlink(tmp_path)
+        else:
+            await websocket.send_json({
+                "type": "error",
+                "message": "No audio received"
+            })
+
+    except ValueError as e:
+        logger.error(f"Configuration error: {e}")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Speech service not configured"
+            })
+        except:
+            pass
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}", exc_info=True)
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Transcription error: {str(e)}"
+            })
+        except:
+            pass
+    finally:
+        logger.info("Speech WebSocket closed")
 
 
 @router.post("/transcribe", response_model=TranscriptionResponse)
@@ -70,23 +172,15 @@ async def transcribe_audio(
     prompt: Optional[str] = Form(None),
 ):
     """
-    Transcribe audio to text using Groq Whisper.
+    Batch transcription endpoint using OpenAI Whisper.
 
-    Supports: mp3, mp4, mpeg, mpga, m4a, wav, webm, ogg, flac
+    Supports: mp3, mp4, wav, webm, ogg, flac, m4a
     Max file size: 25MB
-
-    Args:
-        audio: Audio file to transcribe
-        language: Optional language hint (ISO 639-1 code, e.g., 'en', 'es')
-        prompt: Optional text to guide the transcription style
-
-    Returns:
-        TranscriptionResponse with transcribed text
     """
-    # Get Groq API key
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
+    try:
+        client = get_openai_client()
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     # Read file content
     content = await audio.read()
@@ -101,96 +195,43 @@ async def transcribe_audio(
             detail=f"File too large. Maximum size is 25MB, got {len(content) / (1024*1024):.1f}MB"
         )
 
-    # Determine file extension from filename or content type
-    file_ext = os.path.splitext(audio.filename or "")[1].lower()
-    if not file_ext:
-        content_type = (audio.content_type or "").lower()
-        if "ogg" in content_type:
-            file_ext = ".ogg"  # Best for opus audio
-        elif "mpeg" in content_type or "mp3" in content_type:
-            file_ext = ".mp3"
-        elif "mp4" in content_type or "m4a" in content_type:
-            file_ext = ".m4a"
-        elif "wav" in content_type:
-            file_ext = ".wav"
-        elif "webm" in content_type:
-            file_ext = ".webm"
-        elif "flac" in content_type:
-            file_ext = ".flac"
-        else:
-            # Default to ogg for opus-encoded audio (most compatible with Groq)
-            file_ext = ".ogg"
-
-    logger.info(f"Using file extension: {file_ext}")
-
-    # Create temp file with original audio
-    with tempfile.NamedTemporaryFile(suffix=file_ext, delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    converted_path = None
-    file_to_use = tmp_path
-
     try:
-        # Convert webm/problematic formats to mp3 for Groq compatibility
-        if file_ext in [".webm", ".ogg"]:
-            converted_path = convert_to_mp3(tmp_path)
-            if converted_path:
-                file_to_use = converted_path
-                logger.info("Using converted mp3 file")
+        # Write to temp file
+        suffix = '.webm'
+        if audio.filename:
+            suffix = '.' + audio.filename.split('.')[-1] if '.' in audio.filename else '.webm'
 
-        client = Groq(api_key=api_key)
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
 
-        # Use whisper-large-v3-turbo for best speed/quality balance
-        model = "whisper-large-v3-turbo"
+        try:
+            # Build kwargs
+            kwargs = {
+                "model": "whisper-1",
+                "response_format": "text"
+            }
+            if language:
+                kwargs["language"] = language
+            if prompt:
+                kwargs["prompt"] = prompt
 
-        # Prepare transcription params
-        transcription_params = {
-            "model": model,
-            "response_format": "verbose_json",
-        }
+            with open(tmp_path, 'rb') as audio_file:
+                kwargs["file"] = audio_file
+                transcript = await client.audio.transcriptions.create(**kwargs)
 
-        if language:
-            transcription_params["language"] = language
-        if prompt:
-            transcription_params["prompt"] = prompt
+            text = transcript.strip() if transcript else ""
+            logger.info(f"Transcribed: {len(text)} chars")
 
-        # Transcribe
-        with open(file_to_use, "rb") as audio_file:
-            transcription = client.audio.transcriptions.create(
-                file=audio_file,
-                **transcription_params
+            return TranscriptionResponse(
+                text=text,
+                language=language,
+                duration=None
             )
-
-        text = transcription.text if hasattr(transcription, 'text') else str(transcription)
-        detected_language = getattr(transcription, 'language', None)
-        duration = getattr(transcription, 'duration', None)
-
-        logger.info(f"Transcribed: {len(text)} chars, lang={detected_language}")
-
-        return TranscriptionResponse(
-            text=text,
-            language=detected_language,
-            duration=duration
-        )
+        finally:
+            os.unlink(tmp_path)
 
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"Groq transcription error: {error_msg}")
-
-        if "could not process" in error_msg.lower() or "format" in error_msg.lower():
-            raise HTTPException(
-                status_code=400,
-                detail="Audio format not supported. Please try recording again."
-            )
-
+        logger.error(f"Whisper error: {error_msg}")
         raise HTTPException(status_code=500, detail=f"Transcription failed: {error_msg}")
-
-    finally:
-        # Clean up temp files
-        for path in [tmp_path, converted_path]:
-            if path:
-                try:
-                    os.unlink(path)
-                except:
-                    pass

@@ -46,6 +46,9 @@ const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 const OPENAI_CHAT_COMPLETIONS_URL = import.meta.env.VITE_OPENAI_URL || 
   'https://api.openai.com/v1/chat/completions';
 
+// Export API_BASE for services that need direct access
+export const API_BASE = API_BASE_URL;
+
 // Final configuration
 export const API_CONFIG: ApiConfig = {
   BASE_URL: API_BASE_URL,

@@ -1,0 +1,570 @@
+"""
+Public Developer API v1
+
+REST API for programmatically creating presentations.
+Requires API key authentication (X-API-Key header).
+Available only for Pro subscribers.
+"""
+
+import asyncio
+import logging
+import uuid
+from typing import Optional, Dict, Any, List, Tuple
+from datetime import datetime
+from fastapi import APIRouter, HTTPException, Depends, Header, BackgroundTasks
+from pydantic import BaseModel, Field
+
+from services.api_key_service import get_api_key_service, ApiKeyRecord
+from services.billing_service import get_billing_service, CreditAction
+from services.deck_sharing_service import get_sharing_service
+from services.webhook_service import get_webhook_service
+from services.supabase import get_supabase_client
+from utils.supabase import upload_deck, get_deck
+from models.registry import get_global_registry
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/v1", tags=["Public API v1"])
+
+
+# =============================================================================
+# Request/Response Models
+# =============================================================================
+
+class CreateDeckRequest(BaseModel):
+    """Request to create a new deck via API."""
+    topic: str = Field(..., min_length=1, max_length=1000, description="Topic or prompt for the presentation")
+    slides: int = Field(default=8, ge=1, le=30, description="Number of slides to generate")
+    style: Optional[str] = Field(default=None, max_length=100, description="Style preset (e.g., 'corporate', 'creative', 'minimal')")
+    additional_instructions: Optional[str] = Field(default=None, max_length=2000, description="Additional instructions for generation")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Custom metadata to include in webhook responses")
+
+
+class DeckStatusResponse(BaseModel):
+    """Response for deck status endpoint."""
+    deck_id: str
+    status: str  # "generating", "completed", "failed"
+    view_url: Optional[str] = None
+    edit_url: Optional[str] = None
+    slides_count: Optional[int] = None
+    created_at: str
+    completed_at: Optional[str] = None
+    error_message: Optional[str] = None
+
+
+class CreateDeckResponse(BaseModel):
+    """Response after initiating deck creation."""
+    deck_id: str
+    status: str  # Always "generating" on creation
+    view_url: str
+    edit_url: Optional[str] = None
+    poll_url: str
+    estimated_seconds: int
+    message: str
+
+
+class DeckListResponse(BaseModel):
+    """Response for listing API-created decks."""
+    decks: List[DeckStatusResponse]
+    total: int
+    offset: int
+    limit: int
+
+
+# =============================================================================
+# API Key Authentication
+# =============================================================================
+
+async def get_api_key_auth(
+    x_api_key: str = Header(..., alias="X-API-Key", description="Your API key")
+) -> Tuple[str, ApiKeyRecord]:
+    """
+    Validate API key and return user_id and key record.
+
+    Raises:
+        HTTPException 401: Invalid or missing API key
+        HTTPException 403: User doesn't have Pro subscription
+    """
+    if not x_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing X-API-Key header"
+        )
+
+    service = get_api_key_service()
+    result = await service.validate_api_key(x_api_key)
+
+    if not result:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key"
+        )
+
+    user_id, key_record = result
+
+    # Verify Pro subscription
+    billing = get_billing_service()
+    try:
+        balance = await billing.get_user_balance(user_id)
+        if not balance or balance.plan_id not in ('pro', 'enterprise'):
+            # Check for friends & family
+            if not (balance and hasattr(balance, 'is_friends_family') and balance.is_friends_family):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Developer API requires a Pro subscription"
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking subscription: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to verify subscription status"
+        )
+
+    return user_id, key_record
+
+
+# =============================================================================
+# Background Generation Task
+# =============================================================================
+
+async def generate_deck_background(
+    deck_uuid: str,
+    user_id: str,
+    api_key_record: ApiKeyRecord,
+    topic: str,
+    num_slides: int,
+    style: Optional[str],
+    additional_instructions: Optional[str],
+    view_url: str,
+    edit_url: Optional[str],
+    metadata: Optional[Dict[str, Any]]
+):
+    """
+    Background task to generate a deck.
+
+    This runs after the API returns immediately with the deck URLs.
+    """
+    webhook_service = get_webhook_service()
+
+    try:
+        # Build the outline from the topic
+        from services.outline.generator import generate_outline
+
+        # Combine instructions: API key context + request instructions
+        combined_instructions = ""
+        if api_key_record.context_instructions:
+            combined_instructions += api_key_record.context_instructions + "\n\n"
+        if additional_instructions:
+            combined_instructions += additional_instructions
+
+        # Generate outline
+        logger.info(f"Generating outline for deck {deck_uuid}")
+        outline_result = await generate_outline(
+            topic=topic,
+            num_slides=num_slides,
+            style=style,
+            additional_context=combined_instructions,
+            context_images=api_key_record.context_images or []
+        )
+
+        if not outline_result:
+            raise Exception("Failed to generate outline")
+
+        # Convert to DeckOutline model
+        from models.requests import DeckOutline
+        deck_outline = DeckOutline(**outline_result)
+
+        # Get registry
+        registry = get_global_registry()
+
+        # Build initial deck payload
+        from api.requests.deck_create import build_initial_deck_payload
+        deck_data = build_initial_deck_payload(deck_outline, deck_uuid)
+
+        # Add API source metadata
+        deck_data["data"] = deck_data.get("data", {})
+        deck_data["data"]["source"] = "api"
+        deck_data["data"]["api_key_id"] = api_key_record.id
+        deck_data["data"]["api_key_name"] = api_key_record.name
+
+        # Upload initial deck
+        upload_deck(deck_data, deck_uuid, user_id)
+
+        # Run composition
+        from agents.generation.deck_composer import compose_deck_stream
+        from agents.config import MAX_PARALLEL_SLIDES, DELAY_BETWEEN_SLIDES
+
+        slides_generated = 0
+        async for update in compose_deck_stream(
+            deck_outline, registry, deck_uuid,
+            max_parallel=MAX_PARALLEL_SLIDES,
+            delay_between_slides=DELAY_BETWEEN_SLIDES,
+            async_images=False,  # Auto-apply images for API
+            user_id=user_id
+        ):
+            utype = update.get('type', '')
+            if utype == 'slide_generated':
+                slides_generated += 1
+            elif utype in ('deck_complete', 'composition_complete', 'complete'):
+                break
+
+        # Update deck status
+        client = get_supabase_client()
+        client.table("decks").update({
+            "status": {"state": "completed"}
+        }).eq("uuid", deck_uuid).execute()
+
+        # Get final slide count
+        final_deck = get_deck(deck_uuid)
+        final_slides_count = len(final_deck.get("slides", [])) if final_deck else slides_generated
+
+        logger.info(f"Deck {deck_uuid} generation completed with {final_slides_count} slides")
+
+        # Send webhook if configured
+        if api_key_record.webhook_url:
+            await webhook_service.send_deck_completed(
+                webhook_url=api_key_record.webhook_url,
+                deck_id=deck_uuid,
+                view_url=view_url,
+                slides_count=final_slides_count,
+                edit_url=edit_url,
+                metadata=metadata
+            )
+
+    except Exception as e:
+        logger.error(f"Deck generation failed for {deck_uuid}: {e}", exc_info=True)
+
+        # Update deck status to failed
+        try:
+            client = get_supabase_client()
+            client.table("decks").update({
+                "status": {"state": "failed", "error": str(e)}
+            }).eq("uuid", deck_uuid).execute()
+        except Exception:
+            pass
+
+        # Send failure webhook if configured
+        if api_key_record.webhook_url:
+            await webhook_service.send_deck_failed(
+                webhook_url=api_key_record.webhook_url,
+                deck_id=deck_uuid,
+                error_message=str(e),
+                metadata=metadata
+            )
+
+
+# =============================================================================
+# Endpoints
+# =============================================================================
+
+@router.post("/decks", response_model=CreateDeckResponse)
+async def create_deck(
+    request: CreateDeckRequest,
+    background_tasks: BackgroundTasks,
+    auth: Tuple[str, ApiKeyRecord] = Depends(get_api_key_auth)
+):
+    """
+    Create a new presentation.
+
+    This endpoint returns immediately with view/edit URLs.
+    Generation happens in the background.
+
+    If a webhook URL is configured for your API key,
+    you'll receive a callback when generation completes.
+
+    Otherwise, poll the status endpoint.
+    """
+    user_id, api_key_record = auth
+    deck_uuid = str(uuid.uuid4())
+
+    # Check credits
+    billing = get_billing_service()
+    try:
+        balance = await billing.get_user_balance(user_id)
+        credit_cost = billing.get_credit_cost(CreditAction.SLIDE_GENERATION) * request.slides
+
+        if balance and balance.remaining_credits < credit_cost:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Insufficient credits. Need {credit_cost}, have {balance.remaining_credits}"
+            )
+
+        # Consume credits
+        await billing.consume_credits(
+            user_id,
+            CreditAction.SLIDE_GENERATION,
+            metadata={
+                "deck_id": deck_uuid,
+                "num_slides": request.slides,
+                "source": "api",
+                "api_key_id": api_key_record.id
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Credit check failed, proceeding anyway: {e}")
+
+    # Create share links immediately
+    sharing_service = get_sharing_service()
+
+    try:
+        # Create view link
+        view_share = sharing_service.create_share_link(
+            deck_uuid=deck_uuid,
+            user_id=user_id,
+            share_type='view',
+            metadata={"source": "api", "api_key_id": api_key_record.id}
+        )
+        view_url = f"https://nextslide.ai/p/{view_share['short_code']}"
+
+        # Create edit link if enabled
+        edit_url = None
+        if api_key_record.include_edit_link:
+            edit_share = sharing_service.create_share_link(
+                deck_uuid=deck_uuid,
+                user_id=user_id,
+                share_type='edit',
+                metadata={"source": "api", "api_key_id": api_key_record.id}
+            )
+            edit_url = f"https://nextslide.ai/e/{edit_share['short_code']}"
+
+    except Exception as e:
+        logger.error(f"Failed to create share links: {e}")
+        # Fallback to direct URLs
+        view_url = f"https://nextslide.ai/deck/{deck_uuid}"
+        edit_url = f"https://nextslide.ai/deck/{deck_uuid}" if api_key_record.include_edit_link else None
+
+    # Create initial deck record
+    try:
+        initial_deck = {
+            "name": request.topic[:100],
+            "slides": [],
+            "size": {"width": 1920, "height": 1080},
+            "status": {"state": "generating"},
+            "data": {
+                "source": "api",
+                "api_key_id": api_key_record.id,
+                "api_key_name": api_key_record.name
+            }
+        }
+        upload_deck(initial_deck, deck_uuid, user_id)
+    except Exception as e:
+        logger.error(f"Failed to create initial deck: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create deck")
+
+    # Start generation in background
+    background_tasks.add_task(
+        generate_deck_background,
+        deck_uuid=deck_uuid,
+        user_id=user_id,
+        api_key_record=api_key_record,
+        topic=request.topic,
+        num_slides=request.slides,
+        style=request.style,
+        additional_instructions=request.additional_instructions,
+        view_url=view_url,
+        edit_url=edit_url,
+        metadata=request.metadata
+    )
+
+    # Send creation webhook if configured
+    if api_key_record.webhook_url:
+        webhook_service = get_webhook_service()
+        asyncio.create_task(
+            webhook_service.send_deck_created(
+                webhook_url=api_key_record.webhook_url,
+                deck_id=deck_uuid,
+                view_url=view_url,
+                edit_url=edit_url,
+                metadata=request.metadata
+            )
+        )
+
+    return CreateDeckResponse(
+        deck_id=deck_uuid,
+        status="generating",
+        view_url=view_url,
+        edit_url=edit_url,
+        poll_url=f"/api/v1/decks/{deck_uuid}/status",
+        estimated_seconds=120,  # ~2 minutes
+        message="Deck creation started. Poll the status endpoint or wait for webhook."
+    )
+
+
+@router.get("/decks/{deck_id}/status", response_model=DeckStatusResponse)
+async def get_deck_status(
+    deck_id: str,
+    auth: Tuple[str, ApiKeyRecord] = Depends(get_api_key_auth)
+):
+    """
+    Get the current status of a deck.
+
+    Use this to poll for completion if you don't have webhooks configured.
+    """
+    user_id, _ = auth
+
+    try:
+        deck = get_deck(deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+
+        # Verify ownership
+        if deck.get("user_id") != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        status_obj = deck.get("status", {})
+        status_state = status_obj.get("state", "unknown") if isinstance(status_obj, dict) else "unknown"
+
+        # Get share URLs
+        sharing_service = get_sharing_service()
+        shares = sharing_service.get_share_links(deck_id)
+
+        view_url = None
+        edit_url = None
+        for share in shares:
+            if share.get("share_type") == "view":
+                view_url = f"https://nextslide.ai/p/{share['short_code']}"
+            elif share.get("share_type") == "edit":
+                edit_url = f"https://nextslide.ai/e/{share['short_code']}"
+
+        return DeckStatusResponse(
+            deck_id=deck_id,
+            status=status_state,
+            view_url=view_url,
+            edit_url=edit_url,
+            slides_count=len(deck.get("slides", [])),
+            created_at=deck.get("created_at", ""),
+            completed_at=deck.get("last_modified") if status_state == "completed" else None,
+            error_message=status_obj.get("error") if status_state == "failed" else None
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting deck status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get deck status")
+
+
+@router.get("/decks/{deck_id}", response_model=Dict[str, Any])
+async def get_deck_full(
+    deck_id: str,
+    auth: Tuple[str, ApiKeyRecord] = Depends(get_api_key_auth)
+):
+    """
+    Get the full deck data including all slides.
+
+    Returns the complete deck JSON structure.
+    """
+    user_id, _ = auth
+
+    try:
+        deck = get_deck(deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+
+        # Verify ownership
+        if deck.get("user_id") != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        return deck
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting deck: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get deck")
+
+
+@router.get("/decks", response_model=DeckListResponse)
+async def list_decks(
+    offset: int = 0,
+    limit: int = 20,
+    auth: Tuple[str, ApiKeyRecord] = Depends(get_api_key_auth)
+):
+    """
+    List all decks created via API.
+
+    Only returns decks created with API keys (source='api').
+    """
+    user_id, _ = auth
+
+    try:
+        client = get_supabase_client()
+
+        # Query decks with API source
+        result = client.table("decks") \
+            .select("uuid, name, slides, status, created_at, last_modified, data") \
+            .eq("user_id", user_id) \
+            .order("created_at", desc=True) \
+            .range(offset, offset + limit - 1) \
+            .execute()
+
+        # Filter to API-created decks
+        api_decks = []
+        for deck in (result.data or []):
+            data = deck.get("data", {})
+            if isinstance(data, dict) and data.get("source") == "api":
+                status_obj = deck.get("status", {})
+                status_state = status_obj.get("state", "unknown") if isinstance(status_obj, dict) else "unknown"
+
+                api_decks.append(DeckStatusResponse(
+                    deck_id=deck["uuid"],
+                    status=status_state,
+                    slides_count=len(deck.get("slides", [])),
+                    created_at=deck.get("created_at", ""),
+                    completed_at=deck.get("last_modified") if status_state == "completed" else None
+                ))
+
+        # Get total count
+        count_result = client.table("decks") \
+            .select("uuid", count="exact") \
+            .eq("user_id", user_id) \
+            .execute()
+
+        return DeckListResponse(
+            decks=api_decks,
+            total=len(api_decks),  # Approximate since we filter client-side
+            offset=offset,
+            limit=limit
+        )
+
+    except Exception as e:
+        logger.error(f"Error listing decks: {e}")
+        raise HTTPException(status_code=500, detail="Failed to list decks")
+
+
+@router.delete("/decks/{deck_id}")
+async def delete_deck(
+    deck_id: str,
+    auth: Tuple[str, ApiKeyRecord] = Depends(get_api_key_auth)
+):
+    """
+    Delete a deck.
+
+    This permanently removes the deck and all associated data.
+    """
+    user_id, _ = auth
+
+    try:
+        # Verify ownership
+        deck = get_deck(deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+
+        if deck.get("user_id") != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Delete deck
+        client = get_supabase_client()
+        client.table("decks").delete().eq("uuid", deck_id).execute()
+
+        return {"success": True, "message": "Deck deleted"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting deck: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete deck")

@@ -327,20 +327,19 @@ export const useDeckManagement = (): UseDeckManagementReturn => {
       console.log('[useDeckManagement] Edit already in progress, ignoring duplicate call');
       return;
     }
-    
+
     isEditingRef.current = true;
-    
+
     try {
       // Clean up realtime subscription but don't reset store
       storeCleanupRealtimeSubscription();
-      
-      console.log('[useDeckManagement] handleEditDeck called with deck:', { 
-        uuid: deck?.uuid, 
+
+      console.log('[useDeckManagement] handleEditDeck called with deck:', {
+        uuid: deck?.uuid,
         id: (deck as any)?.id,
-        name: deck?.name,
-        fullDeck: deck 
+        name: deck?.name
       });
-      
+
       if (!deck || !deck.uuid) {
         console.error('[useDeckManagement] Invalid deck data for editing - missing uuid');
         toast({
@@ -348,30 +347,19 @@ export const useDeckManagement = (): UseDeckManagementReturn => {
           description: "The selected deck data is invalid.",
           variant: "destructive"
         });
+        isEditingRef.current = false;
         return;
       }
 
-      
-      console.log(`[useDeckManagement] Loading full deck data for ${deck.uuid}`);
-      const latestDeck = await deckSyncService.getFullDeck(deck.uuid);
-      if (!latestDeck) throw new Error(`Failed to load deck ${deck.uuid}`);
-      if (!Array.isArray(latestDeck.slides) || latestDeck.slides.length === 0) {
-        console.warn(`[useDeckManagement] Deck ${deck.uuid} has no slides, might be corrupted`);
-        toast({
-          title: "Warning",
-          description: "This presentation might be corrupted (no slides found).",
-          variant: "destructive"
-        });
-      }
-      storeUpdateDeckData(latestDeck);
-      sessionStorage.setItem('lastEditedDeckId', latestDeck.uuid);
+      // Navigate immediately for better UX - the deck page will load data
+      sessionStorage.setItem('lastEditedDeckId', deck.uuid);
       sessionStorage.setItem('lastEditedDeckTimestamp', new Date().toISOString());
-      setTimeout(() => navigate(`/deck/${latestDeck.uuid}`), 100);
+      navigate(`/deck/${deck.uuid}`);
     } catch (err) {
-      console.error(`[useDeckManagement] Error loading deck: ${err}`);
+      console.error(`[useDeckManagement] Error navigating to deck: ${err}`);
       toast({
-        title: "Error loading presentation",
-        description: "Failed to load the latest version. Please try again.",
+        title: "Error opening presentation",
+        description: "Failed to open the presentation. Please try again.",
         variant: "destructive",
         duration: 5000
       });

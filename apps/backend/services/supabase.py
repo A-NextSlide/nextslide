@@ -33,8 +33,9 @@ SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
 # =============================================================================
 
 # Maximum connections per host (prevents pool exhaustion)
-MAX_CONNECTIONS = 20
-MAX_KEEPALIVE_CONNECTIONS = 10
+# Keep low to allow horizontal scaling (100 instances × 5 = 500 connections)
+MAX_CONNECTIONS = 5
+MAX_KEEPALIVE_CONNECTIONS = 3
 
 # Timeouts (in seconds)
 CONNECT_TIMEOUT = 5.0

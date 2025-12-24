@@ -19,7 +19,7 @@ interface ElementHitAreaProps {
   element: VirtualElement;
   isSelected: boolean;
   onSelect: (cursorX: number, cursorY: number) => void;
-  onDoubleClick: () => void;
+  onDoubleClick: (cursorX: number, cursorY: number) => void;
   disabled?: boolean;
   /** When true, hide all hit areas (something is selected, let selection overlay handle clicks) */
   hideForSelection?: boolean;
@@ -84,7 +84,7 @@ export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
       onDoubleClick={(e) => {
         e.stopPropagation();
         e.preventDefault();
-        onDoubleClick();
+        onDoubleClick(e.clientX, e.clientY);
       }}
       data-element-id={element.id}
       data-element-type={element.type}

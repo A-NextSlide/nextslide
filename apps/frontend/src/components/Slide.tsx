@@ -178,10 +178,15 @@ const SlideContent: React.FC<SlideProps> = ({
   
   // Handle double-click to enter edit mode
   const handleDoubleClick = (e: React.MouseEvent) => {
+    // Don't trigger edit mode when in presentation mode
+    if (document.body.classList.contains('presentation-mode')) {
+      return;
+    }
+
     if (!isEditing) {
       e.preventDefault();
       e.stopPropagation();
-      
+
       // Dispatch custom event to enter edit mode
       if (typeof window !== 'undefined') {
         const event = new CustomEvent('slide:doubleclick', {

@@ -16,6 +16,34 @@ MAX_IMAGE_DIMENSION = 384
 MAX_IMAGE_BYTES = 150_000
 JPEG_QUALITY = 60
 
+IMAGE_PROP_TOKENS = (
+    "image",
+    "photo",
+    "pic",
+    "picture",
+    "img",
+    "avatar",
+    "logo",
+    "bg",
+    "background",
+    "banner",
+    "thumb",
+    "thumbnail",
+    "icon",
+    "poster",
+    "cover",
+)
+GENERIC_VAR_NAMES = {
+    "obj",
+    "item",
+    "data",
+    "entry",
+    "row",
+    "card",
+    "element",
+    "node",
+}
+
 
 def _extract_search_query_from_prop_name(prop_name: str) -> str:
     """Convert a camelCase prop name to a search query."""
@@ -41,13 +69,109 @@ def _simple_clean_query(query: str) -> str:
     return cleaned
 
 
+def _looks_like_image_prop(prop_name: str) -> bool:
+    if not prop_name:
+        return False
+    lowered = prop_name.lower()
+    if lowered in GENERIC_VAR_NAMES:
+        return False
+    return any(token in lowered for token in IMAGE_PROP_TOKENS)
+
+
+def _iter_js_objects(text: str) -> List[Tuple[int, int, str]]:
+    """Yield JS object literals from text, ignoring braces inside strings."""
+    objects: List[Tuple[int, int, str]] = []
+    depth = 0
+    start = None
+    in_string = None
+    escape = False
+    idx = 0
+    length = len(text)
+
+    while idx < length:
+        ch = text[idx]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == in_string:
+                in_string = None
+        else:
+            if ch in ("'", '"'):
+                in_string = ch
+            elif ch == "{":
+                if depth == 0:
+                    start = idx
+                depth += 1
+            elif ch == "}":
+                if depth > 0:
+                    depth -= 1
+                    if depth == 0 and start is not None:
+                        objects.append((start, idx + 1, text[start:idx + 1]))
+                        start = None
+        idx += 1
+
+    return objects
+
+
+def _object_is_image_like(obj_text: str) -> bool:
+    type_match = re.search(r'\btype\s*:\s*([\'"])([^\'"]+)\1', obj_text, re.IGNORECASE)
+    if not type_match:
+        return True
+    type_value = type_match.group(2).strip().lower()
+    return type_value in ("img", "image", "photo", "picture")
+
+
+def _extract_js_object_label(obj_text: str) -> str:
+    for field in ("alt", "title", "name", "label", "heading"):
+        match = re.search(rf'\b{field}\s*:\s*([\'"])(.*?)\1', obj_text, re.IGNORECASE | re.DOTALL)
+        if match:
+            return match.group(2).strip()
+    return ""
+
+
+def _extract_js_object_image_queries(html: str) -> List[str]:
+    if not html:
+        return []
+    queries: List[str] = []
+    seen = set()
+    for script_content in re.findall(r'<script[^>]*>([\s\S]*?)</script>', html, re.IGNORECASE):
+        for _, _, obj_text in _iter_js_objects(script_content):
+            if not _object_is_image_like(obj_text):
+                continue
+            if not re.search(r'\bsrc\s*:', obj_text, re.IGNORECASE):
+                continue
+            label = _extract_js_object_label(obj_text)
+            cleaned = _simple_clean_query(label)
+            if not cleaned:
+                continue
+            key = cleaned.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            queries.append(cleaned)
+    return queries
+
+
 def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
     """Extract image prop names and their search queries from generated HTML."""
     results: List[Tuple[str, str]] = []
     seen_props = set()
 
+    js_image_queries = _extract_js_object_image_queries(html)
+    for query in js_image_queries:
+        key = f"alt_{query.replace(' ', '_').replace('-', '_')[:30]}"
+        if query.lower() not in seen_props:
+            results.append((key, query))
+            seen_props.add(query.lower())
+
+    has_js_alt_queries = bool(js_image_queries)
+
     pattern1 = re.findall(r'<img[^>]*src=["\']?\$\{(\w+)\}["\']?', html, re.IGNORECASE)
     for prop in pattern1:
+        if has_js_alt_queries and not _looks_like_image_prop(prop):
+            continue
         if prop not in seen_props:
             query = _simple_clean_query(_extract_search_query_from_prop_name(prop))
             if query:
@@ -72,13 +196,22 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
 
     all_img_tags = re.findall(r'<img[^>]+>', html, re.IGNORECASE)
     for img_tag in all_img_tags:
-        src_match = re.search(r'src=["\']?(placeholder|data:|about:blank|)["\']?', img_tag, re.IGNORECASE)
-        if src_match or 'src=""' in img_tag or "src=''" in img_tag:
+        src_match = re.search(r'src=["\']([^"\']*)["\']', img_tag, re.IGNORECASE)
+        src = src_match.group(1) if src_match else ""
+        is_placeholder = (
+            not src
+            or src == "placeholder"
+            or "placeholder" in src.lower()
+            or src.startswith("${")
+            or src.startswith("props.")
+            or (not src.startswith("http") and not src.startswith("data:") and not src.startswith("blob:"))
+        )
+        if is_placeholder or 'src=""' in img_tag or "src=''" in img_tag:
             alt_match = re.search(r'alt=["\']([^"\']+)["\']', img_tag, re.IGNORECASE)
             if alt_match:
                 alt = alt_match.group(1).strip()
                 if alt and alt.lower() not in seen_props:
-                    results.append((f"alt_{alt.replace(' ', '_')[:30]}", alt))
+                    results.append((f"alt_{alt.replace(' ', '_').replace('-', '_')[:30]}", alt))
                     seen_props.add(alt.lower())
 
     our_bucket_domains = ['nextslide.ai', 'supabase.co', 'supabase.com']

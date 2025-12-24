@@ -1,11 +1,79 @@
 """HTML processing helpers for CustomComponent generation."""
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import re
 
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
+
+BUCKET_DOMAINS = ('nextslide.ai', 'supabase.co', 'supabase.com')
+GENERIC_JS_VARS = {"obj", "item", "data", "entry", "row", "card", "element", "node"}
+
+
+def _iter_js_objects(text: str):
+    objects = []
+    depth = 0
+    start = None
+    in_string = None
+    escape = False
+    idx = 0
+    length = len(text)
+
+    while idx < length:
+        ch = text[idx]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == in_string:
+                in_string = None
+        else:
+            if ch in ("'", '"'):
+                in_string = ch
+            elif ch == "{":
+                if depth == 0:
+                    start = idx
+                depth += 1
+            elif ch == "}":
+                if depth > 0:
+                    depth -= 1
+                    if depth == 0 and start is not None:
+                        objects.append((start, idx + 1, text[start:idx + 1]))
+                        start = None
+        idx += 1
+
+    return objects
+
+
+def _object_is_image_like(obj_text: str) -> bool:
+    type_match = re.search(r'\btype\s*:\s*([\'"])([^\'"]+)\1', obj_text, re.IGNORECASE)
+    if not type_match:
+        return True
+    type_value = type_match.group(2).strip().lower()
+    return type_value in ("img", "image", "photo", "picture")
+
+
+def _extract_js_object_label(obj_text: str) -> str:
+    for field in ("alt", "title", "name", "label", "heading"):
+        match = re.search(rf'\b{field}\s*:\s*([\'"])(.*?)\1', obj_text, re.IGNORECASE | re.DOTALL)
+        if match:
+            return match.group(2).strip()
+    return ""
+
+
+def _is_placeholder_src(value: str) -> bool:
+    if not value:
+        return True
+    lowered = value.strip().lower()
+    return (
+        lowered == "placeholder"
+        or "placeholder" in lowered
+        or lowered.startswith("${")
+        or lowered.startswith("props.")
+        or (not lowered.startswith("http") and not lowered.startswith("data:") and not lowered.startswith("blob:"))
+    )
 
 
 class CustomComponentHtmlProcessor:
@@ -75,8 +143,7 @@ class CustomComponentHtmlProcessor:
         if not image_urls:
             external_matches = re.findall(r'<img[^>]+src=["\']?(https?://[^\s"\'>]+)["\']?', html, flags=re.IGNORECASE)
             if external_matches:
-                bucket_domains = ['nextslide.ai', 'supabase.co', 'supabase.com']
-                external_to_replace = [url for url in external_matches if not any(d in url.lower() for d in bucket_domains)]
+                external_to_replace = [url for url in external_matches if not any(d in url.lower() for d in BUCKET_DOMAINS)]
                 if external_to_replace:
                     logger.warning(f"[IMAGE_INJECT] No prefetched images but found {len(external_to_replace)} external URLs")
                     for url in external_to_replace[:3]:
@@ -88,10 +155,10 @@ class CustomComponentHtmlProcessor:
         result = html
         images_injected = 0
         image_index = 0
-        bucket_domains = ['nextslide.ai', 'supabase.co', 'supabase.com']
+        has_js_objects = False
 
         def is_our_url(url: str) -> bool:
-            return any(domain in url.lower() for domain in bucket_domains)
+            return any(domain in url.lower() for domain in BUCKET_DOMAINS)
 
         for key, url in prefetched_images.items():
             if not key.startswith('alt_') or not url.startswith('http'):
@@ -114,6 +181,83 @@ class CustomComponentHtmlProcessor:
 
             alt_pattern = rf'<img[^>]*alt=["\']({escaped_alt}[^"\']*)["\'][^>]*>'
             result = re.sub(alt_pattern, replace_by_alt_first, result, flags=re.IGNORECASE)
+
+        alt_url_map = {}
+        for key, url in prefetched_images.items():
+            if not key.startswith('alt_') or not url.startswith('http'):
+                continue
+            query = prefetched_images.get(f"{key}_query") or key[4:].replace('_', ' ')
+            if query:
+                alt_url_map[query.strip().lower()] = url
+
+        def _match_alt_url(alt_text: str) -> Optional[str]:
+            if not alt_text:
+                return None
+            alt_norm = alt_text.strip().lower()
+            if alt_norm in alt_url_map:
+                return alt_url_map[alt_norm]
+            for query, url in alt_url_map.items():
+                if query and (query in alt_norm or alt_norm in query):
+                    return url
+            return None
+
+        def _replace_src_in_object(obj_text: str, url: str) -> Tuple[str, bool]:
+            src_pattern = r'(\bsrc\s*:\s*)(?:(["\'])(?P<src>.*?)\2|(?P<src_unquoted>[^,\n}]+))'
+
+            def replace_src(match):
+                prefix = match.group(1)
+                quote = match.group(2) or '"'
+                return f"{prefix}{quote}{url}{quote}"
+
+            new_obj, count = re.subn(src_pattern, replace_src, obj_text, count=1, flags=re.IGNORECASE | re.DOTALL)
+            return new_obj, count > 0
+
+        def _replace_js_objects(script_content: str) -> Tuple[str, bool, bool]:
+            nonlocal images_injected, image_index
+            objects = _iter_js_objects(script_content)
+            if not objects:
+                return script_content, False, False
+
+            updated = False
+            found_images = False
+            parts = []
+            cursor = 0
+
+            for start, end, obj_text in objects:
+                new_obj = obj_text
+                if _object_is_image_like(obj_text) and re.search(r'\bsrc\s*:', obj_text, re.IGNORECASE):
+                    label_text = _extract_js_object_label(obj_text)
+                    src_match = re.search(r'\bsrc\s*:\s*(?:(["\'])(?P<src>.*?)\1|(?P<src_unquoted>[^,\n}]+))', obj_text, re.IGNORECASE | re.DOTALL)
+                    if src_match and label_text:
+                        found_images = True
+                        src_value = (src_match.group('src') or src_match.group('src_unquoted') or "").strip()
+                        target_url = _match_alt_url(label_text)
+                        if not target_url and image_urls and _is_placeholder_src(src_value):
+                            target_url = image_urls[image_index % len(image_urls)]
+                            image_index += 1
+                        if target_url:
+                            new_obj, replaced = _replace_src_in_object(obj_text, target_url)
+                            if replaced:
+                                images_injected += 1
+                                updated = True
+                parts.append(script_content[cursor:start])
+                parts.append(new_obj)
+                cursor = end
+
+            parts.append(script_content[cursor:])
+            return "".join(parts), updated, found_images
+
+        script_pattern = re.compile(r'(<script[^>]*>)([\s\S]*?)(</script>)', re.IGNORECASE)
+
+        def replace_script_block(match):
+            nonlocal has_js_objects
+            start_tag, script_content, end_tag = match.groups()
+            new_content, updated, found_any = _replace_js_objects(script_content)
+            if found_any:
+                has_js_objects = True
+            return f"{start_tag}{new_content}{end_tag}"
+
+        result = re.sub(script_pattern, replace_script_block, result)
 
         def replace_js_prop_default(match):
             nonlocal images_injected, image_index
@@ -141,6 +285,9 @@ class CustomComponentHtmlProcessor:
             before = match.group(1)
             var_name = match.group(2)
             after = match.group(3)
+
+            if has_js_objects and var_name.lower() in GENERIC_JS_VARS:
+                return match.group(0)
 
             prop_key = var_name
             if prop_key in prefetched_images and prefetched_images[prop_key].startswith('http'):
