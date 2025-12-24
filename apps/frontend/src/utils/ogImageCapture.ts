@@ -83,7 +83,7 @@ function restoreParentTransforms(originalTransforms: Map<HTMLElement, string>): 
 
 /**
  * Captures a slide as an OG-optimized thumbnail.
- * Temporarily neutralizes parent transforms to capture at native resolution.
+ * Uses the same proven approach as SimpleThumbnail.
  * The image is sized to 1200x630 (standard OG dimensions).
  *
  * @param slideElementOrId - Either an HTMLElement or a slide ID string
@@ -101,47 +101,48 @@ export async function captureOGThumbnail(
     return null;
   }
 
-  let originalTransforms: Map<HTMLElement, string> | null = null;
-
   try {
     console.log('[OG Capture] Starting capture for slide:', slideContainer.getAttribute('data-slide-id'));
 
-    // Wait for any pending renders and images
-    await new Promise(resolve => setTimeout(resolve, 300));
+    // Wait for any pending renders and images (same timing as SimpleThumbnail)
+    await new Promise(resolve => setTimeout(resolve, 150));
     await waitForImages(slideContainer);
-
-    // Temporarily neutralize parent transforms
-    originalTransforms = neutralizeParentTransforms(slideContainer);
-    console.log('[OG Capture] Neutralized', originalTransforms.size, 'parent transforms');
-
-    // Force layout recalculation
-    void slideContainer.offsetHeight;
-
-    // Wait a frame for the transform changes to take effect
-    await new Promise(resolve => requestAnimationFrame(resolve));
-    await new Promise(resolve => setTimeout(resolve, 100));
 
     console.log('[OG Capture] Slide dimensions:', {
       offsetWidth: slideContainer.offsetWidth,
-      offsetHeight: slideContainer.offsetHeight
+      offsetHeight: slideContainer.offsetHeight,
+      scrollWidth: slideContainer.scrollWidth,
+      scrollHeight: slideContainer.scrollHeight
     });
 
-    // Capture using html2canvas (same approach as SimpleThumbnail)
+    // Capture using html2canvas - EXACT same options as SimpleThumbnail
+    // (which is proven to work)
     const canvas = await html2canvas(slideContainer, {
-      scale: OG_WIDTH / NATIVE_WIDTH, // 0.625 - Scale to OG width
+      scale: 0.5, // Same as SimpleThumbnail
       useCORS: true,
       allowTaint: true,
-      backgroundColor: null, // Preserve actual background
+      backgroundColor: null, // Same as SimpleThumbnail - preserve transparency
       logging: false,
       width: NATIVE_WIDTH,
       height: NATIVE_HEIGHT,
-      imageTimeout: 10000,
     });
 
     console.log('[OG Capture] html2canvas completed:', {
       canvasWidth: canvas.width,
       canvasHeight: canvas.height
     });
+
+    // Check if the canvas has any content
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const imageData = ctx.getImageData(0, 0, Math.min(100, canvas.width), Math.min(100, canvas.height));
+      const hasContent = imageData.data.some((val, i) => {
+        // Check if any pixel is not transparent
+        if (i % 4 === 3) return val > 0; // Alpha channel
+        return false;
+      });
+      console.log('[OG Capture] Canvas has non-transparent content:', hasContent);
+    }
 
     // Create final OG-sized canvas (1200x630)
     const finalCanvas = document.createElement('canvas');
@@ -157,21 +158,23 @@ export async function captureOGThumbnail(
     finalCtx.fillStyle = '#ffffff';
     finalCtx.fillRect(0, 0, OG_WIDTH, OG_HEIGHT);
 
-    // The captured canvas should be ~1200x675 (16:9 at 1200 width)
-    // OG image is 1200x630 (~1.9:1), so we crop top/bottom to fit
-    const sourceWidth = canvas.width;
-    const sourceHeight = canvas.height;
+    // Scale up from SimpleThumbnail's 960x540 (1920*0.5, 1080*0.5) to OG 1200x630
+    // We need to crop vertically and scale
+    const sourceWidth = canvas.width; // ~960
+    const sourceHeight = canvas.height; // ~540
 
-    // Center the slide vertically (crop from top/bottom if needed)
-    const cropAmount = Math.max(0, (sourceHeight - OG_HEIGHT) / 2);
+    // Calculate how much to scale to fill OG width
+    const scaleToFill = OG_WIDTH / sourceWidth; // 1.25
 
-    // Draw the captured slide, cropped to OG dimensions
+    // Calculate scaled source height and vertical crop
+    const scaledSourceHeight = sourceHeight * scaleToFill; // ~675
+    const cropAmount = Math.max(0, (scaledSourceHeight - OG_HEIGHT) / 2); // ~22.5
+
+    // Draw scaled and cropped
     finalCtx.drawImage(
       canvas,
-      0, cropAmount, // Source position (crop from top)
-      sourceWidth, Math.min(sourceHeight, OG_HEIGHT), // Source dimensions
-      0, 0, // Destination position
-      OG_WIDTH, OG_HEIGHT // Destination dimensions
+      0, 0, sourceWidth, sourceHeight, // Source: full canvas
+      0, -cropAmount, OG_WIDTH, scaledSourceHeight // Dest: scaled and offset to crop
     );
 
     const dataUrl = finalCanvas.toDataURL('image/jpeg', 0.92);
@@ -185,11 +188,6 @@ export async function captureOGThumbnail(
   } catch (error) {
     console.error('[OG Capture] Failed to capture:', error);
     return null;
-  } finally {
-    // Restore parent transforms
-    if (originalTransforms) {
-      restoreParentTransforms(originalTransforms);
-    }
   }
 }
 
