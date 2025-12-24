@@ -13,6 +13,7 @@ from .generator_files import OutlineGeneratorFileMixin
 from .generator_research import OutlineGeneratorResearchMixin
 from .generator_validation import OutlineGeneratorValidationMixin
 from .generator_pptx import OutlineGeneratorPptxMixin
+from .models import OutlineOptions, OutlineResult
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
@@ -49,3 +50,9 @@ class OutlineGenerator(
             "OutlineGenerator initialized with %s chart types",
             len(self.chart_generator.chart_types),
         )
+
+
+async def generate_outline(options: OutlineOptions, registry=None) -> OutlineResult:
+    """Backward-compatible convenience wrapper for outline generation."""
+    generator = OutlineGenerator(registry)
+    return await generator.generate(options)

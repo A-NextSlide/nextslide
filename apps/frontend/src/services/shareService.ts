@@ -445,11 +445,8 @@ class ShareService {
   }
 
   getShareUrl(shortCode: string, shareType: 'view' | 'edit'): string {
-    // Use frontend URL for share links
-    // Cloudflare Worker will intercept bot requests and proxy to API for OG tags
-    const baseUrl = 'https://app.nextslide.ai';
     const path = shareType === 'view' ? `/p/${shortCode}` : `/e/${shortCode}`;
-    return `${baseUrl}${path}`;
+    return `https://nextslide.ai${path}`;
   }
 
   async updateShareMetadata(

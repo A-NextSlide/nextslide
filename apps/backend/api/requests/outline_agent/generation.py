@@ -58,6 +58,11 @@ async def generate_slide_content_response(
         max_tokens=1600,
     )
 
+    if response_text is None:
+        return GenerateSlideContentResponse(content="", key_points=[])
+    if not isinstance(response_text, str):
+        response_text = str(response_text)
+
     json_match = re.search(r"\{[\s\S]*\}", response_text)
     if json_match:
         try:

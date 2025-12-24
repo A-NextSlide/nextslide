@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Base URL for the frontend (used in OG tags)
 # These can be overridden via environment variables
 import os
-FRONTEND_BASE_URL = os.getenv("FRONTEND_URL", "https://app.nextslide.ai")
+FRONTEND_BASE_URL = os.getenv("FRONTEND_URL", "https://nextslide.ai")
 API_BASE_URL = os.getenv("API_URL", "https://nextslide-backend.onrender.com")
 
 router = APIRouter(prefix="/api/public", tags=["og-image"])
