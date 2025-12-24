@@ -135,7 +135,7 @@ def _apply_custom_component_text_color(comp: Dict[str, Any], color: str) -> bool
 def _apply_custom_component_background_color(comp: Dict[str, Any], color: str) -> bool:
     """Fast path: edit CustomComponent HTML to change background color.
 
-    Updates the body or main container background-color in the HTML.
+    Updates CSS variables, inline styles, or style blocks to change background color.
     """
     props = comp.get("props", {})
     html = props.get("render", "")
@@ -144,7 +144,35 @@ def _apply_custom_component_background_color(comp: Dict[str, Any], color: str) -
 
     original_html = html
 
-    # Update body background-color if it exists
+    # PRIORITY 1: Update CSS variable --bg in :root or style block
+    # Match --bg: #hexcode or --bg: colorname
+    html = re.sub(
+        r'(--bg\s*:\s*)#?[a-fA-F0-9]{3,8}(\s*;)',
+        rf'\1{color}\2',
+        html
+    )
+    html = re.sub(
+        r'(--bg\s*:\s*)[a-zA-Z]+(\s*;)',
+        rf'\1{color}\2',
+        html
+    )
+
+    # PRIORITY 2: Update background-color in html,body style block
+    # Match: html, body { ... background-color: value; ... }
+    html = re.sub(
+        r'(html\s*,\s*body\s*\{[^}]*background-color\s*:\s*)[^;]+(\s*;)',
+        rf'\1{color}\2',
+        html,
+        flags=re.IGNORECASE
+    )
+    html = re.sub(
+        r'(body\s*\{[^}]*background-color\s*:\s*)[^;]+(\s*;)',
+        rf'\1{color}\2',
+        html,
+        flags=re.IGNORECASE
+    )
+
+    # PRIORITY 3: Update body inline style background-color
     html = re.sub(
         r'(<body[^>]*style="[^"]*?)background-color:\s*[^;"]+(;?)([^"]*")',
         rf'\1background-color: {color}\2\3',
@@ -152,7 +180,7 @@ def _apply_custom_component_background_color(comp: Dict[str, Any], color: str) -
         flags=re.IGNORECASE
     )
 
-    # Update body background (shorthand) if it exists
+    # PRIORITY 4: Update body inline style background (shorthand)
     html = re.sub(
         r'(<body[^>]*style="[^"]*?)background:\s*[^;"]+(;?)([^"]*")',
         rf'\1background: {color}\2\3',
@@ -160,34 +188,7 @@ def _apply_custom_component_background_color(comp: Dict[str, Any], color: str) -
         flags=re.IGNORECASE
     )
 
-    # If body has style but no background, add it
-    def add_bg_to_body_style(match):
-        before = match.group(1)
-        style_content = match.group(2)
-        after = match.group(3)
-        if 'background' not in style_content.lower():
-            new_style = f'background-color: {color}; {style_content}'
-            return f'{before}style="{new_style}"{after}'
-        return match.group(0)
-
-    html = re.sub(
-        r'(<body[^>]*)(style=")([^"]*")',
-        add_bg_to_body_style,
-        html,
-        flags=re.IGNORECASE
-    )
-
-    # If body has no style attribute, add one
-    if '<body' in html.lower() and html == original_html:
-        html = re.sub(
-            r'(<body)(\s*>)',
-            rf'\1 style="background-color: {color};"\2',
-            html,
-            flags=re.IGNORECASE
-        )
-
-    # Also try updating main container div (often has class like "slide", "container", etc.)
-    # Update existing background-color in first major div
+    # PRIORITY 5: Update main container div background
     html = re.sub(
         r'(<div[^>]*class="[^"]*(?:slide|container|wrapper|main)[^"]*"[^>]*style="[^"]*?)background-color:\s*[^;"]+(;?)([^"]*")',
         rf'\1background-color: {color}\2\3',

@@ -33,11 +33,12 @@ logger = get_logger(__name__)
 OUTLINE_AGENT_SYSTEM_PROMPT = (
     "You are a presentation outline agent. Return a single JSON object only. "
     "Always include a top-level action: generate_outline, update_outline, update_theme, update_slides, scrape_media, clarify. "
-    "If key details are missing (topic, audience, slide_count, tone/style, slideMode) or the request is high-stakes/educational, "
+    "If key details are missing (topic, audience, slide_count, tone/style, delivery format) or the request is high-stakes/educational, "
     "respond with action=clarify and include a short intro message (do not repeat field labels) plus clarification.fields "
     "(array of {key,label,type,options?,value?}). "
     "Use label for the question (markdown ok). Use value for a suggested default/prefill that is ready to submit. "
     "Ask for all missing essentials in a single clarify response (avoid multi-step questioning). "
+    "When style or theme is unclear, include an open-text clarification question about the visual vibe and how it will be presented (e.g., live talk with minimal text, detailed analysis doc, or interactive web experience). Avoid jargon like slideMode. "
     "When a CURRENT OUTLINE is provided, do not use generate_outline unless the user explicitly asks to regenerate or start over. "
     "Use update_outline for structure/content changes, update_slides for specific slide tweaks, and update_theme for style/brand changes. "
     "When a CLARIFICATION_ANSWERED hint is provided, proceed to generate/update the outline unless a critical detail is still missing. "
@@ -77,6 +78,7 @@ async def _repair_outline_response(
         "Return a single JSON object only. "
         "If details are missing or the response is a question, use action=clarify "
         "with a short intro message and clarification.fields (array of {key,label,type,options?,value?}). "
+        "If style is unclear, include an open-text question about visual vibe and how it will be presented (live talk vs detailed doc vs interactive web), avoiding jargon. "
         "Otherwise use action=generate_outline with title, topic, slide_count, detail_level, tone, slides."
     )
     repair_user = (
@@ -882,11 +884,15 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                                 "value": "professional",
                             },
                             {
+                                "key": "style",
+                                "label": "What visual style or vibe should it have?",
+                                "type": "text",
+                                "value": "modern",
+                            },
+                            {
                                 "key": "slide_mode",
-                                "label": "Slide mode",
-                                "type": "choice",
-                                "options": ["interactive", "static"],
-                                "value": "interactive",
+                                "label": "How will this be presented (live talk with minimal text vs detailed document or interactive web)",
+                                "type": "text",
                             },
                         ]
                     },

@@ -581,10 +581,6 @@ export const useConversationalOnboarding = ({
         ...(forceOutline ? { force_outline: true } : {}),
       };
 
-      if (userMessage) {
-        themeState.prefetchThemeFromPrompt(userMessage, collectedData.style);
-      }
-
       const generator = streamOutlineAgentChat({
         message: userMessage || 'Please analyze these files for my presentation.',
         chat_history: chatMessages.chatHistory,
@@ -848,10 +844,13 @@ export const useConversationalOnboarding = ({
       } else {
         const buttons = extractButtons(assistantMessage);
         const cleanedMessage = stripAssistantMarkup(assistantMessage);
+        const fallbackMessage = buttons.length > 0 ? 'Choose an option:' : '';
 
-        chatMessages.addMessage('assistant', cleanedMessage, {
-          buttons: buttons.length > 0 ? buttons : undefined,
-        });
+        if (cleanedMessage || buttons.length > 0) {
+          chatMessages.addMessage('assistant', cleanedMessage || fallbackMessage, {
+            buttons: buttons.length > 0 ? buttons : undefined,
+          });
+        }
       }
     } catch (error) {
       console.error('[ConversationalOnboarding] Error:', error);
@@ -1124,13 +1123,14 @@ export const useConversationalOnboarding = ({
       outlineState.outlineFlow?.slide_count
     );
     const canGenerate = hasOutline && !needsBrandConfirmation && !needsFileImageChoice;
+    const outlineBlocking = !hasOutline && isOutlinePrefetching;
     const isBlocking = Boolean(
       isProcessing ||
-      isOutlinePrefetching ||
+      outlineBlocking ||
       themeState.isThemeLoading ||
       agentStatus.state.isAgentTyping
     );
-    const blockingLabel = isOutlinePrefetching
+    const blockingLabel = outlineBlocking
       ? 'Generating your outline...'
       : themeState.isThemeLoading
         ? (themeState.themeBlock?.loadingMessage || 'Generating theme...')

@@ -77,15 +77,43 @@ interface ClarificationDraftCardProps {
 }
 
 const formatKeyLabel = (value: string) => {
-  const cleaned = value.replace(/[_-]+/g, ' ').trim();
+  const cleaned = value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim();
   if (!cleaned) return '';
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 };
 
+const isKeyLikeLabel = (value: string) => (
+  /[a-z][A-Z]/.test(value) || /^[a-z0-9_-]+$/i.test(value)
+);
+
+const normalizeLabel = (value?: string) => {
+  const trimmed = value?.trim() || '';
+  if (!trimmed) return '';
+  return isKeyLikeLabel(trimmed) ? formatKeyLabel(trimmed) : trimmed;
+};
+
+const normalizeResponseLabel = (value: string) => value.replace(/[?]+$/, '').trim();
+
+const normalizeKey = (value?: string) => (value || '').replace(/[_-]+/g, '').toLowerCase();
+
+const KEY_LABEL_OVERRIDES: Record<string, string> = {
+  slidemode: 'How will this be presented (live talk with minimal text vs detailed document or interactive web)',
+};
+
 const buildQuestionsFromFields = (fields: ClarificationField[]): ClarificationQuestion[] => (
   fields.map((field, index) => {
-    const label = field.label?.trim() || formatKeyLabel(field.key) || `Detail ${index + 1}`;
-    const responseLabel = field.key?.trim() || label;
+    const rawLabel = field.label?.trim() || '';
+    const overrideLabel = KEY_LABEL_OVERRIDES[normalizeKey(field.key)];
+    const fallbackLabel = formatKeyLabel(field.key);
+    const isFallbackLabel = !rawLabel ||
+      isKeyLikeLabel(rawLabel) ||
+      (fallbackLabel && rawLabel.toLowerCase() === fallbackLabel.toLowerCase());
+    const normalizedLabel = (overrideLabel && isFallbackLabel) ? overrideLabel : normalizeLabel(rawLabel);
+    const label = normalizedLabel || fallbackLabel || `Detail ${index + 1}`;
+    const responseLabel = normalizeResponseLabel(normalizedLabel || fallbackLabel || label);
     let defaultValue = field.value !== undefined ? String(field.value) : '';
     if (field.type === 'boolean' && typeof field.value === 'boolean') {
       defaultValue = field.value ? 'Yes' : 'No';

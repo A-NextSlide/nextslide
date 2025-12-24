@@ -136,6 +136,7 @@ from api.requests.api_auth import router as auth_router
 from api.requests.api_auth import get_auth_header
 from api.requests.api_deck_sharing import router as deck_sharing_router
 from api.requests.api_public_deck import router as public_deck_router
+from api.requests.api_og_image import router as og_image_router, share_router as og_share_router
 from api.requests.api_teams import router as teams_router
 from api.requests.api_deck_access import router as deck_access_router
 from api.requests.api_comments import router as comments_router
@@ -269,6 +270,8 @@ app.include_router(image_generation_router)
 app.include_router(font_router)
 app.include_router(deck_sharing_router)
 app.include_router(public_deck_router)
+app.include_router(og_image_router)
+app.include_router(og_share_router)  # Share routes at root level (/p/, /e/)
 app.include_router(teams_router)
 app.include_router(deck_access_router)
 app.include_router(comments_router)

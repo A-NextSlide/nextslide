@@ -1057,6 +1057,68 @@ async def get_real_analytics(
         raise HTTPException(status_code=500, detail="Failed to get analytics")
 
 
+class UpdateShareMetadataRequest(BaseModel):
+    """Request to update share link metadata (e.g., OG image URL)."""
+    metadata: Dict[str, Any] = Field(..., description="Metadata fields to update/merge")
+
+
+@router.patch("/shares/{share_id}/metadata")
+async def update_share_metadata(
+    share_id: str,
+    request: UpdateShareMetadataRequest,
+    token: Optional[str] = Depends(get_auth_header)
+):
+    """
+    Update metadata for a share link.
+    This merges the provided metadata with existing metadata.
+    Used for storing OG image URLs, custom settings, etc.
+    """
+    try:
+        # Get authenticated user
+        auth_service = get_auth_service()
+        user = auth_service.get_user_with_token(token) if token else None
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        user_id = user["id"]
+
+        from utils.supabase import get_supabase_client
+        supabase = get_supabase_client()
+
+        # Get existing share link and verify ownership
+        share_result = supabase.table('deck_shares').select(
+            'id, created_by, metadata'
+        ).eq('id', share_id).execute()
+
+        if not share_result.data:
+            raise HTTPException(status_code=404, detail="Share link not found")
+
+        share_data = share_result.data[0]
+        if share_data['created_by'] != user_id:
+            raise HTTPException(status_code=403, detail="You don't have permission to update this share link")
+
+        # Merge new metadata with existing
+        existing_metadata = share_data.get('metadata') or {}
+        merged_metadata = {**existing_metadata, **request.metadata}
+
+        # Update the share link
+        result = supabase.table('deck_shares').update({
+            'metadata': merged_metadata
+        }).eq('id', share_id).execute()
+
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to update metadata")
+
+        return {"message": "Metadata updated successfully", "metadata": merged_metadata}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating share metadata: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update metadata")
+
+
 @router.get("/shares/{share_id}/viewers")
 async def get_share_viewers(
     share_id: str,

@@ -60,12 +60,12 @@ const MessageList: React.FC<MessageListProps> = ({
   onClarificationConfirm,
   onClarificationEdit,
 }) => {
-  const isSlideModeBlocked = isThemeLoading || isOutlinePrefetching;
+  const hasOutline = Boolean(outlineBlock?.slides?.length);
+  const outlineBlocking = !hasOutline && isOutlinePrefetching;
+  const isSlideModeBlocked = isThemeLoading || outlineBlocking;
   const blockingLabel = isThemeLoading
     ? (themeBlock?.loadingMessage || 'Generating theme...')
-    : (isOutlinePrefetching ? 'Generating your outline...' : undefined);
-  const hasOutline = Boolean(outlineBlock?.slides?.length);
-
+    : (outlineBlocking ? 'Generating your outline...' : undefined);
   return (
     <>
       {messages.map((message, index) => {

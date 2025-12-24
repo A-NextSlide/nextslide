@@ -30,6 +30,31 @@ export interface OutlineAgentMessage {
 
 export type { OutlineData };
 
+const formatFieldLabel = (value?: string) => {
+  if (!value) return '';
+  const cleaned = value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+};
+
+const normalizeFieldLabel = (value?: string) => {
+  const trimmed = value?.trim() || '';
+  if (!trimmed) return '';
+  const isKeyLike = /[a-z][A-Z]/.test(trimmed) || /^[a-z0-9_-]+$/i.test(trimmed);
+  return isKeyLike ? formatFieldLabel(trimmed) : trimmed;
+};
+
+const stripTrailingQuestion = (value: string) => value.replace(/[?]+$/, '').trim();
+
+const normalizeFieldKey = (value?: string) => (value || '').replace(/[_-]+/g, '').toLowerCase();
+
+const FIELD_LABEL_OVERRIDES: Record<string, string> = {
+  slidemode: 'How will this be presented (live talk with minimal text vs detailed document or interactive web)',
+};
+
 export function useOutlineAgent() {
   const [messages, setMessages] = useState<OutlineAgentMessage[]>([
     {
@@ -191,7 +216,17 @@ export function useOutlineAgent() {
               const clarificationMessage = event.data.message || event.data.clarification?.message || 'Quick check before I build the deck.';
               const clarificationFields = event.data.clarification?.fields || [];
               const fieldLines = clarificationFields.map((field, index) => {
-                const label = field.label || field.key || `Detail ${index + 1}`;
+                const rawLabel = field.label?.trim() || '';
+                const fallbackLabel = formatFieldLabel(field.key);
+                const overrideLabel = FIELD_LABEL_OVERRIDES[normalizeFieldKey(field.key)];
+                const isFallbackLabel = !rawLabel ||
+                  /[a-z][A-Z]/.test(rawLabel) ||
+                  /^[a-z0-9_-]+$/i.test(rawLabel) ||
+                  (fallbackLabel && rawLabel.toLowerCase() === fallbackLabel.toLowerCase());
+                const normalizedLabel = (overrideLabel && isFallbackLabel)
+                  ? overrideLabel
+                  : normalizeFieldLabel(rawLabel);
+                const label = stripTrailingQuestion(normalizedLabel || fallbackLabel || `Detail ${index + 1}`);
                 const value = field.value !== undefined ? String(field.value) : '';
                 const suffix = value ? ` (suggested: ${value})` : '';
                 return `${index + 1}. ${label}${suffix}`;
@@ -292,7 +327,13 @@ export function useOutlineAgent() {
             });
           } else if (event.type === 'done') {
             // Finalize message - ensure we use displayText (with JSON removed)
+            const trimmedDisplay = displayText.trim();
             setMessages((prev) => {
+              if (!hasClarification && !trimmedDisplay) {
+                const newMessages = prev.filter((m) => m.id !== aiMsgId);
+                messagesRef.current = newMessages;
+                return newMessages;
+              }
               const newMessages = prev.map((m) =>
                 m.id === aiMsgId
                   ? {

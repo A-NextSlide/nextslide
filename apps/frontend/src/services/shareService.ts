@@ -450,6 +450,38 @@ class ShareService {
     return `${baseUrl}${path}`;
   }
 
+  async updateShareMetadata(
+    shareId: string,
+    metadata: Record<string, any>
+  ): Promise<ApiResponse<void>> {
+    try {
+      const response = await fetch(
+        `${API_ENDPOINTS.BASE_URL}/decks/shares/${shareId}/metadata`,
+        {
+          method: 'PATCH',
+          headers: this.getAuthHeaders(),
+          body: JSON.stringify({ metadata }),
+        }
+      );
+
+      if (!response.ok) {
+        const data = await this.safeJsonParse<any>(response);
+        return {
+          success: false,
+          error: data?.error || 'Failed to update share metadata',
+        };
+      }
+
+      return { success: true, data: undefined };
+    } catch (error) {
+      console.error('[ShareService] Error updating share metadata:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Network error',
+      };
+    }
+  }
+
   async checkEmailRequired(shortCode: string): Promise<ApiResponse<{ require_email: boolean; share_type: string; deck_name: string }>> {
     try {
       const response = await fetch(`${API_ENDPOINTS.BASE_URL}/public/deck/${shortCode}/check-email-required`);

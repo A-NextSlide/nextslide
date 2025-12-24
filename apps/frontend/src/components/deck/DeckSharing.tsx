@@ -62,6 +62,7 @@ import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { shareService, ShareLink, ApiResponse, CollaboratorResponse, ShareAnalytics, ShareViewer } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
+import { generateShareOGImage } from '@/utils/ogImageCapture';
 import { formatDistanceToNow } from 'date-fns';
 import { useDeckStore } from '@/stores/deckStore';
 import { Switch } from '../ui/switch';
@@ -255,15 +256,21 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
           title: "Share link created",
           description: "Your share link has been created successfully",
         });
-        
+
         const fullUrl = mockShareService.getShareUrl(response.data.short_code, shareType);
         await navigator.clipboard.writeText(fullUrl);
-        
+
         toast({
           title: "Link copied",
           description: "Share link has been copied to clipboard",
         });
-        
+
+        // Capture OG thumbnail for the first slide (async, non-blocking)
+        captureAndUploadOGThumbnail(
+          response.data.id,
+          response.data.short_code
+        );
+
         // Reset form
         setPassword('');
         setRequirePassword(false);
@@ -286,6 +293,49 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  /**
+   * Captures the first slide as an OG thumbnail and uploads it.
+   * Runs in background, non-blocking.
+   */
+  const captureAndUploadOGThumbnail = async (shareId: string, shortCode: string) => {
+    try {
+      // Get first slide from deck store
+      const deckData = useDeckStore.getState().deckData;
+      const slides = deckData?.slides || [];
+
+      if (slides.length === 0) {
+        console.log('[DeckSharing] No slides to capture for OG image');
+        return;
+      }
+
+      const firstSlideId = slides[0].id;
+
+      // Find the slide element in the DOM
+      const slideElement = document.querySelector(
+        `[data-slide-id="${firstSlideId}"]`
+      ) as HTMLElement;
+
+      if (!slideElement) {
+        console.log('[DeckSharing] First slide element not found in DOM');
+        return;
+      }
+
+      // Generate and upload the OG image
+      const ogImageUrl = await generateShareOGImage(slideElement, shortCode);
+
+      if (ogImageUrl) {
+        // Update share metadata with the OG image URL
+        await shareService.updateShareMetadata(shareId, {
+          og_image_url: ogImageUrl,
+        });
+        console.log('[DeckSharing] OG image saved:', ogImageUrl);
+      }
+    } catch (error) {
+      // Non-blocking - just log the error
+      console.error('[DeckSharing] Failed to capture OG thumbnail:', error);
     }
   };
 
