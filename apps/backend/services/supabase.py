@@ -170,8 +170,26 @@ class SupabaseClientManager:
         if self._client is None or self._client_created_at is None:
             return True
 
+        if self._is_client_closed():
+            return True
+
         age = (datetime.now() - self._client_created_at).total_seconds()
         return age > CONNECTION_MAX_AGE
+
+    def _is_client_closed(self) -> bool:
+        """Check if the underlying HTTP client is closed."""
+        if self._client is None:
+            return False
+
+        try:
+            postgrest = getattr(self._client, "postgrest", None)
+            session = getattr(postgrest, "session", None)
+            if session is not None and getattr(session, "is_closed", False):
+                return True
+        except Exception:
+            return False
+
+        return False
 
     def get_client(self) -> Client:
         """
@@ -349,6 +367,7 @@ def with_supabase_retry(
                 except Exception as e:
                     last_error = e
                     error_msg = str(e)
+                    error_msg_lower = error_msg.lower()
                     logger.warning(
                         f"[Supabase] {description} failed on attempt {attempt}/{max_attempts}: {error_msg}"
                     )
@@ -359,10 +378,15 @@ def with_supabase_retry(
                         "ConnectionResetError", "StreamReset",
                         "UNEXPECTED_EOF", "EOF occurred",
                         "RemoteProtocolError", "ReadError",
-                        "The read operation timed out"
+                        "The read operation timed out",
+                        "Server disconnected",
+                        "Cannot send a request, as the client has been closed",
+                        "ClientConnectionError",
+                        "Connection closed",
+                        "Resource temporarily unavailable",
                     ]
 
-                    is_transient = any(err in error_msg for err in transient_errors)
+                    is_transient = any(err.lower() in error_msg_lower for err in transient_errors)
 
                     if is_transient:
                         _supabase_circuit_breaker.record_failure()
