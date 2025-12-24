@@ -65,6 +65,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== BASE LAYOUT FIX ===== */
+/* Prevent layout shift on page navigation by ensuring consistent width */
+html {
+  overflow-y: scroll; /* Always show scrollbar to prevent layout shift */
+}
+
+html, body, #root {
+  width: 100%;
+  min-width: 100%;
+}
+
 /* ===== MOBILE TOUCH OPTIMIZATION ===== */
 /* Prevent 300ms click delay on touch devices */
 button,
