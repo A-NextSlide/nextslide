@@ -150,31 +150,48 @@ async def generate_deck_background(
 
     try:
         # Build the outline from the topic
-        from services.outline.generator import generate_outline
+        from services.outline import OutlineGenerator, OutlineOptions
+        from models.registry import get_global_registry
 
         # Combine instructions: API key context + request instructions
-        combined_instructions = ""
+        combined_instructions = topic
         if api_key_record.context_instructions:
-            combined_instructions += api_key_record.context_instructions + "\n\n"
+            combined_instructions += "\n\nContext: " + api_key_record.context_instructions
         if additional_instructions:
-            combined_instructions += additional_instructions
+            combined_instructions += "\n\nAdditional instructions: " + additional_instructions
 
         # Generate outline
         logger.info(f"Generating outline for deck {deck_uuid}")
-        outline_result = await generate_outline(
-            topic=topic,
-            num_slides=num_slides,
-            style=style,
-            additional_context=combined_instructions,
-            context_images=api_key_record.context_images or []
+        registry = get_global_registry()
+        generator = OutlineGenerator(registry)
+
+        options = OutlineOptions(
+            prompt=combined_instructions,
+            slide_count=num_slides,
+            style_context=style,
+            async_images=False  # Auto-apply images for API
         )
 
-        if not outline_result:
+        outline_result = await generator.generate(options)
+
+        if not outline_result or not outline_result.slides:
             raise Exception("Failed to generate outline")
 
-        # Convert to DeckOutline model
-        from models.requests import DeckOutline
-        deck_outline = DeckOutline(**outline_result)
+        # Convert OutlineResult to DeckOutline model
+        from models.requests import DeckOutline, SlideOutline
+        import uuid as uuid_module
+        deck_outline = DeckOutline(
+            id=deck_uuid,
+            title=outline_result.title or topic[:100],
+            slides=[
+                SlideOutline(
+                    id=str(uuid_module.uuid4()),
+                    title=slide.title,
+                    content=slide.content or ""
+                )
+                for slide in outline_result.slides
+            ]
+        )
 
         # Get registry
         registry = get_global_registry()
@@ -210,13 +227,27 @@ async def generate_deck_background(
             elif utype in ('deck_complete', 'composition_complete', 'complete'):
                 break
 
-        # Update deck status
+        # Update deck status and restore API metadata
         client = get_supabase_client()
+
+        # Get current deck to preserve existing data
+        final_deck = get_deck(deck_uuid)
+        existing_data = final_deck.get("data", {}) if final_deck else {}
+
+        # Merge API metadata into existing data
+        updated_data = {
+            **existing_data,
+            "source": "api",
+            "api_key_id": api_key_record.id,
+            "api_key_name": api_key_record.name
+        }
+
         client.table("decks").update({
-            "status": {"state": "completed"}
+            "status": {"state": "completed"},
+            "data": updated_data
         }).eq("uuid", deck_uuid).execute()
 
-        # Get final slide count
+        # Refresh deck data
         final_deck = get_deck(deck_uuid)
         final_slides_count = len(final_deck.get("slides", [])) if final_deck else slides_generated
 
@@ -307,7 +338,25 @@ async def create_deck(
     except Exception as e:
         logger.warning(f"Credit check failed, proceeding anyway: {e}")
 
-    # Create share links immediately
+    # Create initial deck record FIRST (needed for share link foreign key)
+    try:
+        initial_deck = {
+            "name": request.topic[:100],
+            "slides": [],
+            "size": {"width": 1920, "height": 1080},
+            "status": {"state": "generating"},
+            "data": {
+                "source": "api",
+                "api_key_id": api_key_record.id,
+                "api_key_name": api_key_record.name
+            }
+        }
+        upload_deck(initial_deck, deck_uuid, user_id)
+    except Exception as e:
+        logger.error(f"Failed to create initial deck: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create deck")
+
+    # Create share links after deck exists
     sharing_service = get_sharing_service()
 
     try:
@@ -336,24 +385,6 @@ async def create_deck(
         # Fallback to direct URLs
         view_url = f"https://nextslide.ai/deck/{deck_uuid}"
         edit_url = f"https://nextslide.ai/deck/{deck_uuid}" if api_key_record.include_edit_link else None
-
-    # Create initial deck record
-    try:
-        initial_deck = {
-            "name": request.topic[:100],
-            "slides": [],
-            "size": {"width": 1920, "height": 1080},
-            "status": {"state": "generating"},
-            "data": {
-                "source": "api",
-                "api_key_id": api_key_record.id,
-                "api_key_name": api_key_record.name
-            }
-        }
-        upload_deck(initial_deck, deck_uuid, user_id)
-    except Exception as e:
-        logger.error(f"Failed to create initial deck: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create deck")
 
     # Start generation in background
     background_tasks.add_task(
@@ -416,11 +447,16 @@ async def get_deck_status(
             raise HTTPException(status_code=403, detail="Access denied")
 
         status_obj = deck.get("status", {})
-        status_state = status_obj.get("state", "unknown") if isinstance(status_obj, dict) else "unknown"
+        if isinstance(status_obj, dict):
+            status_state = status_obj.get("state", "unknown")
+        elif isinstance(status_obj, str):
+            status_state = status_obj
+        else:
+            status_state = "unknown"
 
         # Get share URLs
         sharing_service = get_sharing_service()
-        shares = sharing_service.get_share_links(deck_id)
+        shares = sharing_service.get_user_share_links(user_id, deck_id)
 
         view_url = None
         edit_url = None
@@ -508,7 +544,12 @@ async def list_decks(
             data = deck.get("data", {})
             if isinstance(data, dict) and data.get("source") == "api":
                 status_obj = deck.get("status", {})
-                status_state = status_obj.get("state", "unknown") if isinstance(status_obj, dict) else "unknown"
+                if isinstance(status_obj, dict):
+                    status_state = status_obj.get("state", "unknown")
+                elif isinstance(status_obj, str):
+                    status_state = status_obj
+                else:
+                    status_state = "unknown"
 
                 api_decks.append(DeckStatusResponse(
                     deck_id=deck["uuid"],
