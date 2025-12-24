@@ -199,6 +199,30 @@ class DeckSharingService:
         except Exception as e:
             logger.error(f"Error getting user share links: {str(e)}")
             return []
+
+    def get_share_links(self, deck_uuid: str, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Backward-compatible alias for fetching share links by deck.
+
+        Args:
+            deck_uuid: Deck UUID to filter by
+            user_id: Optional creator user ID (filters to a user's links)
+        """
+        if user_id:
+            return self.get_user_share_links(user_id, deck_uuid)
+
+        try:
+            result = (
+                self.supabase.table('active_deck_shares')
+                .select('*')
+                .eq('deck_uuid', deck_uuid)
+                .order('created_at', desc=True)
+                .execute()
+            )
+            return result.data if result.data else []
+        except Exception as e:
+            logger.error(f"Error getting share links: {str(e)}")
+            return []
     
     def revoke_share_link(self, share_id: str, user_id: str) -> bool:
         """

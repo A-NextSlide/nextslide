@@ -51,6 +51,7 @@ def execute_tool(
         custom_component_str_replace,
         component_prop_update,
         view_component,
+        view_slide,
         apply_theme_to_custom_components,
         edit_all_slides,
     )
@@ -84,6 +85,7 @@ def execute_tool(
         "custom_component_str_replace": custom_component_str_replace,
         "component_prop_update": component_prop_update,
         "view_component": view_component,
+        "view_slide": view_slide,
         "search_images": search_images,
         "replace_image": replace_image_from_search,
         "edit_image_with_ai": edit_image_with_ai,

@@ -22,6 +22,7 @@ from agents.editing.tools.slide_tool_helpers import (
 )
 from agents.editing.tools.slide_tool_models import _ReplacePlan
 from agents.editing.tools.struct_utils import get_attr as _get_attr
+from agents.editing.tools.fuzzy_matcher import apply_replacement
 
 logger = logging.getLogger(__name__)
 
@@ -185,17 +186,18 @@ Return a JSON object with:
     for op in (plan.ops or [])[:3]:
         if not op.old_string:
             continue
-        if op.old_string not in new_html:
+        success, updated_html, note = apply_replacement(new_html, op.old_string, op.new_string or "")
+        if not success:
             _dbg(
                 "B",
                 "slide_tools.py:_targeted_custom_component_edit",
                 "old_string_missing",
-                {"missing_preview": op.old_string[:120], "component_id": comp_id},
+                {"missing_preview": op.old_string[:120], "component_id": comp_id, "note": note},
                 runId="pre-fix",
             )
             failed_ops.append(op)
             continue  # Try remaining ops instead of breaking
-        new_html = new_html.replace(op.old_string, op.new_string or "", 1)
+        new_html = updated_html
         applied += 1
 
     if applied == 0 and failed_ops:
@@ -234,8 +236,9 @@ Return a JSON object with EXACT old_string matches:
         for op in (retry_plan.ops or [])[:3]:
             if not op.old_string:
                 continue
-            if op.old_string in new_html:
-                new_html = new_html.replace(op.old_string, op.new_string or "", 1)
+            success, updated_html, _note = apply_replacement(new_html, op.old_string, op.new_string or "")
+            if success:
+                new_html = updated_html
                 applied += 1
 
         _dbg(
@@ -554,12 +557,16 @@ def custom_component_str_replace(
     if old_string not in html:
         # Provide more context about what went wrong
         html_preview = html[:500] if html else "(empty)"
-        raise ValueError(
-            "old_string not found in CustomComponent HTML. "
-            f"Searched for: '{old_string[:100]}...' in HTML starting with: '{html_preview}...'"
-        )
-
-    new_html = html.replace(old_string, new_string, 1)
+        success, _updated_html, note = apply_replacement(html, old_string, new_string)
+        if not success:
+            raise ValueError(
+                "old_string not found in CustomComponent HTML. "
+                f"Searched for: '{old_string[:100]}...' in HTML starting with: '{html_preview}...'"
+                + (f" Suggestion: {note}" if note else "")
+            )
+        new_html = _updated_html
+    else:
+        new_html = html.replace(old_string, new_string, 1)
     deck_diff = DeckDiff(DeckDiffBase())
     deck_diff.update_component(
         slide_id,
@@ -682,6 +689,86 @@ def view_component(
 
     # Return empty DeckDiff since this is a read-only operation,
     # but attach the observation so orchestrator can feed it back to the agent.
+    dd = DeckDiff(DeckDiffBase())
+    try:
+        setattr(dd, "observation", out)
+    except Exception:
+        pass
+    return dd
+
+
+def view_slide(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry: ComponentRegistry = None,
+    attachments: List[Dict] = None,
+) -> DeckDiff:
+    """
+    Return full slide details (including CustomComponent HTML previews).
+    Read-only tool - returns an empty DeckDiff with observation attached.
+
+    Args: {"slide_id": str}
+    """
+    slide_id = args.get("slide_id") if isinstance(args, dict) else None
+    if not slide_id:
+        slide_id = _get_attr(current_slide, "id")
+
+    slide = None
+    slides = (deck_data or {}).get("slides") if isinstance(deck_data, dict) else None
+    if isinstance(slides, list):
+        slide = next((s for s in slides if _get_attr(s, "id") == slide_id), None)
+
+    if not slide and _get_attr(current_slide, "id") == slide_id:
+        slide = current_slide
+
+    if not slide:
+        raise ValueError(f"Slide {slide_id} not found")
+
+    slide_title = _get_attr(slide, "title", "")
+    components = _get_attr(slide, "components", []) or []
+    out_components: List[Dict[str, Any]] = []
+
+    from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
+
+    for comp in components:
+        ctype = _get_attr(comp, "type", "Unknown")
+        props = _get_attr(comp, "props", {}) or {}
+        comp_out: Dict[str, Any] = {
+            "id": _get_attr(comp, "id"),
+            "type": ctype,
+        }
+        if ctype == "CustomComponent":
+            html = props.get("render", "") if isinstance(props, dict) else getattr(props, "render", "")
+            html = strip_frontend_editing_scripts(html)
+            comp_out["html"] = html or ""
+            comp_out["html_preview"] = (html or "")[:2000]
+            if isinstance(props, dict):
+                sanitized_props = dict(props)
+                if "render" in sanitized_props:
+                    sanitized_props["render"] = "[omitted]"
+                comp_out["props"] = sanitized_props
+            else:
+                comp_out["props"] = props
+        else:
+            comp_out["props"] = props
+
+        out_components.append(comp_out)
+
+    slide_props: Dict[str, Any] = {}
+    if isinstance(slide, dict):
+        slide_props = {k: v for k, v in slide.items() if k != "components"}
+
+    out = {
+        "id": slide_id,
+        "title": slide_title,
+        "slide_props": slide_props,
+        "components": out_components,
+    }
+
+    logger.info(f"[view_slide] Viewed slide {slide_id}: {slide_title} ({len(out_components)} components)")
+    _dbg("B", "slide_tools.py:view_slide", "slide_viewed", {"slide_id": slide_id, "components": len(out_components)}, runId="pre-fix")
+
     dd = DeckDiff(DeckDiffBase())
     try:
         setattr(dd, "observation", out)

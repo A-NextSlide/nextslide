@@ -13,6 +13,7 @@ from agents.editing.tools.slide_tool_custom_components import (
     custom_component_rewrite,
     custom_component_str_replace,
     view_component,
+    view_slide,
 )
 from agents.editing.tools.slide_tool_generation import (
     create_slide,
@@ -33,6 +34,7 @@ __all__ = [
     "custom_component_str_replace",
     "component_prop_update",
     "view_component",
+    "view_slide",
     "apply_theme_to_custom_components",
     "edit_all_slides",
 ]

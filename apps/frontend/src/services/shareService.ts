@@ -445,8 +445,9 @@ class ShareService {
   }
 
   getShareUrl(shortCode: string, shareType: 'view' | 'edit'): string {
+    // Use backend URL so bots get OG meta tags, real users get redirected to frontend
     const path = shareType === 'view' ? `/p/${shortCode}` : `/e/${shortCode}`;
-    return `https://nextslide.ai${path}`;
+    return `https://nextslide-backend.onrender.com${path}`;
   }
 
   async updateShareMetadata(
