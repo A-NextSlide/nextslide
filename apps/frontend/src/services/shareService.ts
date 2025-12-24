@@ -445,11 +445,11 @@ class ShareService {
   }
 
   getShareUrl(shortCode: string, shareType: 'view' | 'edit'): string {
-    // Use API domain for share URLs so crawlers get proper OG meta tags
-    // Strip /api suffix from BASE_URL to get the root API domain
-    const apiBase = API_ENDPOINTS.BASE_URL.replace(/\/api\/?$/, '');
+    // Use frontend URL for share links
+    // Cloudflare Worker will intercept bot requests and proxy to API for OG tags
+    const baseUrl = 'https://app.nextslide.ai';
     const path = shareType === 'view' ? `/p/${shortCode}` : `/e/${shortCode}`;
-    return `${apiBase}${path}`;
+    return `${baseUrl}${path}`;
   }
 
   async updateShareMetadata(
