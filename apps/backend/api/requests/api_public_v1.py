@@ -266,9 +266,39 @@ async def generate_deck_background(
                 text=text_color,
                 accent1=accent_color
             )
-            # Logo URL - must be an actual URL, not base64
-            if logo_url and not logo_url.startswith("data:"):
-                style_prefs_data["logoUrl"] = logo_url
+
+            # Handle logo - convert base64 to storage URL if needed
+            if logo_url:
+                if logo_url.startswith("data:"):
+                    # Upload base64 logo to storage and get URL
+                    try:
+                        import base64
+                        import uuid as uuid_module
+                        from utils.supabase import get_supabase_client
+
+                        # Parse data URL: data:image/png;base64,xxxxx
+                        header, b64_data = logo_url.split(",", 1)
+                        content_type = header.split(":")[1].split(";")[0] if ":" in header else "image/png"
+                        ext = content_type.split("/")[1] if "/" in content_type else "png"
+
+                        # Decode and upload
+                        logo_bytes = base64.b64decode(b64_data)
+                        logo_path = f"api-logos/{user_id}/{api_key_record.id}/{uuid_module.uuid4()}.{ext}"
+
+                        client = get_supabase_client()
+                        client.storage.from_("api-context-images").upload(
+                            path=logo_path,
+                            file=logo_bytes,
+                            file_options={"content-type": content_type}
+                        )
+                        logo_url = client.storage.from_("api-context-images").get_public_url(logo_path)
+                        logger.info(f"Uploaded base64 logo to storage: {logo_path}")
+                    except Exception as logo_err:
+                        logger.warning(f"Failed to upload base64 logo: {logo_err}")
+                        logo_url = None
+
+                if logo_url and not logo_url.startswith("data:"):
+                    style_prefs_data["logoUrl"] = logo_url
 
             # Also build theme dict for ThemeResolver (notes.theme path)
             theme_dict = {
@@ -300,7 +330,7 @@ async def generate_deck_background(
                 "reference_images": style_prefs_data.get("referenceImages", [])
             }
             deck_outline.notes = {"theme": theme_dict}
-            logger.info(f"Injected brand theme with logo: {bool(logo_url)}")
+            logger.info(f"Injected brand theme with logo: {logo_url[:50] if logo_url else 'None'}...")
 
         # Set stylePreferences on deck_outline - this flows through to slide generation
         deck_outline.stylePreferences = StylePreferencesItem(**style_prefs_data)
