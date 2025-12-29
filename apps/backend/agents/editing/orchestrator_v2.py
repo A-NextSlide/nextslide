@@ -272,6 +272,10 @@ RULES:
    - "Tell me more about..." → chat only, no tools
    - "Thanks!" or "Perfect!" → chat only, no tools
    - "I'm not sure what to do with this slide" → chat only, offer suggestions
+7. ⚠️ CRITICAL: Always edit the CURRENT SLIDE (shown in context) unless user explicitly names a different slide
+   - The CURRENT SLIDE ID is provided in the context - USE IT for all tool calls
+   - Never assume or pick a different slide - the user is viewing and expects changes on the current one
+   - If user says "this slide" or just describes an edit, apply it to the CURRENT SLIDE
 
 DATA ACCURACY:
 - If user asks for "latest", "current", "most recent", or "as of" data, you MUST call web_search first
@@ -756,6 +760,8 @@ COMPONENTS:
 TOOL_DESCRIPTIONS = """
 AVAILABLE TOOLS:
 
+⚠️ IMPORTANT: Always use the CURRENT SLIDE ID from context for slide_id parameter unless user explicitly names a different slide!
+
 SCOPE:
 - If [CONTEXT] indicates scope=deck or apply_to_all_slides=true, apply the change across all slides
 - Use view_slide to inspect other slides, then edit each relevant slide
@@ -764,6 +770,7 @@ SCOPE:
    - Make a SINGLE targeted edit to a CustomComponent
    - ✅ USE FOR: fix logo, change one color, update one text, fix one image, adjust one element
    - Pass a clear instruction describing ONLY what to change
+   - ⚠️ slide_id MUST match the CURRENT SLIDE from context
    - Args: { "slide_id": str, "component_id": str, "instruction": str }
    - Example: {"instruction": "Replace the logo with the Geisslers logo"}
    - Example: {"instruction": "Change the title color to red"}
@@ -773,6 +780,7 @@ SCOPE:
    - Completely rewrites the slide content (AI regenerates everything)
    - ⚠️ ONLY use when user explicitly wants: redesign, rebrand, overhaul, "from scratch"
    - ⚠️ DO NOT use for single fixes like "fix the logo" or "change one color"
+   - ⚠️ slide_id MUST match the CURRENT SLIDE from context
    - Args: { "slide_id": str, "instruction": str }
    - Optional: use_attachments: true when user explicitly asks to use uploaded images
    - Example: {"instruction": "Redesign this slide with Nike branding throughout"}
