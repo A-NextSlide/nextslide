@@ -44,6 +44,95 @@ from agents.generation.custom_component_html import CustomComponentHtmlProcessor
 
 logger = get_logger(__name__)
 
+
+# =============================================================================
+# IMAGE ROLE INFERENCE
+# =============================================================================
+
+def _infer_image_role(prop_name: str, query: str = "") -> str:
+    """
+    Infer semantic role of an image from its prop name and query.
+
+    Roles:
+    - logo: Brand/company logo
+    - hero: Main hero/banner image
+    - background: Background/decorative image
+    - icon: Small icon/symbol
+    - profile: Person/avatar image
+    - product: Product photo
+    - content: General content image (default)
+    """
+    combined = f"{prop_name} {query}".lower()
+
+    # Order matters - check most specific first
+    if any(kw in combined for kw in ['logo', 'brand', 'company_logo']):
+        return 'logo'
+    if any(kw in combined for kw in ['hero', 'banner', 'header_image', 'main_image']):
+        return 'hero'
+    if any(kw in combined for kw in ['background', 'bg_', '_bg', 'backdrop']):
+        return 'background'
+    if any(kw in combined for kw in ['icon', 'symbol', 'emoji']):
+        return 'icon'
+    if any(kw in combined for kw in ['profile', 'avatar', 'headshot', 'person', 'team_member']):
+        return 'profile'
+    if any(kw in combined for kw in ['product', 'item', 'merchandise']):
+        return 'product'
+    if any(kw in combined for kw in ['thumbnail', 'thumb', 'preview']):
+        return 'thumbnail'
+
+    return 'content'
+
+
+def _build_image_metadata(prefetched_images: Dict[str, str], logo_url: str = None) -> Dict[str, Dict[str, Any]]:
+    """
+    Build structured image metadata from prefetched images.
+
+    Returns:
+        {
+            "propName": {
+                "url": "https://...",
+                "role": "hero|logo|content|...",
+                "label": "human readable description",
+                "query": "original search query"
+            }
+        }
+    """
+    metadata = {}
+
+    if not prefetched_images:
+        prefetched_images = {}
+
+    # Process prefetched images
+    for key, value in prefetched_images.items():
+        if key.endswith('_query'):
+            continue  # Skip query keys, we'll use them below
+
+        query = prefetched_images.get(f"{key}_query", "")
+        role = _infer_image_role(key, query)
+
+        # Create human-readable label from prop name
+        label = key.replace('alt_', '').replace('_', ' ').strip()
+        if query:
+            label = query  # Query is usually more descriptive
+
+        metadata[key] = {
+            "url": value,
+            "role": role,
+            "label": label,
+            "query": query,
+        }
+
+    # Add logo if present
+    if logo_url:
+        metadata["logoUrl"] = {
+            "url": logo_url,
+            "role": "logo",
+            "label": "Company logo",
+            "query": "",
+        }
+
+    return metadata
+
 from agents.config import MAX_API_CONCURRENT_CALLS
 
 _AI_SEMAPHORE = asyncio.Semaphore(MAX_API_CONCURRENT_CALLS)
@@ -212,6 +301,10 @@ class CustomComponentGenerator:
             if logo_url:
                 image_props['logoUrl'] = logo_url
 
+            # Build structured image metadata for intelligent editing
+            image_metadata = _build_image_metadata(prefetched_images, logo_url)
+            logger.info("[CUSTOM_COMPONENT] Image metadata: %d images tagged", len(image_metadata))
+
             hero_font, body_font = _extract_fonts_from_typography(typography)
             logger.info("[CUSTOM_COMPONENT] Using fonts: hero=%s, body=%s", hero_font, body_font)
 
@@ -231,6 +324,7 @@ class CustomComponentGenerator:
                     "heroFont": hero_font,
                     "logoUrl": logo_url,
                     "props": image_props,
+                    "imageMetadata": image_metadata,  # NEW: Structured image info for editing
                 },
                 "position": component_position,
                 "width": width,

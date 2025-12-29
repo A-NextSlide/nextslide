@@ -134,6 +134,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   const canvasHeight = Math.max(1, scaledSlideHeight + chromeHeight);
 
   const [showCommentsPanel, setShowCommentsPanel] = useState(false);
+  const supportsGestureEvents = BROWSER.isSafari || BROWSER.isIOS;
 
   // Use group keyboard shortcuts
   useGroupKeyboardShortcuts();
@@ -151,6 +152,24 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     if (!container) return null;
     const rect = container.getBoundingClientRect();
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }, []);
+
+  const getZoomAnchor = useCallback((clientX: number, clientY: number) => {
+    const container = scrollContainerRef.current;
+    if (!container) return null;
+    const rect = container.getBoundingClientRect();
+    const isInside = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    if (!isInside) {
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }
+    return { x: clientX, y: clientY };
+  }, []);
+
+  const normalizeWheelDelta = useCallback((deltaY: number, deltaMode?: number) => {
+    let normalized = deltaY;
+    if (deltaMode === 1) normalized *= 16;
+    else if (deltaMode === 2) normalized *= window.innerHeight;
+    return normalized;
   }, []);
 
   const adjustScrollForZoom = useCallback((currentZoom: number, nextZoom: number, anchor?: { x: number; y: number } | null) => {
@@ -198,7 +217,6 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 
     const pinchState = { initialDistance: 0, initialZoom: zoomLevelRef.current };
     let gestureInitialZoom = zoomLevelRef.current;
-
     const handleWheel = (e: WheelEvent) => {
       const target = e.target as HTMLElement | null;
       const guardEl = target && typeof target.closest === 'function' ? (target.closest('[data-scroll-guard="true"]') as HTMLElement | null) : null;
@@ -226,15 +244,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
         return;
       }
 
-      const isZoomGesture = e.ctrlKey || e.metaKey;
-      if (!isZoomGesture) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-
-      const zoomFactor = Math.exp(-e.deltaY * 0.002);
-      const nextZoom = Math.round(zoomLevelRef.current * zoomFactor);
-      zoomTo(nextZoom, { x: e.clientX, y: e.clientY });
+      if (e.ctrlKey || e.metaKey) return;
     };
 
     const handleTouchStart = (e: TouchEvent) => {
@@ -266,39 +276,58 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       }
     };
 
-    const handleGestureStart = (e: Event) => {
+    const handleWindowWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
+      e.stopPropagation();
+      const deltaY = normalizeWheelDelta(e.deltaY, e.deltaMode);
+      const zoomFactor = Math.exp(-deltaY * 0.002);
+      const nextZoom = Math.round(zoomLevelRef.current * zoomFactor);
+      zoomTo(nextZoom, getZoomAnchor(e.clientX, e.clientY));
+    };
+
+    const handleWindowGestureStart = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
       gestureInitialZoom = zoomLevelRef.current;
     };
 
-    const handleGestureChange = (e: Event) => {
+    const handleWindowGestureChange = (e: Event) => {
       e.preventDefault();
+      e.stopPropagation();
       const gestureEvent = e as any;
       const scale = gestureEvent.scale || 1;
       const nextZoom = Math.round(gestureInitialZoom * scale);
       zoomTo(nextZoom, getViewportCenter());
     };
 
-    const handleGestureEnd = (e: Event) => {
+    const handleWindowGestureEnd = (e: Event) => {
       e.preventDefault();
+      e.stopPropagation();
     };
 
     scrollContainer.addEventListener('wheel', handleWheel, { passive: false });
     scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
     scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
-    scrollContainer.addEventListener('gesturestart', handleGestureStart as EventListener, { passive: false });
-    scrollContainer.addEventListener('gesturechange', handleGestureChange as EventListener, { passive: false });
-    scrollContainer.addEventListener('gestureend', handleGestureEnd as EventListener, { passive: false });
+    window.addEventListener('wheel', handleWindowWheel, { passive: false, capture: true });
+    if (supportsGestureEvents) {
+      window.addEventListener('gesturestart', handleWindowGestureStart as EventListener, { passive: false, capture: true });
+      window.addEventListener('gesturechange', handleWindowGestureChange as EventListener, { passive: false, capture: true });
+      window.addEventListener('gestureend', handleWindowGestureEnd as EventListener, { passive: false, capture: true });
+    }
 
     return () => {
       scrollContainer.removeEventListener('wheel', handleWheel as EventListener);
       scrollContainer.removeEventListener('touchstart', handleTouchStart as EventListener);
       scrollContainer.removeEventListener('touchmove', handleTouchMove as EventListener);
-      scrollContainer.removeEventListener('gesturestart', handleGestureStart as EventListener);
-      scrollContainer.removeEventListener('gesturechange', handleGestureChange as EventListener);
-      scrollContainer.removeEventListener('gestureend', handleGestureEnd as EventListener);
+      window.removeEventListener('wheel', handleWindowWheel, { capture: true });
+      if (supportsGestureEvents) {
+        window.removeEventListener('gesturestart', handleWindowGestureStart as EventListener, { capture: true });
+        window.removeEventListener('gesturechange', handleWindowGestureChange as EventListener, { capture: true });
+        window.removeEventListener('gestureend', handleWindowGestureEnd as EventListener, { capture: true });
+      }
     };
-  }, [getViewportCenter, zoomTo]);
+  }, [getViewportCenter, getZoomAnchor, normalizeWheelDelta, supportsGestureEvents, zoomTo]);
 
   useEffect(() => {
     const previousZoom = previousZoomRef.current;
@@ -314,13 +343,39 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     previousZoomRef.current = zoomLevel;
   }, [adjustScrollForZoom, getViewportCenter, zoomLevel]);
 
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data as any;
+      if (!data || data.source !== 'ns-slide-zoom') return;
+
+      const anchor = (typeof data.clientX === 'number' && typeof data.clientY === 'number')
+        ? getZoomAnchor(data.clientX, data.clientY)
+        : getViewportCenter();
+
+      if (data.method === 'wheel' && typeof data.deltaY === 'number') {
+        const deltaY = normalizeWheelDelta(data.deltaY, data.deltaMode);
+        const zoomFactor = Math.exp(-deltaY * 0.002);
+        const nextZoom = Math.round(zoomLevelRef.current * zoomFactor);
+        zoomTo(nextZoom, anchor);
+      } else if (data.method === 'gesture' && typeof data.scale === 'number') {
+        const nextZoom = Math.round(zoomLevelRef.current * data.scale);
+        zoomTo(nextZoom, anchor);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [getViewportCenter, getZoomAnchor, normalizeWheelDelta, zoomTo]);
+
   // Add keyboard shortcuts for zooming
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isZoomShortcut = (e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '0');
+
       const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '');
       const isContentEditable = (e.target as HTMLElement)?.hasAttribute('contenteditable');
 
-      if (isInput || isContentEditable || isTextEditing) return;
+      if ((isInput || isContentEditable || isTextEditing) && !isZoomShortcut) return;
 
       if (e.ctrlKey || e.metaKey) {
         if (e.key === '+' || e.key === '=') {

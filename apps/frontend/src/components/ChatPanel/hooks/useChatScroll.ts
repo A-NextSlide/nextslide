@@ -24,7 +24,6 @@ export function useChatScroll({
 
   // Track if user has intentionally scrolled up - persists until they scroll back to bottom
   const userScrolledUpRef = useRef(false);
-  const listenerAttachedRef = useRef(false);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     requestAnimationFrame(() => {
@@ -33,33 +32,28 @@ export function useChatScroll({
     });
   }, []);
 
-  // Attach scroll listener to detect user scrolling up
-  // This runs on every render to ensure listener is attached once container exists
+  // Attach scroll listener once when container is available
   useEffect(() => {
     const container = scrollContainerRef.current;
-    if (!container || listenerAttachedRef.current) return;
+    if (!container) return;
 
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
 
       if (distanceFromBottom <= SCROLL_THRESHOLD) {
-        // User is at bottom, allow auto-scroll
         userScrolledUpRef.current = false;
       } else {
-        // User has scrolled up, disable auto-scroll
         userScrolledUpRef.current = true;
       }
     };
 
     container.addEventListener('scroll', handleScroll, { passive: true });
-    listenerAttachedRef.current = true;
 
     return () => {
       container.removeEventListener('scroll', handleScroll);
-      listenerAttachedRef.current = false;
     };
-  });
+  }, []); // Empty deps - attach once on mount
 
   // Only scroll if user hasn't scrolled up
   const scrollToBottomIfAtBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
@@ -87,46 +81,37 @@ export function useChatScroll({
     }
   }, [showOldMessages]);
 
-  const lastMessage = messages[messages.length - 1];
-  const lastMessageHash = lastMessage
-    ? `${lastMessage.id}-${typeof lastMessage.message === 'string' ? lastMessage.message.length : 0}-${lastMessage.metadata?.isTyping}`
-    : '';
+  // Memoize to avoid recreating on every render
+  const lastMessageType = messages[messages.length - 1]?.metadata?.type || null;
 
-  const streamingMessage = useMemo(() => {
-    return messages.find(msg =>
+  // Check if there's a streaming message - memoized to avoid triggering effects
+  const hasStreamingMessage = useMemo(() => {
+    return messages.some(msg =>
       msg.metadata?.isStreamingUpdate === true ||
       msg.metadata?.isTyping === true ||
       (typeof msg.id === 'string' && msg.id.startsWith('ai-stream-'))
     );
   }, [messages]);
 
-  const streamingMessageHash = streamingMessage
-    ? `${streamingMessage.id}-${typeof streamingMessage.message === 'string' ? streamingMessage.message.length : 0}`
-    : '';
-
+  // Only scroll when message COUNT changes (new message added), not on every update
   useEffect(() => {
-    const isJustUpdatingImages = messages.length === previousMessageCountRef.current &&
-      messages.some(msg => msg.metadata?.type === 'images_collected') &&
+    const messageCount = messages.length;
+    if (messageCount === previousMessageCountRef.current) {
+      return;
+    }
+
+    // Skip scroll for image collection updates
+    const isJustUpdatingImages =
+      lastMessageType === 'images_collected' &&
       lastMessageTypeRef.current === 'images_collected';
 
     if (!isJustUpdatingImages) {
-      scrollToBottomIfAtBottom(streamingMessage ? 'auto' : 'smooth');
+      scrollToBottomIfAtBottom(hasStreamingMessage ? 'auto' : 'smooth');
     }
 
-    previousMessageCountRef.current = messages.length;
-    lastMessageTypeRef.current = lastMessage?.metadata?.type || null;
-  }, [messages.length, lastMessageHash, scrollToBottomIfAtBottom, streamingMessage]);
-
-  useEffect(() => {
-    if (!streamingMessage) return;
-
-    scrollToBottomIfAtBottom('auto');
-    const interval = setInterval(() => {
-      scrollToBottomIfAtBottom('auto');
-    }, 150);
-
-    return () => clearInterval(interval);
-  }, [scrollToBottomIfAtBottom, streamingMessage, streamingMessageHash]);
+    previousMessageCountRef.current = messageCount;
+    lastMessageTypeRef.current = lastMessageType;
+  }, [messages.length, scrollToBottomIfAtBottom, hasStreamingMessage, lastMessageType]);
 
   return {
     messagesEndRef,

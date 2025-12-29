@@ -132,53 +132,64 @@ async def list_comments(
 ):
     user = _require_user(token)
     _assert_can_comment(deck_id, user["id"])  # any commenter/editor can read
-    supabase = _get_supabase()
-    
-    # Join with users table to get author names
-    query = supabase.table("comments").select("""
-        *,
-        author:users!author_id(id, email, full_name, metadata),
-        resolver:users!resolved_by_user_id(id, email, full_name, metadata)
-    """).eq("deck_id", deck_id)
-    
-    if slideId:
-        if _is_valid_uuid(slideId):
-            query = query.eq("slide_id", slideId)
-        else:
-            # Filter by slide_key for non-uuid slide identifiers
-            query = query.eq("slide_key", slideId)
-    if status == "open":
-        query = query.is_("resolved_at", None)
-    elif status == "resolved":
-        query = query.not_.is_("resolved_at", None)
-    
-    res = query.order("created_at", desc=False).execute()
-    comments = res.data or []
-    
-    # Enrich with author names
-    for comment in comments:
-        if comment.get("author"):
-            author_data = comment["author"]
-            # Use full_name from users table, fall back to metadata or email
-            full_name = author_data.get("full_name")
-            if not full_name:
-                metadata = author_data.get("metadata") or {}
-                full_name = metadata.get("full_name") or metadata.get("name")
-            comment["author_name"] = full_name or author_data.get("email", "").split("@")[0]
-            # Clean up nested author object to avoid confusion
-            del comment["author"]
-        
-        if comment.get("resolver"):
-            resolver_data = comment["resolver"]
-            # Use full_name from users table, fall back to metadata or email
-            full_name = resolver_data.get("full_name")
-            if not full_name:
-                metadata = resolver_data.get("metadata") or {}
-                full_name = metadata.get("full_name") or metadata.get("name")
-            comment["resolver_name"] = full_name or resolver_data.get("email", "").split("@")[0]
-            del comment["resolver"]
-    
-    return comments
+
+    try:
+        supabase = _get_supabase()
+
+        # Join with users table to get author names
+        query = supabase.table("comments").select("""
+            *,
+            author:users!author_id(id, email, full_name, metadata),
+            resolver:users!resolved_by_user_id(id, email, full_name, metadata)
+        """).eq("deck_id", deck_id)
+
+        if slideId:
+            if _is_valid_uuid(slideId):
+                query = query.eq("slide_id", slideId)
+            else:
+                # Filter by slide_key for non-uuid slide identifiers
+                query = query.eq("slide_key", slideId)
+        if status == "open":
+            query = query.is_("resolved_at", None)
+        elif status == "resolved":
+            query = query.not_.is_("resolved_at", None)
+
+        res = query.order("created_at", desc=False).execute()
+        comments = res.data or []
+
+        # Enrich with author names
+        for comment in comments:
+            if comment.get("author"):
+                author_data = comment["author"]
+                # Use full_name from users table, fall back to metadata or email
+                full_name = author_data.get("full_name")
+                if not full_name:
+                    metadata = author_data.get("metadata") or {}
+                    full_name = metadata.get("full_name") or metadata.get("name")
+                comment["author_name"] = full_name or author_data.get("email", "").split("@")[0]
+                # Clean up nested author object to avoid confusion
+                del comment["author"]
+
+            if comment.get("resolver"):
+                resolver_data = comment["resolver"]
+                # Use full_name from users table, fall back to metadata or email
+                full_name = resolver_data.get("full_name")
+                if not full_name:
+                    metadata = resolver_data.get("metadata") or {}
+                    full_name = metadata.get("full_name") or metadata.get("name")
+                comment["resolver_name"] = full_name or resolver_data.get("email", "").split("@")[0]
+                del comment["resolver"]
+
+        return comments
+    except Exception as e:
+        # Log the error but return empty list to avoid breaking the UI
+        # SLIDE-BACKEND-1WD: Handle Supabase connection errors gracefully
+        error_str = str(e).lower()
+        if any(err in error_str for err in ["circuit breaker", "client has been closed", "connection", "timeout"]):
+            logger.warning(f"Transient error listing comments for deck {deck_id}: {e}")
+            return []  # Return empty list on transient errors
+        logger.error(f"Error listing comments for deck {deck_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve comments")
 
 
 @router.patch("/{deck_id}/comments/{id}")

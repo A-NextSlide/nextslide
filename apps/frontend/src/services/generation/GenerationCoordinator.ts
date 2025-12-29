@@ -450,7 +450,8 @@ export class GenerationCoordinator extends EventTarget {
                       stage: 'generation_complete',
                       phase: 'generation_complete',
                       progress: 100,
-                      isStreamingUpdate: true,
+                      isStreamingUpdate: false,
+                      streamed: true,
                       deckId
                     }
                   }

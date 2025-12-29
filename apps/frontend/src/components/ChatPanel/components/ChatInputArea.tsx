@@ -10,6 +10,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { IntegrationMentionPopover, IntegrationMentionBubble } from '@/components/chat';
 import { IconButton } from '@/components/ui/IconButton';
 import { COLORS } from '@/utils/colors';
@@ -43,6 +48,7 @@ interface ChatInputAreaProps {
   onOutlineSlideTargetChange: (target: number | 'all') => void;
   deckSlides?: any[];
   isLoading: boolean;
+  isGenerating?: boolean;
   onSend: (message?: string) => void;
   suggestions: Array<{ label: string; prompt: string }>;
   showSuggestions: boolean;
@@ -83,6 +89,7 @@ export function ChatInputArea({
   onOutlineSlideTargetChange,
   deckSlides,
   isLoading,
+  isGenerating = false,
   onSend,
   suggestions,
   showSuggestions,
@@ -254,18 +261,32 @@ export function ChatInputArea({
                 />
               )}
 
-              <IconButton
-                variant="ghost"
-                size="sm"
-                onClick={(e) => { e.stopPropagation(); onSend(); }}
-                disabled={!input.trim()}
-                className="h-8 w-8 transition-all flex items-center justify-center rounded-full text-white hover:opacity-80"
-                style={{
-                  backgroundColor: COLORS.SUGGESTION_PINK
-                }}
-              >
-                <ChevronUp size={16} />
-              </IconButton>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <IconButton
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); onSend(); }}
+                      disabled={!input.trim() || isGenerating}
+                      className={cn(
+                        "h-8 w-8 transition-all flex items-center justify-center rounded-full text-white",
+                        isGenerating ? "opacity-50 cursor-not-allowed" : "hover:opacity-80"
+                      )}
+                      style={{
+                        backgroundColor: COLORS.SUGGESTION_PINK
+                      }}
+                    >
+                      <ChevronUp size={16} />
+                    </IconButton>
+                  </span>
+                </TooltipTrigger>
+                {isGenerating && (
+                  <TooltipContent side="top" className="max-w-[200px] text-center">
+                    You can send requests once generation completes
+                  </TooltipContent>
+                )}
+              </Tooltip>
             </div>
           </div>
         </div>

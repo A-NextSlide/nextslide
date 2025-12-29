@@ -220,7 +220,8 @@ class ParallelSlideOrchestrator:
             # Check for global timeout
             elapsed = (datetime.now() - start_time).total_seconds()
             if elapsed > max_wait_time:
-                logger.error(f"⚠️ Global timeout reached after {elapsed}s. Cancelling {len(pending_tasks)} pending tasks.")
+                # SLIDE-BACKEND-19S: Log as warning, not error - timeouts are expected for very large decks
+                logger.warning(f"⚠️ Global timeout reached after {elapsed}s. Cancelling {len(pending_tasks)} pending tasks.")
                 for task in pending_tasks:
                     if not task.done():
                         task.cancel()

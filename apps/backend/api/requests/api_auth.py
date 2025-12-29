@@ -224,7 +224,8 @@ async def refresh_token(request: RefreshTokenRequest):
             }
             user_response = httpx.get(
                 f"{url}/auth/v1/user",
-                headers=user_headers
+                headers=user_headers,
+                timeout=10.0
             )
             
             if user_response.status_code == 200:
@@ -555,19 +556,10 @@ async def get_full_deck(deck_uuid: str, token: Optional[str] = Depends(get_auth_
         deck = get_deck(deck_uuid)
 
         if not deck:
-            logger.error(f"❌ Deck {deck_uuid} NOT FOUND in database (user: {user_id or 'anonymous'})")
-            # Try a direct query to see if the deck exists at all
-            try:
-                from utils.supabase import get_supabase_client
-                supabase = get_supabase_client()
-                direct_check = supabase.table("decks").select("uuid,user_id,name,created_at").eq("uuid", deck_uuid).execute()
-                if direct_check.data:
-                    logger.error(f"❌ CRITICAL: Deck EXISTS in database but get_deck() returned None!")
-                    logger.error(f"   Direct query result: {direct_check.data[0]}")
-                else:
-                    logger.error(f"❌ Deck truly does not exist in database")
-            except Exception as direct_error:
-                logger.error(f"❌ Direct query also failed: {direct_error}")
+            # This is expected behavior when user accesses a deleted or non-existent deck
+            # Log at warning level, not error, to avoid filling Sentry with false positives
+            # Fixes SLIDE-BACKEND-1HN: "Deck truly does not exist" was incorrectly logged as error
+            logger.warning(f"Deck {deck_uuid} not found in database (user: {user_id or 'anonymous'})")
             raise HTTPException(status_code=404, detail="Deck not found")
 
         logger.debug(

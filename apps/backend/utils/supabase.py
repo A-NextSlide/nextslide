@@ -5,6 +5,7 @@ This module re-exports the robust Supabase client from services/supabase.py
 and provides convenience functions for common database operations.
 """
 import os
+import threading
 from supabase import Client, create_client
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
@@ -33,7 +34,9 @@ _SUPABASE_URL = os.getenv("SUPABASE_URL")
 _SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
 
 # Anon client for frontend operations (separate from service client)
+# Uses thread-safe initialization to avoid race conditions (BUG #2 fix)
 _anon_client = None
+_anon_client_lock = threading.Lock()
 
 def perform_supabase_operation_with_retry(operation, description: str = "operation", max_attempts: int = 3, timeout_seconds: float = 8.0):
     """
@@ -64,19 +67,26 @@ def perform_supabase_operation_with_retry(operation, description: str = "operati
 def get_anon_supabase_client() -> Client:
     """
     Create and return a Supabase client with anon key for frontend operations.
-    
+
+    Uses thread-safe double-checked locking to avoid race conditions.
+    Fixes BUG #2: Race condition in anon client initialization.
+
     Returns:
         Client: A configured Supabase client instance with anon key
     """
     global _anon_client
-    
+
     anon_key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_KEY")
     if not SUPABASE_URL or not anon_key:
         raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY environment variables must be set")
-    
+
+    # Double-checked locking pattern for thread safety
     if _anon_client is None:
-        _anon_client = create_client(SUPABASE_URL, anon_key)
-        
+        with _anon_client_lock:
+            # Check again after acquiring lock
+            if _anon_client is None:
+                _anon_client = create_client(SUPABASE_URL, anon_key)
+
     return _anon_client
 
 def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str] = None) -> Dict[str, Any]:
@@ -185,47 +195,16 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
         if user_id:
             deck_record["user_id"] = user_id
             logger.debug(f"Associating deck {deck_uuid} with user {user_id}")
-        
-        # Check if deck already exists before upserting
-        existing = perform_supabase_operation_with_retry(
-            lambda: supabase.table("decks").select("uuid,name,created_at").eq("uuid", deck_uuid).execute(),
-            description=f"check existing deck {deck_uuid}",
-            max_attempts=3,
-            timeout_seconds=8.0
-        )
-        if existing.data:
-            existing_row = existing.data[0] if isinstance(existing.data, list) and existing.data else None
-            if isinstance(existing_row, dict):
-                # This can happen during rapid successive saves; keep at DEBUG to avoid log spam.
-                logger.debug(
-                    "Duplicate deck upsert detected for %s (created_at=%s, existing_name=%r, new_name=%r)",
-                    deck_uuid,
-                    existing_row.get("created_at"),
-                    existing_row.get("name"),
-                    deck_data.get("name"),
-                )
-            else:
-                logger.debug(
-                    "Duplicate deck upsert detected for %s (unexpected existing row type: %s)",
-                    deck_uuid,
-                    type(existing_row).__name__,
-                )
-            # Shallow-merge existing data into data_field to preserve keys when we update only some
-            try:
-                existing_full = perform_supabase_operation_with_retry(
-                    lambda: supabase.table("decks").select("data").eq("uuid", deck_uuid).single().execute(),
-                    description=f"get existing data for deck {deck_uuid}",
-                    max_attempts=3,
-                    timeout_seconds=8.0
-                )
-                if isinstance(existing_full.data, dict) and isinstance(existing_full.data.get("data"), dict):
-                    existing_data = existing_full.data.get("data") or {}
-                    if data_field:
-                        merged = dict(existing_data)
-                        merged.update(data_field)
-                        data_field = merged
-            except Exception as _merge_err:
-                logger.debug(f"Skipping data merge due to error: {_merge_err}")
+
+        # BUG #4 FIX: Removed pre-upsert check for existing deck that caused race conditions.
+        # The upsert operation is atomic and handles both insert and update cases.
+        # Previous code was: check existing -> read data -> merge -> upsert
+        # This had a race window where another thread could modify data between read and upsert.
+        # Now we rely on the caller to provide complete data if needed.
+
+        # Update data_field in deck_record if we have theme/style data
+        if data_field:
+            deck_record["data"] = data_field
 
         # Log final intent for data column
         if data_field:
@@ -275,7 +254,29 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
         logger.debug(f"Successfully uploaded deck {deck_uuid} for user {user_id or 'anonymous'}")
         return response.data[0]
     except Exception as e:
-        logger.error(f"Error uploading deck: {e}")
+        # Transient connection errors should be logged as warnings, not errors
+        # Fixes SLIDE-BACKEND-1WK: "Cannot send a request, as the client has been closed"
+        # Fixes SLIDE-BACKEND-CC: "Server disconnected"
+        error_str = str(e)
+        transient_errors = [
+            "client has been closed",
+            "circuit breaker",
+            "connection reset",
+            "timeout",
+            "too many failures",
+            "server disconnected",  # SLIDE-BACKEND-CC
+            "eof occurred",
+            "stream reset",
+            "connection closed",
+            "read timeout",
+            "connect timeout",
+            "pool timeout",
+        ]
+        is_transient = any(err in error_str.lower() for err in transient_errors)
+        if is_transient:
+            logger.warning(f"Transient error uploading deck (will be retried): {e}")
+        else:
+            logger.error(f"Error uploading deck: {e}")
         raise
 
 def upload_deck_force(deck_data: Dict[str, Any], deck_uuid: str) -> Dict[str, Any]:

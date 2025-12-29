@@ -72,6 +72,8 @@ import { Avatar, AvatarFallback } from '../ui/avatar';
 import { cn } from '@/lib/utils';
 import QRCode from 'qrcode';
 import { useAuth } from '@/context/SupabaseAuthContext';
+import { communityService, COMMUNITY_CATEGORIES, SubmissionStatus } from '@/services/communityService';
+import { Textarea } from '../ui/textarea';
 
 interface DeckSharingProps {
   deckUuid: string;
@@ -105,7 +107,16 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'links' | 'collaborators' | 'analytics'>('links');
+  const [activeTab, setActiveTab] = useState<'links' | 'collaborators' | 'analytics' | 'community'>('links');
+
+  // Community submission state
+  const [communityTitle, setCommunityTitle] = useState(deckName);
+  const [communityDescription, setCommunityDescription] = useState('');
+  const [communityCategory, setCommunityCategory] = useState<string>('business');
+  const [communityTags, setCommunityTags] = useState('');
+  const [submissionStatus, setSubmissionStatus] = useState<SubmissionStatus | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [shareLinks, setShareLinks] = useState<ShareLinkExtended[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [collaboratorEmail, setCollaboratorEmail] = useState('');
@@ -146,6 +157,24 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
       loadShareData();
     }
   }, [isOpen]);
+
+  // Check community status when switching to community tab
+  useEffect(() => {
+    if (isOpen && activeTab === 'community') {
+      checkCommunityStatus();
+      // Pre-fill title with deck name if not already set
+      if (!submissionStatus && communityTitle === 'New presentation') {
+        setCommunityTitle(deckName);
+      }
+    }
+  }, [isOpen, activeTab]);
+
+  // Update community title when deckName changes
+  useEffect(() => {
+    if (!submissionStatus) {
+      setCommunityTitle(deckName);
+    }
+  }, [deckName]);
 
   // Allow opening this dialog via global event from header popover
   useEffect(() => {
@@ -637,6 +666,88 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
     }
   };
 
+  // Check community submission status
+  const checkCommunityStatus = async () => {
+    setIsCheckingStatus(true);
+    try {
+      const submissions = await communityService.getMySubmissions();
+      const existing = submissions.find(s => s.deckUuid === deckUuid);
+      if (existing) {
+        setSubmissionStatus(existing.status);
+        setCommunityTitle(existing.title);
+        setCommunityDescription(existing.description || '');
+        setCommunityCategory(existing.category);
+        setCommunityTags(existing.tags.join(', '));
+      } else {
+        setSubmissionStatus(null);
+      }
+    } catch (error) {
+      console.error('[DeckSharing] Error checking community status:', error);
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
+
+  // Submit to community
+  const handleSubmitToCommunity = async () => {
+    if (!communityTitle.trim()) {
+      toast({
+        title: 'Title required',
+        description: 'Please enter a title for your community submission',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await communityService.submitDeck({
+        deckUuid,
+        title: communityTitle.trim(),
+        description: communityDescription.trim() || undefined,
+        category: communityCategory as any,
+        tags: communityTags.split(',').map(t => t.trim()).filter(Boolean),
+      });
+
+      toast({
+        title: 'Submitted!',
+        description: 'Your deck has been submitted for community review',
+      });
+
+      setSubmissionStatus('pending');
+    } catch (error: any) {
+      toast({
+        title: 'Submission failed',
+        description: error.message || 'Failed to submit deck',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Withdraw submission
+  const handleWithdrawSubmission = async () => {
+    try {
+      const submissions = await communityService.getMySubmissions();
+      const existing = submissions.find(s => s.deckUuid === deckUuid);
+      if (existing) {
+        await communityService.withdrawSubmission(existing.id);
+        toast({
+          title: 'Withdrawn',
+          description: 'Your community submission has been withdrawn',
+        });
+        setSubmissionStatus(null);
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to withdraw submission',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const formatExpiration = (expiresAt: string | null) => {
     if (!expiresAt) return 'Never expires';
     const expiryDate = new Date(expiresAt);
@@ -686,7 +797,7 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
 
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
             <div className="px-6 pt-4">
-              <TabsList className="grid w-full grid-cols-3 h-9 p-0.5 bg-zinc-100 rounded-lg">
+              <TabsList className="grid w-full grid-cols-4 h-9 p-0.5 bg-zinc-100 rounded-lg">
                 <TabsTrigger
                   value="links"
                   className="rounded-md text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
@@ -707,6 +818,13 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                 >
                   <BarChart3 size={12} className="mr-1.5" />
                   Stats
+                </TabsTrigger>
+                <TabsTrigger
+                  value="community"
+                  className="rounded-md text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
+                >
+                  <Globe size={12} className="mr-1.5" />
+                  Community
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -1243,12 +1361,216 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                 </div>
               )}
             </TabsContent>
+
+            <TabsContent value="community" className="space-y-3 mt-4 h-full">
+              {isCheckingStatus ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 size={24} className="animate-spin text-[#FF6B00]" />
+                </div>
+              ) : submissionStatus ? (
+                // Show submission status
+                <div className="space-y-4">
+                  <div className={cn(
+                    "p-4 rounded-xl border",
+                    submissionStatus === 'approved' && "bg-green-50 border-green-200",
+                    submissionStatus === 'pending' && "bg-amber-50 border-amber-200",
+                    submissionStatus === 'rejected' && "bg-red-50 border-red-200"
+                  )}>
+                    <div className="flex items-center gap-2 mb-2">
+                      {submissionStatus === 'approved' && (
+                        <>
+                          <Check size={16} className="text-green-600" />
+                          <span className="font-medium text-green-900">Published to Community</span>
+                        </>
+                      )}
+                      {submissionStatus === 'pending' && (
+                        <>
+                          <Clock size={16} className="text-amber-600" />
+                          <span className="font-medium text-amber-900">Under Review</span>
+                        </>
+                      )}
+                      {submissionStatus === 'rejected' && (
+                        <>
+                          <X size={16} className="text-red-600" />
+                          <span className="font-medium text-red-900">Not Approved</span>
+                        </>
+                      )}
+                    </div>
+                    <p className="text-xs text-zinc-600">
+                      {submissionStatus === 'approved' && "Your deck is now visible in the community gallery."}
+                      {submissionStatus === 'pending' && "Thanks for sharing! We'll have this up shortly."}
+                      {submissionStatus === 'rejected' && "Your submission was not approved. You can make changes and resubmit."}
+                    </p>
+                  </div>
+
+                  {/* Show current submission details */}
+                  <div className="p-3 rounded-lg bg-zinc-50 border border-zinc-200">
+                    <div className="space-y-2 text-xs">
+                      <div>
+                        <span className="text-zinc-500">Title:</span>
+                        <span className="ml-2 text-zinc-900">{communityTitle}</span>
+                      </div>
+                      {communityDescription && (
+                        <div>
+                          <span className="text-zinc-500">Description:</span>
+                          <span className="ml-2 text-zinc-900">{communityDescription}</span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-zinc-500">Category:</span>
+                        <Badge
+                          variant="outline"
+                          className="ml-2 text-[10px]"
+                          style={{
+                            borderColor: COMMUNITY_CATEGORIES[communityCategory as keyof typeof COMMUNITY_CATEGORIES]?.color,
+                            color: COMMUNITY_CATEGORIES[communityCategory as keyof typeof COMMUNITY_CATEGORIES]?.color,
+                          }}
+                        >
+                          {COMMUNITY_CATEGORIES[communityCategory as keyof typeof COMMUNITY_CATEGORIES]?.name || communityCategory}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Withdraw button for pending submissions */}
+                  {submissionStatus === 'pending' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs text-red-600 border-red-200 hover:bg-red-50"
+                      onClick={handleWithdrawSubmission}
+                    >
+                      <X size={12} className="mr-1.5" />
+                      Withdraw Submission
+                    </Button>
+                  )}
+
+                  {/* Resubmit button for rejected */}
+                  {submissionStatus === 'rejected' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs"
+                      onClick={() => setSubmissionStatus(null)}
+                    >
+                      <Edit size={12} className="mr-1.5" />
+                      Edit & Resubmit
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                // Submission form
+                <div className="space-y-4">
+                  <div className="p-4 rounded-xl bg-zinc-50 border border-dashed border-[#FF6B00]/30 space-y-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Globe size={14} className="text-[#FF6B00]" />
+                      <span className="text-xs font-medium text-zinc-700">Share with the Community</span>
+                    </div>
+
+                    <p className="text-[10px] text-zinc-500 -mt-1">
+                      Submit your deck to be featured in the NextSlide community gallery. Once approved, others can browse and remix your slides.
+                    </p>
+
+                    {/* Title */}
+                    <div>
+                      <Label htmlFor="community-title" className="text-xs font-medium mb-1.5 block text-zinc-600">
+                        Title *
+                      </Label>
+                      <Input
+                        id="community-title"
+                        placeholder="Enter a catchy title..."
+                        value={communityTitle}
+                        onChange={(e) => setCommunityTitle(e.target.value)}
+                        className="h-8 text-xs bg-white border-zinc-200 text-zinc-900"
+                      />
+                    </div>
+
+                    {/* Description */}
+                    <div>
+                      <Label htmlFor="community-desc" className="text-xs font-medium mb-1.5 block text-zinc-600">
+                        Description
+                      </Label>
+                      <Textarea
+                        id="community-desc"
+                        placeholder="What's this deck about? (optional)"
+                        value={communityDescription}
+                        onChange={(e) => setCommunityDescription(e.target.value)}
+                        className="text-xs bg-white border-zinc-200 text-zinc-900 min-h-[60px] resize-none"
+                      />
+                    </div>
+
+                    {/* Category */}
+                    <div>
+                      <Label htmlFor="community-category" className="text-xs font-medium mb-1.5 block text-zinc-600">
+                        Category *
+                      </Label>
+                      <Select value={communityCategory} onValueChange={(val) => setCommunityCategory(val)}>
+                        <SelectTrigger id="community-category" className="h-8 text-xs bg-white border-zinc-200 text-zinc-900">
+                          <SelectValue placeholder="Select a category">
+                            {COMMUNITY_CATEGORIES[communityCategory as keyof typeof COMMUNITY_CATEGORIES]?.name || 'Select a category'}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent position="popper" className="z-[9999]">
+                          {Object.entries(COMMUNITY_CATEGORIES).map(([key, cat]) => (
+                            <SelectItem key={key} value={key}>
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-2 h-2 rounded-full"
+                                  style={{ backgroundColor: cat.color }}
+                                />
+                                <span className="text-xs">{cat.name}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Tags */}
+                    <div>
+                      <Label htmlFor="community-tags" className="text-xs font-medium mb-1.5 block text-zinc-600">
+                        Tags
+                      </Label>
+                      <Input
+                        id="community-tags"
+                        placeholder="startup, pitch, saas (comma separated)"
+                        value={communityTags}
+                        onChange={(e) => setCommunityTags(e.target.value)}
+                        className="h-8 text-xs bg-white border-zinc-200 text-zinc-900"
+                      />
+                    </div>
+
+                    <Button
+                      onClick={handleSubmitToCommunity}
+                      disabled={isSubmitting || !communityTitle.trim()}
+                      className="w-full h-9 bg-gradient-to-r from-[#FF6B00] to-[#FF8533] hover:from-[#E65D00] hover:to-[#E67420] text-white text-sm font-semibold shadow-lg shadow-orange-500/20"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 size={14} className="mr-1.5 animate-spin" />
+                          Submitting...
+                        </>
+                      ) : (
+                        <>
+                          <Globe size={14} className="mr-1.5" />
+                          Submit for Review
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  <p className="text-[10px] text-zinc-400 text-center">
+                    Submissions are reviewed shortly
+                  </p>
+                </div>
+              )}
+            </TabsContent>
             </div>
           </Tabs>
         </div>
       </DialogContent>
     </Dialog>
-    
+
     {/* QR Code Modal */}
     <Dialog open={showQRCode} onOpenChange={setShowQRCode}>
       <DialogContent className="sm:max-w-md">

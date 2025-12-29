@@ -5,6 +5,7 @@ import { useAuth } from '@/context/SupabaseAuthContext';
 import {
   LayoutDashboard,
   Users,
+  Users2,
   FileStack,
   LogOut,
   Menu,
@@ -24,6 +25,7 @@ const navItems = [
   { title: 'Overview', href: '/admin', icon: LayoutDashboard },
   { title: 'Users', href: '/admin/users', icon: Users },
   { title: 'Decks', href: '/admin/decks', icon: FileStack },
+  { title: 'Community', href: '/admin/community', icon: Users2 },
   { title: 'Integrations', href: '/admin/integrations', icon: Plug },
   { title: 'Brands', href: '/admin/brands', icon: Palette },
   { title: 'Services', href: '/admin/services', icon: Server },

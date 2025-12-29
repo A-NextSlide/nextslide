@@ -149,7 +149,7 @@ export function ChatMessageList({
         data-scroll-guard="true"
       >
         {BROWSER.isSafari && (
-          <style>{`.glass-panel{background-color:rgba(255,255,255,0.06) !important; background-image:none !important;}`}</style>
+          <style>{`.glass-panel{background-color:rgba(128,128,128,0.12) !important; background-image:none !important;}`}</style>
         )}
         {themePreview && (
           <div className="mb-2">

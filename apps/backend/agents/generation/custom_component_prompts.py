@@ -70,9 +70,9 @@ def build_system_prompt(
             "- Everything visible without interaction; show final values\n\n"
             "LAYOUT & CANVAS:\n"
             "- Fill the 1920x1080 canvas; no max-width containers\n"
-            "- Set html, body { margin:0; padding:0; width:100%; height:100%; }\n"
+            "- Set html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; }\n"
             "- No implicit body margin/padding; use explicit layout containers for spacing\n"
-            "- Avoid overflow on hover/animations; nothing off-canvas\n\n"
+            "- ALL content must fit - nothing cut off at bottom\n\n"
             "LAYERING:\n"
             "- Background/decorative: z-index 1-10\n"
             "- Media: 20-30\n"
@@ -98,10 +98,11 @@ def build_system_prompt(
         "- Hover-to-reveal cards or accordions\n"
         "- Counters, before/after sliders, SVG draw\n\n"
         "RULES:\n"
-        "- Set html, body { margin:0; padding:0; width:100%; height:100%; }\n"
+        "- Set html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; }\n"
         "- Use a root container that fills the canvas; no implicit padding\n"
         "- Pick 1-2 interactions max; must support the story\n"
         "- Keep animations inside the frame; no overflow on hover/scale\n"
+        "- ALL content must fit - nothing cut off at bottom\n"
         "- Titles always on top; avoid website chrome/navigation\n\n"
         "LAYERING:\n"
         "- Background 1-10; media 20-30; cards 40-50; titles 100+; overlays 200+\n\n"
@@ -245,7 +246,7 @@ def build_user_prompt(
         sections.append(f"PURPOSE: {component_purpose}")
     if is_full_slide:
         sections.append("FULL SLIDE: You control the entire canvas.")
-        sections.append("LAYOUT: Fill the 1920x1080 canvas. Content must fit without scrolling. Avoid max-width containers. No default body margin/padding; use explicit container spacing only when needed.")
+        sections.append("LAYOUT: Fill the 1920x1080 canvas. Content must fit without scrolling - nothing cut off at bottom.")
         sections.append("TYPE SCALE: Title 48-56px, body 14-18px unless content demands otherwise.")
     if slide_mode:
         sections.append(f"MOTION: {slide_mode}")

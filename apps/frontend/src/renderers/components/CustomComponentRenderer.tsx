@@ -508,6 +508,100 @@ export const CustomComponentRenderer: React.FC<{
     }
   };
 
+  const injectZoomRelay = (html: string, componentId: string): string => {
+    if (!html || BROWSER.isIOS || isThumbnail) return html;
+    if (html.includes('ns-slide-zoom')) return html;
+
+    const zoomRelayScript = `
+<script>
+(function() {
+  if (window.__nsSlideZoomInstalled) return;
+  window.__nsSlideZoomInstalled = true;
+
+  function getFrameRect() {
+    try {
+      return window.frameElement ? window.frameElement.getBoundingClientRect() : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function toParentPoint(evt) {
+    var rect = getFrameRect();
+    if (!rect) return null;
+    var width = window.innerWidth || rect.width || 1;
+    var height = window.innerHeight || rect.height || 1;
+    var scaleX = rect.width / width;
+    var scaleY = rect.height / height;
+    return {
+      x: rect.left + (evt.clientX * scaleX),
+      y: rect.top + (evt.clientY * scaleY)
+    };
+  }
+
+  function postZoom(payload) {
+    try {
+      window.parent.postMessage(payload, '*');
+    } catch (e) {}
+  }
+
+  function handleWheel(e) {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var point = toParentPoint(e);
+    postZoom({
+      source: 'ns-slide-zoom',
+      method: 'wheel',
+      componentId: '${componentId}',
+      deltaY: e.deltaY,
+      deltaMode: e.deltaMode || 0,
+      clientX: point ? point.x : null,
+      clientY: point ? point.y : null
+    });
+  }
+
+  function handleGestureStart(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function handleGestureChange(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    var point = toParentPoint(e);
+    postZoom({
+      source: 'ns-slide-zoom',
+      method: 'gesture',
+      componentId: '${componentId}',
+      scale: e.scale || 1,
+      clientX: point ? point.x : null,
+      clientY: point ? point.y : null
+    });
+  }
+
+  function handleGestureEnd(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  window.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+  window.addEventListener('gesturestart', handleGestureStart, { passive: false, capture: true });
+  window.addEventListener('gesturechange', handleGestureChange, { passive: false, capture: true });
+  window.addEventListener('gestureend', handleGestureEnd, { passive: false, capture: true });
+})();
+</script>`;
+
+    if (html.includes('</head>')) {
+      return html.replace('</head>', zoomRelayScript + '</head>');
+    } else if (html.includes('</body>')) {
+      return html.replace('</body>', zoomRelayScript + '</body>');
+    } else if (html.includes('</html>')) {
+      return html.replace('</html>', zoomRelayScript + '</html>');
+    }
+    return html + zoomRelayScript;
+  };
+
   // Inject image props into HTML by replacing placeholder src attributes
   const injectImageProps = (html: string, props: Record<string, any>): string => {
     if (!html || !props) return html;
@@ -739,6 +833,8 @@ export const CustomComponentRenderer: React.FC<{
       html = injectImageClickHandlers(html, component.id);
     }
 
+    html = injectZoomRelay(html, component.id);
+
     // Inject element-level edit mode when in edit mode (not just when selected)
     // This allows hover effects and double-click to work before selection
     // NOTE: Skip on iOS due to postMessage crash issues
@@ -852,7 +948,7 @@ export const CustomComponentRenderer: React.FC<{
     }
 
     return html;
-  }, [iframeSrcDoc, component.id, isEditing, propsKey, effectiveIsEditMode, isSelected, resolvedFonts.bodyFont, resolvedFonts.heroFont, fontCatalogVersion]); // Use propsKey instead of object reference
+  }, [iframeSrcDoc, component.id, isEditing, isThumbnail, propsKey, effectiveIsEditMode, isSelected, resolvedFonts.bodyFont, resolvedFonts.heroFont, fontCatalogVersion]); // Use propsKey instead of object reference
 
   // Listen for messages from iframe (placeholder image clicks and edit mode)
   // NOTE: Disabled on iOS due to postMessage crash issues

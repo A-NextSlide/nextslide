@@ -31,6 +31,7 @@ import TestCollaboration from './yjs/TestCollaboration';
 import SlideTagging from './pages/SlideTagging';
 import SharedDeckView from './pages/SharedDeckView';
 import SharedDeckEdit from './pages/SharedDeckEdit';
+import CommunityDeckView from './pages/CommunityDeckView';
 import { API_CONFIG } from './config/environment';
 import { DeckStoreInitializer } from './components/DeckStoreInitializer';
 // Removed font optimization hook
@@ -41,6 +42,7 @@ const DevPerformanceHUD = import.meta.env.PROD ? null : React.lazy(() => import(
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminUserDetail from './pages/admin/AdminUserDetail';
 import AdminDecks from './pages/admin/AdminDecks';
+import AdminCommunity from './pages/admin/AdminCommunity';
 import AdminBrands from './pages/admin/AdminBrands';
 import AdminServices from './pages/admin/AdminServices';
 import AdminCosts from './pages/admin/AdminCosts';
@@ -448,6 +450,11 @@ const AppContent = () => {
                 path="/e/:shareCode"
                 element={<SharedDeckEdit />}
               />
+              {/* Community deck view route */}
+              <Route
+                path="/community/:deckId"
+                element={<CommunityDeckView />}
+              />
               {/* Email verification route */}
               <Route
                 path="/verify-email/:token"
@@ -506,6 +513,14 @@ const AppContent = () => {
                 element={
                   <AdminProtectedRoute>
                     <AdminDecks />
+                  </AdminProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/community"
+                element={
+                  <AdminProtectedRoute>
+                    <AdminCommunity />
                   </AdminProtectedRoute>
                 }
               />

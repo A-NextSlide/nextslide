@@ -88,10 +88,11 @@ class BrandfetchService:
                     return {"error": f"api_error_{response.status}", "message": error_text}
                     
         except asyncio.TimeoutError:
-            logger.error(f"Timeout fetching brand data for: {clean_identifier}")
+            # Timeouts are expected with external APIs - log as warning
+            logger.warning(f"Timeout fetching brand data for: {clean_identifier}")
             return {"error": "timeout", "identifier": clean_identifier}
         except Exception as e:
-            logger.error(f"Error fetching brand data: {e}")
+            logger.warning(f"Error fetching brand data: {e}")
             return {"error": "fetch_error", "message": str(e)}
 
     async def search_brands(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:

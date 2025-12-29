@@ -150,8 +150,8 @@ async def websocket_stream_transcription(websocket: WebSocket):
                 "type": "error",
                 "message": "Speech service not configured"
             })
-        except:
-            pass
+        except Exception:
+            pass  # WebSocket may be closed
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
         try:
@@ -159,8 +159,8 @@ async def websocket_stream_transcription(websocket: WebSocket):
                 "type": "error",
                 "message": f"Transcription error: {str(e)}"
             })
-        except:
-            pass
+        except Exception:
+            pass  # WebSocket may be closed
     finally:
         logger.info("Speech WebSocket closed")
 

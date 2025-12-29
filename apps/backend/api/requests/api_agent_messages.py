@@ -487,19 +487,42 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
     # LinkedIn lookup is now handled by the orchestrator via the linkedin_lookup tool
     # The LLM decides when to use it based on @linkedin mentions in the message
 
-    result = await run_in_threadpool(
-        thread_pool,
-        edit_deck,
-        deck_data=deck_data_for_agent,
-        current_slide=current_slide_for_agent,
-        registry=registry,
-        message=llm_message,
-        chat_history=chat_history,
-        run_uuid=str(uuid.uuid4()),
-        event_cb=_event_cb,
-        attachments=normalized_attachments,
-        slide_screenshot=slide_screenshot_data if include_screenshot else None
-    )
+    try:
+        result = await run_in_threadpool(
+            thread_pool,
+            edit_deck,
+            deck_data=deck_data_for_agent,
+            current_slide=current_slide_for_agent,
+            registry=registry,
+            message=llm_message,
+            chat_history=chat_history,
+            run_uuid=str(uuid.uuid4()),
+            event_cb=_event_cb,
+            attachments=normalized_attachments,
+            slide_screenshot=slide_screenshot_data if include_screenshot else None
+        )
+    except Exception as edit_error:
+        logger.error(f"[AgentChat] edit_deck failed: {edit_error}")
+        # Send completion event even on error so frontend doesn't stay stuck
+        try:
+            await agent_stream_bus.publish(session_id, {
+                "type": "assistant.message.complete",
+                "sessionId": session_id,
+                "messageId": message_id,
+                "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                "data": {"messageId": message_id, "error": True}
+            })
+            # Also send an error message to show in the chat
+            await agent_stream_bus.publish(session_id, {
+                "type": "assistant.message.delta",
+                "sessionId": session_id,
+                "messageId": message_id,
+                "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                "data": {"delta": "I encountered an issue processing your request. Please try again."}
+            })
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Edit processing failed: {str(edit_error)[:200]}")
 
     # Convert orchestrator result to a proposed edit (or auto-apply if enabled)
     deck_diff = result.get("deck_diff")
@@ -749,7 +772,11 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                     "applied_by": user["id"],
                 }
                 logger.info(f"[DEBUG] Inserting applied record: session={session_id[:8]}..., deck={deck_id[:8] if deck_id else 'N/A'}..., slides={applied_rec.get('slide_ids', [])}, diff={_summarize_deck_diff(applied_rec.get('diff', {}))}")
-                e = sb_apply.table("agent_edits").insert(applied_rec).execute().data[0]
+                insert_result = sb_apply.table("agent_edits").insert(applied_rec).execute()
+                if not insert_result.data:
+                    logger.error(f"Failed to insert applied edit record for session {session_id}")
+                    raise HTTPException(status_code=500, detail="Failed to save applied edit")
+                e = insert_result.data[0]
                 logger.info(f"[DEBUG] Applied record inserted with ID: {e.get('id')}")
 
                 # Apply to deck
@@ -845,7 +872,11 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                 "proposed_at": datetime.utcnow().isoformat(),
                 "proposed_by": user["id"],
             }
-            e = sb.table("agent_edits").insert(proposed_rec).execute().data[0]
+            insert_result = sb.table("agent_edits").insert(proposed_rec).execute()
+            if not insert_result.data:
+                logger.error(f"Failed to insert proposed edit record for session {session_id}")
+                raise HTTPException(status_code=500, detail="Failed to save proposed edit")
+            e = insert_result.data[0]
 
             # Stream proposed event for UI (enriched with full diff per frontend support)
             proposed_payload = {
@@ -896,7 +927,23 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
             except Exception:
                 pass
 
+            # Send completion event for proposed edits
+            await agent_stream_bus.publish(session_id, {
+                "type": "assistant.message.complete",
+                "sessionId": session_id,
+                "messageId": message_id,
+                "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                "data": {"messageId": message_id}
+            })
+
             return {"messageId": message_id}
     else:
-        # No deck_id: cannot apply; keep behavior (no-op apply path)
+        # No deck_id or no changes: send completion event anyway
+        await agent_stream_bus.publish(session_id, {
+            "type": "assistant.message.complete",
+            "sessionId": session_id,
+            "messageId": message_id,
+            "timestamp": int(datetime.utcnow().timestamp() * 1000),
+            "data": {"messageId": message_id}
+        })
         return {"messageId": message_id}

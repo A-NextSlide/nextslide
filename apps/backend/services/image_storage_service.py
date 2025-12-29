@@ -48,7 +48,19 @@ class ImageStorageService:
         if self.session and self._session_owner:
             await self.session.close()
             self.session = None
-            
+
+    def __del__(self):
+        """Cleanup session when object is garbage collected."""
+        if self.session and not self.session.closed:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self.session.close())
+                else:
+                    loop.run_until_complete(self.session.close())
+            except Exception:
+                pass
+
     def _get_session(self):
         """Get or create aiohttp session."""
         if not self.session:

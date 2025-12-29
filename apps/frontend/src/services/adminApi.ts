@@ -951,6 +951,91 @@ class AdminApi {
       throw error;
     }
   }
+
+  // ==================== Community Endpoints ====================
+
+  async getCommunityQueue(options: {
+    status?: 'pending' | 'approved' | 'rejected';
+    category?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<CommunityQueueResponse> {
+    try {
+      const params = new URLSearchParams();
+      if (options.status) params.append('status', options.status);
+      if (options.category) params.append('category', options.category);
+      if (options.page) params.append('page', options.page.toString());
+      if (options.limit) params.append('limit', options.limit.toString());
+      const query = params.toString() ? `?${params.toString()}` : '';
+      return await this.request<CommunityQueueResponse>(`/community/admin/queue${query}`);
+    } catch (error) {
+      console.error('Error fetching community queue:', error);
+      throw error;
+    }
+  }
+
+  async approveCommunitySubmission(submissionId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      return await this.request(`/community/admin/${submissionId}/approve`, {
+        method: 'POST',
+      });
+    } catch (error) {
+      console.error('Error approving submission:', error);
+      throw error;
+    }
+  }
+
+  async rejectCommunitySubmission(submissionId: string, reason: string): Promise<{ success: boolean; message: string }> {
+    try {
+      return await this.request(`/community/admin/${submissionId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      });
+    } catch (error) {
+      console.error('Error rejecting submission:', error);
+      throw error;
+    }
+  }
+
+  async removeCommunityDeck(submissionId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      return await this.request(`/community/admin/${submissionId}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('Error removing community deck:', error);
+      throw error;
+    }
+  }
+
+  async updateCommunityDeck(
+    submissionId: string,
+    updates: {
+      title?: string;
+      description?: string;
+      category?: string;
+      tags?: string[];
+    }
+  ): Promise<{ success: boolean; message: string; data: CommunitySubmission }> {
+    try {
+      return await this.request(`/community/admin/${submissionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+      });
+    } catch (error) {
+      console.error('Error updating community deck:', error);
+      throw error;
+    }
+  }
+
+  async getCommunityStats(): Promise<CommunityStats> {
+    try {
+      return await this.request<CommunityStats>('/community/admin/stats');
+    } catch (error) {
+      console.error('Error fetching community stats:', error);
+      throw error;
+    }
+  }
 }
 
 export interface Brand {
@@ -1106,6 +1191,43 @@ export interface UsagePatternsResponse {
     decks: number;
     slides: number;
   };
+}
+
+// Community Types
+export interface CommunitySubmission {
+  id: string;
+  deck_uuid: string;
+  title: string;
+  description?: string;
+  category: string;
+  tags: string[];
+  status: 'pending' | 'approved' | 'rejected';
+  slide_count: number;
+  first_slide?: any;
+  author_name?: string;
+  author_email?: string;
+  user_id: string;
+  submitted_at: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+  rejection_reason?: string;
+}
+
+export interface CommunityQueueResponse {
+  submissions: CommunitySubmission[];
+  total: number;
+  page: number;
+  limit: number;
+  has_more: boolean;
+}
+
+export interface CommunityStats {
+  pending: number;
+  approved: number;
+  rejected: number;
+  total: number;
+  total_remixes: number;
+  total_views: number;
 }
 
 export const adminApi = new AdminApi();

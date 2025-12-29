@@ -1049,8 +1049,16 @@ export function useAgentEvents({
     } catch (e) {
       console.error('[Realtime][preview.diff] Error applying preview', e);
     }
+
+    // Fallback: finalize streaming message after a short delay
+    // In case assistant.message.complete is not received
+    setTimeout(() => {
+      finalizeStreamingAiMessage();
+      clearPlanTimers();
+    }, 500);
+
     return true;
-  }, [applyDeckDiffRespectingEditMode, applyPreviewSlidesRespectingEditMode, normalizeSlidesPayload, scheduleAgentEditTimeout]);
+  }, [applyDeckDiffRespectingEditMode, applyPreviewSlidesRespectingEditMode, clearPlanTimers, finalizeStreamingAiMessage, normalizeSlidesPayload, scheduleAgentEditTimeout]);
 
   return {
     handleCommonAgentEvent,

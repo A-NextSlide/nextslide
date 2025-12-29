@@ -72,7 +72,9 @@ Always cite your sources. Focus on what would be useful for presentation slides.
         }
 
     except asyncio.TimeoutError:
-        logger.error(f"[OutlineAgent] Perplexity search timed out (60s) for: {query[:50]}...")
+        # Timeouts are expected with external APIs - log as warning, not error
+        # Fixes SLIDE-BACKEND-280: Perplexity timeout was incorrectly logged as error
+        logger.warning(f"[OutlineAgent] Perplexity search timed out (60s) for: {query[:50]}...")
         return {
             "success": False,
             "content": None,
@@ -80,7 +82,7 @@ Always cite your sources. Focus on what would be useful for presentation slides.
             "error": "Search timed out after 60 seconds"
         }
     except Exception as e:
-        logger.error(f"[OutlineAgent] Perplexity research failed: {e}")
+        logger.warning(f"[OutlineAgent] Perplexity research failed: {e}")
         return {
             "success": False,
             "content": None,

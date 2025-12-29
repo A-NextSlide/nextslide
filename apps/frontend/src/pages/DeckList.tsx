@@ -48,6 +48,8 @@ import { useSlideResearch } from '@/hooks/useSlideResearch';
 import { useOutlineChat } from '@/hooks/useOutlineChat';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
+import CommunityBottomSheet from '@/components/community/CommunityBottomSheet';
+import { Users2 } from 'lucide-react';
 import { normalizeReferenceImages } from '@/utils/referenceImages';
 import { normalizeDeckTitle } from '@/utils/normalizeDeckTitle';
 import { hasRealThemeColors } from '@/utils/themeUtils';
@@ -374,6 +376,7 @@ const DeckList: React.FC = () => {
   // State for slides gallery
   const [showGallery, setShowGallery] = useState(false);
   const [showGoogleImport, setShowGoogleImport] = useState(false);
+  const [showCommunity, setShowCommunity] = useState(false);
   const [showAppearanceOnboarding, setShowAppearanceOnboarding] = useState(false);
   const [showConversationalOnboarding, setShowConversationalOnboarding] = useState(false);
   const [isAgentThinking, setIsAgentThinking] = useState(false);
@@ -1207,6 +1210,19 @@ const DeckList: React.FC = () => {
       // Clean the URL
       params.delete('google');
       params.delete('openGoogleImport');
+      const newUrl = `${window.location.pathname}?${params.toString()}`.replace(/\?$/, '');
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
+
+  // Auto-open community bottom sheet if query param present
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const openCommunity = params.get('community');
+    if (openCommunity === 'open') {
+      setShowCommunity(true);
+      // Clean the URL
+      params.delete('community');
       const newUrl = `${window.location.pathname}?${params.toString()}`.replace(/\?$/, '');
       window.history.replaceState({}, '', newUrl);
     }
@@ -3004,6 +3020,21 @@ const DeckList: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Community Button - Fixed at bottom */}
+      <button
+        onClick={() => setShowCommunity(true)}
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-medium rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center gap-2"
+      >
+        <Users2 className="h-4 w-4" />
+        Community Slides
+      </button>
+
+      {/* Community Bottom Sheet */}
+      <CommunityBottomSheet
+        isOpen={showCommunity}
+        onClose={() => setShowCommunity(false)}
+      />
     </div>
   );
 };

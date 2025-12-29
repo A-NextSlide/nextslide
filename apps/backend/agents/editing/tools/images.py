@@ -1,5 +1,7 @@
 """
-Image tools - search and manage images in slides.
+Image tools - LLM-based image search and replacement.
+
+All image selection decisions are made by the LLM, not hardcoded rules.
 """
 import asyncio
 import logging
@@ -16,284 +18,159 @@ from utils.images import image_exists
 logger = logging.getLogger(__name__)
 
 
-async def _upload_image_to_supabase(image_url: str) -> Tuple[str, bool]:
+# =============================================================================
+# MODELS
+# =============================================================================
+
+class ImageInfo(BaseModel):
+    """Information about an image for LLM selection."""
+    index: int
+    url: str
+    description: str  # Combined alt, label, context
+
+
+class ImageSelectionResponse(BaseModel):
+    """LLM response for image selection."""
+    selected_index: int = Field(description="Index of the image to replace (0-based)")
+    reasoning: str = Field(description="Why this image was selected")
+
+
+# =============================================================================
+# IMAGE EXTRACTION
+# =============================================================================
+
+def _extract_all_images(props: Dict[str, Any], html: str) -> List[ImageInfo]:
     """
-    Upload an external image to Supabase storage.
-    Returns (url, success) - either the Supabase URL or original URL on failure.
+    Extract all images from a CustomComponent.
+    Combines metadata (if available) with HTML extraction.
     """
-    from services.image_storage_service import ImageStorageService
+    images = []
+    seen_urls = set()
 
-    # Skip if already our bucket URL
-    OUR_BUCKET_DOMAINS = ['nextslide.ai', 'supabase.co', 'supabase.com']
-    if any(domain in image_url.lower() for domain in OUR_BUCKET_DOMAINS):
-        logger.info(f"[SEARCH_IMAGES] Image already in our bucket: {image_url[:50]}...")
-        return image_url, True
-
-    try:
-        async with ImageStorageService() as storage:
-            result = await storage.upload_image_from_url(image_url)
-            if 'error' not in result and result.get('url'):
-                uploaded_url = result['url']
-                logger.info(f"[SEARCH_IMAGES] ✅ Uploaded to Supabase: {image_url[:40]}... -> {uploaded_url[:50]}...")
-                return uploaded_url, True
-            else:
-                logger.warning(f"[SEARCH_IMAGES] Upload failed, using original: {result.get('error', 'Unknown error')}")
-                return image_url, False
-    except Exception as e:
-        logger.error(f"[SEARCH_IMAGES] Upload exception: {e}")
-        return image_url, False
-
-
-# Generic/vague terms that need AI enhancement
-VAGUE_QUERY_TERMS = {
-    'image', 'picture', 'photo', 'graphic', 'visual', 'icon',
-    'business', 'technology', 'professional', 'corporate', 'modern',
-    'abstract', 'concept', 'idea', 'strategy', 'innovation', 'success',
-    'growth', 'teamwork', 'collaboration', 'excellence', 'quality'
-}
-
-JS_IMAGE_TYPES = {"img", "image", "photo", "picture"}
-
-
-def _iter_js_objects(text: str):
-    objects = []
-    depth = 0
-    start = None
-    in_string = None
-    escape = False
-    idx = 0
-    length = len(text)
-
-    while idx < length:
-        ch = text[idx]
-        if in_string:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == in_string:
-                in_string = None
-        else:
-            if ch in ("'", '"'):
-                in_string = ch
-            elif ch == "{":
-                if depth == 0:
-                    start = idx
-                depth += 1
-            elif ch == "}":
-                if depth > 0:
-                    depth -= 1
-                    if depth == 0 and start is not None:
-                        objects.append((start, idx + 1, text[start:idx + 1]))
-                        start = None
-        idx += 1
-
-    return objects
-
-
-def _object_is_image_like(obj_text: str) -> bool:
-    type_match = re.search(r'\btype\s*:\s*([\'"])([^\'"]+)\1', obj_text, re.IGNORECASE)
-    if not type_match:
-        return True
-    type_value = type_match.group(2).strip().lower()
-    return type_value in JS_IMAGE_TYPES
-
-
-def _extract_js_image_objects(script_content: str) -> List[Dict[str, Any]]:
-    objects: List[Dict[str, Any]] = []
-    for start, end, obj_text in _iter_js_objects(script_content):
-        if not _object_is_image_like(obj_text):
+    # Source 1: imageMetadata (new slides have this)
+    image_metadata = props.get("imageMetadata", {})
+    for prop_name, meta in image_metadata.items():
+        if not isinstance(meta, dict):
             continue
-        alt = ""
-        alt_match = re.search(r'\balt\s*:\s*([\'"])(.*?)\1', obj_text, re.IGNORECASE | re.DOTALL)
-        if alt_match:
-            alt = alt_match.group(2).strip()
-        label = ""
-        if not alt:
-            label_match = re.search(r'\b(title|name|label|heading)\s*:\s*([\'"])(.*?)\2', obj_text, re.IGNORECASE | re.DOTALL)
-            if label_match:
-                label = label_match.group(3).strip()
-        if not alt and not label:
+        url = meta.get("url", "")
+        if not url or url in seen_urls:
             continue
-        if alt.startswith("${") or alt.startswith("props."):
-            alt = ""
-        if label.startswith("${") or label.startswith("props."):
-            label = ""
-        if not alt and not label:
+        seen_urls.add(url)
+
+        # Build description from metadata
+        label = meta.get("label", "")
+        role = meta.get("role", "")
+        query = meta.get("query", "")
+        desc_parts = []
+        if role:
+            desc_parts.append(f"role: {role}")
+        if label:
+            desc_parts.append(f"label: {label}")
+        if query:
+            desc_parts.append(f"search query: {query}")
+
+        images.append(ImageInfo(
+            index=len(images),
+            url=url,
+            description=" | ".join(desc_parts) if desc_parts else prop_name
+        ))
+
+    # Source 2: HTML extraction (for images not in metadata)
+    # <img src="..." alt="...">
+    for match in re.finditer(r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>', html):
+        url = match.group(1)
+        if not url.startswith('http') or url in seen_urls:
             continue
-        src_match = re.search(r'\bsrc\s*:\s*(?:(["\'])(?P<src>.*?)\1|(?P<src_unquoted>[^,\n}]+))', obj_text, re.IGNORECASE | re.DOTALL)
-        if not src_match:
+        seen_urls.add(url)
+
+        # Extract alt and surrounding context
+        full_tag = match.group(0)
+        alt_match = re.search(r'alt=["\']([^"\']*)["\']', full_tag)
+        alt = alt_match.group(1) if alt_match else ""
+
+        # Get surrounding text
+        start = max(0, match.start() - 150)
+        end = min(len(html), match.end() + 150)
+        context = re.sub(r'<[^>]+>', ' ', html[start:end])
+        context = ' '.join(context.split())[:100]
+
+        images.append(ImageInfo(
+            index=len(images),
+            url=url,
+            description=f"alt: {alt}" if alt else f"context: {context}"
+        ))
+
+    # Source 3: CSS background images
+    for match in re.finditer(r'background(?:-image)?:\s*[^;]*url\(["\']?([^"\')\s]+)["\']?\)', html):
+        url = match.group(1)
+        if not url.startswith('http') or url in seen_urls:
             continue
-        src = (src_match.group('src') or src_match.group('src_unquoted') or "").strip()
-        objects.append({
-            "alt": alt,
-            "label": label,
-            "src": src,
-            "start": start,
-            "end": end,
-            "text": obj_text,
-        })
-    return objects
+        seen_urls.add(url)
+
+        start = max(0, match.start() - 100)
+        end = min(len(html), match.end() + 100)
+        context = re.sub(r'<[^>]+>', ' ', html[start:end])
+        context = ' '.join(context.split())[:80]
+
+        images.append(ImageInfo(
+            index=len(images),
+            url=url,
+            description=f"background image, context: {context}"
+        ))
+
+    return images
 
 
-def _replace_js_object_src(script_content: str, obj: Dict[str, Any], new_url: str) -> Tuple[str, bool]:
-    src_pattern = r'(\bsrc\s*:\s*)(?:(["\'])(?P<src>.*?)\2|(?P<src_unquoted>[^,\n}]+))'
+# =============================================================================
+# LLM IMAGE SELECTION
+# =============================================================================
 
-    def replace_src(match):
-        prefix = match.group(1)
-        quote = match.group(2) or '"'
-        return f"{prefix}{quote}{new_url}{quote}"
+async def _select_image_with_llm(
+    user_request: str,
+    images: List[ImageInfo],
+) -> int:
+    """
+    Use LLM to select which image the user wants to replace.
 
-    new_obj, count = re.subn(src_pattern, replace_src, obj["text"], count=1, flags=re.IGNORECASE | re.DOTALL)
-    if not count:
-        return script_content, False
-    updated = f"{script_content[:obj['start']]}{new_obj}{script_content[obj['end']:]}"
-    return updated, True
+    Args:
+        user_request: What the user said (e.g., "replace the chicken wing image")
+        images: List of images with descriptions
 
+    Returns:
+        Index of selected image
+    """
+    if len(images) == 1:
+        return 0
 
-def _replace_js_image_object_by_query(
-    html: str,
-    query: str,
-    new_url: str,
-    image_index: Optional[int],
-) -> Tuple[str, bool]:
-    script_pattern = re.compile(r'(<script[^>]*>)([\s\S]*?)(</script>)', re.IGNORECASE)
-    query_words = set(query.lower().split())
-    generic_words = {'logo', 'image', 'photo', 'picture', 'icon', 'img', 'graphic'}
-    specific_words = query_words - generic_words
-
-    best = None
-    best_score = -1
-    script_blocks = []
-
-    for idx, match in enumerate(script_pattern.finditer(html)):
-        script_blocks.append(match)
-        script_content = match.group(2)
-        objects = _extract_js_image_objects(script_content)
-        if not objects:
-            continue
-
-        for obj_idx, obj in enumerate(objects):
-            alt_text = (obj.get("alt") or obj.get("label") or "").lower()
-            score = 0
-            specific_matched = False
-
-            if alt_text == query.lower():
-                score += 10
-
-            for word in query_words:
-                if len(word) < 3:
-                    continue
-                is_specific = word in specific_words
-                if word in alt_text:
-                    score += 5 if is_specific else 2
-                    if is_specific:
-                        specific_matched = True
-
-            if specific_matched:
-                score += 5
-
-            if image_index is not None and obj_idx == image_index:
-                score += 0.5
-
-            logger.info("[SEARCH_IMAGES] JS object %s: score=%s label='%s'", obj_idx, score, alt_text[:40])
-
-            if score > best_score:
-                best_score = score
-                best = (idx, obj_idx, objects)
-
-    if not best:
-        return html, False
-
-    script_idx, obj_idx, objects = best
-    match = script_blocks[script_idx]
-    script_content = match.group(2)
-    obj = objects[obj_idx]
-
-    updated_content, replaced = _replace_js_object_src(script_content, obj, new_url)
-    if not replaced:
-        return html, False
-
-    parts = []
-    last = 0
-    for idx, block in enumerate(script_blocks):
-        parts.append(html[last:block.start()])
-        start_tag, _, end_tag = block.groups()
-        content = updated_content if idx == script_idx else block.group(2)
-        parts.append(f"{start_tag}{content}{end_tag}")
-        last = block.end()
-    parts.append(html[last:])
-
-    return "".join(parts), True
-
-
-def _extract_slide_context(current_slide: Dict, render_html: str = None) -> Dict[str, str]:
-    """Extract slide title and content for context-aware image search."""
-    title = ""
-    content = ""
-
-    # Try to get title from slide properties
-    title = current_slide.get("title", "") or current_slide.get("name", "")
-
-    # Extract from HTML if available
-    if render_html:
-        # Extract title from h1, h2, or prominent text
-        title_match = re.search(r'<h[12][^>]*>([^<]+)</h[12]>', render_html)
-        if title_match:
-            title = title_match.group(1).strip()
-
-        # Extract text content (strip HTML tags)
-        text_content = re.sub(r'<[^>]+>', ' ', render_html)
-        text_content = ' '.join(text_content.split())[:500]
-        content = text_content
-
-    return {"title": title, "content": content}
-
-
-def _is_query_vague(query: str) -> bool:
-    """Check if the query is too vague/generic. Logo queries are never vague."""
-    # Logo queries are specific brand names - never enhance them
-    if 'logo' in query.lower():
-        return False
-
-    words = set(query.lower().split())
-    vague_count = len(words & VAGUE_QUERY_TERMS)
-    # If more than half the words are vague, or it's a single vague word
-    return vague_count > len(words) / 2 or (len(words) == 1 and vague_count == 1)
-
-
-async def _enhance_query_with_ai(query: str, slide_context: Dict[str, str]) -> str:
-    """Use AI to enhance a vague query into something specific and visual."""
     from agents.ai.clients import get_client, invoke
     from agents.config import IMAGE_SEARCH_MODEL
 
+    # Build image list for LLM
+    image_list = "\n".join([
+        f"[{img.index}] {img.description}"
+        for img in images
+    ])
+
+    prompt = f"""You are selecting which image to replace based on the user's request.
+
+USER REQUEST: "{user_request}"
+
+AVAILABLE IMAGES:
+{image_list}
+
+Select the image that best matches what the user wants to change.
+- If user says "main image", "hero", or just "the image" → pick the primary content image, NOT logos
+- If user says "logo" or "brand" → pick the logo
+- If user mentions specific content (like "chicken wings") → pick the image with matching description
+- When in doubt, prefer content images over logos/icons
+
+Respond with ONLY the index number (0, 1, 2, etc.) of the image to replace.
+Just the number, nothing else."""
+
     try:
         client, model_name = get_client(IMAGE_SEARCH_MODEL)
-
-        prompt = f"""Optimize this image search query for Google Images.
-
-ORIGINAL QUERY: {query}
-SLIDE TITLE: {slide_context.get('title', 'Unknown')}
-SLIDE CONTENT: {slide_context.get('content', '')[:300]}
-
-🎯 CRITICAL RULES:
-1. If query contains a NAMED ENTITY (character, person, brand, place) - KEEP THE NAME!
-   - "Krillin" → "Krillin Dragon Ball" (NOT "bald martial artist")
-   - "Goku" → "Goku Dragon Ball" (NOT "anime fighter")
-   - "Elon Musk" → "Elon Musk portrait"
-   - "Tesla" → "Tesla Model S"
-
-2. ONLY for vague/generic concepts, transform into visual terms:
-   - "analytics" → "business analytics dashboard"
-   - "sustainability" → "wind turbines hillside"
-
-3. Google Images CANNOT find descriptions - it needs ACTUAL NAMES!
-   - "bald anime martial artist in orange gi" = WRONG
-   - "Krillin Dragon Ball" = CORRECT
-
-Return ONLY the optimized query (2-4 words). If input has a name, KEEP IT!"""
-
         loop = asyncio.get_event_loop()
+
         response = await loop.run_in_executor(
             None,
             invoke,
@@ -301,43 +178,54 @@ Return ONLY the optimized query (2-4 words). If input has a name, KEEP IT!"""
             model_name,
             [{"role": "user", "content": prompt}],
             None,
-            100,
-            0.3
+            10,  # Short response
+            0.0  # Deterministic
         )
 
-        enhanced = str(response).strip().strip('"\'')
-        if enhanced and len(enhanced) < 100:
-            logger.info(f"[SEARCH_IMAGES] Enhanced query: '{query}' -> '{enhanced}'")
-            return enhanced
+        result = str(response).strip()
+        # Extract number
+        numbers = re.findall(r'\d+', result)
+        if numbers:
+            idx = int(numbers[0])
+            if 0 <= idx < len(images):
+                logger.info(f"[IMAGE_SELECT] LLM selected [{idx}] {images[idx].description[:50]}")
+                return idx
+
+        logger.warning(f"[IMAGE_SELECT] Invalid LLM response: {result}, defaulting to 0")
     except Exception as e:
-        logger.warning(f"[SEARCH_IMAGES] Query enhancement failed: {e}")
+        logger.error(f"[IMAGE_SELECT] LLM failed: {e}, defaulting to 0")
 
-    return query
+    return 0
 
 
-async def _validate_image_url(url: str) -> bool:
-    """Check if an image URL is valid and accessible."""
-    import aiohttp
+# =============================================================================
+# IMAGE UPLOAD
+# =============================================================================
+
+async def _upload_to_supabase(image_url: str) -> Tuple[str, bool]:
+    """Upload external image to Supabase. Returns (url, success)."""
+    from services.image_storage_service import ImageStorageService
+
+    # Skip if already in our bucket
+    if any(d in image_url.lower() for d in ['nextslide.ai', 'supabase.co', 'supabase.com']):
+        return image_url, True
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.head(url, timeout=aiohttp.ClientTimeout(total=5), allow_redirects=True) as resp:
-                if resp.status != 200:
-                    return False
-                content_type = resp.headers.get('Content-Type', '')
-                return 'image' in content_type.lower()
-    except Exception:
-        return False
+        async with ImageStorageService() as storage:
+            result = await storage.upload_image_from_url(image_url)
+            if 'error' not in result and result.get('url'):
+                logger.info(f"[IMAGES] Uploaded: {image_url[:40]}...")
+                return result['url'], True
+            logger.warning(f"[IMAGES] Upload failed: {result.get('error')}")
+            return image_url, False
+    except Exception as e:
+        logger.error(f"[IMAGES] Upload error: {e}")
+        return image_url, False
 
 
-class ValidateImageArgs(ToolModel):
-    tool_name: Literal["validate_image"] = Field(description="Validate the image url")
-    image_url: str = Field(description="The url of the image to validate")
-
-
-def validate_image(edit_args: ValidateImageArgs, **kwargs):
-    return image_exists(edit_args.image_url)
-
+# =============================================================================
+# MAIN TOOL: SEARCH AND REPLACE IMAGE
+# =============================================================================
 
 def search_images(
     args: Dict[str, Any],
@@ -347,472 +235,34 @@ def search_images(
     attachments: List[Dict] = None,
 ) -> DeckDiff:
     """
-    Search for images using SERP API (Google Images).
+    Search for an image and replace it in the slide.
 
-    Can be used to:
-    1. Just search and return results (component_id=None)
-    2. Search and replace an existing Image component (component_id provided)
+    The LLM decides which image to replace based on the user's query.
 
-    Args in dict:
-        query: str - What to search for (e.g., "modern office teamwork", "technology abstract")
-        component_id: Optional[str] - If provided, replace this Image component with the best result
-        slide_id: Optional[str] - Slide containing the component (defaults to current slide)
-        num_results: int - Number of results to return (default 5)
-        orientation: Optional[str] - "landscape", "portrait", or "square"
+    Args:
+        query: str - What to search for AND/OR which image to replace
+        component_id: Optional[str] - Component to update
+        slide_id: Optional[str] - Target slide
     """
     query = args.get("query", "")
     component_id = args.get("component_id")
     slide_id = args.get("slide_id") or (current_slide.get("id") if current_slide else None)
-    num_results = args.get("num_results", 5)
-    orientation = args.get("orientation", "landscape")
 
     if not query:
-        logger.warning("[SEARCH_IMAGES] No query provided")
+        logger.warning("[IMAGES] No query")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-    # Auto-detect CustomComponent if no component_id provided
-    # This handles the common case where the slide IS a CustomComponent with embedded images
-    render_html = ""
+    # Auto-detect component
     if not component_id and current_slide:
-        components = current_slide.get("components", [])
-        for c in components:
+        for c in current_slide.get("components", []):
             if c.get("type") == "CustomComponent":
                 component_id = c.get("id")
-                render_html = c.get("props", {}).get("render", "")
-                logger.info(f"[SEARCH_IMAGES] Auto-detected CustomComponent: {component_id}")
                 break
             elif c.get("type") == "Image":
-                # Also auto-detect Image components
                 component_id = c.get("id")
-                logger.info(f"[SEARCH_IMAGES] Auto-detected Image component: {component_id}")
                 break
 
-    # Run async operations in sync context
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    # Extract slide context for AI-enhanced queries
-    slide_context = _extract_slide_context(current_slide or {}, render_html)
-
-    # Enhance vague queries with AI for better results
-    original_query = query
-    if _is_query_vague(query):
-        logger.info(f"[SEARCH_IMAGES] Query '{query}' is vague, enhancing with AI...")
-        try:
-            query = loop.run_until_complete(_enhance_query_with_ai(query, slide_context))
-        except Exception as e:
-            logger.warning(f"[SEARCH_IMAGES] AI enhancement failed: {e}")
-
-    logger.info(f"[SEARCH_IMAGES] Searching for: '{query}' (original='{original_query}', component_id={component_id}, orientation={orientation})")
-
-    try:
-        from services.serpapi_service import SerpAPIService
-
-        serpapi = SerpAPIService()
-        if not serpapi.is_available:
-            logger.warning("[SEARCH_IMAGES] SERP API not available (no API key)")
-            return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-        # Search for images - same parameters as slide generation for consistency
-        # Get top 10 results ranked by Google, pick best (first valid) like ImagePicker shows
-        async def do_search_with_validation():
-            results = await serpapi.search_images(
-                query=query,
-                per_page=10,  # Same as slide generation - top 10 Google-ranked results
-                size="large"  # Same as slide generation
-            )
-            photos = results.get("photos", [])
-            logger.info(f"[SEARCH_IMAGES] Got {len(photos)} results for '{query}'")
-
-            # Filter valid URLs - pick in order (Google ranks best first)
-            valid_photos = []
-            for photo in photos[:10]:
-                url = photo.get("original") or photo.get("url") or photo.get("src", {}).get("original")
-                if url and url.startswith("http") and not url.startswith("data:"):
-                    if not any(x in url.lower() for x in ['placeholder', 'dummy', 'example.com']):
-                        valid_photos.append({"url": url, "alt": photo.get("alt", query)})
-                        if len(valid_photos) >= num_results:
-                            break
-            logger.info(f"[SEARCH_IMAGES] 🎯 Picking best from {len(valid_photos)} valid results")
-            return valid_photos
-
-        photos = loop.run_until_complete(do_search_with_validation())
-
-        logger.info(f"[SEARCH_IMAGES] Found {len(photos)} valid images for '{query}'")
-
-        # Get the best image URL and upload to Supabase
-        # Photos are already filtered and sorted by Google's ranking (best first)
-        best_image_url = None
-        best_image_alt = query
-        for photo in photos:
-            url = photo.get("url")
-            if url:
-                # CRITICAL: Upload to Supabase first, like slide generation does
-                # This ensures images are in our bucket and won't break/expire
-                logger.info(f"[SEARCH_IMAGES] Uploading image to Supabase: {url[:60]}...")
-                uploaded_url, success = loop.run_until_complete(_upload_image_to_supabase(url))
-                if success:
-                    best_image_url = uploaded_url
-                    best_image_alt = photo.get("alt", query)
-                    logger.info(f"[SEARCH_IMAGES] ✅ Best match uploaded: {best_image_url[:60]}...")
-                    break
-                else:
-                    # Try next image if upload failed
-                    logger.warning(f"[SEARCH_IMAGES] Upload failed for {url[:40]}..., trying next image")
-                    continue
-
-        # If component_id provided and we found an image, replace it
-        if component_id and best_image_url:
-            # Find the target slide
-            target_slide_id = slide_id
-            if not target_slide_id and current_slide:
-                target_slide_id = current_slide.get("id")
-
-            logger.info(f"[SEARCH_IMAGES] Looking up: component_id={component_id}, target_slide_id={target_slide_id}")
-
-            if target_slide_id:
-                # Find the component
-                # CRITICAL: Prefer current_slide if it matches target_slide_id
-                # The orchestrator patches current_slide with accumulated props from previous tool calls
-                # This ensures sequential search_images calls build on each other's changes
-                target_slide = None
-
-                # First check if current_slide IS the target (this has accumulated props!)
-                if current_slide and current_slide.get("id") == target_slide_id:
-                    target_slide = current_slide
-                    logger.info(f"[SEARCH_IMAGES] Using current_slide (with accumulated props) for {target_slide_id}")
-                else:
-                    # Fall back to deck_data lookup
-                    all_slide_ids = [s.get("id") for s in deck_data.get("slides", [])]
-                    logger.info(f"[SEARCH_IMAGES] Looking in deck_data for {target_slide_id}. Available: {all_slide_ids}")
-
-                    for s in deck_data.get("slides", []):
-                        if s.get("id") == target_slide_id:
-                            target_slide = s
-                            break
-
-                if not target_slide:
-                    logger.warning(f"[SEARCH_IMAGES] Slide {target_slide_id} not found, using current_slide as fallback")
-                    target_slide = current_slide
-
-                if target_slide:
-                    components = target_slide.get("components", [])
-                    all_component_ids = [(c.get("id"), c.get("type")) for c in components]
-                    logger.info(f"[SEARCH_IMAGES] Components on slide: {all_component_ids}")
-
-                    target_component = None
-                    for c in components:
-                        if c.get("id") == component_id:
-                            target_component = c
-                            break
-
-                    if not target_component:
-                        logger.warning(f"[SEARCH_IMAGES] Component {component_id} not found in slide {target_slide_id}")
-
-                    if target_component:
-                        comp_type = target_component.get("type")
-
-                        if comp_type == "Image":
-                            # Standard Image component - update src prop
-                            logger.info(f"[SEARCH_IMAGES] Replacing Image {component_id} with: {best_image_url[:80]}...")
-                            return DeckDiff(DeckDiffBase(
-                                slides_to_update=[
-                                    SlideDiffBase(
-                                        slide_id=target_slide_id,
-                                        components_to_update=[
-                                            ComponentDiffBase(
-                                                id=component_id,
-                                                props={
-                                                    "src": best_image_url,
-                                                    "alt": best_image_alt
-                                                }
-                                            )
-                                        ]
-                                    )
-                                ]
-                            ))
-                        elif comp_type == "CustomComponent":
-                            # CustomComponent - find and replace image URL in HTML
-                            props = target_component.get("props", {})
-                            render_html = props.get("render", "")
-
-                            # CRITICAL: Strip frontend editing scripts from HTML before processing
-                            # These can accumulate if frontend sends back HTML with injected scripts
-                            from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
-                            render_html = strip_frontend_editing_scripts(render_html)
-
-                            if render_html:
-                                import re
-                                old_url = args.get("old_url")  # Optional: specific URL to replace
-                                image_index = args.get("image_index")  # Optional: 0-based index of image to replace
-
-                                if old_url:
-                                    # Replace specific URL
-                                    new_html = render_html.replace(old_url, best_image_url)
-                                else:
-                                    js_html, js_replaced = _replace_js_image_object_by_query(
-                                        render_html,
-                                        query,
-                                        best_image_url,
-                                        image_index,
-                                    )
-                                    if js_replaced:
-                                        new_html = js_html
-                                        logger.info("[SEARCH_IMAGES] Replaced JS image object for query '%s'", query)
-                                    else:
-                                        # Find all images: both <img> tags AND CSS background-image URLs
-                                        # Pattern 1: <img src="...">
-                                        img_pattern = r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>'
-                                        # Pattern 2: background-image: url('...') or url("...")
-                                        bg_pattern = r'background-image:\s*url\(["\']?([^"\')\s]+)["\']?\)'
-                                        # Pattern 3: style="...background-image: url('...')..." inline
-                                        inline_bg_pattern = r'style=["\'][^"\']*background-image:\s*url\(["\']?([^"\')\s]+)["\']?\)[^"\']*["\']'
-
-                                        img_matches = list(re.finditer(img_pattern, render_html))
-                                        bg_matches = list(re.finditer(bg_pattern, render_html))
-                                        inline_bg_matches = list(re.finditer(inline_bg_pattern, render_html))
-
-                                        # Combine all matches, keeping track of their positions
-                                        # CRITICAL: Deduplicate by URL to avoid double-counting
-                                        # bg_pattern and inline_bg_pattern can match the same URL
-                                        all_matches = []
-                                        seen_urls = set()
-
-                                        # Add img matches first (these are unique - <img> tags)
-                                        for m in img_matches:
-                                            url = m.group(1)
-                                            if url not in seen_urls:
-                                                all_matches.append((m.start(), m, 'img'))
-                                                seen_urls.add(url)
-
-                                        # For background images, prefer inline_bg matches (more context)
-                                        # over bare bg_pattern matches
-                                        for m in inline_bg_matches:
-                                            url = m.group(1)
-                                            if url not in seen_urls:
-                                                all_matches.append((m.start(), m, 'inline_bg'))
-                                                seen_urls.add(url)
-
-                                        # Only add bg_pattern matches if not already seen
-                                        for m in bg_matches:
-                                            url = m.group(1)
-                                            if url not in seen_urls:
-                                                all_matches.append((m.start(), m, 'bg'))
-                                                seen_urls.add(url)
-
-                                        # Sort by position to maintain order
-                                        all_matches.sort(key=lambda x: x[0])
-                                        matches = [m[1] for m in all_matches]
-
-                                        logger.info(f"[SEARCH_IMAGES] Found {len(matches)} unique images ({len(img_matches)} <img> tags, {len(bg_matches)} CSS bg, {len(inline_bg_matches)} inline bg - deduplicated)")
-
-                                        if not matches:
-                                            logger.warning(f"[SEARCH_IMAGES] No images found in CustomComponent HTML (checked <img> tags and CSS background-images)")
-                                            return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-                                        # Log what each image index maps to (helpful for debugging)
-                                        for idx, m in enumerate(matches):
-                                            url = m.group(1)
-                                            # Get surrounding context for logging
-                                            ctx_start = max(0, m.start() - 100)
-                                            ctx_end = min(len(render_html), m.end() + 100)
-                                            ctx = re.sub(r'<[^>]+>', ' ', render_html[ctx_start:ctx_end])
-                                            ctx = ' '.join(ctx.split())[:80]
-                                            logger.info(f"[SEARCH_IMAGES] Index {idx}: {url[:60]}... context: '{ctx}'")
-
-                                        # If only one image, just replace it
-                                        if len(matches) == 1:
-                                            old_url = matches[0].group(1)
-                                            new_html = render_html.replace(old_url, best_image_url, 1)
-                                            logger.info(f"[SEARCH_IMAGES] Replacing only image: {old_url[:50]}... -> {best_image_url[:50]}...")
-                                        else:
-                                            # ALWAYS use smart scoring for multiple images
-                                            # The LLM's image_index guesses are often wrong (it doesn't know
-                                            # that index 0 might be a logo, not a card background)
-                                            # image_index is used as a hint/tiebreaker, not an override
-                                            # Multiple images - score each by relevance to query
-                                            query_words = set(query.lower().split())
-                                            # Identify generic words that shouldn't dominate scoring
-                                            generic_words = {'logo', 'image', 'photo', 'picture', 'icon', 'img', 'graphic'}
-                                            specific_words = query_words - generic_words
-
-                                            best_match_idx = 0
-                                            best_score = -1
-
-                                            for idx, match in enumerate(matches):
-                                                full_tag = match.group(0)
-                                                img_url = match.group(1)
-                                                score = 0
-                                                specific_word_matched = False
-
-                                                # Extract alt text
-                                                alt_match = re.search(r'alt=["\']([^"\']*)["\']', full_tag)
-                                                alt_text = alt_match.group(1).lower() if alt_match else ""
-
-                                                # Extract class names
-                                                class_match = re.search(r'class=["\']([^"\']*)["\']', full_tag)
-                                                class_text = class_match.group(1).lower() if class_match else ""
-
-                                                # Get WIDE surrounding context (500 chars before/after to catch titles)
-                                                start = max(0, match.start() - 500)
-                                                end = min(len(render_html), match.end() + 500)
-                                                context = render_html[start:end].lower()
-
-                                                # Also extract visible text content from context (strip HTML tags)
-                                                text_content = re.sub(r'<[^>]+>', ' ', context)
-                                                text_content = ' '.join(text_content.split()).lower()
-
-                                                # Score based on query word matches
-                                                for word in query_words:
-                                                    if len(word) < 3:
-                                                        continue
-
-                                                    is_specific = word in specific_words
-                                                    word_score = 0
-
-                                                    if word in alt_text:
-                                                        word_score += 5 if is_specific else 2  # Specific words in alt are gold
-                                                        if is_specific:
-                                                            specific_word_matched = True
-                                                    if word in class_text:
-                                                        word_score += 2 if is_specific else 1
-                                                    if word in text_content:
-                                                        word_score += 4 if is_specific else 1  # Text content (like card titles)
-                                                        if is_specific:
-                                                            specific_word_matched = True
-                                                    if word in img_url.lower():
-                                                        word_score += 3 if is_specific else 1
-
-                                                    score += word_score
-
-                                                # Bonus if we matched a specific (non-generic) word
-                                                if specific_word_matched:
-                                                    score += 5
-
-                                                # Small tiebreaker bonus if LLM's image_index matches
-                                                # This shouldn't override strong matches but helps when scores are equal
-                                                if image_index is not None and idx == image_index:
-                                                    score += 0.5  # Small bonus, not enough to override real matches
-
-                                                logger.info(f"[SEARCH_IMAGES] Image {idx}: score={score}, specific_match={specific_word_matched}, alt='{alt_text[:30]}', text_near='{text_content[:50]}...'")
-
-                                                if score > best_score:
-                                                    best_score = score
-                                                    best_match_idx = idx
-
-                                            old_url = matches[best_match_idx].group(1)
-                                            new_html = render_html.replace(old_url, best_image_url, 1)
-                                            logger.info(f"[SEARCH_IMAGES] Best match (idx={best_match_idx}, score={best_score}): {old_url[:50]}... -> {best_image_url[:50]}...")
-
-                                if new_html != render_html:
-                                    logger.info(f"[SEARCH_IMAGES] ✅ RETURNING DeckDiff: slide_id={target_slide_id}, component_id={component_id}, html_len={len(new_html)}")
-                                    diff = DeckDiff(DeckDiffBase(
-                                        slides_to_update=[
-                                            SlideDiffBase(
-                                                slide_id=target_slide_id,
-                                                components_to_update=[
-                                                    ComponentDiffBase(
-                                                        id=component_id,
-                                                        props={"render": new_html}
-                                                    )
-                                                ]
-                                            )
-                                        ]
-                                    ))
-                                    return diff
-                                else:
-                                    logger.warning(f"[SEARCH_IMAGES] ⚠️ HTML unchanged after replacement! old_url may not exist in HTML")
-                        else:
-                            logger.warning(f"[SEARCH_IMAGES] Component {component_id} is type {comp_type}, not Image or CustomComponent")
-                    else:
-                        logger.warning(f"[SEARCH_IMAGES] Component {component_id} not found")
-
-        # Return empty diff if just searching or no component to replace
-        logger.info(f"[SEARCH_IMAGES] Search complete. Best image: {best_image_url[:80] if best_image_url else 'None'}")
-        return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-    except Exception as e:
-        logger.error(f"[SEARCH_IMAGES] Error: {e}")
-        return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-
-async def _download_image_bytes(url: str) -> Optional[bytes]:
-    """Download image from URL and return as bytes."""
-    import aiohttp
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                if resp.status == 200:
-                    return await resp.read()
-                else:
-                    logger.warning(f"[EDIT_IMAGE_AI] Failed to download image: status {resp.status}")
-                    return None
-    except Exception as e:
-        logger.error(f"[EDIT_IMAGE_AI] Error downloading image: {e}")
-        return None
-
-
-def edit_image_with_ai(
-    args: Dict[str, Any],
-    deck_data: Dict,
-    current_slide: Dict,
-    registry=None,
-    attachments: List[Dict] = None,
-) -> DeckDiff:
-    """
-    Edit an image using AI (Gemini) based on natural language instructions.
-
-    This tool uses Gemini's image editing capabilities to modify existing images
-    on a slide. It can handle requests like:
-    - "Make the background blue"
-    - "Remove the text from this image"
-    - "Add a subtle gradient overlay"
-    - "Make it look more professional"
-    - "Change the color scheme to match our brand"
-
-    Args in dict:
-        instruction: str - Natural language description of the edit (e.g., "make it blue", "remove the person")
-        component_id: Optional[str] - If provided, edit image in this component (auto-detects CustomComponent)
-        slide_id: Optional[str] - Slide containing the component (defaults to current slide)
-        image_index: Optional[int] - 0-based index of which image to edit if multiple exist
-        image_url: Optional[str] - Specific image URL to edit (if known)
-    """
-    instruction = args.get("instruction", "")
-    component_id = args.get("component_id")
-    slide_id = args.get("slide_id") or (current_slide.get("id") if current_slide else None)
-    image_index = args.get("image_index")
-    target_url = args.get("image_url")
-
-    if not instruction:
-        logger.warning("[EDIT_IMAGE_AI] No instruction provided")
-        return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-    logger.info(f"[EDIT_IMAGE_AI] Instruction: '{instruction}', component_id={component_id}, image_index={image_index}")
-
-    # Auto-detect CustomComponent if no component_id provided
-    render_html = ""
-    if not component_id and current_slide:
-        components = current_slide.get("components", [])
-        for c in components:
-            if c.get("type") == "CustomComponent":
-                component_id = c.get("id")
-                render_html = c.get("props", {}).get("render", "")
-                logger.info(f"[EDIT_IMAGE_AI] Auto-detected CustomComponent: {component_id}")
-                break
-            elif c.get("type") == "Image":
-                # Handle Image component directly
-                component_id = c.get("id")
-                target_url = c.get("props", {}).get("src", "")
-                logger.info(f"[EDIT_IMAGE_AI] Auto-detected Image component: {component_id}")
-                break
-
-    if not component_id:
-        logger.warning("[EDIT_IMAGE_AI] No component found to edit")
-        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+    logger.info(f"[IMAGES] Query: '{query}', component: {component_id}")
 
     # Get event loop
     try:
@@ -821,18 +271,56 @@ def edit_image_with_ai(
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    # Find the target slide and component
-    target_slide = current_slide if current_slide and current_slide.get("id") == slide_id else None
-    if not target_slide:
+    # Search for new image
+    try:
+        from services.serpapi_service import SerpAPIService
+        serpapi = SerpAPIService()
+
+        if not serpapi.is_available:
+            logger.warning("[IMAGES] SERP API not available")
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+        async def do_search():
+            results = await serpapi.search_images(query=query, per_page=5, size="large")
+            photos = results.get("photos", [])
+            for p in photos:
+                url = p.get("original") or p.get("url")
+                if url and url.startswith("http") and "placeholder" not in url.lower():
+                    return url, p.get("alt", query)
+            return None, None
+
+        new_url, new_alt = loop.run_until_complete(do_search())
+
+        if not new_url:
+            logger.warning("[IMAGES] No search results")
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+        # Upload to Supabase
+        new_url, _ = loop.run_until_complete(_upload_to_supabase(new_url))
+        logger.info(f"[IMAGES] New image: {new_url[:60]}...")
+
+    except Exception as e:
+        logger.error(f"[IMAGES] Search error: {e}")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    # Find and replace in component
+    if not component_id:
+        logger.warning("[IMAGES] No component to update")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    # Find target slide
+    target_slide = current_slide
+    if current_slide and current_slide.get("id") != slide_id:
         for s in deck_data.get("slides", []):
             if s.get("id") == slide_id:
                 target_slide = s
                 break
 
     if not target_slide:
-        logger.warning(f"[EDIT_IMAGE_AI] Slide {slide_id} not found")
+        logger.warning("[IMAGES] Slide not found")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
+    # Find component
     target_component = None
     for c in target_slide.get("components", []):
         if c.get("id") == component_id:
@@ -840,60 +328,13 @@ def edit_image_with_ai(
             break
 
     if not target_component:
-        logger.warning(f"[EDIT_IMAGE_AI] Component {component_id} not found")
+        logger.warning("[IMAGES] Component not found")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
     comp_type = target_component.get("type")
 
     # Handle Image component
     if comp_type == "Image":
-        target_url = target_component.get("props", {}).get("src", "")
-        if not target_url:
-            logger.warning("[EDIT_IMAGE_AI] Image component has no src")
-            return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-        # Download, edit, and upload
-        async def process_image():
-            from services.gemini_image_service import GeminiImageService
-            from services.image_storage_service import ImageStorageService
-
-            gemini = GeminiImageService()
-            if not gemini.is_available:
-                logger.error("[EDIT_IMAGE_AI] Gemini service not available")
-                return None
-
-            # Download image
-            img_bytes = await _download_image_bytes(target_url)
-            if not img_bytes:
-                return None
-
-            # Edit with Gemini
-            result = await gemini.edit_image(instruction, img_bytes)
-            if "error" in result:
-                logger.error(f"[EDIT_IMAGE_AI] Gemini edit failed: {result['error']}")
-                return None
-
-            # Upload to Supabase
-            import base64
-            b64_data = result.get("b64_json")
-            if not b64_data:
-                return None
-
-            async with ImageStorageService() as storage:
-                import uuid as uuid_mod
-                filename = f"ai-edited-{uuid_mod.uuid4().hex[:8]}.png"
-                upload_result = await storage.upload_image_from_base64(b64_data, filename, "image/png")
-                if "error" in upload_result:
-                    logger.error(f"[EDIT_IMAGE_AI] Upload failed: {upload_result['error']}")
-                    return None
-                return upload_result.get("url")
-
-        new_url = loop.run_until_complete(process_image())
-        if not new_url:
-            logger.error("[EDIT_IMAGE_AI] Failed to process image")
-            return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-        logger.info(f"[EDIT_IMAGE_AI] ✅ Image edited successfully: {new_url[:60]}...")
         return DeckDiff(DeckDiffBase(
             slides_to_update=[
                 SlideDiffBase(
@@ -901,7 +342,7 @@ def edit_image_with_ai(
                     components_to_update=[
                         ComponentDiffBase(
                             id=component_id,
-                            props={"src": new_url}
+                            props={"src": new_url, "alt": new_alt or query}
                         )
                     ]
                 )
@@ -909,125 +350,45 @@ def edit_image_with_ai(
         ))
 
     # Handle CustomComponent
-    elif comp_type == "CustomComponent":
+    if comp_type == "CustomComponent":
         props = target_component.get("props", {})
-        render_html = props.get("render", "")
+        html = props.get("render", "")
 
-        if not render_html:
-            logger.warning("[EDIT_IMAGE_AI] CustomComponent has no HTML")
+        if not html:
             return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-        # Strip frontend editing scripts
+        # Strip frontend scripts
         from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
-        render_html = strip_frontend_editing_scripts(render_html)
+        html = strip_frontend_editing_scripts(html)
 
-        # Find images in HTML
-        img_pattern = r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>'
-        bg_pattern = r'background-image:\s*url\(["\']?([^"\')\s]+)["\']?\)'
+        # Extract all images
+        images = _extract_all_images(props, html)
 
-        img_matches = list(re.finditer(img_pattern, render_html))
-        bg_matches = list(re.finditer(bg_pattern, render_html))
-
-        # Combine matches
-        all_matches = []
-        seen_urls = set()
-        for m in img_matches:
-            url = m.group(1)
-            if url not in seen_urls and url.startswith("http"):
-                all_matches.append((m.start(), m, 'img', url))
-                seen_urls.add(url)
-        for m in bg_matches:
-            url = m.group(1)
-            if url not in seen_urls and url.startswith("http"):
-                all_matches.append((m.start(), m, 'bg', url))
-                seen_urls.add(url)
-
-        all_matches.sort(key=lambda x: x[0])
-
-        if not all_matches:
-            logger.warning("[EDIT_IMAGE_AI] No images found in CustomComponent HTML")
+        if not images:
+            logger.warning("[IMAGES] No images found in component")
             return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-        logger.info(f"[EDIT_IMAGE_AI] Found {len(all_matches)} images in HTML")
+        logger.info(f"[IMAGES] Found {len(images)} images:")
+        for img in images:
+            logger.info(f"  [{img.index}] {img.description[:60]}")
 
-        # Select target image
-        if target_url:
-            # Find specific URL
-            target_match = None
-            for _, m, _, url in all_matches:
-                if url == target_url:
-                    target_match = (m, url)
-                    break
-            if not target_match:
-                logger.warning(f"[EDIT_IMAGE_AI] Target URL not found in HTML: {target_url[:60]}")
-                return DeckDiff(DeckDiffBase(slides_to_update=[]))
-        elif image_index is not None and 0 <= image_index < len(all_matches):
-            _, m, _, url = all_matches[image_index]
-            target_match = (m, url)
-            logger.info(f"[EDIT_IMAGE_AI] Using image at index {image_index}: {url[:60]}...")
-        else:
-            # Default to first image
-            _, m, _, url = all_matches[0]
-            target_match = (m, url)
-            logger.info(f"[EDIT_IMAGE_AI] Using first image: {url[:60]}...")
+        # LLM selects which image to replace
+        try:
+            selected_idx = loop.run_until_complete(_select_image_with_llm(query, images))
+        except Exception as e:
+            # SLIDE-BACKEND-28A: Handle LLM selection failures gracefully
+            logger.warning(f"[IMAGES] LLM selection failed: {e}, defaulting to first image")
+            selected_idx = 0
+        old_url = images[selected_idx].url
 
-        match_obj, old_url = target_match
+        # Replace in HTML
+        new_html = html.replace(old_url, new_url, 1)
 
-        # Download, edit, and upload
-        async def process_image():
-            from services.gemini_image_service import GeminiImageService
-            from services.image_storage_service import ImageStorageService
-
-            gemini = GeminiImageService()
-            if not gemini.is_available:
-                logger.error("[EDIT_IMAGE_AI] Gemini service not available")
-                return None
-
-            # Download image
-            img_bytes = await _download_image_bytes(old_url)
-            if not img_bytes:
-                logger.error(f"[EDIT_IMAGE_AI] Failed to download image from {old_url[:60]}")
-                return None
-
-            logger.info(f"[EDIT_IMAGE_AI] Downloaded image ({len(img_bytes)} bytes), sending to Gemini...")
-
-            # Edit with Gemini
-            result = await gemini.edit_image(instruction, img_bytes)
-            if "error" in result:
-                logger.error(f"[EDIT_IMAGE_AI] Gemini edit failed: {result['error']}")
-                return None
-
-            logger.info(f"[EDIT_IMAGE_AI] Gemini edit successful, uploading to storage...")
-
-            # Upload to Supabase
-            import base64
-            b64_data = result.get("b64_json")
-            if not b64_data:
-                logger.error("[EDIT_IMAGE_AI] No b64_json in Gemini response")
-                return None
-
-            async with ImageStorageService() as storage:
-                import uuid as uuid_mod
-                filename = f"ai-edited-{uuid_mod.uuid4().hex[:8]}.png"
-                upload_result = await storage.upload_image_from_base64(b64_data, filename, "image/png")
-                if "error" in upload_result:
-                    logger.error(f"[EDIT_IMAGE_AI] Upload failed: {upload_result['error']}")
-                    return None
-                return upload_result.get("url")
-
-        new_url = loop.run_until_complete(process_image())
-        if not new_url:
-            logger.error("[EDIT_IMAGE_AI] Failed to process image")
+        if new_html == html:
+            logger.warning("[IMAGES] Replacement failed - URL not found in HTML")
             return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-        # Replace URL in HTML
-        new_html = render_html.replace(old_url, new_url, 1)
-
-        if new_html == render_html:
-            logger.warning("[EDIT_IMAGE_AI] HTML unchanged after replacement")
-            return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-        logger.info(f"[EDIT_IMAGE_AI] ✅ Image edited and replaced: {old_url[:40]}... -> {new_url[:40]}...")
+        logger.info(f"[IMAGES] Replaced image [{selected_idx}]: {old_url[:40]}... -> {new_url[:40]}...")
 
         return DeckDiff(DeckDiffBase(
             slides_to_update=[
@@ -1043,10 +404,12 @@ def edit_image_with_ai(
             ]
         ))
 
-    else:
-        logger.warning(f"[EDIT_IMAGE_AI] Component type {comp_type} not supported")
-        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+    return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
+
+# =============================================================================
+# REPLACE IMAGE (specific URL)
+# =============================================================================
 
 def replace_image_from_search(
     args: Dict[str, Any],
@@ -1056,47 +419,25 @@ def replace_image_from_search(
     attachments: List[Dict] = None,
 ) -> DeckDiff:
     """
-    Replace an Image component with a specific image URL (typically from search results).
-
-    Args in dict:
-        component_id: str - The Image component to replace
-        image_url: str - The URL of the new image
-        alt: Optional[str] - Alt text for the image
-        slide_id: Optional[str] - Slide containing the component (defaults to current slide)
+    Replace an Image component with a specific URL.
     """
     component_id = args.get("component_id")
     image_url = args.get("image_url")
     alt = args.get("alt", "")
     slide_id = args.get("slide_id") or (current_slide.get("id") if current_slide else None)
 
-    if not component_id:
-        logger.warning("[REPLACE_IMAGE] No component_id provided")
+    if not component_id or not image_url:
+        logger.warning("[REPLACE_IMAGE] Missing args")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-    if not image_url:
-        logger.warning("[REPLACE_IMAGE] No image_url provided")
-        return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-    # Validate the image URL (optional - log warning but proceed)
-    if not image_exists(image_url):
-        logger.warning(f"[REPLACE_IMAGE] Image URL may not be accessible: {image_url[:80]}")
-
-    # CRITICAL: Upload to Supabase first, like slide generation does
+    # Upload to Supabase
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    logger.info(f"[REPLACE_IMAGE] Uploading image to Supabase: {image_url[:60]}...")
-    uploaded_url, success = loop.run_until_complete(_upload_image_to_supabase(image_url))
-    if success:
-        image_url = uploaded_url
-        logger.info(f"[REPLACE_IMAGE] Using Supabase URL: {image_url[:60]}...")
-    else:
-        logger.warning(f"[REPLACE_IMAGE] Upload failed, using original URL")
-
-    logger.info(f"[REPLACE_IMAGE] Replacing {component_id} with {image_url[:80]}...")
+    image_url, _ = loop.run_until_complete(_upload_to_supabase(image_url))
 
     return DeckDiff(DeckDiffBase(
         slides_to_update=[
@@ -1105,12 +446,169 @@ def replace_image_from_search(
                 components_to_update=[
                     ComponentDiffBase(
                         id=component_id,
-                        props={
-                            "src": image_url,
-                            "alt": alt
-                        }
+                        props={"src": image_url, "alt": alt}
                     )
                 ]
             )
         ]
     ))
+
+
+# =============================================================================
+# EDIT IMAGE WITH AI (Gemini)
+# =============================================================================
+
+async def _download_image(url: str) -> Optional[bytes]:
+    """Download image bytes."""
+    import aiohttp
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                if resp.status == 200:
+                    return await resp.read()
+        return None
+    except Exception as e:
+        logger.error(f"[EDIT_IMAGE] Download error: {e}")
+        return None
+
+
+def edit_image_with_ai(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry=None,
+    attachments: List[Dict] = None,
+) -> DeckDiff:
+    """
+    Edit an image using Gemini AI.
+
+    Args:
+        instruction: What to do (e.g., "make it blue", "remove background")
+        image_index: Which image to edit (0-based)
+    """
+    instruction = args.get("instruction", "")
+    image_index = args.get("image_index", 0)
+    slide_id = args.get("slide_id") or (current_slide.get("id") if current_slide else None)
+
+    if not instruction:
+        logger.warning("[EDIT_IMAGE] No instruction")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    logger.info(f"[EDIT_IMAGE] Instruction: '{instruction}', index: {image_index}")
+
+    # Find component
+    component_id = None
+    for c in current_slide.get("components", []):
+        if c.get("type") in ["CustomComponent", "Image"]:
+            component_id = c.get("id")
+            break
+
+    if not component_id:
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    target_component = None
+    for c in current_slide.get("components", []):
+        if c.get("id") == component_id:
+            target_component = c
+            break
+
+    if not target_component:
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    comp_type = target_component.get("type")
+    props = target_component.get("props", {})
+
+    # Get image URL
+    if comp_type == "Image":
+        old_url = props.get("src", "")
+    else:
+        html = props.get("render", "")
+        images = _extract_all_images(props, html)
+        if not images:
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+        idx = min(image_index, len(images) - 1)
+        old_url = images[idx].url
+
+    if not old_url:
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    # Download, edit, upload
+    async def process():
+        from services.gemini_image_service import GeminiImageService
+        from services.image_storage_service import ImageStorageService
+
+        gemini = GeminiImageService()
+        if not gemini.is_available:
+            logger.error("[EDIT_IMAGE] Gemini not available")
+            return None
+
+        img_bytes = await _download_image(old_url)
+        if not img_bytes:
+            return None
+
+        result = await gemini.edit_image(instruction, img_bytes)
+        if "error" in result:
+            logger.error(f"[EDIT_IMAGE] Gemini error: {result['error']}")
+            return None
+
+        b64_data = result.get("b64_json")
+        if not b64_data:
+            return None
+
+        async with ImageStorageService() as storage:
+            import uuid
+            filename = f"ai-edit-{uuid.uuid4().hex[:8]}.png"
+            upload = await storage.upload_image_from_base64(b64_data, filename, "image/png")
+            if "error" in upload:
+                return None
+            return upload.get("url")
+
+    new_url = loop.run_until_complete(process())
+    if not new_url:
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    logger.info(f"[EDIT_IMAGE] Success: {old_url[:40]}... -> {new_url[:40]}...")
+
+    if comp_type == "Image":
+        return DeckDiff(DeckDiffBase(
+            slides_to_update=[
+                SlideDiffBase(
+                    slide_id=slide_id,
+                    components_to_update=[
+                        ComponentDiffBase(id=component_id, props={"src": new_url})
+                    ]
+                )
+            ]
+        ))
+    else:
+        html = props.get("render", "")
+        new_html = html.replace(old_url, new_url, 1)
+        return DeckDiff(DeckDiffBase(
+            slides_to_update=[
+                SlideDiffBase(
+                    slide_id=slide_id,
+                    components_to_update=[
+                        ComponentDiffBase(id=component_id, props={"render": new_html})
+                    ]
+                )
+            ]
+        ))
+
+
+# =============================================================================
+# VALIDATE IMAGE
+# =============================================================================
+
+class ValidateImageArgs(ToolModel):
+    tool_name: Literal["validate_image"] = Field(description="Validate image URL")
+    image_url: str = Field(description="URL to validate")
+
+
+def validate_image(edit_args: ValidateImageArgs, **kwargs):
+    return image_exists(edit_args.image_url)

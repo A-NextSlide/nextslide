@@ -551,7 +551,10 @@ async def restore_to_edit(edit_id: str, token: Optional[str] = Depends(get_auth_
             "applied_by": user["id"],
             "deck_revision": str(deck_revision) if deck_revision else None
         }
-        new_edit = sb.table("agent_edits").insert(restore_record).execute().data[0]
+        restore_result = sb.table("agent_edits").insert(restore_record).execute()
+        if not restore_result.data:
+            raise HTTPException(status_code=500, detail="Failed to save restore edit")
+        new_edit = restore_result.data[0]
 
         # Broadcast the restoration event
         from services.agent_stream_bus import agent_stream_bus

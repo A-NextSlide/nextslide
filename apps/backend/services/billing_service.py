@@ -193,7 +193,13 @@ class BillingService:
                 plan_name=plan_name
             )
         except Exception as e:
-            logger.error(f"Error getting user balance: {e}")
+            # Circuit breaker errors are expected during Supabase outages - log as warning
+            # Fixes SLIDE-BACKEND-27S: Circuit breaker errors filled Sentry
+            error_str = str(e)
+            if "circuit breaker" in error_str.lower() or "too many failures" in error_str.lower():
+                logger.warning(f"Error getting user balance (circuit breaker): {e}")
+            else:
+                logger.error(f"Error getting user balance: {e}")
             return None
 
     async def initialize_user_credits(self, user_id: str) -> bool:

@@ -56,22 +56,24 @@ def get_model(task: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 TASK_MODELS = {
-    # Orchestration (tool routing) - Haiku is fast and smart enough
-    "orchestrator": MODEL_EASY,
+    # Orchestration (tool routing) - Gemini 3 Flash for speed + reliability
+    "orchestrator": GEMINI_3_FLASH,
 
-    # Generation (creative) - Gemini 3 Pro
+    # Generation (creative) - Pro for creation, Flash for single edits
     "slide_generate": MODEL_HARD,
-    "component_create": MODEL_HARD,
-    "component_edit": MODEL_HARD,
+    "slide_edit": GEMINI_3_FLASH,
+    "slide_edit_batch": MODEL_HARD,  # edit_all_slides uses Pro
+    "component_create": GEMINI_3_FLASH,
+    "component_edit": GEMINI_3_FLASH,
     "custom_component_rewrite": GEMINI_3_FLASH,
     "theme_generate": MODEL_HARD,
     "slide_style": MODEL_HARD,
 
-    # Simple tasks - Haiku
+    # Simple tasks - Haiku (except validation/brand which use Flash for JSON reliability)
     "composer_route": MODEL_EASY,
-    "validation": MODEL_EASY,
+    "validation": GEMINI_3_FLASH,
     "context_build": MODEL_EASY,
-    "brand_detect": MODEL_EASY,
+    "brand_detect": GEMINI_3_FLASH,
     "font_select": MODEL_EASY,
     "image_search": MODEL_EASY,
     "chat": MODEL_EASY,

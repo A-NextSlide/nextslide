@@ -19,6 +19,7 @@ from api.requests.api_auth import get_auth_header
 from services.supabase_auth_service import get_auth_service
 from services.pptx_importer import PPTXImporter
 from services.agent_stream_bus import agent_stream_bus
+from utils.background_tasks import create_background_task
 
 
 logger = logging.getLogger(__name__)
@@ -2144,8 +2145,8 @@ async def _run_import_pptx_job(user_id: str, job_id: str, uploaded_file_path: st
         # Clean up temp file
         try:
             os.unlink(uploaded_file_path)
-        except:
-            pass
+        except (OSError, FileNotFoundError):
+            pass  # File already deleted or doesn't exist
 
 
 async def _upload_deck_images_to_storage(deck: Dict[str, Any]) -> Dict[str, Any]:
@@ -2452,9 +2453,12 @@ async def import_slides(body: SlidesImportRequest, token: Optional[str] = Depend
         raise HTTPException(status_code=401, detail="Authentication required")
     user_id = user["id"]
     job_id = jobs_store.create(user_id=user_id, job_type=JobType.IMPORT_SLIDES, input_payload=body.model_dump())
-    import asyncio
 
-    asyncio.create_task(_run_import_slides_job(user_id=user_id, job_id=job_id, presentation_id=body.presentationId))
+    # FIX: Use safe background task wrapper for proper error logging
+    create_background_task(
+        _run_import_slides_job(user_id=user_id, job_id=job_id, presentation_id=body.presentationId),
+        name=f"import_slides_{job_id}"
+    )
     return JobResponse(jobId=job_id)
 
 
@@ -2494,9 +2498,12 @@ async def import_pptx_from_url(body: ImportPptxUrlRequest, token: Optional[str] 
         tmp_path = tmp.name
 
     job_id = jobs_store.create(user_id=user_id, job_type=JobType.IMPORT_PPTX, input_payload={"filename": filename, "deckId": body.deckId})
-    import asyncio
 
-    asyncio.create_task(_run_import_pptx_job(user_id=user_id, job_id=job_id, uploaded_file_path=tmp_path))
+    # FIX: Use safe background task wrapper for proper error logging
+    create_background_task(
+        _run_import_pptx_job(user_id=user_id, job_id=job_id, uploaded_file_path=tmp_path),
+        name=f"import_pptx_{job_id}"
+    )
     return JobResponse(jobId=job_id)
 
 
@@ -2517,9 +2524,12 @@ async def import_pptx_upload(file: UploadFile = File(...), token: Optional[str] 
         tmp.write(content)
         tmp_path = tmp.name
     job_id = jobs_store.create(user_id=user_id, job_type=JobType.IMPORT_PPTX, input_payload={"filename": file.filename})
-    import asyncio
 
-    asyncio.create_task(_run_import_pptx_job(user_id=user_id, job_id=job_id, uploaded_file_path=tmp_path))
+    # FIX: Use safe background task wrapper for proper error logging
+    create_background_task(
+        _run_import_pptx_job(user_id=user_id, job_id=job_id, uploaded_file_path=tmp_path),
+        name=f"import_pptx_upload_{job_id}"
+    )
     return JobResponse(jobId=job_id)
 
 
@@ -2965,9 +2975,12 @@ async def export_slides_editable(body: ExportEditableRequest, token: Optional[st
         raise HTTPException(status_code=401, detail="Authentication required")
     user_id = user["id"]
     job_id = jobs_store.create(user_id=user_id, job_type=JobType.EXPORT_EDITABLE, input_payload={"options": body.options or {}})
-    import asyncio
 
-    asyncio.create_task(_run_export_job(user_id=user_id, job_id=job_id, job_type=JobType.EXPORT_EDITABLE, deck=body.deck, options=body.options))
+    # FIX: Use safe background task wrapper for proper error logging
+    create_background_task(
+        _run_export_job(user_id=user_id, job_id=job_id, job_type=JobType.EXPORT_EDITABLE, deck=body.deck, options=body.options),
+        name=f"export_editable_{job_id}"
+    )
     return JobResponse(jobId=job_id)
 
 
@@ -2979,9 +2992,12 @@ async def export_slides_images(body: ExportImagesRequest, token: Optional[str] =
         raise HTTPException(status_code=401, detail="Authentication required")
     user_id = user["id"]
     job_id = jobs_store.create(user_id=user_id, job_type=JobType.EXPORT_IMAGES, input_payload={"options": body.options or {}})
-    import asyncio
 
-    asyncio.create_task(_run_export_job(user_id=user_id, job_id=job_id, job_type=JobType.EXPORT_IMAGES, deck=body.deck, options=body.options))
+    # FIX: Use safe background task wrapper for proper error logging
+    create_background_task(
+        _run_export_job(user_id=user_id, job_id=job_id, job_type=JobType.EXPORT_IMAGES, deck=body.deck, options=body.options),
+        name=f"export_images_{job_id}"
+    )
     return JobResponse(jobId=job_id)
 
 

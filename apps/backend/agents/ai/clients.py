@@ -380,6 +380,163 @@ def _invoke_freeform(client, model: str, messages: List[Dict], system: str, kwar
 
     raise ValueError(f"Unknown client type: {type(raw_client)}")
 
+def _repair_json(text: str) -> str:
+    """Attempt to repair common JSON syntax errors from LLM output.
+
+    Common issues:
+    - Missing commas between object properties or array elements
+    - Trailing commas before closing brackets
+    - Truncated strings (EOF while parsing a string)
+    - Truncated objects/arrays
+    """
+    if not text:
+        return text
+
+    # First, try to parse as-is - if valid, return immediately
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+
+    repaired = text
+
+    # Fix missing comma after closing brace followed by opening brace (array of objects)
+    # Handles: }{ , }\n{ , }  { , }\n  { etc.
+    repaired = re.sub(r'(\})(\s*)(\{)', r'\1,\2\3', repaired)
+
+    # Fix missing comma after closing bracket followed by opening bracket (nested arrays)
+    repaired = re.sub(r'(\])(\s*)(\[)', r'\1,\2\3', repaired)
+
+    # Fix missing comma after string value followed by string key: "value" "key" or "value"\n"key"
+    # But NOT after : (that's key-value separator)
+    repaired = re.sub(r'(")\s*\n(\s*")', r'\1,\n\2', repaired)
+    repaired = re.sub(r'(")(\s{2,})(")', r'\1,\2\3', repaired)
+
+    # Fix missing comma after value followed by string key: value\n"key" or value "key"
+    repaired = re.sub(r'(\d)(\s*\n\s*)(")', r'\1,\2\3', repaired)
+    repaired = re.sub(r'(true|false|null)(\s*\n\s*)(")', r'\1,\2\3', repaired)
+
+    # Fix missing comma after closing brace/bracket followed by string (array of strings/mixed)
+    repaired = re.sub(r'(\})(\s*\n\s*)(")', r'\1,\2\3', repaired)
+    repaired = re.sub(r'(\])(\s*\n\s*)(")', r'\1,\2\3', repaired)
+
+    # Remove trailing commas before closing brackets
+    repaired = re.sub(r',(\s*\])', r'\1', repaired)
+    repaired = re.sub(r',(\s*\})', r'\1', repaired)
+
+    # Try parsing to see if repair worked; if not, try truncation repair
+    try:
+        json.loads(repaired)
+        logger.debug("JSON repair successful")
+        return repaired
+    except json.JSONDecodeError as e:
+        # Try to fix truncated JSON (common with long HTML content)
+        repaired = _repair_truncated_json(repaired)
+
+    # Final check
+    try:
+        json.loads(repaired)
+        logger.debug("JSON truncation repair successful")
+        return repaired
+    except json.JSONDecodeError:
+        return repaired
+
+
+def _repair_truncated_json(text: str) -> str:
+    """Fix truncated JSON by closing open strings, arrays, and objects."""
+    if not text:
+        return text
+
+    # Track the order of opening brackets/braces to close in reverse order
+    in_string = False
+    escape = False
+    stack = []  # Track order: '{' or '['
+
+    for c in text:
+        if escape:
+            escape = False
+            continue
+        if c == '\\' and in_string:
+            escape = True
+            continue
+        if c == '"' and not escape:
+            in_string = not in_string
+            continue
+        if not in_string:
+            if c == '{':
+                stack.append('{')
+            elif c == '}':
+                if stack and stack[-1] == '{':
+                    stack.pop()
+            elif c == '[':
+                stack.append('[')
+            elif c == ']':
+                if stack and stack[-1] == '[':
+                    stack.pop()
+
+    repaired = text
+
+    # If we ended inside a string, close it
+    if in_string:
+        # Escape any trailing backslash and close the string
+        if repaired.endswith('\\'):
+            repaired = repaired[:-1]
+        repaired += '"'
+
+    # Close any open brackets/braces in reverse order
+    while stack:
+        opener = stack.pop()
+        if opener == '{':
+            repaired += '}'
+        elif opener == '[':
+            repaired += ']'
+
+    return repaired
+
+def _extract_json(text: str) -> str:
+    """Extract valid JSON from text that may have markdown fences or trailing garbage."""
+    if not isinstance(text, str):
+        text = str(text)
+    t = text.strip()
+    # Strip ```json fences if present
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z]*\s*", "", t)
+        t = re.sub(r"\s*```$", "", t).strip()
+    # If it's already a JSON object/array, keep
+    if (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]")):
+        # Try to repair common issues
+        return _repair_json(t)
+
+    # Try to find matching braces/brackets for objects starting with {
+    if t.startswith("{"):
+        depth = 0
+        in_string = False
+        escape = False
+        for i, c in enumerate(t):
+            if escape:
+                escape = False
+                continue
+            if c == '\\' and in_string:
+                escape = True
+                continue
+            if c == '"' and not escape:
+                in_string = not in_string
+                continue
+            if not in_string:
+                if c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        return _repair_json(t[:i+1])
+
+    # Best-effort: grab first {...} or [...]
+    m = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", t)
+    if m:
+        return _repair_json(m.group(1).strip())
+    return t
+
 def _invoke_structured(client, model: str, messages: List[Dict], system: str, response_model, kwargs: dict, max_retries: int = 3):
     """Invoke with structured output (Pydantic model).
 
@@ -425,38 +582,41 @@ def _invoke_structured(client, model: str, messages: List[Dict], system: str, re
                 "Return ONLY valid JSON (no markdown, no code fences, no commentary)."
             )
 
-        def _extract_json(text: str) -> str:
-            if not isinstance(text, str):
-                text = str(text)
-            t = text.strip()
-            # Strip ```json fences if present
-            if t.startswith("```"):
-                t = re.sub(r"^```[a-zA-Z]*\s*", "", t)
-                t = re.sub(r"\s*```$", "", t).strip()
-            # If it's already a JSON object/array, keep
-            if (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]")):
-                return t
-            # Best-effort: grab first {...} or [...]
-            m = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", t)
-            if m:
-                return m.group(1).strip()
-            return t
-
         prompt = _build_prompt()
         last_err = None
+        last_raw_text = None
         for _attempt in range(max_retries):
             try:
                 result = raw_client.models.generate_content(model=model, contents=prompt, **gk)
                 text = getattr(result, "text", None) or str(result)
+                last_raw_text = text
                 payload = _extract_json(text)
                 # Validate/parse into response_model
                 try:
                     return response_model.model_validate_json(payload)
-                except Exception:
-                    return response_model.parse_raw(payload)
+                except Exception as e1:
+                    # Try parse_raw as fallback
+                    try:
+                        return response_model.parse_raw(payload)
+                    except Exception as e2:
+                        # Log for debugging and continue to retry
+                        logger.warning(f"Gemini JSON parse attempt {_attempt + 1} failed: {e1}")
+                        raise e1
             except Exception as e:
                 last_err = e
                 continue
+
+        # All retries failed - try one more aggressive repair as last resort
+        if last_raw_text:
+            try:
+                # Try to fix common issues more aggressively
+                payload = _extract_json(last_raw_text)
+                # Additional repair: fix any remaining issues
+                payload = _repair_json(payload)
+                return response_model.model_validate_json(payload)
+            except Exception:
+                pass
+
         # Re-raise with the final error context
         if last_err:
             raise last_err
@@ -470,10 +630,60 @@ def _invoke_structured(client, model: str, messages: List[Dict], system: str, re
                 ck['system'] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
             else:
                 ck['system'] = system
-        return client.create(model=model, messages=messages, response_model=response_model, max_retries=max_retries, **ck)
+        try:
+            return client.create(model=model, messages=messages, response_model=response_model, max_retries=max_retries, **ck)
+        except Exception as e:
+            # Check if this is a JSON validation error (trailing characters, malformed JSON, missing delimiters)
+            error_str = str(e).lower()
+            is_json_error = (
+                "trailing characters" in error_str or
+                "invalid json" in error_str or
+                "json_invalid" in error_str or
+                "expecting" in error_str or  # Catches "Expecting ',' delimiter" etc.
+                "jsondecode" in error_str
+            )
+            if is_json_error:
+                logger.warning(f"Claude instructor JSON parse failed, attempting manual extraction: {e}")
+                # Fall back to raw Anthropic client + manual JSON extraction
+                raw_client, _ = get_client(model, wrap_with_instructor=False)
+                raw_ck = {k: v for k, v in ck.items() if k not in ["response_model"]}
+                raw_ck["max_tokens"] = kwargs.get("max_tokens", 4096)
+                result = raw_client.messages.create(model=model, messages=messages, **raw_ck)
+                text = result.content[0].text if result.content else ""
+                payload = _extract_json(text)
+                try:
+                    return response_model.model_validate_json(payload)
+                except Exception:
+                    return response_model.parse_raw(payload)
+            raise
 
     # OpenAI-style
-    return client.chat.completions.create(model=model, messages=messages, response_model=response_model, max_retries=max_retries, **kwargs)
+    try:
+        return client.chat.completions.create(model=model, messages=messages, response_model=response_model, max_retries=max_retries, **kwargs)
+    except Exception as e:
+        # Check if this is a JSON validation error (trailing characters, malformed JSON, missing delimiters)
+        error_str = str(e).lower()
+        is_json_error = (
+            "trailing characters" in error_str or
+            "invalid json" in error_str or
+            "json_invalid" in error_str or
+            "expecting" in error_str or  # Catches "Expecting ',' delimiter" etc.
+            "jsondecode" in error_str
+        )
+        if is_json_error:
+            logger.warning(f"OpenAI instructor JSON parse failed, attempting manual extraction: {e}")
+            # Fall back to raw OpenAI client + manual JSON extraction
+            raw_client, _ = get_client(model, wrap_with_instructor=False)
+            raw_kwargs = {k: v for k, v in kwargs.items() if k not in ["response_model"]}
+            raw_kwargs["max_tokens"] = kwargs.get("max_tokens", 4096)
+            result = raw_client.chat.completions.create(model=model, messages=messages, **raw_kwargs)
+            text = result.choices[0].message.content if result.choices else ""
+            payload = _extract_json(text)
+            try:
+                return response_model.model_validate_json(payload)
+            except Exception:
+                return response_model.parse_raw(payload)
+        raise
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # EXPORTS

@@ -175,19 +175,37 @@ class ConcurrencyManager:
             'status': 'acquiring'
         }
         
-        # Acquire all necessary resources
+        # Acquire all necessary resources with proper cleanup on partial failure
+        # FIX: Track which semaphores were acquired to avoid releasing unacquired ones
+        acquired_global = False
+        acquired_user = False
+        acquired_api = False
+
         try:
             await self.global_semaphore.acquire()
+            acquired_global = True
+
             await self.user_semaphores[user_id].acquire()
+            acquired_user = True
+
             await self.api_semaphore.acquire()
+            acquired_api = True
+
             await self.rate_limiter.acquire()
-            
+
             self.active_generations[task_id]['status'] = 'running'
             logger.info(f"Acquired resources for user {user_id}, task {task_id}")
             return True
-            
+
         except Exception as e:
-            # Release on error
+            # Release only the semaphores that were actually acquired
+            if acquired_api:
+                self.api_semaphore.release()
+            if acquired_user:
+                self.user_semaphores[user_id].release()
+            if acquired_global:
+                self.global_semaphore.release()
+
             self.user_tasks[user_id].discard(task_id)
             self.active_generations.pop(task_id, None)
             logger.error(f"Failed to acquire resources: {e}")

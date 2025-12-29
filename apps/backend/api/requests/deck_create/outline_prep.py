@@ -15,9 +15,10 @@ from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
 
-TITLE_MAX_WORDS = 12
-TITLE_MAX_CHARS = 70
+TITLE_MAX_WORDS = 8  # Reduced from 12 for punchier titles
+TITLE_MAX_CHARS = 50  # Reduced from 70 for shorter titles
 TITLE_PREFIX_PATTERNS = (
+    # Standard verbose prefixes
     re.compile(
         r"^(?:a|an|the)\s+(?:comprehensive|detailed|in[- ]depth|deep|full|complete|thorough|extensive)\s+"
         r"(?:analysis|overview|review|assessment|summary|report|study|brief)\s+(?:of|on)\s+",
@@ -29,6 +30,27 @@ TITLE_PREFIX_PATTERNS = (
     ),
     re.compile(r"^(?:a|an|the)\s+(?:deep|detailed|full)\s+dive\s+into\s+", re.IGNORECASE),
     re.compile(r"^(?:exploring|examining|understanding|mapping|investigating|evaluating)\s+", re.IGNORECASE),
+    # New patterns for "slideshow/presentation" prefixes
+    re.compile(
+        r"^(?:a|an|the)\s+(?:lyric|visual|interactive|dynamic|custom|detailed|comprehensive)?\s*"
+        r"(?:slideshow|presentation|deck|slides?)\s+(?:about|on|for|visualizing|showcasing|featuring|covering)\s+",
+        re.IGNORECASE,
+    ),
+    # Pattern for "today's/current/latest X based on..."
+    re.compile(
+        r"^(?:today'?s?|current|latest|recent)\s+(?:most\s+)?(?:viewed|popular|trending|top)\s+",
+        re.IGNORECASE,
+    ),
+    # Pattern for trailing "based on real-time/current data"
+    re.compile(
+        r"\s+based\s+on\s+(?:real[- ]?time|current|live|latest)\s+(?:data|analytics|metrics|statistics)\.?$",
+        re.IGNORECASE,
+    ),
+    # Generic "A/An/The [adjective] [noun] about/of/on"
+    re.compile(
+        r"^(?:a|an|the)\s+\w+\s+(?:about|of|on|for|regarding|concerning)\s+",
+        re.IGNORECASE,
+    ),
 )
 TITLE_SPLIT_SEPARATORS = (":", " - ", " \u2014 ", " \u2013 ", " | ", ";")
 
@@ -39,9 +61,22 @@ def normalize_deck_title(value: Optional[str]) -> str:
     original = " ".join(str(value).split()).strip().strip('"').strip("'")
     cleaned = original
 
+    # Apply prefix patterns (removes from start)
     for pattern in TITLE_PREFIX_PATTERNS:
         cleaned = pattern.sub("", cleaned)
     cleaned = re.sub(r"^\s*the\s+", "", cleaned, flags=re.IGNORECASE).strip()
+
+    # Apply trailing patterns (removes from end)
+    # Pattern for "based on real-time data" etc.
+    cleaned = re.sub(
+        r"\s+based\s+on\s+(?:real[- ]?time|current|live|latest)\s+(?:data|analytics|metrics|statistics)\.?$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    # Pattern for trailing ellipsis from LLM
+    cleaned = re.sub(r"\.{2,}$", "", cleaned).strip()
 
     def exceeds_limits(text: str) -> bool:
         return len(text) > TITLE_MAX_CHARS or len(text.split()) > TITLE_MAX_WORDS
@@ -49,7 +84,7 @@ def normalize_deck_title(value: Optional[str]) -> str:
     for sep in TITLE_SPLIT_SEPARATORS:
         if sep in cleaned:
             candidate = cleaned.split(sep, 1)[0].strip()
-            if candidate and len(candidate.split()) >= 3:
+            if candidate and len(candidate.split()) >= 2:  # Reduced from 3 for shorter titles
                 cleaned = candidate
                 break
 
@@ -60,6 +95,9 @@ def normalize_deck_title(value: Optional[str]) -> str:
 
     if exceeds_limits(cleaned):
         cleaned = re.sub(r"\s+for\s+[^,]+$", "", cleaned, flags=re.IGNORECASE).strip()
+
+    # Remove trailing prepositions/articles that look incomplete
+    cleaned = re.sub(r"\s+(?:and|or|the|a|an|of|on|in|for|to|with|about)$", "", cleaned, flags=re.IGNORECASE).strip()
 
     truncated = False
     words = cleaned.split()
@@ -182,6 +220,13 @@ def prepare_outline_dict(
         if "id" not in slide:
             slide["id"] = f"slide-{deck_uuid}-{i}"
         slide.setdefault("title", f"Slide {i + 1}")
+        # Fix SLIDE-BACKEND-1M: LLM sometimes returns content as a list instead of string
+        content_val = slide.get("content")
+        if isinstance(content_val, list):
+            # Join list items into a single string with newlines
+            slide["content"] = "\n".join(str(item) for item in content_val if item)
+        elif content_val is None:
+            slide["content"] = ""
         slide.setdefault("content", "")
         slide.setdefault("uploadedMedia", None)
         slide.setdefault("extractedData", None)

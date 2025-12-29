@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { showcaseService, ShowcaseDeck } from '@/services/showcaseService';
 import { useAuth } from '@/context/SupabaseAuthContext';
+import CommunityGallery from '@/components/community/CommunityGallery';
+import CommunityBottomSheet from '@/components/community/CommunityBottomSheet';
 
 // Lazy load MiniSlide
 const MiniSlide = lazy(() => import('@/components/deck/MiniSlide'));
@@ -34,6 +36,9 @@ const Landing: React.FC = () => {
 
   // Sticky CTA text
   const [ctaText, setCtaText] = useState('Get Started Free');
+
+  // Community bottom sheet
+  const [showCommunity, setShowCommunity] = useState(false);
 
   // Load showcase decks
   useEffect(() => {
@@ -1162,6 +1167,55 @@ const Landing: React.FC = () => {
           </div>
         </div>
       </section>
+
+      {/* Community Slides */}
+      <section className="py-24 px-8 bg-white dark:bg-black/30">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="text-center mb-12 animate-on-scroll opacity-0">
+            <h2
+              className="mb-4"
+              style={{
+                fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                fontWeight: 900,
+                fontSize: 'clamp(32px, 5vw, 48px)',
+                lineHeight: '1.1',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              Community Slides
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+              Get inspired by slides created by the NextSlide community. Remix any deck to make it your own!
+            </p>
+          </div>
+
+          <div className="animate-on-scroll opacity-0">
+            <CommunityGallery
+              variant="landing"
+              maxItems={12}
+              showSearch={false}
+              showFilters={false}
+            />
+          </div>
+
+          <div className="text-center mt-10 animate-on-scroll opacity-0">
+            <Button
+              variant="outline"
+              className="border-[#FF4301] text-[#FF4301] hover:bg-[#FF4301]/5"
+              onClick={() => setShowCommunity(true)}
+            >
+              See more community slides
+              <ArrowRight size={16} className="ml-2" />
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* Community Bottom Sheet */}
+      <CommunityBottomSheet
+        isOpen={showCommunity}
+        onClose={() => setShowCommunity(false)}
+      />
 
       {/* Final CTA */}
       <section className="py-32 px-8 bg-[#FF4301] text-white">

@@ -266,7 +266,12 @@ RULES:
 2. Be precise - if user says "red", use red (#FF0000 or similar)
 3. For creative requests (like "make a slide about X"), use edit_slide or create_slide
 4. You can and SHOULD call multiple tools in one response when needed
-5. Always provide a conversational response with your tool calls
+5. Always provide a conversational response in your message field
+6. For CHAT-ONLY messages (questions, thanks, acknowledgments, ideas, brainstorming), respond with JUST a message and NO tool_calls
+   - "What do you think about..." → chat only, no tools
+   - "Tell me more about..." → chat only, no tools
+   - "Thanks!" or "Perfect!" → chat only, no tools
+   - "I'm not sure what to do with this slide" → chat only, offer suggestions
 
 DATA ACCURACY:
 - If user asks for "latest", "current", "most recent", or "as of" data, you MUST call web_search first
@@ -516,7 +521,7 @@ class ToolCall(BaseModel):
 
 class OrchestratorResponse(BaseModel):
     """LLM response containing tool calls and conversational message."""
-    tool_calls: List[ToolCall] = Field(description="List of tools to execute")
+    tool_calls: List[ToolCall] = Field(default=[], description="List of tools to execute (can be empty for chat-only responses)")
     message: str = Field(default="", description="Friendly conversational response to the user explaining what was done")
 
 def parse_selections_from_message(user_message: str) -> tuple[str, List[Dict[str, Any]]]:
@@ -1108,6 +1113,12 @@ Respond with the tool_calls to execute."""
         except Exception:
             pass
 
+    # Track integration data from lookup tools to inject into subsequent slide creation
+    # IMPORTANT: This is OUTSIDE _execute_tool_calls so it persists across all passes (initial + follow-ups)
+    # Generic structure: { "integration_name": { "type": "profiles|files|items", "data": [...], "source": "..." } }
+    # Examples: linkedin -> profiles, figma -> designs, salesforce -> contacts, hubspot -> deals, web_search -> research
+    integration_context: Dict[str, Dict[str, Any]] = {}
+
     def _execute_tool_calls(tool_calls: List[ToolCall]) -> tuple[DeckDiff, List[str], List[Dict[str, Any]], bool]:
         """Execute tool calls and collect any attached observations.
 
@@ -1115,6 +1126,8 @@ Respond with the tool_calls to execute."""
             tuple: (deck_diff, summaries, observations, needs_user_confirmation)
             - needs_user_confirmation: True if we paused for user to select from multiple options
         """
+        nonlocal integration_context  # Access the outer integration_context
+
         dd = DeckDiff(DeckDiffBase())
         summaries: List[str] = []
         observations: List[Dict[str, Any]] = []
@@ -1122,11 +1135,6 @@ Respond with the tool_calls to execute."""
         # Track accumulated component updates so sequential str_replace ops see previous results
         # Key: component_id, Value: latest props dict (especially 'render' for CustomComponent)
         accumulated_props: Dict[str, Dict[str, Any]] = {}
-
-        # Track integration data from lookup tools to inject into subsequent slide creation
-        # Generic structure: { "integration_name": { "type": "profiles|files|items", "data": [...], "source": "..." } }
-        # Examples: linkedin -> profiles, figma -> designs, salesforce -> contacts, hubspot -> deals
-        integration_context: Dict[str, Dict[str, Any]] = {}
 
         # SEQUENTIAL LINKEDIN HANDLING: Only allow ONE linkedin_lookup per pass
         # This ensures we handle multiple people one at a time (user selects first person, then we show second)
@@ -1599,10 +1607,12 @@ Respond with the tool_calls to execute."""
                 followup_msg = getattr(followup, 'message', '') or ''
                 logger.warning(f"[ORCHESTRATOR] 🔄 Follow-up returned NO tool calls - agent may need more guidance")
                 logger.warning(f"[ORCHESTRATOR] 🔄 Observations length: {len(obs_str)} chars, followup message: {followup_msg[:200] if followup_msg else '(empty)'}")
-                # Use follow-up message if provided, otherwise ask for clarification
+                # Use follow-up message if provided, otherwise PRESERVE original message
+                # Don't overwrite a good original message with a generic fallback
                 if followup_msg:
                     response.message = followup_msg
-                else:
+                elif not response.message:
+                    # Only use fallback if original message was also empty
                     response.message = "I looked at the slide but I'm not sure what specific changes you'd like. Could you tell me more about what you want to change?"
         except Exception as e:
             logger.warning(f"[ORCHESTRATOR] Follow-up after observation failed: {e}")
@@ -1611,6 +1621,7 @@ Respond with the tool_calls to execute."""
 
     # Extract the conversational message from the response
     agent_message = getattr(response, 'message', '') or ''
+    logger.info(f"[ORCHESTRATOR] 💬 Extracted message from response: '{agent_message[:100]}...' (len={len(agent_message)})" if agent_message else "[ORCHESTRATOR] 💬 No message in response object")
 
     # CRITICAL: Ensure there's ALWAYS a response message - never leave user hanging
     if not agent_message and not edit_summaries:
@@ -1626,10 +1637,14 @@ Respond with the tool_calls to execute."""
     # Emit the conversational message to the frontend
     if event_cb and agent_message:
         try:
+            logger.info(f"[ORCHESTRATOR] 📤 Emitting assistant.message.delta: '{agent_message[:100]}...'")
             event_cb("assistant.message.delta", {"delta": agent_message})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[ORCHESTRATOR] Failed to emit message: {e}")
+    else:
+        logger.warning(f"[ORCHESTRATOR] ⚠️ No message emitted - event_cb={bool(event_cb)}, agent_message='{agent_message[:50] if agent_message else 'EMPTY'}'")
 
+    logger.info(f"[ORCHESTRATOR] ✅ Returning result with message: '{agent_message[:100]}...' (len={len(agent_message)})" if agent_message else "[ORCHESTRATOR] ⚠️ Returning with EMPTY message")
     return {"deck_diff": deck_diff, "edit_summary": "\n".join(edit_summaries), "message": agent_message}
 
 

@@ -142,9 +142,9 @@ class ApolloService:
 
         try:
             if method == "GET":
-                response = requests.get(url, headers=self._headers, params=data)
+                response = requests.get(url, headers=self._headers, params=data, timeout=30)
             else:
-                response = requests.post(url, headers=self._headers, json=data or {})
+                response = requests.post(url, headers=self._headers, json=data or {}, timeout=30)
 
             response.raise_for_status()
             return response.json()

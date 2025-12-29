@@ -159,6 +159,7 @@ from api.requests.api_theme import router as theme_router
 from api.requests.api_deck_notes import router as deck_notes_router
 from api.requests.api_admin import router as admin_router
 from api.requests.api_admin_analytics import router as admin_analytics_router
+from api.requests.api_community import router as community_router
 from api.requests.api_google_integration import router as google_router
 from api.requests.api_integrations import router as integrations_router
 from api.requests.api_file_analysis import router as file_analysis_router
@@ -166,6 +167,7 @@ from api.requests.api_billing import router as billing_router
 from api.requests.api_speech_to_text import router as speech_to_text_router
 from api.requests.api_developer import router as developer_router
 from api.requests.api_public_v1 import router as public_api_v1_router
+from api.requests.api_followup import router as followup_router
 from fastapi import Depends
 
 # Middleware imports removed - files were deleted
@@ -286,6 +288,7 @@ app.include_router(websocket_analytics_router, prefix="", tags=["Websocket Analy
 app.include_router(deck_notes_router, prefix="", tags=["Deck Notes"])
 app.include_router(admin_router)
 app.include_router(admin_analytics_router)
+app.include_router(community_router)
 app.include_router(agent_router)
 app.include_router(agent_stream_router)
 app.include_router(uploads_router)
@@ -297,6 +300,7 @@ app.include_router(file_analysis_router, prefix="/api/files", tags=["File Analys
 app.include_router(billing_router, prefix="/api", tags=["Billing"])
 app.include_router(speech_to_text_router)
 app.include_router(developer_router, tags=["Developer API"])
+app.include_router(followup_router, prefix="/api", tags=["Follow-up Messages"])
 # Mount public API at /v1 (clean URLs for api.nextslide.ai) and /api/v1 (backward compatibility)
 app.include_router(public_api_v1_router, prefix="/v1", tags=["Public API v1"])
 app.include_router(public_api_v1_router, prefix="/api/v1", tags=["Public API v1"])
@@ -451,7 +455,45 @@ async def api_registry_endpoint(request: RegistryUpdateRequest):
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    """Health check with Supabase circuit breaker status."""
+    from services.supabase import get_supabase_stats, check_supabase_health
+
+    supabase_stats = get_supabase_stats()
+    circuit_state = supabase_stats.get("circuit_breaker", {}).get("state", "unknown")
+
+    # Determine overall health based on circuit breaker state
+    if circuit_state == "open":
+        status = "degraded"
+    else:
+        status = "healthy"
+
+    return {
+        "status": status,
+        "timestamp": datetime.now().isoformat(),
+        "supabase": supabase_stats
+    }
+
+
+@app.get("/api/health/supabase")
+async def supabase_health():
+    """Detailed Supabase health check (performs actual query)."""
+    from services.supabase import check_supabase_health
+    return check_supabase_health()
+
+
+@app.post("/api/admin/reset-circuit-breaker")
+async def reset_circuit_breaker_endpoint():
+    """
+    Manually reset the Supabase circuit breaker.
+    Use this to recover after a Supabase outage is resolved.
+    """
+    from services.supabase import reset_circuit_breaker
+    result = reset_circuit_breaker()
+    return {
+        "message": "Circuit breaker reset to CLOSED",
+        "status": result
+    }
+
 
 @app.get("/api/sentry-test")
 async def test_sentry():

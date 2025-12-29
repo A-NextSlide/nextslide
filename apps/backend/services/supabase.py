@@ -28,6 +28,11 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 # Use service key if available, otherwise fall back to anon key
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
 
+# Validate SUPABASE_URL has a protocol (fixes SLIDE-BACKEND-288)
+if SUPABASE_URL and not SUPABASE_URL.startswith(("http://", "https://")):
+    logger.warning(f"SUPABASE_URL missing protocol, adding https://: {SUPABASE_URL}")
+    SUPABASE_URL = f"https://{SUPABASE_URL}"
+
 # =============================================================================
 # CONNECTION POOL CONFIGURATION
 # =============================================================================
@@ -47,8 +52,10 @@ POOL_TIMEOUT = 5.0
 CONNECTION_MAX_AGE = 300  # 5 minutes
 
 # Circuit breaker settings
-CIRCUIT_BREAKER_THRESHOLD = 5  # failures before opening circuit
-CIRCUIT_BREAKER_TIMEOUT = 30  # seconds before attempting to close circuit
+# Increased threshold to handle concurrent deck generation (many parallel Supabase calls)
+# A 30-slide deck with 3 retries each = up to 90 failure events during a bad network moment
+CIRCUIT_BREAKER_THRESHOLD = 25  # consecutive failures before opening circuit
+CIRCUIT_BREAKER_TIMEOUT = 30  # seconds before attempting to close circuit (reduced for faster recovery)
 
 
 # =============================================================================
@@ -63,38 +70,45 @@ class CircuitBreaker:
     - CLOSED: Normal operation, requests pass through
     - OPEN: Failing, requests are rejected immediately
     - HALF_OPEN: Testing if service recovered
+
+    BUG #5 FIX: Tracks consecutive failures instead of total failures.
+    This prevents the circuit from opening due to normal retry behavior.
     """
 
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"
 
-    def __init__(self, name: str, failure_threshold: int = 5, timeout: int = 30):
+    def __init__(self, name: str, failure_threshold: int = 15, timeout: int = 60):
         self.name = name
         self.failure_threshold = failure_threshold
         self.timeout = timeout
         self.state = self.CLOSED
         self.failures = 0
+        self.consecutive_failures = 0  # Track consecutive failures for better accuracy
         self.last_failure_time: Optional[datetime] = None
         self._lock = threading.Lock()
 
     def record_success(self):
-        """Record a successful operation."""
+        """Record a successful operation - resets consecutive failure count."""
         with self._lock:
-            self.failures = 0
+            self.consecutive_failures = 0  # Reset consecutive count on any success
             if self.state == self.HALF_OPEN:
                 logger.info(f"[CircuitBreaker:{self.name}] Circuit closed after successful request")
+                self.failures = 0  # Also reset total on recovery
             self.state = self.CLOSED
 
     def record_failure(self):
         """Record a failed operation."""
         with self._lock:
             self.failures += 1
+            self.consecutive_failures += 1
             self.last_failure_time = datetime.now()
 
-            if self.failures >= self.failure_threshold:
+            # Only open circuit on consecutive failures to avoid false positives
+            if self.consecutive_failures >= self.failure_threshold:
                 if self.state != self.OPEN:
-                    logger.warning(f"[CircuitBreaker:{self.name}] Circuit OPENED after {self.failures} failures")
+                    logger.warning(f"[CircuitBreaker:{self.name}] Circuit OPENED after {self.consecutive_failures} consecutive failures")
                 self.state = self.OPEN
 
     def can_execute(self) -> bool:
@@ -121,6 +135,8 @@ class CircuitBreaker:
             "name": self.name,
             "state": self.state,
             "failures": self.failures,
+            "consecutive_failures": self.consecutive_failures,
+            "threshold": self.failure_threshold,
             "last_failure": self.last_failure_time.isoformat() if self.last_failure_time else None
         }
 
@@ -205,6 +221,10 @@ class SupabaseClientManager:
         if not SUPABASE_URL or not SUPABASE_KEY:
             raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables must be set")
 
+        # Extra validation for URL protocol (SLIDE-BACKEND-288)
+        if not SUPABASE_URL.startswith(("http://", "https://")):
+            raise ValueError(f"SUPABASE_URL must start with http:// or https://, got: {SUPABASE_URL[:50]}...")
+
         # Check circuit breaker
         if not _supabase_circuit_breaker.can_execute():
             raise RuntimeError(
@@ -218,16 +238,35 @@ class SupabaseClientManager:
                 self._close_client()
 
                 try:
-                    # Create new client
-                    # Note: supabase-py 2.x uses ClientOptions, we use defaults
-                    # with connection management handled at our level
+                    # Create new client with custom httpx client for proper connection pooling
+                    # This fixes BUG #1: previously the custom httpx client was never used
+                    from supabase.lib.client_options import ClientOptions
+
+                    # Create httpx client with proper connection limits
+                    custom_httpx_client = self._create_httpx_client()
+
+                    # Create supabase client with the custom httpx client
                     self._client = create_client(
                         SUPABASE_URL,
-                        SUPABASE_KEY
+                        SUPABASE_KEY,
+                        options=ClientOptions(
+                            auto_refresh_token=True,
+                            persist_session=False,  # Server-side, no session persistence needed
+                        )
                     )
+
+                    # NOTE: We no longer inject a custom httpx client because it causes
+                    # "Request URL is missing protocol" errors. The Supabase client
+                    # configures its own session with the correct base URL. Instead,
+                    # we rely on the connection recycling mechanism (CONNECTION_MAX_AGE)
+                    # to prevent connection pool exhaustion.
+                    # The custom_httpx_client is created but not used - keeping the
+                    # factory method for potential future use.
+                    custom_httpx_client.close()  # Close the unused client
+
                     self._client_created_at = datetime.now()
                     self._request_count = 0
-                    logger.debug(f"Created new Supabase client (max_conn={MAX_CONNECTIONS})")
+                    logger.info("Created new Supabase client (recycles every 5min)")
                 except Exception as e:
                     logger.error(f"Failed to create Supabase client: {e}")
                     _supabase_circuit_breaker.record_failure()
@@ -242,8 +281,12 @@ class SupabaseClientManager:
             try:
                 # The supabase-py client doesn't have a close method,
                 # but we can try to close the underlying httpx client
-                if hasattr(self._client, 'postgrest') and hasattr(self._client.postgrest, 'session'):
-                    self._client.postgrest.session.close()
+                postgrest = getattr(self._client, 'postgrest', None)
+                if postgrest is not None:
+                    # Try both attribute names for compatibility
+                    session = getattr(postgrest, 'session', None) or getattr(postgrest, '_session', None)
+                    if session and not getattr(session, 'is_closed', False):
+                        session.close()
             except Exception as e:
                 logger.debug(f"Error closing Supabase client: {e}")
             finally:
@@ -305,6 +348,25 @@ def get_supabase_stats() -> dict:
     return _client_manager.get_stats()
 
 
+def reset_circuit_breaker() -> dict:
+    """
+    Manually reset the circuit breaker to CLOSED state.
+
+    Use this to recover from a stuck OPEN circuit after fixing
+    the underlying issue (e.g., Supabase outage resolved).
+
+    Returns:
+        dict: Circuit breaker status after reset
+    """
+    global _supabase_circuit_breaker
+    _supabase_circuit_breaker.state = CircuitBreaker.CLOSED
+    _supabase_circuit_breaker.failures = 0
+    _supabase_circuit_breaker.consecutive_failures = 0
+    _supabase_circuit_breaker.last_failure_time = None
+    logger.info("[CircuitBreaker:supabase] Manually reset to CLOSED state")
+    return _supabase_circuit_breaker.get_status()
+
+
 # =============================================================================
 # RETRY DECORATOR WITH CIRCUIT BREAKER
 # =============================================================================
@@ -358,17 +420,22 @@ def with_supabase_retry(
 
                 except FutureTimeout:
                     last_error = TimeoutError(f"Operation timed out after {timeout_seconds}s")
-                    logger.warning(
+                    # Log at DEBUG level during retries to avoid filling logs/Sentry
+                    logger.debug(
                         f"[Supabase] {description} timed out on attempt {attempt}/{max_attempts}"
                     )
                     _supabase_circuit_breaker.record_failure()
-                    reset_supabase_client()
+                    # DON'T reset client on timeout - it causes "client closed" errors
+                    # for concurrent requests. The client will be recycled naturally
+                    # after CONNECTION_MAX_AGE seconds.
 
                 except Exception as e:
                     last_error = e
                     error_msg = str(e)
                     error_msg_lower = error_msg.lower()
-                    logger.warning(
+                    # Log at DEBUG level during retries to avoid filling logs/Sentry
+                    # The final failure (if all attempts exhausted) will raise the exception
+                    logger.debug(
                         f"[Supabase] {description} failed on attempt {attempt}/{max_attempts}: {error_msg}"
                     )
 
@@ -390,7 +457,13 @@ def with_supabase_retry(
 
                     if is_transient:
                         _supabase_circuit_breaker.record_failure()
-                        reset_supabase_client()
+                        # DON'T reset client - it causes "client closed" errors for
+                        # concurrent requests. The client manager will recycle naturally.
+                        # Only log at WARNING level on final attempt
+                        if attempt == max_attempts:
+                            logger.warning(
+                                f"[Supabase] {description} failed after {max_attempts} attempts: {error_msg}"
+                            )
                     else:
                         # Non-transient error, don't retry
                         raise

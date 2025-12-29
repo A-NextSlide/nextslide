@@ -240,7 +240,7 @@ Use CustomComponent for complex layouts (cards, grids, timelines, etc.)."""
         if video_titles:
             prompt += "\n\nAVAILABLE VIDEOS: " + "; ".join(video_titles) + ". Use a Video component or embed in a CustomComponent when requested."
 
-    client, model = get_model_and_client("slide_generate", log_prefix="SLIDE_TOOLS")
+    client, model = get_model_and_client("slide_edit", log_prefix="SLIDE_TOOLS")
 
     # Check if we have image attachments - use multimodal content if so
     has_images = _has_image_attachments(attachments)
@@ -315,7 +315,7 @@ Consider converting to a CustomComponent if the request requires complex layout.
     if use_attachments and attachments:
         prompt += "\n\nUPLOADS: Use the attached images as actual slide visuals. Prefer Image components that reference the attachment URLs."
 
-    client, model = get_model_and_client("slide_generate", log_prefix="SLIDE_TOOLS")
+    client, model = get_model_and_client("slide_edit", log_prefix="SLIDE_TOOLS")
 
     # Check if we have image attachments - use multimodal content if so
     has_images = _has_image_attachments(attachments)

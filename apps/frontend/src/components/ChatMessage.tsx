@@ -382,13 +382,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
           type === 'user'
             ? 'bg-transparent text-foreground border border-zinc-700/70 dark:border-[#929292]/80 max-w-[80%]'
             : type === 'system'
-            ? (metadata?.type === 'agent_plan' || metadata?.type === 'agent_tool' || metadata?.type === 'agent_selection' || metadata?.type === 'edit_applied' || metadata?.type === 'progress' || metadata?.type === 'generation_complete' || metadata?.type === 'linkedin_profiles' || metadata?.stage === 'generation_complete')
+            ? (metadata?.type === 'agent_plan' || metadata?.type === 'agent_tool' || metadata?.type === 'agent_selection' || metadata?.type === 'edit_applied' || metadata?.type === 'generation_complete' || metadata?.type === 'linkedin_profiles' || metadata?.stage === 'generation_complete')
               ? 'bg-transparent max-w-[80%]'
+              : isStreamingMessage && !isCompleted
+              ? 'glass-panel border border-[#929292] w-full shadow-none'
               : 'bg-muted max-w-[80%]'
             : isCompletionRow
             ? 'bg-transparent max-w-[80%]'
             : isStreamingMessage && !isCompleted
-            ? 'border border-[#929292] bg-transparent w-full'
+            ? 'glass-panel border border-[#929292] w-full shadow-none'
             : 'glass-panel border border-[#929292] max-w-[80%] shadow-none'
         )}
         style={bubbleStyleWithSafariFix}

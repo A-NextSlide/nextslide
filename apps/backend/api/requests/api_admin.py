@@ -452,8 +452,8 @@ async def list_users(
                             last_sign_in = datetime.fromisoformat(auth_info["last_sign_in_at"].replace("Z", "+00:00"))
                             if last_sign_in.replace(tzinfo=None) > seven_days_ago:
                                 active_count += 1
-                        except:
-                            pass
+                        except (ValueError, TypeError):
+                            pass  # Invalid date format
 
                     # Count new this week
                     if auth_info.get("created_at"):
@@ -461,8 +461,8 @@ async def list_users(
                             created = datetime.fromisoformat(auth_info["created_at"].replace("Z", "+00:00"))
                             if created.replace(tzinfo=None) > seven_days_ago:
                                 new_this_week += 1
-                        except:
-                            pass
+                        except (ValueError, TypeError):
+                            pass  # Invalid date format
 
                 stats.verifiedCount = verified_count
                 stats.totalActive = active_count
@@ -584,7 +584,7 @@ async def get_user_details(
                 try:
                     import json
                     metadata_obj = json.loads(raw_metadata)
-                except:
+                except (json.JSONDecodeError, ValueError):
                     metadata_obj = {}
         
         # Build response matching frontend requirements exactly
@@ -1914,7 +1914,7 @@ async def delete_brand_font(
                 await font_storage.delete_font_file(brand_id, file_path + ext)
                 deleted = True
                 break
-            except:
+            except Exception:
                 continue
 
         # Remove variant from API response
@@ -3087,7 +3087,7 @@ async def cleanup_user_decks(
 
             try:
                 created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00")).replace(tzinfo=None)
-            except:
+            except (ValueError, TypeError, AttributeError):
                 created_at = datetime.min
 
             # Rule 2: Keep all decks from the last N days

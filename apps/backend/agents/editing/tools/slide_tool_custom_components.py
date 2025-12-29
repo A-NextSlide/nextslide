@@ -114,6 +114,7 @@ def _targeted_custom_component_edit(
     instruction: str,
     deck_data: Dict,
     attachments: List[Dict] = None,
+    task: str = "validation",
 ) -> DeckDiff:
     """
     Perform a surgical edit on CustomComponent HTML:
@@ -137,12 +138,12 @@ def _targeted_custom_component_edit(
 
     prompt = f"""{_current_date_note()}
 
-You are a precise HTML editor. You must make a SMALL, TARGETED change without redesigning.
+You are a precise HTML editor. Make a SMALL, TARGETED change without redesigning.
 
 RULES:
 - Do NOT rewrite the whole HTML.
 - Propose 1-3 exact search/replace operations.
-- old_string MUST exist verbatim in the provided HTML.
+- old_string MUST exist verbatim in the provided HTML (copy-paste exactly).
 - Keep changes minimal and localized.
 
 THEME (for color/font consistency):
@@ -150,7 +151,6 @@ THEME (for color/font consistency):
 - accent_2: {colors.get('accent_2')}
 - primary_text: {colors.get('primary_text')}
 - primary_background: {colors.get('primary_background')}
-- typography: {str(typography)[:500]}
 
 CURRENT HTML (truncated to 25k):
 {current_html[:25000]}
@@ -158,18 +158,27 @@ CURRENT HTML (truncated to 25k):
 USER REQUEST:
 {instruction}{att_hint}
 
-Return a JSON object with:
-{{"ops":[{{"old_string":"...", "new_string":"..."}}], "note":"..."}}"""
+IMPORTANT: You MUST respond with ONLY a JSON object. No explanations, no markdown, no commentary.
+Example format: {{"ops":[{{"old_string":"exact text to find","new_string":"replacement text"}}],"note":"brief note"}}"""
 
-    client, model = get_model_and_client("validation", log_prefix="SLIDE_TOOLS")
-    plan = invoke_with_fallback(
-        client=client,
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        response_model=_ReplacePlan,
-        max_tokens=8000,  # Increased from 2500 to handle larger HTML replacements for style changes
-        log_prefix="SLIDE_TOOLS",
-    )
+    client, model = get_model_and_client(task, log_prefix="SLIDE_TOOLS")
+    try:
+        plan = invoke_with_fallback(
+            client=client,
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are an HTML editor that ONLY outputs JSON. Never output code, explanations, or markdown - only valid JSON objects."},
+                {"role": "user", "content": prompt}
+            ],
+            response_model=_ReplacePlan,
+            max_tokens=8000,
+            temperature=0.1,  # Very low temperature for reliable structured output
+            log_prefix="SLIDE_TOOLS",
+        )
+    except Exception as e:
+        # SLIDE-BACKEND-28B: Handle LLM failures gracefully
+        logger.warning(f"[SLIDE_TOOLS] LLM failed to generate edit plan: {e}")
+        plan = _ReplacePlan(ops=[], note=f"LLM error: {str(e)[:100]}")
 
     _dbg(
         "B",
@@ -220,17 +229,26 @@ USER REQUEST:
 PREVIOUS FAILED ATTEMPTS (these strings were NOT found verbatim):
 {chr(10).join(f'- "{op.old_string[:200]}"' for op in failed_ops[:3])}
 
-Return a JSON object with EXACT old_string matches:
-{{"ops":[{{"old_string":"...", "new_string":"..."}}], "note":"..."}}"""
+IMPORTANT: You MUST respond with ONLY a JSON object. No explanations, no markdown, no commentary.
+Example format: {{"ops":[{{"old_string":"exact text from HTML","new_string":"replacement"}}],"note":"brief note"}}"""
 
-        retry_plan = invoke_with_fallback(
-            client=client,
-            model=model,
-            messages=[{"role": "user", "content": retry_prompt}],
-            response_model=_ReplacePlan,
-            max_tokens=8000,
-            log_prefix="SLIDE_TOOLS",
-        )
+        try:
+            retry_plan = invoke_with_fallback(
+                client=client,
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are an HTML editor that ONLY outputs JSON. Never output code, explanations, or markdown - only valid JSON objects."},
+                    {"role": "user", "content": retry_prompt}
+                ],
+                response_model=_ReplacePlan,
+                max_tokens=8000,
+                temperature=0.1,  # Very low temperature for reliable structured output
+                log_prefix="SLIDE_TOOLS",
+            )
+        except Exception as e:
+            # SLIDE-BACKEND-28B: Handle LLM failures gracefully
+            logger.warning(f"[SLIDE_TOOLS] LLM retry failed: {e}")
+            retry_plan = _ReplacePlan(ops=[], note=f"LLM retry error: {str(e)[:100]}")
 
         # Try retry ops
         for op in (retry_plan.ops or [])[:3]:

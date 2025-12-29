@@ -93,12 +93,14 @@ def edit_all_slides(
         logger.info(f"[edit_all_slides] 🚀 STARTING slide {idx+1}/{len(slides_to_process)}: {slide_id}")
         try:
             # Call the targeted edit function which handles AI replacement
+            # Use slide_edit_batch task for Gemini 3 Pro (heavier operation)
             slide_diff = _targeted_custom_component_edit(
                 slide_id=slide_id,
                 custom_component=custom_comp,
                 instruction=instruction,
                 deck_data=deck_data,
                 attachments=None,  # No per-slide attachments for batch edits
+                task="slide_edit_batch",
             )
 
             elapsed = time.time() - start_time

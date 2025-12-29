@@ -578,6 +578,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               onOutlineSlideTargetChange={setOutlineSlideTarget}
               deckSlides={deckData?.slides}
               isLoading={isLoading}
+              isGenerating={isGenerating}
               onSend={handleSend}
               suggestions={suggestions}
               showSuggestions={!isLoading && messages.length <= 1 && !hasEverGeneratedRef.current}

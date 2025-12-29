@@ -29,41 +29,33 @@ export function useChatWelcomeMessage({
     // Only run for decks that were existing at mount time, not decks that just finished generating
     const wasExistingAtMount = initialIsExistingDeckRef.current;
 
+    // For new decks (not existing at mount), don't show any welcome message here.
+    // The post-generation welcome will be handled by useChatSystemMessages after deck_finalized.
+    if (!wasExistingAtMount) return;
+
     welcomeMessageShownRef.current = true;
     const timer = window.setTimeout(() => {
       setMessages(prev => {
-        // For existing decks (at mount time), show welcome message and remove any stale progress messages
-        if (wasExistingAtMount) {
-          // Filter out any progress/generating messages
-          const cleaned = prev.filter(m =>
-            m.id !== 'generation-progress' &&
-            !m.metadata?.isStreamingUpdate
-          );
+        // Filter out any progress/generating messages
+        const cleaned = prev.filter(m =>
+          m.id !== 'generation-progress' &&
+          !m.metadata?.isStreamingUpdate
+        );
 
-          // Check if there's already a welcome or meaningful message
-          const hasWelcome = cleaned.some(m =>
-            m.id === 'welcome-message' ||
-            m.id === 'post-generation-welcome'
-          );
-          if (hasWelcome) return cleaned;
+        // Check if there's already a welcome or meaningful message
+        const hasWelcome = cleaned.some(m =>
+          m.id === 'welcome-message' ||
+          m.id === 'post-generation-welcome'
+        );
+        if (hasWelcome) return cleaned;
 
-          return [...cleaned, {
-            id: 'welcome-message',
-            type: 'ai',
-            message: getWelcomeMessage(false, true),
-            timestamp: new Date(),
-            feedback: null,
-          }];
-        }
-
-        // For new decks, only show if no messages
-        if (prev.length > 0) return prev;
-        return [{
+        return [...cleaned, {
           id: 'welcome-message',
           type: 'ai',
-          message: getWelcomeMessage(false, false),
+          message: getWelcomeMessage(false, true),
           timestamp: new Date(),
           feedback: null,
+          metadata: { streamed: true },
         }];
       });
     }, 300);

@@ -226,16 +226,28 @@ class CombinedImageService:
     def _set_cached_results(self, cache_key: str, results: List[Dict]):
         """Store results in cache."""
         self._search_cache[cache_key] = (results, time.time())
-        
-        # Clean up old cache entries if cache is getting large
-        if len(self._search_cache) > 1000:
+
+        # FIX: Improved cache cleanup - remove expired entries AND limit total size
+        if len(self._search_cache) > 500:  # Start cleanup earlier
             current_time = time.time()
+
+            # First, remove expired entries
             expired_keys = [
                 k for k, (_, ts) in self._search_cache.items()
                 if current_time - ts > self._cache_ttl
             ]
             for k in expired_keys:
                 del self._search_cache[k]
+
+            # If still too large, remove oldest entries (LRU-style)
+            if len(self._search_cache) > 500:
+                # Sort by timestamp and keep only newest 400
+                sorted_entries = sorted(
+                    self._search_cache.items(),
+                    key=lambda x: x[1][1],  # Sort by timestamp
+                    reverse=True  # Newest first
+                )
+                self._search_cache = dict(sorted_entries[:400])
     
     async def cleanup(self):
         """Properly clean up resources. Call this when done with the service."""
@@ -248,6 +260,15 @@ class CombinedImageService:
         self._ai_usage_per_deck[deck_id] = 0
         # Also reset used images tracking
         self._used_images_per_deck[deck_id] = set()
+
+        # FIX: Clean up old deck tracking data to prevent memory leak
+        # Keep only the most recent 100 decks
+        if len(self._ai_usage_per_deck) > 100:
+            # Remove entries for old decks (simple FIFO - just keep last 50)
+            old_deck_ids = list(self._ai_usage_per_deck.keys())[:-50]
+            for old_id in old_deck_ids:
+                self._ai_usage_per_deck.pop(old_id, None)
+                self._used_images_per_deck.pop(old_id, None)
     
     def get_ai_count(self, deck_id: str) -> int:
         """Get current AI generation count for a deck."""

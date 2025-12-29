@@ -4,6 +4,7 @@ Deck persistence layer - handles all database operations and caching.
 import asyncio
 import copy
 import logging
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 from utils.supabase import get_deck, upload_deck
@@ -135,7 +136,7 @@ class DeckPersistence:
             # IMPORTANT: Update timestamp and version for realtime (matches slide update path)
             try:
                 import uuid
-                deck_data["last_modified"] = datetime.utcnow().isoformat()
+                deck_data["last_modified"] = datetime.now(timezone.utc).isoformat()
                 deck_data["version"] = str(uuid.uuid4())
             except Exception:
                 # Don't fail save just because metadata couldn't be set
@@ -317,9 +318,8 @@ class DeckPersistence:
                 # The upload_deck function should handle the structure as-is
 
                 # IMPORTANT: Update timestamp and version for realtime
-                from datetime import datetime
                 import uuid
-                deck['last_modified'] = datetime.utcnow().isoformat()
+                deck['last_modified'] = datetime.now(timezone.utc).isoformat()
                 deck['version'] = str(uuid.uuid4())
 
                 # Log for debugging

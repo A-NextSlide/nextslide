@@ -298,7 +298,7 @@ async def get_analytics_overview(
                 # Try to get balance from credit_balances table first (more efficient)
                 balances = supabase.table("credit_balances").select("balance").execute()
                 total_credits_balance = sum(b.get("balance", 0) for b in (balances.data or []))
-            except:
+            except Exception:
                 # Fallback: sample recent transactions
                 recent_txns = supabase.table("credit_transactions").select("amount").limit(1000).execute()
                 total_credits_balance = sum(t.get("amount", 0) for t in (recent_txns.data or []))
@@ -335,7 +335,7 @@ async def get_analytics_overview(
             try:
                 views_result = supabase.table("deck_shares").select("access_count").limit(1000).execute()
                 total_views = sum(s.get("access_count", 0) for s in (views_result.data or []))
-            except:
+            except Exception:
                 pass
 
             metrics["sharing"] = {
@@ -414,7 +414,7 @@ async def get_user_timeseries(
                     date_str = date_point.strftime("%Y-%m-%d")
                     value = next((r.get("login_count", 0) for r in (login_data.data or [])
                                  if r.get("login_date") == date_str), 0)
-                except:
+                except Exception:
                     result = supabase.table("users").select("id", count="exact").gte(
                         "last_sign_in_at", date_point.isoformat()
                     ).lt("last_sign_in_at", next_point.isoformat()).execute()
@@ -674,7 +674,7 @@ async def get_user_segments(
                         "count": count,
                         "percentage": round((count / max(total_users.count or 1, 1)) * 100, 1)
                     })
-            except:
+            except Exception:
                 segments = [{"segment": "Free", "count": 0, "percentage": 100}]
 
         elif segment_by == "role":
@@ -758,8 +758,8 @@ async def get_user_cohorts(
                                 sign_in_dt = parse_date(last_sign_in)
                                 if retention_start <= sign_in_dt < retention_end:
                                     active_count += 1
-                            except:
-                                pass
+                            except (ValueError, TypeError):
+                                pass  # Invalid date format
 
                     retention_rate = round((active_count / cohort_size_count) * 100, 1)
                     retention.append(retention_rate)
@@ -1015,7 +1015,7 @@ async def get_sharing_analytics(
             for v in views:
                 device = v.get("device_type", "unknown")
                 device_breakdown[device] = device_breakdown.get(device, 0) + 1
-        except:
+        except Exception:
             avg_duration = 0
             avg_slides = 0
             device_breakdown = {}
@@ -1187,8 +1187,8 @@ async def get_recent_activity(
                         "user_email": user_map.get(share.get("created_by"), "Unknown"),
                         "deck_id": share.get("deck_uuid")
                     })
-        except:
-            pass
+        except Exception:
+            pass  # Share events table may not exist
 
         # Sort all activities by timestamp
         activities.sort(key=lambda x: x.get("timestamp", ""), reverse=True)

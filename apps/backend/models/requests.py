@@ -101,6 +101,22 @@ class SlideOutline(BaseModel):
     id: str = Field(description="Unique identifier for the slide.")
     title: str = Field(description="Title of the slide.")
     content: str = Field(description="Main content/notes for the slide.")
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def _coerce_content_to_string(cls, value):
+        """
+        Coerce content to string if AI returns a list.
+
+        Fixes SLIDE-BACKEND-1M: AI sometimes returns content as a list of strings
+        instead of a single string. Join them with newlines.
+        """
+        if value is None:
+            return ""
+        if isinstance(value, list):
+            # Join list items with newlines, filtering out non-strings
+            return "\n".join(str(item) for item in value if item)
+        return value
     deepResearch: Optional[bool] = Field(False, description="Flag indicating if deep research was enabled for this slide.")
     taggedMedia: Optional[List[TaggedMediaItem]] = Field(None, description="Media items tagged to this slide.")
     extractedData: Optional[ExtractedDataItem] = Field(None, description="Data extracted from files like CSV or Excel, potentially for chart generation.")
@@ -228,3 +244,77 @@ class DeckComposeRequest(BaseModel):
             else:
                 raise ValueError("deck_id must be provided either directly or via outline.id")
         return self
+
+
+# ============================================================================
+# Community Decks Models
+# ============================================================================
+
+from typing import Literal
+
+class SubmitToCommunityRequest(BaseModel):
+    """Request to submit a deck to the community gallery"""
+    deck_uuid: str = Field(description="UUID of the deck to submit")
+    title: str = Field(description="Title for community display")
+    description: Optional[str] = Field(None, description="Description of the deck")
+    category: Literal['business', 'education', 'marketing', 'creative', 'technology', 'personal'] = Field(
+        description="Category for the deck"
+    )
+    tags: List[str] = Field(default_factory=list, description="Custom tags for searchability")
+
+
+class CommunityDeckResponse(BaseModel):
+    """Response model for a community deck (list view)"""
+    id: str
+    title: str
+    description: Optional[str] = None
+    category: str
+    tags: List[str] = []
+    slide_count: int = 0
+    first_slide: Optional[Dict[str, Any]] = None
+    author_name: Optional[str] = None
+    remix_count: int = 0
+    view_count: int = 0
+    approved_at: Optional[str] = None
+    submitted_at: Optional[str] = None
+
+
+class CommunityDeckDetailResponse(CommunityDeckResponse):
+    """Response model for a single community deck with full slides"""
+    slides: List[Dict[str, Any]] = []
+    theme: Optional[Dict[str, Any]] = None
+
+
+class CommunityDecksListResponse(BaseModel):
+    """Paginated list of community decks"""
+    decks: List[CommunityDeckResponse]
+    total: int
+    page: int
+    limit: int
+    has_more: bool
+
+
+class CommunitySubmissionResponse(BaseModel):
+    """Response for user's community submission status"""
+    id: str
+    deck_uuid: str
+    title: str
+    description: Optional[str] = None
+    category: str
+    tags: List[str] = []
+    status: str  # pending, approved, rejected
+    rejection_reason: Optional[str] = None
+    submitted_at: str
+    reviewed_at: Optional[str] = None
+
+
+class CommunityCategoryCount(BaseModel):
+    """Category with count for filtering"""
+    name: str
+    display_name: str
+    count: int
+
+
+class RejectCommunitySubmissionRequest(BaseModel):
+    """Request to reject a community submission"""
+    reason: str = Field(description="Reason for rejection")

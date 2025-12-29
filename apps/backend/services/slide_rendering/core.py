@@ -383,50 +383,61 @@ class SlideRenderer(
                 images.append(img)
             except Exception as e:
                 logger.error(f"Failed to load image {path}: {e}")
-        
+
         if not images:
             return
-        
-        # Create thumbnail grid
-        thumb_size = (320, 180)  # 1920/6 x 1080/6
-        cols = 4
-        rows = (len(images) + cols - 1) // cols
-        
-        summary_width = cols * thumb_size[0] + (cols + 1) * 20
-        summary_height = rows * thumb_size[1] + (rows + 1) * 20 + 60  # Extra space for title
-        
-        summary_img = Image.new('RGB', (summary_width, summary_height), color='#F5F5F5')
-        draw = ImageDraw.Draw(summary_img)
-        
-        # Add title
-        title_font = self.get_font('Arial', 24, 'bold')
-        draw.text((20, 20), f"Deck Summary: {deck_uuid}", font=title_font, fill='#000000')
-        
-        # Add thumbnails
-        x_offset = 20
-        y_offset = 60
-        
-        for i, img in enumerate(images):
-            # Create thumbnail
-            thumb = img.copy()
-            thumb.thumbnail(thumb_size, Image.Resampling.LANCZOS)
-            
-            # Paste thumbnail
-            summary_img.paste(thumb, (x_offset, y_offset))
-            
-            # Add slide number
-            label_font = self.get_font('Arial', 12)
-            draw.text((x_offset + 5, y_offset + 5), f"Slide {i + 1}", 
-                     font=label_font, fill='#FFFFFF', 
-                     stroke_width=1, stroke_fill='#000000')
-            
-            # Move to next position
-            x_offset += thumb_size[0] + 20
-            if (i + 1) % cols == 0:
-                x_offset = 20
-                y_offset += thumb_size[1] + 20
-        
-        # Save summary
-        summary_path = self.output_dir / f"deck_summary_{deck_uuid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-        summary_img.save(summary_path, 'PNG', quality=95)
-        logger.info(f"Created deck summary: {summary_path}")
+
+        try:
+            # Create thumbnail grid
+            thumb_size = (320, 180)  # 1920/6 x 1080/6
+            cols = 4
+            rows = (len(images) + cols - 1) // cols
+
+            summary_width = cols * thumb_size[0] + (cols + 1) * 20
+            summary_height = rows * thumb_size[1] + (rows + 1) * 20 + 60  # Extra space for title
+
+            summary_img = Image.new('RGB', (summary_width, summary_height), color='#F5F5F5')
+            draw = ImageDraw.Draw(summary_img)
+
+            # Add title
+            title_font = self.get_font('Arial', 24, 'bold')
+            draw.text((20, 20), f"Deck Summary: {deck_uuid}", font=title_font, fill='#000000')
+
+            # Add thumbnails
+            x_offset = 20
+            y_offset = 60
+
+            for i, img in enumerate(images):
+                # Create thumbnail
+                thumb = img.copy()
+                try:
+                    thumb.thumbnail(thumb_size, Image.Resampling.LANCZOS)
+
+                    # Paste thumbnail
+                    summary_img.paste(thumb, (x_offset, y_offset))
+
+                    # Add slide number
+                    label_font = self.get_font('Arial', 12)
+                    draw.text((x_offset + 5, y_offset + 5), f"Slide {i + 1}",
+                             font=label_font, fill='#FFFFFF',
+                             stroke_width=1, stroke_fill='#000000')
+
+                    # Move to next position
+                    x_offset += thumb_size[0] + 20
+                    if (i + 1) % cols == 0:
+                        x_offset = 20
+                        y_offset += thumb_size[1] + 20
+                finally:
+                    thumb.close()
+
+            # Save summary
+            summary_path = self.output_dir / f"deck_summary_{deck_uuid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            summary_img.save(summary_path, 'PNG', quality=95)
+            logger.info(f"Created deck summary: {summary_path}")
+        finally:
+            # Always close all opened images to prevent resource leaks
+            for img in images:
+                try:
+                    img.close()
+                except Exception:
+                    pass
