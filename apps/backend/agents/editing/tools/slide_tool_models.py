@@ -24,7 +24,7 @@ class SlideContent(BaseModel):
 
 class _ReplaceOp(BaseModel):
     old_string: str = Field(description="Exact string to find in the HTML (must exist verbatim).")
-    new_string: str = Field(description="Replacement string.")
+    new_string: str = Field(default="", description="Replacement string (empty string to delete).")
 
 
 class _ReplacePlan(BaseModel):
