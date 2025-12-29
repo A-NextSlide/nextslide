@@ -546,12 +546,12 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
         # Try multiple serialization approaches
         try:
             # Approach 1: Use to_json_safe
-            result = to_json_safe(deck_diff)
-            if result and isinstance(result, dict):
-                deck_diff_plain = result
+            serialized_diff = to_json_safe(deck_diff)
+            if serialized_diff and isinstance(serialized_diff, dict):
+                deck_diff_plain = serialized_diff
                 logger.info(f"[DEBUG] Deck diff conversion via to_json_safe SUCCESS")
             else:
-                logger.warning(f"[DEBUG] to_json_safe returned invalid result: {result} (type: {type(result)})")
+                logger.warning(f"[DEBUG] to_json_safe returned invalid result: {serialized_diff} (type: {type(serialized_diff)})")
                 raise ValueError("to_json_safe returned non-dict")
         except Exception as e1:
             logger.warning(f"[DEBUG] to_json_safe FAILED: {e1}")
@@ -565,16 +565,16 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                     except Exception:
                         cls_name = ''
                     if any(k in cls_name for k in ("DeckDiff", "DeckDiffBase")):
-                        result = deck_diff.model_dump(exclude_none=False, exclude_unset=False)
+                        serialized_diff = deck_diff.model_dump(exclude_none=False, exclude_unset=False)
                     else:
-                        result = deck_diff.model_dump(exclude_none=True, exclude_unset=True)
-                    logger.info(f"[DEBUG] model_dump result: {_summarize_deck_diff(result) if isinstance(result, dict) else type(result).__name__}")
+                        serialized_diff = deck_diff.model_dump(exclude_none=True, exclude_unset=True)
+                    logger.info(f"[DEBUG] model_dump result: {_summarize_deck_diff(serialized_diff) if isinstance(serialized_diff, dict) else type(serialized_diff).__name__}")
                     # Don't double-process with to_json_safe if it's already a dict
-                    if isinstance(result, dict):
-                        deck_diff_plain = result
+                    if isinstance(serialized_diff, dict):
+                        deck_diff_plain = serialized_diff
                         logger.info(f"[DEBUG] Using model_dump result directly")
                     else:
-                        deck_diff_plain = to_json_safe(result)
+                        deck_diff_plain = to_json_safe(serialized_diff)
                         logger.info(f"[DEBUG] Applied to_json_safe to model_dump result")
                     logger.info(f"[DEBUG] Deck diff conversion via model_dump SUCCESS")
                 else:
@@ -590,16 +590,16 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                         except Exception:
                             cls_name = ''
                         if any(k in cls_name for k in ("DeckDiff", "DeckDiffBase")):
-                            result = deck_diff.dict(exclude_none=False, exclude_unset=False)
+                            serialized_diff = deck_diff.dict(exclude_none=False, exclude_unset=False)
                         else:
-                            result = deck_diff.dict(exclude_none=True, exclude_unset=True)
-                        logger.info(f"[DEBUG] dict result: {_summarize_deck_diff(result) if isinstance(result, dict) else type(result).__name__}")
+                            serialized_diff = deck_diff.dict(exclude_none=True, exclude_unset=True)
+                        logger.info(f"[DEBUG] dict result: {_summarize_deck_diff(serialized_diff) if isinstance(serialized_diff, dict) else type(serialized_diff).__name__}")
                         # Don't double-process with to_json_safe if it's already a dict
-                        if isinstance(result, dict):
-                            deck_diff_plain = result
+                        if isinstance(serialized_diff, dict):
+                            deck_diff_plain = serialized_diff
                             logger.info(f"[DEBUG] Using dict result directly")
                         else:
-                            deck_diff_plain = to_json_safe(result)
+                            deck_diff_plain = to_json_safe(serialized_diff)
                             logger.info(f"[DEBUG] Applied to_json_safe to dict result")
                         logger.info(f"[DEBUG] Deck diff conversion via dict SUCCESS")
                     else:

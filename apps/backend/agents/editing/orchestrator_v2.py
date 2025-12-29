@@ -1062,10 +1062,20 @@ Respond with the tool_calls to execute."""
         )
     except Exception as e:
         error_str = str(e).lower()
-        if '429' in error_str or 'rate' in error_str:
+        is_rate_limit = '429' in error_str or 'rate' in error_str
+        is_json_error = (
+            'json_invalid' in error_str or
+            'jsondecode' in error_str or
+            'expecting' in error_str or
+            'validation error' in error_str or
+            'invalid json' in error_str
+        )
+        if is_rate_limit or is_json_error:
             # Try fallback
-            logger.warning(f"[ORCHESTRATOR] Rate limited, trying fallback")
-            mark_provider_rate_limited("gemini" if "gemini" in model else "anthropic")
+            reason = "rate limited" if is_rate_limit else "JSON parse error from Gemini"
+            logger.warning(f"[ORCHESTRATOR] {reason}, trying fallback model")
+            if is_rate_limit:
+                mark_provider_rate_limited("gemini" if "gemini" in model else "anthropic")
             fallback_client, fallback_model = get_client(MODEL_FALLBACK)
             response = invoke(
                 client=fallback_client,
