@@ -546,43 +546,53 @@ def _invoke_structured(client, model: str, messages: List[Dict], system: str, re
 
     # Gemini
     if model.startswith("gemini"):
-        # NOTE:
-        # We intentionally DO NOT use the instructor-wrapped Gemini client here.
-        # Certain genai/instructor combos can misinterpret long prompt strings as file paths
-        # (leading to: OSError [Errno 63] File name too long).
-        #
-        # Instead, we call the raw google.genai Client directly and parse JSON ourselves.
+        # Use Gemini's native JSON mode with response_mime_type for guaranteed JSON output
+        from google.genai import types as genai_types
 
         raw_client, _ = get_client(model, wrap_with_instructor=False)
-        # Keep only relevant kwargs - config is already set by invoke() with max_output_tokens
-        gk = {k: v for k, v in kwargs.items() if k not in ["temperature", "max_tokens"]}
 
+        # Build the prompt
         def _build_prompt() -> str:
             base = "\n".join([f"{m.get('role', 'user')}: {m.get('content')}" for m in messages])
             if system:
                 base = f"System: {system}\n{base}"
-            # Include schema to increase determinism
-            schema = None
-            try:
-                schema = response_model.model_json_schema()
-            except Exception:
-                try:
-                    schema = response_model.schema()
-                except Exception:
-                    schema = None
-            if schema:
-                return (
-                    f"{base}\n\n"
-                    "Return ONLY valid JSON (no markdown, no code fences, no commentary) "
-                    "that conforms to this JSON Schema:\n"
-                    f"{json.dumps(schema, ensure_ascii=False)}"
-                )
-            return (
-                f"{base}\n\n"
-                "Return ONLY valid JSON (no markdown, no code fences, no commentary)."
-            )
+            return base
 
         prompt = _build_prompt()
+
+        # Get schema for structured output
+        schema = None
+        try:
+            schema = response_model.model_json_schema()
+        except Exception:
+            try:
+                schema = response_model.schema()
+            except Exception:
+                pass
+
+        # Extract config from kwargs or create new one with JSON mode
+        existing_config = kwargs.get("config")
+        if existing_config:
+            # Merge with existing config - add JSON mode
+            config_dict = {
+                "temperature": getattr(existing_config, "temperature", 0.7),
+                "max_output_tokens": getattr(existing_config, "max_output_tokens", 8192),
+                "response_mime_type": "application/json",  # FORCE JSON OUTPUT
+            }
+        else:
+            config_dict = {
+                "temperature": 0.3,  # Lower temperature for structured output
+                "max_output_tokens": 8192,
+                "response_mime_type": "application/json",  # FORCE JSON OUTPUT
+            }
+
+        # Add schema hint to prompt since response_schema can be finicky
+        if schema:
+            prompt = f"{prompt}\n\nRespond with JSON matching this schema:\n{json.dumps(schema, ensure_ascii=False)}"
+
+        gk = {k: v for k, v in kwargs.items() if k not in ["temperature", "max_tokens", "config"]}
+        gk["config"] = genai_types.GenerateContentConfig(**config_dict)
+
         last_err = None
         last_raw_text = None
         for _attempt in range(max_retries):
@@ -604,14 +614,13 @@ def _invoke_structured(client, model: str, messages: List[Dict], system: str, re
                         raise e1
             except Exception as e:
                 last_err = e
+                logger.warning(f"Gemini attempt {_attempt + 1} error: {e}")
                 continue
 
         # All retries failed - try one more aggressive repair as last resort
         if last_raw_text:
             try:
-                # Try to fix common issues more aggressively
                 payload = _extract_json(last_raw_text)
-                # Additional repair: fix any remaining issues
                 payload = _repair_json(payload)
                 return response_model.model_validate_json(payload)
             except Exception:
