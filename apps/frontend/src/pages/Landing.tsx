@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import BrandWordmark from '@/components/common/BrandWordmark';
 import { cn } from '@/lib/utils';
 import {
-  ArrowRight, Check, Menu, X, Play, Clock, Frown, DollarSign,
+  ArrowRight, Check, Menu, X, Clock, Frown, DollarSign,
   Zap, Palette, Brain, ChevronDown, ChevronUp,
   ChevronLeft, ChevronRight, Bot, Layers, Settings, Crown, Star
 } from 'lucide-react';
@@ -31,6 +31,7 @@ const Landing: React.FC = () => {
   const [activeDeckSlideIndex, setActiveDeckSlideIndex] = useState(0);
   const [userInteracted, setUserInteracted] = useState(false);
   const [showcaseFocused, setShowcaseFocused] = useState(false);
+  const [showcaseInView, setShowcaseInView] = useState(false);
   const autoScrollRef = useRef<NodeJS.Timeout | null>(null);
   const showcaseRef = useRef<HTMLDivElement>(null);
 
@@ -91,19 +92,38 @@ const Landing: React.FC = () => {
     return () => observer.disconnect();
   }, []);
 
-  // Auto-rotate showcase (only if user hasn't interacted)
+  // Detect when showcase section comes into view
   useEffect(() => {
-    if (showcaseDecks.length === 0 || userInteracted) return;
-    
+    if (!showcaseRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && !showcaseInView) {
+            setShowcaseInView(true);
+          }
+        });
+      },
+      { threshold: 0.3 }
+    );
+
+    observer.observe(showcaseRef.current);
+    return () => observer.disconnect();
+  }, [showcaseInView]);
+
+  // Auto-rotate showcase (only after section is in view and user hasn't interacted)
+  useEffect(() => {
+    if (showcaseDecks.length === 0 || userInteracted || !showcaseInView) return;
+
     autoScrollRef.current = setInterval(() => {
       setActiveShowcaseIndex((prev) => (prev + 1) % showcaseDecks.length);
       setActiveDeckSlideIndex(0);
     }, 8000);
-    
+
     return () => {
       if (autoScrollRef.current) clearInterval(autoScrollRef.current);
     };
-  }, [showcaseDecks.length, userInteracted]);
+  }, [showcaseDecks.length, userInteracted, showcaseInView]);
 
   // Stop auto-scroll on user interaction
   const handleUserInteraction = () => {
@@ -419,16 +439,6 @@ const Landing: React.FC = () => {
                 {isSignedIn ? 'My Slides' : 'Create Full Deck Free'}
                 <ArrowRight className="ml-2 w-4 h-4 sm:w-5 sm:h-5" />
               </Button>
-              {!isSignedIn && (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="px-6 sm:px-10 py-5 sm:py-6 text-sm sm:text-base font-semibold border-2 w-full sm:w-auto min-h-[48px] touch-manipulation"
-                >
-                  <Play className="mr-2 w-4 h-4 sm:w-5 sm:h-5" />
-                  Watch Demo
-                </Button>
-              )}
             </div>
             <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-black/50 dark:text-white/50">
               <div className="flex items-center gap-2">
@@ -472,22 +482,6 @@ const Landing: React.FC = () => {
               See it in action
             </h2>
             <p className="text-xl text-white/60">Real presentations built with NextSlide</p>
-            {/* Keyboard navigation hint */}
-            <div className={cn(
-              "mt-3 text-xs text-white/40 transition-opacity duration-200 flex items-center justify-center gap-4",
-              showcaseFocused ? "opacity-100" : "opacity-0"
-            )}>
-              <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">←</kbd>
-                <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">→</kbd>
-                <span className="ml-1">slides</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">↑</kbd>
-                <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">↓</kbd>
-                <span className="ml-1">decks</span>
-              </span>
-            </div>
           </div>
 
           <div className="animate-on-scroll opacity-0">
@@ -502,59 +496,30 @@ const Landing: React.FC = () => {
                       <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
                       <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
                     </div>
-                    <span className="text-[11px] text-white/40 font-mono truncate max-w-[300px]">
+                    <span className="text-[11px] text-white/40 font-mono truncate max-w-[200px] sm:max-w-[300px]">
                       {activeDeck?.name || 'Loading...'}
                     </span>
                   </div>
-                  <span className="text-[11px] text-white/40">
-                    {activeDeck ? `${activeDeckSlideIndex + 1}/${activeDeck.slideCount}` : ''}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    {/* Keyboard hints */}
+                    <div className={cn(
+                      "hidden sm:flex items-center gap-2 text-[10px] text-white/30 transition-opacity duration-200",
+                      showcaseFocused ? "opacity-100" : "opacity-0"
+                    )}>
+                      <kbd className="px-1 py-0.5 bg-white/10 rounded">←</kbd>
+                      <kbd className="px-1 py-0.5 bg-white/10 rounded">→</kbd>
+                      <span>slides</span>
+                    </div>
+                    <span className="text-[11px] text-white/40">
+                      {activeDeck ? `${activeDeckSlideIndex + 1}/${activeDeck.slideCount}` : ''}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Content with slide sidebar - fixed height container */}
-                <div className="flex flex-col md:flex-row h-[420px] sm:h-[480px] lg:h-[500px]">
-                  {/* Slide thumbnails sidebar - scrollable */}
-                  <div className="w-full md:w-[150px] flex-shrink-0 border-b md:border-b-0 md:border-r border-white/5 bg-black/30 p-2 overflow-x-auto md:overflow-y-auto md:overflow-x-hidden custom-scrollbar relative group/sidebar">
-                    <div className="flex md:block gap-2 md:space-y-2">
-                      {isLoadingShowcase ? (
-                        [...Array(5)].map((_, idx) => (
-                          <div key={idx} className="aspect-video rounded overflow-hidden relative bg-white/5 animate-pulse min-w-[120px] md:min-w-0 flex-shrink-0" />
-                        ))
-                      ) : (
-                        activeDeck?.slides?.map((slide, idx) => (
-                          <div
-                            key={idx}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUserInteraction();
-                              setActiveDeckSlideIndex(idx);
-                              showcaseRef.current?.focus();
-                            }}
-                            className={cn(
-                              "aspect-video rounded overflow-hidden relative cursor-pointer transition-all flex-shrink-0 min-w-[120px] md:min-w-0",
-                              idx === activeDeckSlideIndex
-                                ? "ring-2 ring-[#FF4301]"
-                                : "opacity-50 hover:opacity-100 hover:ring-1 hover:ring-white/30"
-                            )}
-                          >
-                            <div className="absolute inset-0 z-10" /> {/* Click capture layer */}
-                            <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
-                              <MiniSlide slide={slide} />
-                            </Suspense>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                    {/* Scroll indicator - fade gradient at bottom */}
-                    {!isLoadingShowcase && activeDeck && activeDeck.slideCount > 5 && (
-                      <div className="sticky bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-black/60 to-transparent pointer-events-none hidden md:flex items-end justify-center pb-1">
-                        <ChevronDown className="w-4 h-4 text-white/50 animate-bounce" />
-                      </div>
-                    )}
-                  </div>
-
+                {/* Content with slide thumbnails underneath - fixed height container */}
+                <div className="flex flex-col h-[420px] sm:h-[480px] lg:h-[500px]">
                   {/* Main slide */}
-                  <div className="flex-1 p-3 md:p-4 flex items-center justify-center">
+                  <div className="flex-1 p-3 md:p-4 flex items-center justify-center min-h-0">
                     <div
                       className="aspect-video w-full max-h-full relative rounded-lg overflow-hidden bg-black group"
                       onClick={() => {
@@ -617,6 +582,40 @@ const Landing: React.FC = () => {
                       )}
                     </div>
                   </div>
+
+                  {/* Slide thumbnails - horizontal strip at bottom */}
+                  <div className="flex-shrink-0 border-t border-white/5 bg-black/30 p-2 overflow-x-auto custom-scrollbar">
+                    <div className="flex gap-2">
+                      {isLoadingShowcase ? (
+                        [...Array(5)].map((_, idx) => (
+                          <div key={idx} className="w-[100px] sm:w-[120px] aspect-video rounded overflow-hidden relative bg-white/5 animate-pulse flex-shrink-0" />
+                        ))
+                      ) : (
+                        activeDeck?.slides?.map((slide, idx) => (
+                          <div
+                            key={idx}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUserInteraction();
+                              setActiveDeckSlideIndex(idx);
+                              showcaseRef.current?.focus();
+                            }}
+                            className={cn(
+                              "w-[100px] sm:w-[120px] aspect-video rounded overflow-hidden relative cursor-pointer transition-all flex-shrink-0",
+                              idx === activeDeckSlideIndex
+                                ? "ring-2 ring-[#FF4301]"
+                                : "opacity-50 hover:opacity-100 hover:ring-1 hover:ring-white/30"
+                            )}
+                          >
+                            <div className="absolute inset-0 z-10" /> {/* Click capture layer */}
+                            <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
+                              <MiniSlide slide={slide} />
+                            </Suspense>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -625,11 +624,11 @@ const Landing: React.FC = () => {
                 <div className="px-3 py-2 border-b border-white/5 flex-shrink-0">
                   <h4 className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Explore Examples</h4>
                 </div>
-                <div className="p-2 flex gap-3 overflow-x-auto lg:overflow-y-auto lg:flex-col lg:gap-2 flex-1 custom-scrollbar">
+                <div className="p-2 flex gap-2 overflow-x-auto lg:overflow-y-auto lg:flex-col lg:gap-2 flex-1 custom-scrollbar">
                   {isLoadingShowcase ? (
-                    [...Array(4)].map((_, index) => (
-                      <div key={index} className="rounded-lg overflow-hidden relative ring-1 ring-white/5 min-w-[180px] lg:min-w-0">
-                        <div className="aspect-[16/9] relative overflow-hidden bg-white/5 animate-pulse" />
+                    [...Array(6)].map((_, index) => (
+                      <div key={index} className="rounded-lg relative ring-1 ring-white/5 min-w-[160px] lg:min-w-0 flex-shrink-0">
+                        <div className="aspect-[16/9] relative bg-white/5 animate-pulse rounded-lg" />
                       </div>
                     ))
                   ) : (
@@ -638,34 +637,36 @@ const Landing: React.FC = () => {
                         key={deck.uuid}
                         onClick={() => { handleUserInteraction(); setActiveShowcaseIndex(index); setActiveDeckSlideIndex(0); showcaseRef.current?.focus(); }}
                         className={cn(
-                          "rounded-lg overflow-hidden relative cursor-pointer transition-all min-w-[180px] lg:min-w-0",
+                          "rounded-lg relative cursor-pointer transition-all min-w-[160px] lg:min-w-0 flex-shrink-0 overflow-hidden",
                           index === activeShowcaseIndex
                             ? "ring-2 ring-[#FF4301]"
                             : "ring-1 ring-white/5 hover:ring-white/20"
                         )}
                       >
-                        <div className="aspect-[16/9] relative overflow-hidden">
+                        <div className="absolute inset-0 z-10 cursor-pointer" /> {/* Click capture layer */}
+                        <div className="aspect-[16/9] relative">
                           {deck.slides?.[0] && (
                             <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
                               <MiniSlide slide={deck.slides[0]} />
                             </Suspense>
                           )}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                          {/* Gradient overlay with text */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                           <div className="absolute bottom-0 left-0 right-0 p-2">
                             <div className={cn(
-                              "text-[10px] font-medium truncate",
-                              index === activeShowcaseIndex ? "text-[#FF4301]" : "text-white/80"
+                              "text-[10px] font-medium truncate leading-tight",
+                              index === activeShowcaseIndex ? "text-[#FF4301]" : "text-white/90"
                             )}>
                               {deck.name}
                             </div>
-                            <div className="text-[9px] text-white/40">
+                            <div className="text-[9px] text-white/50">
                               {deck.slideCount} slides
                             </div>
                           </div>
-                          {index === activeShowcaseIndex && (
-                            <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#FF4301]" />
-                          )}
                         </div>
+                        {index === activeShowcaseIndex && (
+                          <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#FF4301]" />
+                        )}
                       </div>
                     ))
                   )}
@@ -1185,7 +1186,7 @@ const Landing: React.FC = () => {
               Community Slides
             </h2>
             <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
-              Get inspired by slides created by the NextSlide community. Remix any deck to make it your own!
+              Get inspired or learn something new from slides created by the NextSlide community, or remix it to make it your own!
             </p>
           </div>
 
