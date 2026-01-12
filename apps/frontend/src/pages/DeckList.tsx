@@ -3021,14 +3021,16 @@ const DeckList: React.FC = () => {
         </div>
       </div>
 
-      {/* Community Button - Fixed at bottom */}
-      <button
-        onClick={() => setShowCommunity(true)}
-        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-medium rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center gap-2"
-      >
-        <Users2 className="h-4 w-4" />
-        Community Slides
-      </button>
+      {/* Community Button - Fixed at bottom, hidden during conversational onboarding */}
+      {!showConversationalOnboarding && (
+        <button
+          onClick={() => setShowCommunity(true)}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-medium rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center gap-2"
+        >
+          <Users2 className="h-4 w-4" />
+          Community Slides
+        </button>
+      )}
 
       {/* Community Bottom Sheet */}
       <CommunityBottomSheet

@@ -94,7 +94,8 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
     return Array.isArray(slide?.components) && slide.components.length > 0;
   }, [slide?.components]);
   const fallbackBackground = useMemo(() => getSlideFallbackBackground(slide), [slide]);
-  const shouldRenderMiniSlide = hasComponents;
+  // On mobile (renderSimple=true), skip MiniSlide to prevent memory issues
+  const shouldRenderMiniSlide = hasComponents && !renderSimple;
 
   return (
     <ContextMenu>
@@ -145,11 +146,16 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
               />
             ) : (
               <div
-                className="w-full h-full rounded-sm overflow-hidden flex items-center justify-center"
-                style={fallbackBackground ? { background: fallbackBackground } : { background: '#f5f5f5' }}
+                className="w-full h-full rounded-sm overflow-hidden flex items-center justify-center relative"
+                style={fallbackBackground ? { background: fallbackBackground } : { background: 'linear-gradient(135deg, #f8fafc, #e2e8f0)' }}
               >
-                <div className="text-[10px] font-medium text-zinc-600">
-                  Slide {index + 1}
+                {/* Show slide number for simple rendering on mobile */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="px-2 py-1 rounded bg-black/20 backdrop-blur-sm">
+                    <span className="text-[11px] font-medium text-white/90">
+                      {index + 1}
+                    </span>
+                  </div>
                 </div>
               </div>
             )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Sparkles, Heart, Award, RefreshCw, Trophy, Layers, MousePointer2, Image as ImageIcon, Type, BarChart3, LayoutTemplate, Copyright, ArrowRight } from 'lucide-react';
+import { Sparkles, Heart, Award, RefreshCw, Trophy, Layers, MousePointer2, Image as ImageIcon, Type, BarChart3, LayoutTemplate, Copyright, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SlideStackerGameProps {
@@ -266,13 +266,6 @@ const SlideStackerGame: React.FC<SlideStackerGameProps> = ({ onClose }) => {
         </div>
       </div>
 
-      {/* Close Button */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
-        className="absolute top-6 right-6 z-50 p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors pointer-events-auto"
-      >
-        <X className="w-6 h-6" />
-      </button>
 
       {/* Game Canvas (The Slide) */}
       <div className="relative w-[360px] h-[540px] bg-white border-[8px] border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
