@@ -29,10 +29,26 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   slideSize
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  // Use sensible fallback dimensions to prevent 0-size containers on mobile
-  const fallbackWidth = fixedWidth || 160;
-  const fallbackHeight = fixedHeight || 90;
-  const [dimensions, setDimensions] = useState({ width: fallbackWidth, height: fallbackHeight });
+
+  // Minimum dimension threshold - if container is smaller, use computed fallbacks
+  const MIN_DIMENSION_THRESHOLD = 50;
+
+  // Compute proper fallback dimensions based on window size (like useSlideViewportSize does)
+  const getComputedFallback = () => {
+    if (typeof window === 'undefined') {
+      return { width: fixedWidth || 160, height: fixedHeight || 90 };
+    }
+    // Use window dimensions to compute a reasonable thumbnail size
+    const windowWidth = window.innerWidth || 1200;
+    const aspectRatio = (slideSize?.width || DEFAULT_SLIDE_WIDTH) / (slideSize?.height || DEFAULT_SLIDE_HEIGHT);
+    // Target ~15% of screen width for thumbnails, min 120px, max 300px
+    const targetWidth = Math.min(300, Math.max(120, windowWidth * 0.15));
+    const targetHeight = targetWidth / aspectRatio;
+    return { width: targetWidth, height: targetHeight };
+  };
+
+  const fallbackDimensions = getComputedFallback();
+  const [dimensions, setDimensions] = useState(fallbackDimensions);
   // Always render immediately - don't block on ResizeObserver
   const [isReady, setIsReady] = useState(true);
   const normalizedResult = useMemo(() => {
@@ -68,7 +84,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       }
       return;
     }
-    
+
     const updateDimensions = () => {
       if (!containerRef.current) return;
 
@@ -76,10 +92,15 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       let containerWidth = rect.width;
       let containerHeight = rect.height;
 
-      // On mobile, container may have 0 dimensions initially - use fallbacks
-      if (containerWidth <= 0 || containerHeight <= 0) {
-        containerWidth = fallbackWidth;
-        containerHeight = fallbackHeight;
+      // Use fallbacks if container is too small (threshold-based, not just 0)
+      // This handles cases where container gets tiny dimensions on mobile
+      if (containerWidth < MIN_DIMENSION_THRESHOLD || containerHeight < MIN_DIMENSION_THRESHOLD) {
+        // Compute fallback based on window size
+        const windowWidth = typeof window !== 'undefined' ? (window.innerWidth || 1200) : 1200;
+        const slideAspect = baseSlideWidth / baseSlideHeight;
+        // Target ~15% of screen width for thumbnails, min 120px, max 300px
+        containerWidth = Math.min(300, Math.max(120, windowWidth * 0.15));
+        containerHeight = containerWidth / slideAspect;
       }
 
       // Calculate dimensions maintaining aspect ratio
@@ -93,10 +114,14 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
         width = containerHeight * aspectRatio;
       }
 
-      setDimensions({ width: Math.max(1, width), height: Math.max(1, height) });
+      // Ensure minimum reasonable dimensions
+      width = Math.max(MIN_DIMENSION_THRESHOLD, width);
+      height = Math.max(MIN_DIMENSION_THRESHOLD / aspectRatio, height);
+
+      setDimensions({ width, height });
       setIsReady(true);
     };
-    
+
     // Initial calculation
     updateDimensions();
 
@@ -104,11 +129,11 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       setIsReady(true);
       return;
     }
-    
+
     // Set up ResizeObserver
     const resizeObserver = new ResizeObserver(updateDimensions);
     resizeObserver.observe(containerRef.current);
-    
+
     return () => {
       resizeObserver.disconnect();
     };
@@ -168,7 +193,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
 
   if (responsive) {
     return (
-      <div 
+      <div
         ref={containerRef}
         className={cn(
           "relative overflow-hidden rounded cursor-pointer transition-all w-full h-full slide-thumbnail",
@@ -176,7 +201,12 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
           className
         )}
         onClick={onClick}
-        style={fallbackBackground ? { background: fallbackBackground } : undefined}
+        style={{
+          // Ensure container has minimum dimensions even if parent has none
+          minWidth: MIN_DIMENSION_THRESHOLD,
+          minHeight: MIN_DIMENSION_THRESHOLD / (baseSlideWidth / baseSlideHeight),
+          ...(fallbackBackground ? { background: fallbackBackground } : {})
+        }}
       >
         {isReady && (
           <div 
