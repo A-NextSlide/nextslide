@@ -19,8 +19,8 @@ interface MiniSlideProps {
 }
 
 // This component renders a miniature version of the slide directly
-const MiniSlide: React.FC<MiniSlideProps> = ({ 
-  slide, 
+const MiniSlide: React.FC<MiniSlideProps> = ({
+  slide,
   width: fixedWidth,
   height: fixedHeight,
   className = '',
@@ -29,8 +29,23 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   slideSize
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: fixedWidth || 160, height: fixedHeight || 90 });
+  // Use sensible fallback dimensions to prevent 0-size containers on mobile
+  const fallbackWidth = fixedWidth || 160;
+  const fallbackHeight = fixedHeight || 90;
+  const [dimensions, setDimensions] = useState({ width: fallbackWidth, height: fallbackHeight });
   const [isReady, setIsReady] = useState(!responsive); // If not responsive, ready immediately
+
+  // Force ready state after timeout to prevent infinite loading on mobile
+  useEffect(() => {
+    if (!responsive || isReady) return;
+    const timeout = setTimeout(() => {
+      if (!isReady) {
+        // Force ready with fallback dimensions if still not ready
+        setIsReady(true);
+      }
+    }, 100); // 100ms timeout to allow layout to settle
+    return () => clearTimeout(timeout);
+  }, [responsive, isReady]);
   const normalizedResult = useMemo(() => {
     return normalizeSlideForRender(slide, slideSize, { preferFallbackSize: true });
   }, [slide, slideSize]);
@@ -67,26 +82,30 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     
     const updateDimensions = () => {
       if (!containerRef.current) return;
-      
+
       const rect = containerRef.current.getBoundingClientRect();
-      const containerWidth = rect.width;
-      const containerHeight = rect.height;
-      
-      if (containerWidth > 0 && containerHeight > 0) {
-        // Calculate dimensions maintaining aspect ratio
-        const aspectRatio = baseSlideWidth / baseSlideHeight;
-        let width = containerWidth;
-        let height = containerWidth / aspectRatio;
-        
-        // If calculated height exceeds container, scale based on height
-        if (height > containerHeight) {
-          height = containerHeight;
-          width = containerHeight * aspectRatio;
-        }
-        
-        setDimensions({ width, height });
-        setIsReady(true);
+      let containerWidth = rect.width;
+      let containerHeight = rect.height;
+
+      // On mobile, container may have 0 dimensions initially - use fallbacks
+      if (containerWidth <= 0 || containerHeight <= 0) {
+        containerWidth = fallbackWidth;
+        containerHeight = fallbackHeight;
       }
+
+      // Calculate dimensions maintaining aspect ratio
+      const aspectRatio = baseSlideWidth / baseSlideHeight;
+      let width = containerWidth;
+      let height = containerWidth / aspectRatio;
+
+      // If calculated height exceeds container, scale based on height
+      if (height > containerHeight) {
+        height = containerHeight;
+        width = containerHeight * aspectRatio;
+      }
+
+      setDimensions({ width: Math.max(1, width), height: Math.max(1, height) });
+      setIsReady(true);
     };
     
     // Initial calculation
@@ -106,15 +125,17 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     };
   }, [responsive, fixedWidth, fixedHeight, baseSlideWidth, baseSlideHeight]);
   
-  // Calculate scale based on current dimensions
-  const scale = Math.min(
+  // Calculate scale based on current dimensions - guard against NaN and 0
+  const rawScale = Math.min(
     dimensions.width / baseSlideWidth,
     dimensions.height / baseSlideHeight
   );
-  
+  // Ensure scale is valid (not NaN, not 0, not Infinity) - minimum 0.01 to prevent invisible renders
+  const scale = (!isFinite(rawScale) || rawScale <= 0) ? 0.05 : Math.max(0.01, rawScale);
+
   // Calculate actual dimensions to maintain aspect ratio
-  const actualWidth = baseSlideWidth * scale;
-  const actualHeight = baseSlideHeight * scale;
+  const actualWidth = Math.max(1, baseSlideWidth * scale);
+  const actualHeight = Math.max(1, baseSlideHeight * scale);
   
   // If responsive, use container ref for sizing
   // Compute a simple fallback background from the slide's Background component

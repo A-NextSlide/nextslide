@@ -93,9 +93,12 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const baseSlideWidth = resolvedSlideSize.width;
   const baseSlideHeight = resolvedSlideSize.height;
 
-  // Thumbnail dimensions
+  // Thumbnail dimensions - guard against invalid values
   const thumbnailHeight = 120;
-  const thumbnailWidth = Math.round(thumbnailHeight * (deckSlideSize.width / deckSlideSize.height));
+  const rawThumbnailWidth = thumbnailHeight * (deckSlideSize.width / deckSlideSize.height);
+  const thumbnailWidth = (!isFinite(rawThumbnailWidth) || rawThumbnailWidth <= 0)
+    ? Math.round(thumbnailHeight * (16 / 9)) // Default to 16:9 aspect ratio
+    : Math.round(rawThumbnailWidth);
 
   // Calculate slide scale to fit container
   useLayoutEffect(() => {

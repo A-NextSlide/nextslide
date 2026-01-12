@@ -2,7 +2,8 @@ import React, { useRef, useEffect, useCallback, useState, lazy, Suspense } from 
 import { createPortal } from 'react-dom';
 import { BROWSER } from '@/utils/browser';
 import { runWhenIdle } from '@/utils/scheduler';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Presentation } from 'lucide-react';
+import { usePresentationStore } from '@/stores/presentationStore';
 import { Button } from '@/components/ui/button';
 import { SlideData } from '@/types/SlideTypes';
 import { ComponentInstance } from '@/types/components';
@@ -247,7 +248,9 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       if (e.ctrlKey || e.metaKey) return;
     };
 
+    // Only set up pinch-to-zoom handlers on desktop - causes crashes on mobile
     const handleTouchStart = (e: TouchEvent) => {
+      if (isMobileView) return; // Skip custom zoom on mobile - let native browser handle it
       if (e.touches.length === 2) {
         const [touch1, touch2] = e.touches;
         pinchState.initialDistance = Math.hypot(
@@ -259,6 +262,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     };
 
     const handleTouchMove = (e: TouchEvent) => {
+      if (isMobileView) return; // Skip custom zoom on mobile - let native browser handle it
       if (e.touches.length === 2) {
         e.preventDefault();
         const [touch1, touch2] = e.touches;
@@ -287,12 +291,14 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     };
 
     const handleWindowGestureStart = (e: Event) => {
+      if (isMobileView) return; // Skip custom zoom on mobile
       e.preventDefault();
       e.stopPropagation();
       gestureInitialZoom = zoomLevelRef.current;
     };
 
     const handleWindowGestureChange = (e: Event) => {
+      if (isMobileView) return; // Skip custom zoom on mobile
       e.preventDefault();
       e.stopPropagation();
       const gestureEvent = e as any;
@@ -302,15 +308,19 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     };
 
     const handleWindowGestureEnd = (e: Event) => {
+      if (isMobileView) return; // Skip custom zoom on mobile
       e.preventDefault();
       e.stopPropagation();
     };
 
     scrollContainer.addEventListener('wheel', handleWheel, { passive: false });
-    scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
-    scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+    // Only add touch zoom handlers on desktop - they cause crashes on mobile
+    if (!isMobileView) {
+      scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
+      scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+    }
     window.addEventListener('wheel', handleWindowWheel, { passive: false, capture: true });
-    if (supportsGestureEvents) {
+    if (supportsGestureEvents && !isMobileView) {
       window.addEventListener('gesturestart', handleWindowGestureStart as EventListener, { passive: false, capture: true });
       window.addEventListener('gesturechange', handleWindowGestureChange as EventListener, { passive: false, capture: true });
       window.addEventListener('gestureend', handleWindowGestureEnd as EventListener, { passive: false, capture: true });
@@ -318,16 +328,18 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 
     return () => {
       scrollContainer.removeEventListener('wheel', handleWheel as EventListener);
-      scrollContainer.removeEventListener('touchstart', handleTouchStart as EventListener);
-      scrollContainer.removeEventListener('touchmove', handleTouchMove as EventListener);
+      if (!isMobileView) {
+        scrollContainer.removeEventListener('touchstart', handleTouchStart as EventListener);
+        scrollContainer.removeEventListener('touchmove', handleTouchMove as EventListener);
+      }
       window.removeEventListener('wheel', handleWindowWheel, { capture: true });
-      if (supportsGestureEvents) {
+      if (supportsGestureEvents && !isMobileView) {
         window.removeEventListener('gesturestart', handleWindowGestureStart as EventListener, { capture: true });
         window.removeEventListener('gesturechange', handleWindowGestureChange as EventListener, { capture: true });
         window.removeEventListener('gestureend', handleWindowGestureEnd as EventListener, { capture: true });
       }
     };
-  }, [getViewportCenter, getZoomAnchor, normalizeWheelDelta, supportsGestureEvents, zoomTo]);
+  }, [getViewportCenter, getZoomAnchor, normalizeWheelDelta, supportsGestureEvents, zoomTo, isMobileView]);
 
   useEffect(() => {
     const previousZoom = previousZoomRef.current;
@@ -847,13 +859,21 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       tabIndex={-1}
     >
       {/* Waiting Game Overlay */}
-      <GenerationGameOverlay
-        deckState={deckStatus?.state}
-        startedAt={deckStatus?.startedAt}
-        isVisibleOverride={showWaitingGame}
-        currentSlideIndex={currentSlideIndex}
-        totalSlides={totalSlides}
-      />
+      <GenerationGameOverlay isVisible={showWaitingGame} />
+
+      {/* Mobile Present Button - floating in top right */}
+      {isMobileView && !isEditing && currentSlide && slides.length > 0 && (
+        <button
+          className="absolute top-3 right-3 z-50 px-3 py-1.5 bg-[#FF4301] hover:bg-[#E63901] active:bg-[#D62F00] text-white rounded-lg flex items-center gap-1.5 text-sm font-semibold shadow-lg transition-colors"
+          style={{
+            fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+          }}
+          onClick={() => usePresentationStore.getState().enterPresentation()}
+        >
+          <Presentation size={16} />
+          Present
+        </button>
+      )}
 
       <ZoomIndicator />
 
