@@ -96,8 +96,8 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
     return Array.isArray(slide?.components) && slide.components.length > 0;
   }, [slide?.components]);
   const fallbackBackground = useMemo(() => getSlideFallbackBackground(slide), [slide]);
-  // On mobile (renderSimple=true), skip MiniSlide to prevent memory issues
-  const shouldRenderMiniSlide = hasComponents && !renderSimple;
+  // Always render MiniSlide if slide has components (works on mobile now)
+  const shouldRenderMiniSlide = hasComponents;
   // Show generating state if no components and deck is still generating
   const showGeneratingState = !hasComponents && isGenerating;
 
@@ -160,23 +160,12 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
               </div>
             ) : (
               <div
-                className="w-full h-full rounded-sm overflow-hidden flex items-center justify-center relative"
+                className="w-full h-full rounded-sm overflow-hidden flex items-center justify-center"
                 style={fallbackBackground ? { background: fallbackBackground } : { background: '#f5f5f5' }}
               >
-                {/* Show slide number - styled differently for mobile vs desktop */}
-                {renderSimple ? (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="px-2 py-1 rounded bg-black/20 backdrop-blur-sm">
-                      <span className="text-[11px] font-medium text-white/90">
-                        {index + 1}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-[10px] font-medium text-zinc-600">
-                    Slide {index + 1}
-                  </div>
-                )}
+                <div className="text-[10px] font-medium text-zinc-600">
+                  Slide {index + 1}
+                </div>
               </div>
             )}
           </div>
