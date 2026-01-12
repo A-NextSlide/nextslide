@@ -43,11 +43,16 @@ def _extract_all_images(props: Dict[str, Any], html: str) -> List[ImageInfo]:
     """
     Extract all images from a CustomComponent.
     Combines metadata (if available) with HTML extraction.
+
+    IMPORTANT: Only uses imageMetadata URLs if they actually exist in the HTML.
+    This prevents stale metadata from causing replacement failures after edits.
     """
     images = []
     seen_urls = set()
 
     # Source 1: imageMetadata (new slides have this)
+    # CRITICAL: Only use metadata URLs that actually exist in the current HTML
+    # After image replacements, metadata may be stale (contains old URLs)
     image_metadata = props.get("imageMetadata", {})
     for prop_name, meta in image_metadata.items():
         if not isinstance(meta, dict):
@@ -55,6 +60,13 @@ def _extract_all_images(props: Dict[str, Any], html: str) -> List[ImageInfo]:
         url = meta.get("url", "")
         if not url or url in seen_urls:
             continue
+
+        # VALIDATION: Skip metadata entries whose URLs are not in the HTML
+        # This handles the case where an image was replaced but metadata wasn't updated
+        if url not in html:
+            logger.debug(f"[IMAGES] Skipping stale metadata URL not in HTML: {url[:60]}...")
+            continue
+
         seen_urls.add(url)
 
         # Build description from metadata

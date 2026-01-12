@@ -31,6 +31,7 @@ interface ThumbnailItemProps {
   onDragEnd: () => void;
   renderSimple?: boolean;
   slideSize?: { width: number; height: number };
+  isGenerating?: boolean;
 }
 
 const getSlideFallbackBackground = (slide: SlideData): string | undefined => {
@@ -89,6 +90,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
   onDragEnd,
   renderSimple = false,
   slideSize,
+  isGenerating = false,
 }) => {
   const hasComponents = useMemo(() => {
     return Array.isArray(slide?.components) && slide.components.length > 0;
@@ -96,6 +98,8 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
   const fallbackBackground = useMemo(() => getSlideFallbackBackground(slide), [slide]);
   // On mobile (renderSimple=true), skip MiniSlide to prevent memory issues
   const shouldRenderMiniSlide = hasComponents && !renderSimple;
+  // Show generating state if no components and deck is still generating
+  const showGeneratingState = !hasComponents && isGenerating;
 
   return (
     <ContextMenu>
@@ -144,6 +148,16 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
                 className={cn("pointer-events-none", renderSimple && "hover:ring-0 cursor-default")}
                 slideSize={slideSize}
               />
+            ) : showGeneratingState ? (
+              /* Orange generating state - matches PlaceholderThumbnail */
+              <div className="w-full h-full rounded-sm overflow-hidden bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-1">
+                  <div className="w-4 h-4 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+                  <div className="text-[9px] font-medium text-orange-600 dark:text-orange-400">
+                    Generating...
+                  </div>
+                </div>
+              </div>
             ) : (
               <div
                 className="w-full h-full rounded-sm overflow-hidden flex items-center justify-center relative"
@@ -606,6 +620,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                     onDragEnd={handleDragEnd}
                     renderSimple={isMobile}
                     slideSize={slideSize}
+                    isGenerating={isGenerating}
                   />
                 </motion.div>
 
