@@ -64,7 +64,7 @@ def _extract_all_images(props: Dict[str, Any], html: str) -> List[ImageInfo]:
         # VALIDATION: Skip metadata entries whose URLs are not in the HTML
         # This handles the case where an image was replaced but metadata wasn't updated
         if url not in html:
-            logger.debug(f"[IMAGES] Skipping stale metadata URL not in HTML: {url[:60]}...")
+            logger.info(f"[IMAGES] Skipping stale metadata URL (not in HTML): {url[:60]}...")
             continue
 
         seen_urls.add(url)

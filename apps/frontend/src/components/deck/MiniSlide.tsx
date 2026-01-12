@@ -33,19 +33,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   const fallbackWidth = fixedWidth || 160;
   const fallbackHeight = fixedHeight || 90;
   const [dimensions, setDimensions] = useState({ width: fallbackWidth, height: fallbackHeight });
-  const [isReady, setIsReady] = useState(!responsive); // If not responsive, ready immediately
-
-  // Force ready state after timeout to prevent infinite loading on mobile
-  useEffect(() => {
-    if (!responsive || isReady) return;
-    const timeout = setTimeout(() => {
-      if (!isReady) {
-        // Force ready with fallback dimensions if still not ready
-        setIsReady(true);
-      }
-    }, 100); // 100ms timeout to allow layout to settle
-    return () => clearTimeout(timeout);
-  }, [responsive, isReady]);
+  // Always render immediately - don't block on ResizeObserver
+  const [isReady, setIsReady] = useState(true);
   const normalizedResult = useMemo(() => {
     return normalizeSlideForRender(slide, slideSize, { preferFallbackSize: true });
   }, [slide, slideSize]);
