@@ -1836,7 +1836,7 @@ const DeckList: React.FC = () => {
           />
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
-          {!(currentOutline || isOutlineChatGenerating || showConversationalOnboarding) && (
+          {!(currentOutline || isOutlineChatGenerating || showConversationalOnboarding) && !isMobileView && (
             <div className="flex items-center">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
