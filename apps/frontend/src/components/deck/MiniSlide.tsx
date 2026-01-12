@@ -70,7 +70,6 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   // ALL HOOKS MUST BE AT THE TOP - before any conditionals or functions
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
-  const [hasBeenVisible, setHasBeenVisible] = useState(false);
   const [containerSize, setContainerSize] = useState({ width: 160, height: 90 });
 
   // Normalize slide data
@@ -108,27 +107,22 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   const fallbackBackground = useMemo(() => getSlideBackground(normalizedSlide), [normalizedSlide]);
 
   // IntersectionObserver - only render full slide when visible (prevents mobile crash)
+  // Components are UNMOUNTED when not visible to save memory
   useEffect(() => {
     if (!containerRef.current) return;
 
     if (typeof IntersectionObserver === 'undefined') {
       setIsVisible(true);
-      setHasBeenVisible(true);
       return;
     }
 
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setIsVisible(true);
-            setHasBeenVisible(true);
-          } else {
-            setIsVisible(false);
-          }
+          setIsVisible(entry.isIntersecting);
         });
       },
-      { root: null, rootMargin: '100px', threshold: 0 }
+      { root: null, rootMargin: '200px', threshold: 0 }
     );
 
     observer.observe(containerRef.current);
@@ -240,7 +234,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
           background: fallbackBackground || '#f5f5f5'
         }}
       >
-        {(isVisible || hasBeenVisible) ? (
+        {isVisible ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <div
               className="relative"

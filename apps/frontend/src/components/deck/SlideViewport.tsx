@@ -72,6 +72,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   const [selectedComponentId, setSelectedComponentId] = React.useState<string | null>(null);
   const [showWaitingGame, setShowWaitingGame] = useState(false);
   const isMobileView = useIsMobile();
+  const enterPresentation = usePresentationStore(state => state.enterPresentation);
   const viewportRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { width: slideWidth, height: slideHeight } = useSlideViewportSize(viewportRef);
@@ -129,7 +130,8 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   const zoomScale = zoomLevel / 100;
   const scaledSlideWidth = Math.max(1, Math.round(slideWidth * zoomScale));
   const scaledSlideHeight = Math.max(1, Math.round(slideHeight * zoomScale));
-  const topBarHeight = currentSlide ? 48 : 0;
+  // Controls bar is hidden on mobile when not editing
+  const topBarHeight = currentSlide && (!isMobileView || isEditing) ? 48 : 0;
   const bottomBarHeight = slides.length > 0 ? 56 : 0;
   const chromeHeight = topBarHeight + bottomBarHeight;
   const canvasHeight = Math.max(1, scaledSlideHeight + chromeHeight);
@@ -863,6 +865,20 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 
       <ZoomIndicator />
 
+      {/* Mobile Present Button - floating top right */}
+      {isMobileView && !isEditing && currentSlide && slides.length > 0 && (
+        <button
+          className="fixed top-16 right-3 z-50 px-3 py-1.5 bg-[#FF4301] hover:bg-[#E63901] active:bg-[#D62F00] text-white rounded-md flex items-center gap-1.5 text-xs font-semibold shadow-lg transition-colors"
+          style={{
+            fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+          }}
+          onClick={enterPresentation}
+        >
+          <Presentation size={14} />
+          Present
+        </button>
+      )}
+
       {/* Scrollable Container */}
       <div
         ref={scrollContainerRef}
@@ -903,64 +919,52 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
               willChange: 'transform',
             }}
           >
-            {/* Controls bar - ABOVE the slide, left-aligned */}
-            <div
-              className="h-10 mb-2 flex items-center w-full"
-              style={{ position: 'relative', zIndex: 50000 }}
-            >
-              {/* Toolbar on left - only in edit mode */}
-              {isEditing && currentSlide && (
-                <ComponentToolbar
-                  slideId={currentSlide.id}
-                  onComponentSelected={(componentId) => {
-                    if (componentId) {
-                      const component = activeComponents.find(c => c.id === componentId);
-                      if (component) {
-                        handleComponentSelect(component);
+            {/* Controls bar - ABOVE the slide, left-aligned - hide on mobile when not editing */}
+            {(!isMobileView || isEditing) && (
+              <div
+                className="h-10 mb-2 flex items-center w-full"
+                style={{ position: 'relative', zIndex: 50000 }}
+              >
+                {/* Toolbar on left - only in edit mode */}
+                {isEditing && currentSlide && (
+                  <ComponentToolbar
+                    slideId={currentSlide.id}
+                    onComponentSelected={(componentId) => {
+                      if (componentId) {
+                        const component = activeComponents.find(c => c.id === componentId);
+                        if (component) {
+                          handleComponentSelect(component);
+                        }
+                      } else {
+                        handleComponentDeselect();
                       }
-                    } else {
-                      handleComponentDeselect();
-                    }
-                  }}
-                />
-              )}
+                    }}
+                  />
+                )}
 
-              {/* Spacer when not editing */}
-              {!isEditing && <div className="flex-1" />}
+                {/* Spacer when not editing */}
+                {!isEditing && <div className="flex-1" />}
 
-              {/* Mobile Present Button - right above slide */}
-              {isMobileView && !isEditing && currentSlide && (
-                <button
-                  className="px-3 py-1.5 bg-[#FF4301] hover:bg-[#E63901] active:bg-[#D62F00] text-white rounded-md flex items-center gap-1.5 text-xs font-semibold shadow-sm transition-colors ml-auto"
-                  style={{
-                    fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-                  }}
-                  onClick={() => usePresentationStore.getState().enterPresentation()}
-                >
-                  <Presentation size={14} />
-                  Present
-                </button>
-              )}
-
-              {/* Edit/Done button on right - always rendered for tour visibility */}
-              {currentSlide && !isMobileView && (
-                <button
-                  className="px-3 py-1.5 text-xs font-semibold rounded-md border border-[#FF4301]/40 bg-white/80 dark:bg-zinc-900/80 hover:bg-[#FF4301]/10 hover:border-[#FF4301] text-[#FF4301] shadow-sm transition-all duration-200 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm ml-auto"
-                  style={{
-                    fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-                    fontWeight: 600,
-                    letterSpacing: '0.3px'
-                  }}
-                  data-tour="edit-button"
-                  onClick={() => {
-                    window.dispatchEvent(new CustomEvent('editor:toggle-edit-mode'));
-                  }}
-                  disabled={!isCurrentSlideCompleted}
-                >
-                  {isEditing ? 'Done' : 'Edit'}
-                </button>
-              )}
-            </div>
+                {/* Edit/Done button on right - always rendered for tour visibility */}
+                {currentSlide && !isMobileView && (
+                  <button
+                    className="px-3 py-1.5 text-xs font-semibold rounded-md border border-[#FF4301]/40 bg-white/80 dark:bg-zinc-900/80 hover:bg-[#FF4301]/10 hover:border-[#FF4301] text-[#FF4301] shadow-sm transition-all duration-200 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm ml-auto"
+                    style={{
+                      fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                      fontWeight: 600,
+                      letterSpacing: '0.3px'
+                    }}
+                    data-tour="edit-button"
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent('editor:toggle-edit-mode'));
+                    }}
+                    disabled={!isCurrentSlideCompleted}
+                  >
+                    {isEditing ? 'Done' : 'Edit'}
+                  </button>
+                )}
+              </div>
+            )}
 
             <SlideContainer
               slides={slides}

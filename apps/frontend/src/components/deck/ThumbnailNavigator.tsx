@@ -96,8 +96,8 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
     return Array.isArray(slide?.components) && slide.components.length > 0;
   }, [slide?.components]);
   const fallbackBackground = useMemo(() => getSlideFallbackBackground(slide), [slide]);
-  // On mobile (renderSimple), skip MiniSlide to prevent crashes - just show background
-  const shouldRenderMiniSlide = hasComponents && !renderSimple;
+  // MiniSlide has IntersectionObserver for lazy loading
+  const shouldRenderMiniSlide = hasComponents;
   // Show generating state if no components and deck is still generating
   const showGeneratingState = !hasComponents && isGenerating;
 
@@ -158,12 +158,6 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
                   </div>
                 </div>
               </div>
-            ) : hasComponents && renderSimple ? (
-              /* Mobile simplified thumbnail - just background, no heavy MiniSlide */
-              <div
-                className="w-full h-full rounded-sm overflow-hidden"
-                style={{ background: fallbackBackground || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
-              />
             ) : (
               <div
                 className="w-full h-full rounded-sm overflow-hidden flex items-center justify-center"

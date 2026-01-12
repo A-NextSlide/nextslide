@@ -44,10 +44,12 @@ import { COMMUNITY_CATEGORIES } from '@/services/communityService';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import MiniSlide from '@/components/deck/MiniSlide';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 type TabStatus = 'pending' | 'approved' | 'rejected';
 
 const AdminCommunity: React.FC = () => {
+  const isMobile = useIsMobile();
   const [submissions, setSubmissions] = useState<CommunitySubmission[]>([]);
   const [stats, setStats] = useState<CommunityStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
