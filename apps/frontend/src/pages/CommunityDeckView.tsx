@@ -152,7 +152,7 @@ const CommunityDeckView: React.FC = () => {
   return (
     <NavigationProvider>
       <EditorStateProvider>
-        <StaticActiveSlideProvider slides={slides}>
+        <StaticActiveSlideProvider slide={currentSlide}>
           <div className="min-h-screen bg-black flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-4 bg-black/90 z-10">
