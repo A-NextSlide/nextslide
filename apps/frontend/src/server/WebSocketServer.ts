@@ -47,9 +47,16 @@ function broadcast(room: Set<WebSocket> | undefined, sender: WebSocket, message:
   });
 }
 
-// Extract room name from URL - always use standardized room name for consistency
-function getRoomName(): string {
-  return 'shared-test-document';
+// Extract room name from URL path (e.g., ws://host:port/deck-uuid -> deck-uuid)
+function getRoomName(req: http.IncomingMessage): string {
+  const url = req.url || '/';
+  // Remove leading slash and get the room name (deck ID)
+  const roomName = url.replace(/^\/+/, '').split('?')[0];
+  // If no room specified, reject with a fallback that won't pollute other rooms
+  if (!roomName || roomName === '') {
+    return `anonymous-${Date.now()}`;
+  }
+  return roomName;
 }
 
 // Check for common encoding issues in a binary update
@@ -122,10 +129,10 @@ function encodeStateAsUpdate(doc: Y.Doc, encodedStateVector?: Uint8Array): Uint8
 // Handle WebSocket connections
 wss.on('connection', (ws, req) => {
   ws.binaryType = 'arraybuffer';
-  
-  // Use standardized room name
-  const roomName = getRoomName();
-  console.log(`New connection to room: ${roomName}`);
+
+  // Extract room name from URL path (deck ID)
+  const roomName = getRoomName(req);
+  console.log(`New connection to room: ${roomName} (from URL: ${req.url})`);
   
   // Get or create document for this room
   if (!docs.has(roomName)) {
@@ -408,11 +415,26 @@ wss.on('connection', (ws, req) => {
   });
 });
 
+// Periodically log memory usage and clean up stale rooms
+setInterval(() => {
+  const memUsage = process.memoryUsage();
+  console.log(`[Memory] Heap: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB / ${Math.round(memUsage.heapTotal / 1024 / 1024)}MB | Rooms: ${rooms.size} | Docs: ${docs.size}`);
+
+  // Clean up any rooms that somehow have no clients but still have docs
+  for (const [roomName, room] of rooms.entries()) {
+    if (room.size === 0) {
+      console.log(`[Cleanup] Removing empty room: ${roomName}`);
+      rooms.delete(roomName);
+      docs.delete(roomName);
+    }
+  }
+}, 60000); // Every minute
+
 // Start the server
 const PORT = process.env.YJS_PORT ? parseInt(process.env.YJS_PORT, 10) : 1234;
 server.listen(PORT, () => {
   console.log(`Yjs WebSocket server running on port ${PORT}`);
-  console.log(`Room standardization: All clients will be connected to 'shared-test-document' room`);
+  console.log(`Rooms are created dynamically based on deck ID in URL path`);
 });
 
 // Handle graceful shutdown

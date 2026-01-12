@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
-import { useSearchParams, useParams } from 'react-router-dom';
+import { useSearchParams, useParams, useLocation } from 'react-router-dom';
 import ChatPanel from './ChatPanel';
 import DeckPanel from './DeckPanel';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
@@ -1904,8 +1904,15 @@ const SlideEditorContent: React.FC = () => {
 const SlideEditor: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [syncEnabled, setSyncEnabled] = useState(true);
-  const [collaborationEnabled, setCollaborationEnabled] = useState(true);
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+
+  // Check if this is a shared deck (accessed via share link)
+  const isSharedAccess = (location.state as { sharedAccess?: boolean })?.sharedAccess === true;
+
+  // Collaboration only enabled for shared decks
+  // This prevents unnecessary WebSocket connections for solo users
+  const [collaborationEnabled, setCollaborationEnabled] = useState(isSharedAccess);
   const AUTO_SYNC_INTERVAL = 30000;
 
   const setAutoSaveInterval = useDeckStore(state => state.setAutoSaveInterval);

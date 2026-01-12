@@ -294,11 +294,9 @@ const AppContent = () => {
   const [isEditing, setIsEditing] = useState(false);
   const { session } = useAuth();
 
-  // Only enable collaboration on editor routes, not on deck list or other pages
-  const collaborationDisabledRoutes = ['/slide-tagging', '/renderer', '/', '/collaboration-test'];
-  const isCollaborationEnabled = !collaborationDisabledRoutes.some(route =>
-    route === '/' ? location.pathname === '/' : location.pathname.startsWith(route)
-  );
+  // Collaboration disabled at App level - controlled per-component in SlideEditor
+  // This prevents unnecessary WebSocket connections for solo users
+  const isCollaborationEnabled = false;
 
   // Initialize debug tools in development mode
   useEffect(() => {
