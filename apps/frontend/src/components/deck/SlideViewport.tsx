@@ -861,20 +861,6 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       {/* Waiting Game Overlay */}
       <GenerationGameOverlay isVisible={showWaitingGame} />
 
-      {/* Mobile Present Button - floating in top right */}
-      {isMobileView && !isEditing && currentSlide && slides.length > 0 && (
-        <button
-          className="absolute top-3 right-3 z-50 px-3 py-1.5 bg-[#FF4301] hover:bg-[#E63901] active:bg-[#D62F00] text-white rounded-lg flex items-center gap-1.5 text-sm font-semibold shadow-lg transition-colors"
-          style={{
-            fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-          }}
-          onClick={() => usePresentationStore.getState().enterPresentation()}
-        >
-          <Presentation size={16} />
-          Present
-        </button>
-      )}
-
       <ZoomIndicator />
 
       {/* Scrollable Container */}
@@ -941,6 +927,20 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 
               {/* Spacer when not editing */}
               {!isEditing && <div className="flex-1" />}
+
+              {/* Mobile Present Button - right above slide */}
+              {isMobileView && !isEditing && currentSlide && (
+                <button
+                  className="px-3 py-1.5 bg-[#FF4301] hover:bg-[#E63901] active:bg-[#D62F00] text-white rounded-md flex items-center gap-1.5 text-xs font-semibold shadow-sm transition-colors ml-auto"
+                  style={{
+                    fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                  }}
+                  onClick={() => usePresentationStore.getState().enterPresentation()}
+                >
+                  <Presentation size={14} />
+                  Present
+                </button>
+              )}
 
               {/* Edit/Done button on right - always rendered for tour visibility */}
               {currentSlide && !isMobileView && (
