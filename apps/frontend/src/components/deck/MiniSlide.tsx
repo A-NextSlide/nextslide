@@ -126,6 +126,9 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   // Render placeholder when not visible or no dimensions yet
   const showPlaceholder = !isVisible || (responsive && !containerDims);
 
+  // DEBUG - remove after fixing
+  const debugInfo = `v:${isVisible} d:${containerDims?.width?.toFixed(0)}x${containerDims?.height?.toFixed(0)} s:${scale.toFixed(3)}`;
+
   return (
     <div
       ref={containerRef}
@@ -137,6 +140,10 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       onClick={onClick}
       style={{ background: fallbackBg }}
     >
+      {/* DEBUG overlay */}
+      <div style={{ position: 'absolute', top: 0, left: 0, fontSize: 8, color: 'red', zIndex: 999, background: 'white', padding: 2 }}>
+        {debugInfo}
+      </div>
       {!showPlaceholder && (
         <div
           style={{
