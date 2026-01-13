@@ -18,6 +18,10 @@ interface MiniSlideProps {
   slideSize?: { width: number; height: number };
 }
 
+// Global counter to limit simultaneous renders on mobile
+let activeRenderCount = 0;
+const MAX_CONCURRENT_RENDERS = 3;
+
 const MiniSlide: React.FC<MiniSlideProps> = ({
   slide,
   width: fixedWidth,
@@ -30,6 +34,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [containerDims, setContainerDims] = useState<{ width: number; height: number } | null>(null);
+  const [canRender, setCanRender] = useState(false);
 
   // Normalize slide data
   const normalizedResult = useMemo(() => {
@@ -123,11 +128,35 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   };
   const scale = Math.max(0.01, getScale());
 
-  // Render placeholder when not visible or no dimensions yet
-  const showPlaceholder = !isVisible || (responsive && !containerDims);
+  // Track if we're allowed to render (limit concurrent renders to prevent crash)
+  useEffect(() => {
+    if (!isVisible || !containerDims) {
+      if (canRender) {
+        activeRenderCount--;
+        setCanRender(false);
+      }
+      return;
+    }
+
+    // Check if we can render
+    if (!canRender && activeRenderCount < MAX_CONCURRENT_RENDERS) {
+      activeRenderCount++;
+      setCanRender(true);
+    }
+
+    return () => {
+      if (canRender) {
+        activeRenderCount--;
+      }
+    };
+  }, [isVisible, containerDims, canRender]);
+
+  // Render placeholder when not visible, no dimensions, or over render limit
+  const showPlaceholder = !isVisible || (responsive && !containerDims) || !canRender;
 
   // DEBUG - remove after fixing
-  const debugInfo = `v:${isVisible} d:${containerDims?.width?.toFixed(0)}x${containerDims?.height?.toFixed(0)} s:${scale.toFixed(3)}`;
+  const compCount = safeSlide?.components?.length || 0;
+  const debugInfo = `v:${isVisible} d:${containerDims?.width?.toFixed(0)}x${containerDims?.height?.toFixed(0)} s:${scale.toFixed(3)} c:${compCount} r:${canRender}`;
 
   return (
     <div
