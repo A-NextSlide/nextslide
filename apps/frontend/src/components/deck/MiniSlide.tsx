@@ -20,7 +20,7 @@ interface MiniSlideProps {
 
 // Global counter to limit simultaneous renders on mobile
 let activeRenderCount = 0;
-const MAX_CONCURRENT_RENDERS = 3;
+const MAX_CONCURRENT_RENDERS = 1; // Only 1 at a time to prevent crash
 
 const MiniSlide: React.FC<MiniSlideProps> = ({
   slide,
@@ -177,38 +177,43 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
         <div
           style={{
             position: 'absolute',
-            top: '50%',
-            left: '50%',
-            width: baseWidth,
-            height: baseHeight,
-            transform: `translate(-50%, -50%) scale(${scale})`,
-            transformOrigin: 'center center',
-            pointerEvents: 'none'
+            top: 0,
+            left: 0,
+            width: containerDims?.width || '100%',
+            height: containerDims?.height || '100%',
+            overflow: 'hidden'
           }}
         >
-          <NavigationProvider initialSlideIndex={0}>
-            <EditorStateProvider
-              syncConfig={{ enabled: false, useRealtimeSubscription: false }}
-              initialEditingState={false}
-              slideSizeOverride={resolvedSlideSize}
-            >
-              <StaticActiveSlideProvider slide={safeSlide}>
-                <Slide
-                  slide={safeSlide}
-                  isActive={true}
-                  isEditing={false}
-                  isThumbnail={true}
-                  style={{
-                    width: baseWidth,
-                    height: baseHeight,
-                    position: 'absolute',
-                    top: 0,
-                    left: 0
-                  }}
-                />
-              </StaticActiveSlideProvider>
-            </EditorStateProvider>
-          </NavigationProvider>
+          <div
+            style={{
+              width: baseWidth,
+              height: baseHeight,
+              transform: `scale(${scale})`,
+              transformOrigin: 'top left',
+              pointerEvents: 'none'
+            }}
+          >
+            <NavigationProvider initialSlideIndex={0}>
+              <EditorStateProvider
+                syncConfig={{ enabled: false, useRealtimeSubscription: false }}
+                initialEditingState={false}
+                slideSizeOverride={resolvedSlideSize}
+              >
+                <StaticActiveSlideProvider slide={safeSlide}>
+                  <Slide
+                    slide={safeSlide}
+                    isActive={true}
+                    isEditing={false}
+                    isThumbnail={true}
+                    style={{
+                      width: baseWidth,
+                      height: baseHeight
+                    }}
+                  />
+                </StaticActiveSlideProvider>
+              </EditorStateProvider>
+            </NavigationProvider>
+          </div>
         </div>
       )}
     </div>
