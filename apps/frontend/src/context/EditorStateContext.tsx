@@ -231,4 +231,20 @@ export const useEditorState = () => {
     throw new Error('useEditorState must be used within an EditorStateProvider');
   }
   return context;
+}
+
+// Safe version that returns default values if no provider is present
+export const useEditorStateSafe = () => {
+  const context = useContext(EditorStateContext);
+  if (context === undefined) {
+    return {
+      isEditing: false,
+      setIsEditing: () => {},
+      isSyncing: false,
+      lastSyncTime: null,
+      slideSize: { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT },
+      syncConfig: { enabled: false, useSupabase: true }
+    };
+  }
+  return context;
 } 

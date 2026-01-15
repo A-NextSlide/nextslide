@@ -15,6 +15,7 @@ import GroupEditIndicator from '@/components/GroupEditIndicator';
 import { useDeckStore } from '@/stores/deckStore';
 import { isBackgroundOnlySelection } from '@/utils/selectionUtils';
 import { usePresentationStore } from '@/stores/presentationStore';
+import { useEditorStateSafe } from '@/context/EditorStateContext';
 
 interface SlideProps {
   slide: SlideData;
@@ -280,30 +281,9 @@ const SlideContent: React.FC<SlideProps> = ({
   // Ensure we have a consistent direction value
   const animationDirection = direction || null;
 
-  // Get slide size using proper React hooks
-  const [slideSize, setSlideSize] = useState({ width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT });
-  
-  // Try to get slide size from editor context - using useEffect to be safe
-  useEffect(() => {
-    try {
-      const getEditorState = async () => {
-        const module = await import('@/context/EditorStateContext');
-        try {
-          const useEditorState = module.useEditorState;
-          const editorState = useEditorState();
-          if (editorState && editorState.slideSize) {
-            setSlideSize(editorState.slideSize);
-          }
-        } catch (err) {
-          // Error accessing EditorStateContext, using default slide size
-        }
-      };
-      
-      getEditorState();
-    } catch (error) {
-      // Using default slide size 1920x1080
-    }
-  }, []);
+  // Get slide size from editor context (properly using hook at component level)
+  const editorState = useEditorStateSafe();
+  const slideSize = editorState.slideSize;
 
   // Track line dragging state globally
   const [lineDragState, setLineDragState] = useState<{
