@@ -203,7 +203,7 @@ export const VirtualizedDeckGrid = React.memo(({
         return next;
       });
       setUpgradingIndex(null);
-    }, 120);
+    }, 50);
     return () => window.clearTimeout(t);
   }, [isMobile, upgradingIndex]);
 
@@ -346,8 +346,8 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   const isMobile = useIsMobile();
   const safeDecks: CompleteDeckData[] = Array.isArray(decks) ? decks : [];
   const [visibleDecks, setVisibleDecks] = useState<Set<number>>(() => {
-    // Start with all decks visible to prevent flash on initial load
-    return new Set(Array.from({ length: safeDecks.length }, (_, i) => i));
+    // Start with just first few decks to avoid flooding the queue
+    return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
   });
   // Progressive upgrade for popup thumbnails on mobile too
   const [upgradedDecks, setUpgradedDecks] = useState<Set<number>>(() => new Set());
@@ -390,22 +390,11 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   };
 }, [safeDecks.length]);
 
+  // Queue management: Enqueue visible items that need upgrade
   useEffect(() => {
     if (!isMobile) return;
-    // Enqueue all currently visible decks for progressive upgrade
-    // Also clean up non-visible ones
-    setUpgradedDecks(prev => {
-      let changed = false;
-      const next = new Set(prev);
-      for (const idx of next) {
-        if (!visibleDecks.has(idx)) {
-          next.delete(idx);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-
+    
+    // Enqueue visible items not yet upgraded
     visibleDecks.forEach((idx) => {
       if (upgradedDecks.has(idx)) return;
       if (upgradeQueueRef.current.includes(idx)) return;
@@ -413,8 +402,17 @@ export const VirtualizedPopupDeckGrid = React.memo(({
       upgradeQueueRef.current.push(idx);
     });
     
+    // Kick processing loop
     if (upgradingIndex === null && upgradeQueueRef.current.length > 0) {
-      setUpgradingIndex(upgradeQueueRef.current.shift() ?? null);
+      // Find the next VISIBLE item in the queue
+      let next = upgradeQueueRef.current.shift();
+      while (next !== undefined && !visibleDecks.has(next)) {
+        next = upgradeQueueRef.current.shift();
+      }
+      
+      if (next !== undefined) {
+        setUpgradingIndex(next);
+      }
     }
   }, [isMobile, visibleDecks, upgradedDecks, upgradingIndex]);
 
@@ -428,7 +426,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
         return next;
       });
       setUpgradingIndex(null);
-    }, 120);
+    }, 50);
     return () => window.clearTimeout(t);
   }, [isMobile, upgradingIndex]);
 
