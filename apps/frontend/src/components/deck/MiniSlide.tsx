@@ -135,14 +135,12 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       const el = containerRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      console.log('[MiniSlide] measure():', { slideId, width: rect.width, height: rect.height, isStable });
 
       // Expanded safety check: ensure strictly positive dimensions
       if (rect.width > 0 && rect.height > 0) {
         // If we already had a stable size, ignore very small "glitch" sizes (e.g. < STABILITY_THRESHOLD)
         // that might happen during mobile layout shifts (address bar, etc)
         if (isStable && (rect.width < STABILITY_THRESHOLD || rect.height < STABILITY_THRESHOLD)) {
-          console.log('[MiniSlide] Skipping small measurement (isStable)');
           return;
         }
 
@@ -150,7 +148,6 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
           isStable = true;
         }
 
-        console.log('[MiniSlide] Setting containerDims:', { width: rect.width, height: rect.height });
         setContainerDims({ width: rect.width, height: rect.height });
       }
     };
@@ -192,9 +189,9 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     };
   }, [renderMode, responsive]);
 
-  // Common container classes
+  // Common container classes - removed flex centering as it interferes with absolute positioning
   const containerClasses = cn(
-    "relative overflow-hidden rounded cursor-pointer w-full h-full flex items-center justify-center", // Added flex centering
+    "relative overflow-hidden rounded cursor-pointer w-full h-full",
     "hover:ring-2 hover:ring-primary/50",
     className
   );
@@ -209,18 +206,6 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     targetWidth / Math.max(1, baseWidth),
     targetHeight / Math.max(1, baseHeight)
   );
-
-  console.log('[MiniSlide] Render:', {
-    slideId,
-    renderMode,
-    containerDims,
-    targetWidth,
-    targetHeight,
-    baseWidth,
-    baseHeight,
-    scale,
-    hasValidDimensions: !!(containerDims && containerDims.width > 100 && containerDims.height > 50),
-  });
 
   // Lightweight background-only rendering (used for mobile deck list stability/perf)
   if (renderMode === 'background') {
@@ -263,7 +248,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   const hasValidDimensions = containerDims && containerDims.width > 100 && containerDims.height > 50;
 
   // Full slide render with providers and scaling
-  // Use absolute positioning with top-left transform origin for correct scaling
+  // Use a simple scaling approach: render at full size and scale down
   return (
     <div
       ref={containerRef}
@@ -273,49 +258,34 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     >
       {hasValidDimensions && (
         <div
+          key={`scale-${Math.round(scale * 1000)}`}
           style={{
             position: 'relative',
-            width: targetWidth,
-            height: targetHeight,
-            overflow: 'hidden',
+            width: `${baseWidth}px`,
+            height: `${baseHeight}px`,
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+            pointerEvents: 'none',
           }}
         >
-          <div
-            key={`scale-${Math.round(scale * 1000)}`} // Force re-render when scale changes significantly
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: baseWidth,
-              height: baseHeight,
-              transform: `scale(${scale})`,
-              transformOrigin: 'top left',
-              pointerEvents: 'none',
-            }}
-          >
-            <NavigationProvider initialSlideIndex={0}>
-              <EditorStateProvider
-                syncConfig={{ enabled: false, useRealtimeSubscription: false }}
-                initialEditingState={false}
-                slideSizeOverride={resolvedSlideSize}
-              >
-                <StaticActiveSlideProvider slide={safeSlide}>
-                  <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
-                    <Slide
-                      slide={safeSlide}
-                      isActive={true}
-                      isEditing={false}
-                      isThumbnail={true}
-                      style={{
-                        width: baseWidth,
-                        height: baseHeight
-                      }}
-                    />
-                  </ThumbnailRenderProvider>
-                </StaticActiveSlideProvider>
-              </EditorStateProvider>
-            </NavigationProvider>
-          </div>
+          <NavigationProvider initialSlideIndex={0}>
+            <EditorStateProvider
+              syncConfig={{ enabled: false, useRealtimeSubscription: false }}
+              initialEditingState={false}
+              slideSizeOverride={resolvedSlideSize}
+            >
+              <StaticActiveSlideProvider slide={safeSlide}>
+                <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
+                  <Slide
+                    slide={safeSlide}
+                    isActive={true}
+                    isEditing={false}
+                    isThumbnail={true}
+                  />
+                </ThumbnailRenderProvider>
+              </StaticActiveSlideProvider>
+            </EditorStateProvider>
+          </NavigationProvider>
         </div>
       )}
     </div>
