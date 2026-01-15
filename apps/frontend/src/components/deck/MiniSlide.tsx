@@ -247,8 +247,23 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   // This prevents the tiny initial render from getting "stuck" due to memoization
   const hasValidDimensions = containerDims && containerDims.width > 100 && containerDims.height > 50;
 
+  // Calculate the scaled dimensions for the wrapper
+  const scaledWidth = baseWidth * scale;
+  const scaledHeight = baseHeight * scale;
+
+  console.log('[MiniSlide] Render:', {
+    slideId,
+    containerDims,
+    baseWidth,
+    baseHeight,
+    scale,
+    scaledWidth,
+    scaledHeight,
+    hasValidDimensions,
+  });
+
   // Full slide render with providers and scaling
-  // Use a simple scaling approach: render at full size and scale down
+  // Use a wrapper that clips to the scaled size, containing a full-size slide that gets scaled
   return (
     <div
       ref={containerRef}
@@ -258,34 +273,42 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     >
       {hasValidDimensions && (
         <div
-          key={`scale-${Math.round(scale * 1000)}`}
           style={{
-            position: 'relative',
-            width: `${baseWidth}px`,
-            height: `${baseHeight}px`,
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left',
-            pointerEvents: 'none',
+            width: `${scaledWidth}px`,
+            height: `${scaledHeight}px`,
+            overflow: 'hidden',
           }}
         >
-          <NavigationProvider initialSlideIndex={0}>
-            <EditorStateProvider
-              syncConfig={{ enabled: false, useRealtimeSubscription: false }}
-              initialEditingState={false}
-              slideSizeOverride={resolvedSlideSize}
-            >
-              <StaticActiveSlideProvider slide={safeSlide}>
-                <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
-                  <Slide
-                    slide={safeSlide}
-                    isActive={true}
-                    isEditing={false}
-                    isThumbnail={true}
-                  />
-                </ThumbnailRenderProvider>
-              </StaticActiveSlideProvider>
-            </EditorStateProvider>
-          </NavigationProvider>
+          <div
+            key={`scale-${Math.round(scale * 1000)}`}
+            style={{
+              position: 'relative',
+              width: `${baseWidth}px`,
+              height: `${baseHeight}px`,
+              transform: `scale(${scale})`,
+              transformOrigin: 'top left',
+              pointerEvents: 'none',
+            }}
+          >
+            <NavigationProvider initialSlideIndex={0}>
+              <EditorStateProvider
+                syncConfig={{ enabled: false, useRealtimeSubscription: false }}
+                initialEditingState={false}
+                slideSizeOverride={resolvedSlideSize}
+              >
+                <StaticActiveSlideProvider slide={safeSlide}>
+                  <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
+                    <Slide
+                      slide={safeSlide}
+                      isActive={true}
+                      isEditing={false}
+                      isThumbnail={true}
+                    />
+                  </ThumbnailRenderProvider>
+                </StaticActiveSlideProvider>
+              </EditorStateProvider>
+            </NavigationProvider>
+          </div>
         </div>
       )}
     </div>
