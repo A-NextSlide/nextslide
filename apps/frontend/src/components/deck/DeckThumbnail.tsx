@@ -2,9 +2,11 @@ import React, { useMemo } from 'react';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { Presentation } from 'lucide-react';
 import MiniSlide from './MiniSlide';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 // Component to render a deck thumbnail using the first slide
 const DeckThumbnail: React.FC<{ deck: CompleteDeckData }> = React.memo(({ deck }) => {
+  const isMobile = useIsMobile();
   // Get the first slide from the deck for the thumbnail
   const rawFirstSlide = (deck as any).first_slide || (deck.slides && deck.slides.length > 0 ? deck.slides[0] : null);
 
@@ -39,6 +41,8 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData }> = React.memo(({ deck }
         responsive={true}
         slideSize={deck.size}
         className="w-full h-full"
+        // Mobile deck list stability: avoid heavy full-slide rendering in grids
+        renderMode={isMobile ? 'background' : 'full'}
       />
     </div>
   );

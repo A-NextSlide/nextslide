@@ -16,6 +16,12 @@ interface MiniSlideProps {
   onClick?: () => void;
   responsive?: boolean;
   slideSize?: { width: number; height: number };
+  /**
+   * Rendering mode:
+   * - full: render the full slide (can be heavy for lists)
+   * - background: render only extracted background (safe for mobile deck lists)
+   */
+  renderMode?: 'full' | 'background';
 }
 
 /**
@@ -85,7 +91,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   className = '',
   onClick,
   responsive = true,
-  slideSize
+  slideSize,
+  renderMode = 'full'
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerDims, setContainerDims] = useState<{ width: number; height: number } | null>(null);
@@ -200,6 +207,18 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
 
   // Wait for container dimensions in responsive mode
   if (responsive && !containerDims) {
+    return (
+      <div
+        ref={containerRef}
+        className={containerClasses}
+        onClick={onClick}
+        style={backgroundStyle}
+      />
+    );
+  }
+
+  // Lightweight background-only rendering (used for mobile deck list stability/perf)
+  if (renderMode === 'background') {
     return (
       <div
         ref={containerRef}

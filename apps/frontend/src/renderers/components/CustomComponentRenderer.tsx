@@ -74,6 +74,36 @@ export const CustomComponentRenderer: React.FC<{
   isSelected?: boolean;
   isEditing?: boolean;
 }> = memo(({ component, baseStyles, containerRef, isThumbnail = false, isSelected = false, isEditing = false }) => {
+  // THUMBNAIL SAFETY:
+  // Rendering full CustomComponents inside deck thumbnails can spawn many iframes and heavy scripts,
+  // which is especially unstable on mobile and has been causing "shrink then crash" behavior.
+  // For thumbnails, render a lightweight placeholder instead of an iframe.
+  if (isThumbnail) {
+    return (
+      <div
+        data-custom-component="true"
+        data-thumbnail="true"
+        style={{
+          ...baseStyles,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 6,
+          background: 'rgba(0,0,0,0.06)',
+          border: '1px solid rgba(0,0,0,0.08)',
+          color: 'rgba(0,0,0,0.55)',
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          pointerEvents: 'none',
+        }}
+      >
+        Custom
+      </div>
+    );
+  }
+
   const renderCode = component.props.render as string;
 
   // Debug logging - only when DEBUG_CUSTOM_COMPONENT is enabled

@@ -131,6 +131,14 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   const zoomLevel = useEditorSettingsStore(state => state.zoomLevel);
   const setZoomLevel = useEditorSettingsStore(state => state.setZoomLevel);
 
+  // Mobile stability: keep zoom fixed at 100 to avoid reflow loops / tiny initial renders.
+  useEffect(() => {
+    if (!isMobileView) return;
+    if (zoomLevel !== 100) {
+      setZoomLevel(100);
+    }
+  }, [isMobileView, setZoomLevel, zoomLevel]);
+
   const zoomScale = zoomLevel / 100;
   const scaledSlideWidth = Math.max(1, Math.round(slideWidth * zoomScale));
   const scaledSlideHeight = Math.max(1, Math.round(slideHeight * zoomScale));

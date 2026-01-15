@@ -180,17 +180,9 @@ const DeckList: React.FC = () => {
     })();
   }, [isAuthenticated, isLoading, refreshAdminStatus]);
 
-  useEffect(() => {
-    if (!isMobileView || typeof document === 'undefined') return;
-    const prevBodyOverflow = document.body.style.overflow;
-    const prevHtmlOverflow = document.documentElement.style.overflow;
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prevBodyOverflow;
-      document.documentElement.style.overflow = prevHtmlOverflow;
-    };
-  }, [isMobileView]);
+  // NOTE: Do not lock body/html scrolling here. On mobile (especially iOS),
+  // toggling overflow during initial layout can cause viewport resize loops
+  // and "tiny top-left" rendering glitches.
 
   // Search state for the main side navigation
   const { searchQuery, setSearchQuery, filteredDecks, isSearching, clearSearch } = useDeckFiltering(decks);
@@ -1299,27 +1291,8 @@ const DeckList: React.FC = () => {
     };
   }, []); // Empty dependency array - only run on mount
 
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-
-    if (isMobileView) {
-      // On mobile, just prevent background scrolling while the DeckList is open.
-      // Avoid `position: fixed` which is brittle on iOS and can break layout sizing.
-      document.documentElement.style.overflow = 'hidden';
-      document.body.style.overflow = 'hidden';
-      document.body.style.width = '100%';
-    } else {
-      document.documentElement.style.overflow = '';
-      document.body.style.overflow = '';
-      document.body.style.width = '';
-    }
-
-    return () => {
-      document.documentElement.style.overflow = '';
-      document.body.style.overflow = '';
-      document.body.style.width = '';
-    };
-  }, [isMobileView]);
+  // NOTE: Avoid global html/body style mutations based on isMobileView.
+  // This page already manages its own scrolling/overflow via layout containers.
 
   // Show appearance onboarding only on first visit to the app page
   useEffect(() => {
