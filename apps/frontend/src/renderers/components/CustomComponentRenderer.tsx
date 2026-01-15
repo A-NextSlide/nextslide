@@ -1246,18 +1246,10 @@ export const CustomComponentRenderer: React.FC<{
 
   // Scaling Logic
   // NOTE: ResizeObserver can crash on iOS Safari, use fallback there
-  // NOTE: Skip scaling in thumbnail mode - MiniSlide already handles scaling the entire slide
   const [scale, setScale] = useState(1);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // In thumbnail mode, MiniSlide already applies transform: scale() to the entire slide container
-    // Using scale=1 here avoids double-scaling which would make content appear tiny
-    if (isThumbnail) {
-      setScale(1);
-      return;
-    }
-
     const element = rootRef.current;
     if (!element) return;
 
@@ -1307,7 +1299,7 @@ export const CustomComponentRenderer: React.FC<{
         // Ignore disconnect errors
       }
     };
-  }, [containerWidth, isThumbnail]);
+  }, [containerWidth]);
 
   // Handler for HTML updates from CustomComponentEditOverlay
   const handleHtmlUpdate = useCallback((newHtml: string) => {
