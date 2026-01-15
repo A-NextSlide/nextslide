@@ -265,6 +265,12 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
           style={{
             width: baseWidth,
             height: baseHeight,
+            // FORCE dimensions to prevent flex/grid parent from squishing us before the scale is applied.
+            // This is critical on mobile where space is constrained.
+            minWidth: baseWidth,
+            minHeight: baseHeight,
+            maxWidth: 'none',
+            maxHeight: 'none',
             transform: `scale(${scale})`,
             transformOrigin: 'center center', // Changed to center center
             position: 'relative', // IMPORTANT: Slide renders absolutely; it needs a relative parent at base dimensions
