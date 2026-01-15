@@ -24,8 +24,8 @@ export class DeckSyncService {
       // In development, use Vite proxy which handles the routing
       // TEMPORARY: Force direct URL to debug proxy issue
       if (endpoint.startsWith('/auth')) {
-  
-        return `http://localhost:9090${endpoint}`;
+        const devHost = import.meta.env.VITE_AGENT_API_URL || 'http://localhost:9090';
+        return `${devHost}${endpoint}`;
       }
       return `/api${endpoint}`;
     }

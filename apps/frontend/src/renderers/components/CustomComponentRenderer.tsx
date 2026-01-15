@@ -92,14 +92,36 @@ export const CustomComponentRenderer: React.FC<{
   const [hasRenderError, setHasRenderError] = useState(false);
 
   // THUMBNAIL SAFETY:
-  // Rendering full CustomComponents inside deck thumbnails can spawn many iframes and heavy scripts,
-  // which is especially unstable on mobile and has been causing "shrink then crash" behavior.
-  // For thumbnails, render a lightweight placeholder instead of an iframe.
-  // CRITICAL: On iOS Safari, ALWAYS use lite mode for thumbnails to prevent crashes
-  const shouldUseLiteMode = isThumbnail && (thumbnailMode !== 'full' || BROWSER.isIOS);
+  // For thumbnails on iOS, we'll render static HTML (no scripts) to prevent memory crashes
+  // For full view, render with full scripts for interactivity
+  const shouldUseLiteMode = false; // Disabled - try rendering all content
+  const shouldUseStaticHtml = isThumbnail && BROWSER.isIOS; // iOS thumbnails use static HTML
+
+  // DEBUG: Log rendering decision (throttled - only first render)
+  const renderCountRef = useRef(0);
+  renderCountRef.current++;
+  if (renderCountRef.current === 1) {
+    console.log(`[CustomComponent] id=${component.id} isThumbnail=${isThumbnail} isIOS=${BROWSER.isIOS} liteMode=${shouldUseLiteMode}`);
+  }
 
   // Show simple placeholder for thumbnails OR if there was a render error
   if (shouldUseLiteMode || hasRenderError) {
+    // Try to extract background color from the component's render code for a better preview
+    const renderCode = component.props?.render as string || '';
+    let bgColor = 'rgba(0,0,0,0.06)';
+    let bgGradient = '';
+
+    // Extract background from CSS in render code
+    const bgMatch = renderCode.match(/background(?:-color)?:\s*([^;}\n]+)/i);
+    if (bgMatch) {
+      const bgValue = bgMatch[1].trim();
+      if (bgValue.includes('gradient') || bgValue.includes('linear') || bgValue.includes('radial')) {
+        bgGradient = bgValue;
+      } else if (bgValue.startsWith('#') || bgValue.startsWith('rgb') || bgValue.startsWith('hsl')) {
+        bgColor = bgValue;
+      }
+    }
+
     return (
       <div
         data-custom-component="true"
@@ -111,17 +133,18 @@ export const CustomComponentRenderer: React.FC<{
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: 6,
-          background: hasRenderError ? 'rgba(211,47,47,0.1)' : 'rgba(0,0,0,0.06)',
+          background: hasRenderError ? 'rgba(211,47,47,0.1)' : (bgGradient || bgColor),
           border: hasRenderError ? '1px solid rgba(211,47,47,0.3)' : '1px solid rgba(0,0,0,0.08)',
-          color: hasRenderError ? 'rgba(211,47,47,0.8)' : 'rgba(0,0,0,0.55)',
+          color: hasRenderError ? 'rgba(211,47,47,0.8)' : 'rgba(255,255,255,0.7)',
           fontSize: 10,
           fontWeight: 700,
           letterSpacing: '0.06em',
           textTransform: 'uppercase',
           pointerEvents: 'none',
+          textShadow: '0 1px 2px rgba(0,0,0,0.3)',
         }}
       >
-        {hasRenderError ? 'Error' : 'Custom'}
+        {hasRenderError ? 'Error' : ''}
       </div>
     );
   }
@@ -1265,11 +1288,18 @@ export const CustomComponentRenderer: React.FC<{
   }, [compilationError, compiledRender, isIframeComponent, componentProps, state, updateState, component.id, isThumbnail, effectiveIsEditMode, containerWidth, containerHeight]);
 
   // Scaling Logic
+  // NOTE: For thumbnails, MiniSlide already handles scaling - don't double-scale
   // NOTE: ResizeObserver can crash on iOS Safari, use fallback there
   const [scale, setScale] = useState(1);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Skip scaling for thumbnails - MiniSlide already scales the entire slide
+    if (isThumbnail) {
+      setScale(1);
+      return;
+    }
+
     const element = rootRef.current;
     if (!element) return;
 
@@ -1319,7 +1349,7 @@ export const CustomComponentRenderer: React.FC<{
         // Ignore disconnect errors
       }
     };
-  }, [containerWidth]);
+  }, [containerWidth, isThumbnail]);
 
   // Handler for HTML updates from CustomComponentEditOverlay
   const handleHtmlUpdate = useCallback((newHtml: string) => {
@@ -1553,26 +1583,31 @@ export const CustomComponentRenderer: React.FC<{
         }}
       >
         {/* Content wrapper that applies the scale */}
+        {/* For thumbnails: fill parent (MiniSlide handles scaling); for full view: use design dimensions with scale */}
         <div
           ref={contentInnerRef}
           style={{
             position: 'absolute',
             top: 0,
             left: 0,
-            width: `${containerWidth}px`, // Force design width
-            height: `${containerHeight}px`, // Force design height
-            transform: `scale(${scale})`,
+            width: isThumbnail ? '100%' : `${containerWidth}px`,
+            height: isThumbnail ? '100%' : `${containerHeight}px`,
+            transform: isThumbnail ? 'none' : `scale(${scale})`,
             transformOrigin: 'top left',
             boxSizing: 'border-box',
-            pointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none' // Inner content shouldn't block clicks in edit mode (handled by overlay) unless selected
+            pointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none'
           }}
         >
           {/* IFRAME RENDERING - Simple 100% fill, HTML handles responsive layout */}
+          {/* On iOS thumbnails: strip scripts for memory safety, full view keeps scripts */}
           {isIframeComponent && stableIframeSrcDoc && (
             <iframe
               ref={iframeRef}
               key={`${component.id}-${renderCodeHash}-${propsKey.length}-${propsKey.slice(-20)}`}
-              srcDoc={stableIframeSrcDoc}
+              srcDoc={shouldUseStaticHtml
+                ? stableIframeSrcDoc.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                : stableIframeSrcDoc
+              }
               style={{
                 position: 'absolute',
                 top: 0,
@@ -1582,10 +1617,13 @@ export const CustomComponentRenderer: React.FC<{
                 border: 'none',
                 backgroundColor: 'transparent',
                 display: 'block',
-                pointerEvents: 'auto' // Always interactive - edit mode script handles selection notification
+                pointerEvents: isThumbnail ? 'none' : 'auto'
               }}
-              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+              sandbox={shouldUseStaticHtml ? "allow-same-origin" : "allow-scripts allow-same-origin allow-popups allow-forms"}
               title="Custom Component"
+              onLoad={() => {
+                // Iframe loaded successfully
+              }}
               onError={() => {
                 console.error('[CustomComponent] iframe error, showing fallback');
                 setHasRenderError(true);

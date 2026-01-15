@@ -100,6 +100,50 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   const [containerDims, setContainerDims] = useState<{ width: number; height: number } | null>(null);
   const slideId = slide?.id || 'unknown';
 
+  // iOS LAZY LOADING: Only render visible thumbnails with debounce to prevent crashes
+  const [isVisible, setIsVisible] = useState(false);
+  const [shouldRender, setShouldRender] = useState(!BROWSER.isIOS); // Desktop renders immediately
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !BROWSER.isIOS) return;
+
+    let renderTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          // Debounce: wait 300ms before rendering to avoid loading during fast scroll
+          if (renderTimeout) clearTimeout(renderTimeout);
+          renderTimeout = setTimeout(() => {
+            setShouldRender(true);
+          }, 300);
+        } else {
+          setIsVisible(false);
+          // Cancel pending render
+          if (renderTimeout) {
+            clearTimeout(renderTimeout);
+            renderTimeout = null;
+          }
+          // Unload immediately when not visible to free memory
+          setShouldRender(false);
+        }
+      },
+      {
+        rootMargin: '50px',
+        threshold: 0.1
+      }
+    );
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+      if (renderTimeout) clearTimeout(renderTimeout);
+    };
+  }, []);
+
   // Normalize slide data
   const normalizedResult = useMemo(() => {
     return normalizeSlideForRender(slide, slideSize, { preferFallbackSize: true });
@@ -255,6 +299,9 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
 
   // Full slide render with providers and scaling
   // Use a wrapper that clips to the scaled size, containing a full-size slide that gets scaled
+  // On iOS: Only render when shouldRender is true (debounced visibility)
+  const shouldRenderContent = hasValidDimensions && shouldRender;
+
   return (
     <div
       ref={containerRef}
@@ -264,9 +311,9 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
         ...backgroundStyle,
         position: 'relative',
       }}
-      data-mini-slide-debug={`scale:${scale.toFixed(3)},baseW:${baseWidth},baseH:${baseHeight},containerW:${containerDims?.width || 0},containerH:${containerDims?.height || 0}`}
+      data-mini-slide-debug={`scale:${scale.toFixed(3)},visible:${isVisible},render:${shouldRender}`}
     >
-      {hasValidDimensions && (
+      {shouldRenderContent && (
         <div
           key={`scale-${Math.round(scale * 1000)}`}
           style={{
@@ -288,8 +335,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
             <StaticNavigationProvider slideIndex={0}>
               <StaticEditorStateProvider slideSize={resolvedSlideSize}>
                 <StaticActiveSlideProvider slide={safeSlide}>
-                  {/* Force 'lite' mode on iOS to prevent CustomComponent iframe crashes */}
-                  <ThumbnailRenderProvider mode={BROWSER.isIOS ? 'lite' : (renderMode === 'full' ? 'full' : 'lite')}>
+                  {/* On iOS: use 'full' mode since we're lazy loading, otherwise use renderMode */}
+                  <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
                     <Slide
                       slide={safeSlide}
                       isActive={true}
