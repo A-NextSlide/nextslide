@@ -290,24 +290,35 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
               pointerEvents: 'none',
             }}
           >
-            <NavigationProvider initialSlideIndex={0}>
-              <EditorStateProvider
-                syncConfig={{ enabled: false, useRealtimeSubscription: false }}
-                initialEditingState={false}
-                slideSizeOverride={resolvedSlideSize}
-              >
-                <StaticActiveSlideProvider slide={safeSlide}>
-                  <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
-                    <Slide
-                      slide={safeSlide}
-                      isActive={true}
-                      isEditing={false}
-                      isThumbnail={true}
-                    />
-                  </ThumbnailRenderProvider>
-                </StaticActiveSlideProvider>
-              </EditorStateProvider>
-            </NavigationProvider>
+            {/* Force the slide to fill this exact container */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: `${baseWidth}px`,
+                height: `${baseHeight}px`,
+              }}
+            >
+              <NavigationProvider initialSlideIndex={0}>
+                <EditorStateProvider
+                  syncConfig={{ enabled: false, useRealtimeSubscription: false }}
+                  initialEditingState={false}
+                  slideSizeOverride={resolvedSlideSize}
+                >
+                  <StaticActiveSlideProvider slide={safeSlide}>
+                    <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
+                      <Slide
+                        slide={safeSlide}
+                        isActive={true}
+                        isEditing={false}
+                        isThumbnail={true}
+                      />
+                    </ThumbnailRenderProvider>
+                  </StaticActiveSlideProvider>
+                </EditorStateProvider>
+              </NavigationProvider>
+            </div>
           </div>
         </div>
       )}
