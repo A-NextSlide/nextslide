@@ -206,18 +206,6 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     targetHeight / Math.max(1, baseHeight)
   );
 
-  // Wait for container dimensions in responsive mode
-  if (responsive && !containerDims) {
-    return (
-      <div
-        ref={containerRef}
-        className={containerClasses}
-        onClick={onClick}
-        style={backgroundStyle}
-      />
-    );
-  }
-
   // Lightweight background-only rendering (used for mobile deck list stability/perf)
   if (renderMode === 'background') {
     return (
