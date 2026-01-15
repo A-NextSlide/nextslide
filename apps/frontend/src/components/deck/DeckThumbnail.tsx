@@ -45,6 +45,9 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'b
     </div>
   );
 }, (prevProps, nextProps) => {
+  // CRITICAL: Include renderMode in comparison! Otherwise mode upgrades are blocked.
+  if (prevProps.renderMode !== nextProps.renderMode) return false;
+  
   const prevFirstSlide = (prevProps.deck as any).first_slide || prevProps.deck.slides?.[0];
   const nextFirstSlide = (nextProps.deck as any).first_slide || nextProps.deck.slides?.[0];
 

@@ -1249,27 +1249,18 @@ export const CustomComponentRenderer: React.FC<{
   const [scale, setScale] = useState(1);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // Blob URL for thumbnail iframes - bypasses iOS Safari srcDoc rendering bugs in scaled containers
-  const [thumbnailBlobUrl, setThumbnailBlobUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Only use Blob URL for thumbnails on iOS/mobile where srcDoc in scaled containers fails
+  // Data URL for thumbnail iframes - bypasses iOS Safari srcDoc rendering bugs in scaled containers
+  const thumbnailDataUrl = useMemo(() => {
     if (!isThumbnail || !stableIframeSrcDoc || !isIframeComponent) {
-      setThumbnailBlobUrl(null);
-      return;
+      return null;
     }
     
     try {
-      const blob = new Blob([stableIframeSrcDoc], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      setThumbnailBlobUrl(url);
-      
-      return () => {
-        URL.revokeObjectURL(url);
-      };
+      // Use data URL which iOS handles better than srcDoc in scaled containers
+      return `data:text/html;charset=utf-8,${encodeURIComponent(stableIframeSrcDoc)}`;
     } catch (err) {
-      console.error('[CustomComponent] Failed to create blob URL:', err);
-      setThumbnailBlobUrl(null);
+      console.error('[CustomComponent] Failed to create data URL:', err);
+      return null;
     }
   }, [isThumbnail, stableIframeSrcDoc, isIframeComponent]);
 
@@ -1578,12 +1569,12 @@ export const CustomComponentRenderer: React.FC<{
           }}
         >
           {/* IFRAME RENDERING - Simple 100% fill, HTML handles responsive layout */}
-          {/* For thumbnails, use Blob URL to bypass iOS Safari srcDoc rendering bugs in scaled containers */}
-          {isIframeComponent && stableIframeSrcDoc && (isThumbnail ? thumbnailBlobUrl : true) && (
+          {/* For thumbnails, use data URL to bypass iOS Safari srcDoc rendering bugs in scaled containers */}
+          {isIframeComponent && stableIframeSrcDoc && (isThumbnail ? thumbnailDataUrl : true) && (
             <iframe
               ref={iframeRef}
               key={`${component.id}-${renderCodeHash}-${propsKey.length}-${propsKey.slice(-20)}`}
-              src={isThumbnail ? thumbnailBlobUrl! : undefined}
+              src={isThumbnail ? thumbnailDataUrl! : undefined}
               srcDoc={isThumbnail ? undefined : stableIframeSrcDoc}
               style={{
                 position: 'absolute',
