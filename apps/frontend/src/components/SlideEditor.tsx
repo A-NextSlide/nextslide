@@ -141,17 +141,6 @@ const SlideEditorContent: React.FC = () => {
     try {
       setHasShownChatDragHint(localStorage.getItem(chatHintStorageKey) === '1');
     } catch { }
-
-    // Lock body scroll on mobile to prevent overscroll
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    document.documentElement.style.height = '100dvh'; // Use dynamic viewport height
-
-    return () => {
-      document.body.style.overflow = '';
-      document.documentElement.style.overflow = '';
-      document.documentElement.style.height = '';
-    };
   }, [isMobile]);
 
   useLayoutEffect(() => {
@@ -1683,7 +1672,7 @@ const SlideEditorContent: React.FC = () => {
   }, [deckData?.uuid]);
 
   return (
-    <div className={`h-screen bg-background flex flex-col ${isChatCollapsed ? 'chat-collapsed' : ''}`}>
+    <div className={`h-dvh bg-background flex flex-col overflow-hidden ${isChatCollapsed ? 'chat-collapsed' : ''}`} style={{ height: '100dvh' }}>
       <DeckHeader
         isEditing={isEditing}
         setIsEditing={handleEditToggle}
@@ -1830,20 +1819,21 @@ const SlideEditorContent: React.FC = () => {
                 {isHistoryPanelOpen && <VersionHistoryPanel />}
               </div>
 
-              {/* Presentation Mode Overlay */}
-              {deckData.slides && deckData.slides.length > 0 && (
-                <PresentationMode
-                  slides={deckData.slides.filter(s => s && s.id && !s.id.startsWith('placeholder-'))}
-                  currentSlideIndex={currentSlideIndex}
-                  renderSlide={renderSlide}
-                  alwaysShowControls={isMobile}
-                  slideSize={deckData.size}
-                />
-              )}
             </ResizablePanel>
           </ResizablePanelGroup>
         )}
       </div>
+
+      {/* Presentation Mode Overlay - rendered outside mobile/desktop conditional */}
+      {deckData.slides && deckData.slides.length > 0 && (
+        <PresentationMode
+          slides={deckData.slides.filter(s => s && s.id && !s.id.startsWith('placeholder-'))}
+          currentSlideIndex={currentSlideIndex}
+          renderSlide={renderSlide}
+          alwaysShowControls={isMobile}
+          slideSize={deckData.size}
+        />
+      )}
 
       {/* Quick tip bubble */}
       <QuickTipBubble show={showQuickTip} />
@@ -1928,22 +1918,29 @@ const SlideEditor: React.FC = () => {
 
   const setAutoSaveInterval = useDeckStore(state => state.setAutoSaveInterval);
 
-  // Reset document styles when editor loads
-  // This fixes the layout issue when navigating from DeckList
+  // Reset document styles and lock scroll when editor loads
+  // This fixes the layout issue when navigating from DeckList and prevents page scrolling
   useEffect(() => {
-    // Reset to normal positioning for the editor
-    document.documentElement.style.position = '';
-    document.documentElement.style.overflow = '';
-    document.documentElement.style.width = '';
-    document.documentElement.style.height = '';
-    document.body.style.position = '';
-    document.body.style.overflow = '';
-    document.body.style.width = '';
-    document.body.style.height = '';
+    // Lock body scroll to prevent page from scrolling
+    document.documentElement.style.position = 'fixed';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.width = '100%';
+    document.documentElement.style.height = '100%';
+    document.body.style.position = 'fixed';
+    document.body.style.overflow = 'hidden';
+    document.body.style.width = '100%';
+    document.body.style.height = '100%';
 
-    // Cleanup function - don't set fixed positioning on cleanup
-    // Let each page manage its own styles
+    // Cleanup function - reset styles on unmount
     return () => {
+      document.documentElement.style.position = '';
+      document.documentElement.style.overflow = '';
+      document.documentElement.style.width = '';
+      document.documentElement.style.height = '';
+      document.body.style.position = '';
+      document.body.style.overflow = '';
+      document.body.style.width = '';
+      document.body.style.height = '';
       // Store that we were in the editor for DeckList to detect
       sessionStorage.setItem('lastEditedDeckId', 'true');
     };

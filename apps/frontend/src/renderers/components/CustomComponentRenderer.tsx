@@ -1249,28 +1249,7 @@ export const CustomComponentRenderer: React.FC<{
   const [scale, setScale] = useState(1);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // Data URL for thumbnail iframes - bypasses iOS Safari srcDoc rendering bugs in scaled containers
-  const thumbnailDataUrl = useMemo(() => {
-    if (!isThumbnail || !stableIframeSrcDoc || !isIframeComponent) {
-      return null;
-    }
-    
-    try {
-      // Use data URL which iOS handles better than srcDoc in scaled containers
-      return `data:text/html;charset=utf-8,${encodeURIComponent(stableIframeSrcDoc)}`;
-    } catch (err) {
-      console.error('[CustomComponent] Failed to create data URL:', err);
-      return null;
-    }
-  }, [isThumbnail, stableIframeSrcDoc, isIframeComponent]);
-
   useEffect(() => {
-    // If thumbnail, disable internal scaling (handled by parent MiniSlide)
-    if (isThumbnail) {
-      setScale(1);
-      return;
-    }
-
     const element = rootRef.current;
     if (!element) return;
 
@@ -1320,7 +1299,7 @@ export const CustomComponentRenderer: React.FC<{
         // Ignore disconnect errors
       }
     };
-  }, [containerWidth, isThumbnail]);
+  }, [containerWidth]);
 
   // Handler for HTML updates from CustomComponentEditOverlay
   const handleHtmlUpdate = useCallback((newHtml: string) => {
@@ -1569,13 +1548,11 @@ export const CustomComponentRenderer: React.FC<{
           }}
         >
           {/* IFRAME RENDERING - Simple 100% fill, HTML handles responsive layout */}
-          {/* For thumbnails, use data URL to bypass iOS Safari srcDoc rendering bugs in scaled containers */}
-          {isIframeComponent && stableIframeSrcDoc && (isThumbnail ? thumbnailDataUrl : true) && (
+          {isIframeComponent && stableIframeSrcDoc && (
             <iframe
               ref={iframeRef}
               key={`${component.id}-${renderCodeHash}-${propsKey.length}-${propsKey.slice(-20)}`}
-              src={isThumbnail ? thumbnailDataUrl! : undefined}
-              srcDoc={isThumbnail ? undefined : stableIframeSrcDoc}
+              srcDoc={stableIframeSrcDoc}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -1585,12 +1562,10 @@ export const CustomComponentRenderer: React.FC<{
                 border: 'none',
                 backgroundColor: 'transparent',
                 display: 'block',
-                pointerEvents: isThumbnail ? 'none' : 'auto' // Disable interaction for thumbnails
+                pointerEvents: 'auto' // Always interactive - edit mode script handles selection notification
               }}
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
               title="Custom Component"
-              loading={isThumbnail ? 'eager' : undefined}
-              scrolling="no"
             />
           )}
 
