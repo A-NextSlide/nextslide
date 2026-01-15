@@ -6,7 +6,7 @@ import { normalizeSlideForRender, resolveSlideSize } from '@/utils/slideNormaliz
 import Slide from '@/components/Slide';
 import { StaticEditorStateProvider } from '@/context/EditorStateContext';
 import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
-import { NavigationProvider } from '@/context/NavigationContext';
+import { StaticNavigationProvider } from '@/context/NavigationContext';
 import { ThumbnailRenderProvider } from '@/context/ThumbnailRenderContext';
 
 interface MiniSlideProps {
@@ -284,7 +284,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
         >
           {/* Inner wrapper with explicit dimensions to ensure proper sizing */}
           <div style={{ width: `${baseWidth}px`, height: `${baseHeight}px`, position: 'relative' }}>
-            <NavigationProvider initialSlideIndex={0}>
+            <StaticNavigationProvider slideIndex={0}>
               <StaticEditorStateProvider slideSize={resolvedSlideSize}>
                 <StaticActiveSlideProvider slide={safeSlide}>
                   <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
@@ -297,7 +297,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
                   </ThumbnailRenderProvider>
                 </StaticActiveSlideProvider>
               </StaticEditorStateProvider>
-            </NavigationProvider>
+            </StaticNavigationProvider>
           </div>
         </div>
       )}

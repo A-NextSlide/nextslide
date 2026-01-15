@@ -149,3 +149,30 @@ export function useCurrentSlide() {
   const { currentSlideIndex } = useNavigation();
   return deckData.slides[currentSlideIndex] || null;
 }
+
+/**
+ * Lightweight static provider for thumbnails - NO store subscriptions
+ * This prevents iOS Safari crashes from too many Zustand subscriptions
+ * when rendering multiple thumbnails in the deck list
+ */
+interface StaticNavigationProviderProps {
+  children: ReactNode;
+  slideIndex?: number;
+}
+
+export function StaticNavigationProvider({
+  children,
+  slideIndex = 0
+}: StaticNavigationProviderProps) {
+  // Static value - no hooks, no subscriptions, no re-renders
+  const value: NavigationContextType = {
+    currentSlideIndex: slideIndex,
+    setCurrentSlideIndex: () => {} // No-op for thumbnails
+  };
+
+  return (
+    <NavigationContext.Provider value={value}>
+      {children}
+    </NavigationContext.Provider>
+  );
+}
