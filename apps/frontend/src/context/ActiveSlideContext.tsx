@@ -337,10 +337,28 @@ export const StaticActiveSlideProvider = ({
 // Custom hook to use the active slide context
 export const useActiveSlide = () => {
   const context = useContext(ActiveSlideContext);
-  
+
   if (!context) {
     throw new Error('useActiveSlide must be used within an ActiveSlideProvider');
   }
-  
+
+  return context;
+}
+
+// Safe version that returns null values if no provider is present
+export const useActiveSlideSafe = () => {
+  const context = useContext(ActiveSlideContext);
+
+  if (!context) {
+    return {
+      activeSlide: null,
+      slideId: null,
+      activeComponents: [],
+      updateComponent: () => {},
+      addComponent: () => {},
+      removeComponent: () => {}
+    };
+  }
+
   return context;
 }

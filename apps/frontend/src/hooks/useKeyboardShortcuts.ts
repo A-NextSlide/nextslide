@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
-import { useEditorState } from '@/context/EditorStateContext';
+import { useEditorStateSafe } from '@/context/EditorStateContext';
 import { useHistoryStore } from '@/stores/historyStore';
-import { useActiveSlide } from '@/context/ActiveSlideContext';
+import { useActiveSlideSafe } from '@/context/ActiveSlideContext';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 
 export function useKeyboardShortcuts() {
-  const { isEditing } = useEditorState();
-  const { activeSlide } = useActiveSlide();
+  const { isEditing } = useEditorStateSafe();
+  const { activeSlide } = useActiveSlideSafe();
   const { undo, redo, canUndo, canRedo } = useHistoryStore();
   const isTextEditing = useEditorSettingsStore(state => state.isTextEditing);
 
