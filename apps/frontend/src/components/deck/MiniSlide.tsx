@@ -247,28 +247,6 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   // This prevents the tiny initial render from getting "stuck" due to memoization
   const hasValidDimensions = containerDims && containerDims.width > 100 && containerDims.height > 50;
 
-  // Debug logging for iOS Safari - comprehensive thumbnail info
-  if (hasContent && containerDims) {
-    console.log(`[MiniSlide DEBUG] slideId=${slideId}`, {
-      containerDims,
-      baseWidth,
-      baseHeight,
-      scale: scale.toFixed(4),
-      scaledWidth: (baseWidth * scale).toFixed(1),
-      scaledHeight: (baseHeight * scale).toFixed(1),
-      resolvedSlideSize,
-      hasValidDimensions,
-      componentCount: safeSlide?.components?.length || 0,
-      components: safeSlide?.components?.slice(0, 3).map((c: any) => ({
-        type: c.type,
-        id: c.id,
-        propsWidth: c.props?.width,
-        propsHeight: c.props?.height,
-        propsSize: c.props?.size,
-        position: c.props?.position,
-      }))
-    });
-  }
 
   // Calculate the scaled dimensions for the wrapper
   const scaledWidth = baseWidth * scale;

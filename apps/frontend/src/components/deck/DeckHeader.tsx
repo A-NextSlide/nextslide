@@ -301,7 +301,7 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
             type="text"
             value={deckName}
             onChange={(e) => setDeckName(e.target.value)}
-            className={`text-xs font-medium bg-transparent border-none outline-none focus:ring-1 focus:ring-primary/20 ${isMobile ? 'px-1 py-0.5' : 'px-3 py-1'} rounded ${isMobile ? 'w-auto max-w-[45vw]' : 'w-96 max-w-[40vw]'}`}
+            className={`text-xs font-medium bg-transparent border-none outline-none focus:ring-1 focus:ring-primary/20 ${isMobile ? 'px-1 py-0.5' : 'px-3 py-1'} rounded ${isMobile ? 'w-auto max-w-[60vw]' : 'w-96 max-w-[40vw]'}`}
             aria-label="Deck name"
           />
         </div>

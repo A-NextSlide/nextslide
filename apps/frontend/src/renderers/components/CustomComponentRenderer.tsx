@@ -1254,7 +1254,6 @@ export const CustomComponentRenderer: React.FC<{
     // In thumbnail mode, MiniSlide already applies transform: scale() to the entire slide container
     // Using scale=1 here avoids double-scaling which would make content appear tiny
     if (isThumbnail) {
-      console.log(`[CustomComponentRenderer] Thumbnail mode - using scale=1 to avoid double-scaling`);
       setScale(1);
       return;
     }

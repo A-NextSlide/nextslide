@@ -54,10 +54,8 @@ export const EditorStateProvider = ({
   const [slideSize, setSlideSize] = useState<{ width: number; height: number }>(() => {
     // Initialize with override if provided, otherwise use defaults
     if (slideSizeOverride?.width && slideSizeOverride?.height) {
-      console.log('[EditorStateProvider] Initializing with override:', slideSizeOverride);
       return { width: slideSizeOverride.width, height: slideSizeOverride.height };
     }
-    console.log('[EditorStateProvider] Initializing with defaults:', DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT);
     return { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
   });
   

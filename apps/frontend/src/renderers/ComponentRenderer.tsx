@@ -118,29 +118,6 @@ export const ComponentRenderer: React.FC<Props> = memo(({
     height = slideSize.height;
   }
 
-  // Debug logging for thumbnail rendering
-  if (isThumbnail && componentType !== 'Background') {
-    console.log(`[ComponentRenderer DEBUG] ${componentType}:${componentId}`, {
-      slideSize,
-      position,
-      width,
-      height,
-      size,
-      rawProps: {
-        position: componentProps?.position,
-        width: componentProps?.width,
-        height: componentProps?.height,
-        size: componentProps?.size,
-      },
-      componentLevel: {
-        position: (component as any).position,
-        size: (component as any).size,
-        width: (component as any).width,
-        height: (component as any).height,
-      }
-    });
-  }
-
   const isBackground = componentType === "Background" || (componentId && componentId.toLowerCase().includes('background'));
   const isLines = componentType === "Lines" || componentType === 'Line' || componentType === 'line';
   const isGroup = componentType === "Group";
