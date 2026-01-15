@@ -4,7 +4,7 @@ import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { cn } from '@/lib/utils';
 import { normalizeSlideForRender, resolveSlideSize } from '@/utils/slideNormalization';
 import Slide from '@/components/Slide';
-import { EditorStateProvider } from '@/context/EditorStateContext';
+import { StaticEditorStateProvider } from '@/context/EditorStateContext';
 import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { NavigationProvider } from '@/context/NavigationContext';
 import { ThumbnailRenderProvider } from '@/context/ThumbnailRenderContext';
@@ -285,11 +285,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
           {/* Inner wrapper with explicit dimensions to ensure proper sizing */}
           <div style={{ width: `${baseWidth}px`, height: `${baseHeight}px`, position: 'relative' }}>
             <NavigationProvider initialSlideIndex={0}>
-              <EditorStateProvider
-                syncConfig={{ enabled: false, useRealtimeSubscription: false }}
-                initialEditingState={false}
-                slideSizeOverride={resolvedSlideSize}
-              >
+              <StaticEditorStateProvider slideSize={resolvedSlideSize}>
                 <StaticActiveSlideProvider slide={safeSlide}>
                   <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
                     <Slide
@@ -300,7 +296,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
                     />
                   </ThumbnailRenderProvider>
                 </StaticActiveSlideProvider>
-              </EditorStateProvider>
+              </StaticEditorStateProvider>
             </NavigationProvider>
           </div>
         </div>

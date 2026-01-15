@@ -250,4 +250,35 @@ export const useEditorStateSafe = () => {
     };
   }
   return context;
+}
+
+/**
+ * Lightweight static provider for thumbnails - NO store subscriptions
+ * This prevents iOS Safari crashes from too many Zustand subscriptions
+ * when rendering multiple thumbnails in the deck list
+ */
+interface StaticEditorStateProviderProps {
+  children: ReactNode;
+  slideSize: { width: number; height: number };
+}
+
+export const StaticEditorStateProvider = ({
+  children,
+  slideSize
+}: StaticEditorStateProviderProps) => {
+  // Static value - no hooks, no subscriptions, no re-renders
+  const value: EditorStateContextType = {
+    isEditing: false,
+    setIsEditing: () => {},
+    isSyncing: false,
+    lastSyncTime: null,
+    slideSize: slideSize || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT },
+    syncConfig: { enabled: false, useSupabase: false }
+  };
+
+  return (
+    <EditorStateContext.Provider value={value}>
+      {children}
+    </EditorStateContext.Provider>
+  );
 } 
