@@ -10,6 +10,7 @@ import { Trash2 } from 'lucide-react';
 import DeckCard from '@/components/deck/DeckCard';
 import DeckThumbnail from '@/components/deck/DeckThumbnail';
 import { formatDistanceToNow } from 'date-fns';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 // Rotating words animation for hero heading - vertical slot machine style
 const WORDS = ['PROPOSALS', 'STRATEGIES', 'REPORTS', 'DOCS', 'NOTES', 'IDEAS'];
@@ -106,11 +107,16 @@ export const VirtualizedDeckGrid = React.memo(({
   isLoadingMore,
   isInitialLoad
 }: VirtualizedDeckGridProps) => {
+  const isMobile = useIsMobile();
   const safeDecks: CompleteDeckData[] = Array.isArray(decks) ? decks : [];
   const [renderedDecks, setRenderedDecks] = useState<Set<number>>(() => {
     // Start with first few decks rendered to prevent flash
     return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
   });
+  // Progressive upgrade: on mobile, render full thumbnails one at a time to avoid crashes.
+  const [upgradedDecks, setUpgradedDecks] = useState<Set<number>>(() => new Set());
+  const [upgradingIndex, setUpgradingIndex] = useState<number | null>(null);
+  const upgradeQueueRef = useRef<number[]>([]);
   const [initiallyVisibleDecks, setInitiallyVisibleDecks] = useState<Set<number>>(() => {
     // Start with first few decks visible to prevent flash
     return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
@@ -156,6 +162,35 @@ export const VirtualizedDeckGrid = React.memo(({
   }, [safeDecks.length]);
 
   useEffect(() => {
+    if (!isMobile) return;
+    // Enqueue already-rendered items on mount/when list length changes (e.g., initial 6)
+    renderedDecks.forEach((idx) => {
+      if (upgradedDecks.has(idx)) return;
+      if (upgradeQueueRef.current.includes(idx)) return;
+      upgradeQueueRef.current.push(idx);
+    });
+    // Kick processing loop
+    if (upgradingIndex === null && upgradeQueueRef.current.length > 0) {
+      setUpgradingIndex(upgradeQueueRef.current.shift() ?? null);
+    }
+  }, [isMobile, renderedDecks, upgradedDecks, upgradingIndex]);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    if (upgradingIndex === null) return;
+    // Yield to the browser; then mark upgraded and proceed to the next.
+    const t = window.setTimeout(() => {
+      setUpgradedDecks((prev) => {
+        const next = new Set(prev);
+        next.add(upgradingIndex);
+        return next;
+      });
+      setUpgradingIndex(null);
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [isMobile, upgradingIndex]);
+
+  useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -163,6 +198,15 @@ export const VirtualizedDeckGrid = React.memo(({
           if (entry.isIntersecting) {
             // Once visible, always rendered
             setRenderedDecks((prev) => new Set(prev).add(index));
+            if (isMobile) {
+              // Enqueue for full thumbnail rendering (1-at-a-time)
+              if (!upgradedDecks.has(index) && !upgradeQueueRef.current.includes(index)) {
+                upgradeQueueRef.current.push(index);
+              }
+              if (upgradingIndex === null && upgradeQueueRef.current.length > 0) {
+                setUpgradingIndex(upgradeQueueRef.current.shift() ?? null);
+              }
+            }
           }
         });
       },
@@ -181,7 +225,7 @@ export const VirtualizedDeckGrid = React.memo(({
     return () => {
       observer.disconnect();
     };
-  }, [safeDecks.length]);
+  }, [isMobile, safeDecks.length, upgradedDecks, upgradingIndex]);
 
   // Set up infinite scroll observer
   useEffect(() => {
@@ -228,6 +272,8 @@ export const VirtualizedDeckGrid = React.memo(({
         // Only animate if this card was initially visible
         const shouldAnimate = initiallyVisibleDecks.has(index);
         const shouldRender = renderedDecks.has(index);
+        const thumbnailRenderMode: 'full' | 'background' =
+          !isMobile ? 'full' : ((upgradedDecks.has(index) || upgradingIndex === index) ? 'full' : 'background');
 
         return (
           <div
@@ -244,6 +290,7 @@ export const VirtualizedDeckGrid = React.memo(({
                 onShowDeleteDialog={onShowDeleteDialog}
                 index={index}
                 shouldAnimate={shouldAnimate}
+                thumbnailRenderMode={thumbnailRenderMode}
               />
             ) : (
               <div className="aspect-[16/9] bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
@@ -288,11 +335,16 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   hasMore,
   isLoadingMore
 }: VirtualizedPopupDeckGridProps) => {
+  const isMobile = useIsMobile();
   const safeDecks: CompleteDeckData[] = Array.isArray(decks) ? decks : [];
   const [visibleDecks, setVisibleDecks] = useState<Set<number>>(() => {
     // Start with all decks visible to prevent flash on initial load
     return new Set(Array.from({ length: safeDecks.length }, (_, i) => i));
   });
+  // Progressive upgrade for popup thumbnails on mobile too
+  const [upgradedDecks, setUpgradedDecks] = useState<Set<number>>(() => new Set());
+  const [upgradingIndex, setUpgradingIndex] = useState<number | null>(null);
+  const upgradeQueueRef = useRef<number[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
@@ -307,6 +359,14 @@ export const VirtualizedPopupDeckGrid = React.memo(({
             const next = new Set(prev);
             if (entry.isIntersecting) {
               next.add(index);
+              if (isMobile) {
+                if (!upgradedDecks.has(index) && !upgradeQueueRef.current.includes(index)) {
+                  upgradeQueueRef.current.push(index);
+                }
+                if (upgradingIndex === null && upgradeQueueRef.current.length > 0) {
+                  setUpgradingIndex(upgradeQueueRef.current.shift() ?? null);
+                }
+              }
             } else {
               next.delete(index);
             }
@@ -328,7 +388,34 @@ export const VirtualizedPopupDeckGrid = React.memo(({
     return () => {
       observer.disconnect();
     };
-  }, [safeDecks.length]);
+  }, [isMobile, safeDecks.length, upgradedDecks, upgradingIndex]);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    // Enqueue all currently visible decks for progressive upgrade
+    visibleDecks.forEach((idx) => {
+      if (upgradedDecks.has(idx)) return;
+      if (upgradeQueueRef.current.includes(idx)) return;
+      upgradeQueueRef.current.push(idx);
+    });
+    if (upgradingIndex === null && upgradeQueueRef.current.length > 0) {
+      setUpgradingIndex(upgradeQueueRef.current.shift() ?? null);
+    }
+  }, [isMobile, visibleDecks, upgradedDecks, upgradingIndex]);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    if (upgradingIndex === null) return;
+    const t = window.setTimeout(() => {
+      setUpgradedDecks((prev) => {
+        const next = new Set(prev);
+        next.add(upgradingIndex);
+        return next;
+      });
+      setUpgradingIndex(null);
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [isMobile, upgradingIndex]);
 
   // Set up infinite scroll observer
   useEffect(() => {
@@ -386,7 +473,10 @@ export const VirtualizedPopupDeckGrid = React.memo(({
             >
               <div className="relative aspect-[16/9] w-full overflow-hidden bg-muted">
                 <div className="absolute inset-0 w-full h-full flex items-center justify-center">
-                  <DeckThumbnail deck={deck} />
+                  <DeckThumbnail
+                    deck={deck}
+                    renderMode={!isMobile ? 'full' : ((upgradedDecks.has(index) || upgradingIndex === index) ? 'full' : 'background')}
+                  />
                 </div>
                 {/* Text overlay at bottom */}
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent pt-6 pb-2 px-3">

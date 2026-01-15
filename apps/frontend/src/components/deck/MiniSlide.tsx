@@ -7,6 +7,7 @@ import Slide from '@/components/Slide';
 import { EditorStateProvider } from '@/context/EditorStateContext';
 import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { NavigationProvider } from '@/context/NavigationContext';
+import { ThumbnailRenderProvider } from '@/context/ThumbnailRenderContext';
 
 interface MiniSlideProps {
   slide: SlideData;
@@ -289,16 +290,18 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
               slideSizeOverride={resolvedSlideSize}
             >
               <StaticActiveSlideProvider slide={safeSlide}>
-                <Slide
-                  slide={safeSlide}
-                  isActive={true}
-                  isEditing={false}
-                  isThumbnail={true}
-                  style={{
-                    width: baseWidth,
-                    height: baseHeight
-                  }}
-                />
+                <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
+                  <Slide
+                    slide={safeSlide}
+                    isActive={true}
+                    isEditing={false}
+                    isThumbnail={true}
+                    style={{
+                      width: baseWidth,
+                      height: baseHeight
+                    }}
+                  />
+                </ThumbnailRenderProvider>
               </StaticActiveSlideProvider>
             </EditorStateProvider>
           </NavigationProvider>

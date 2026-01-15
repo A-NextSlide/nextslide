@@ -13,6 +13,7 @@ interface DeckCardProps {
   onShowDeleteDialog: (deckId: string, event: React.MouseEvent) => void;
   index: number;
   shouldAnimate?: boolean; // New prop to control animation
+  thumbnailRenderMode?: 'full' | 'background';
 }
 
 const DeckCard: React.FC<DeckCardProps> = React.memo(({ 
@@ -20,7 +21,8 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
   onEdit, 
   onShowDeleteDialog, 
   index,
-  shouldAnimate = false 
+  shouldAnimate = false,
+  thumbnailRenderMode = 'full'
 }) => {
   const formatDate = (dateString: string) => {
     try {
@@ -69,7 +71,7 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
               )}
             </div>
           ) : (
-            <DeckThumbnail deck={deck} />
+            <DeckThumbnail deck={deck} renderMode={thumbnailRenderMode} />
           )}
         </div>
 
@@ -144,7 +146,8 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
     prevProps.deck.share_type === nextProps.deck.share_type &&
     prevProps.deck.shared_by?.email === nextProps.deck.shared_by?.email &&
     prevProps.index === nextProps.index &&
-    prevProps.shouldAnimate === nextProps.shouldAnimate
+    prevProps.shouldAnimate === nextProps.shouldAnimate &&
+    prevProps.thumbnailRenderMode === nextProps.thumbnailRenderMode
   );
 });
 

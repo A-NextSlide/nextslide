@@ -14,6 +14,7 @@ import { useCustomComponentImageAutoApply } from './custom/useCustomComponentIma
 import { useCustomComponentImageProxy } from './custom/useCustomComponentImageProxy';
 import { extractFontFamiliesFromHtml, injectIframeFonts } from './custom/iframeFonts';
 import { FontLoadingService } from '@/services/FontLoadingService';
+import { useThumbnailRenderMode } from '@/context/ThumbnailRenderContext';
 
 // Browser detection for iOS-specific safety checks
 import { BROWSER } from '@/utils/browser';
@@ -74,11 +75,12 @@ export const CustomComponentRenderer: React.FC<{
   isSelected?: boolean;
   isEditing?: boolean;
 }> = memo(({ component, baseStyles, containerRef, isThumbnail = false, isSelected = false, isEditing = false }) => {
+  const thumbnailMode = useThumbnailRenderMode();
   // THUMBNAIL SAFETY:
   // Rendering full CustomComponents inside deck thumbnails can spawn many iframes and heavy scripts,
   // which is especially unstable on mobile and has been causing "shrink then crash" behavior.
   // For thumbnails, render a lightweight placeholder instead of an iframe.
-  if (isThumbnail) {
+  if (isThumbnail && thumbnailMode !== 'full') {
     return (
       <div
         data-custom-component="true"
