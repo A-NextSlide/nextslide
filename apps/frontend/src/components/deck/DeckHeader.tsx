@@ -25,6 +25,7 @@ import { googleIntegrationApi } from '@/services/googleIntegrationApi';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import { IntegrationsDialog } from '@/components/integrations';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface DeckHeaderProps {
   isEditing: boolean;
@@ -69,6 +70,7 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const { signOut } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
 
   // Get Yjs status from deck store
   const getYjsConnectionStatus = useDeckStore(state => (state as any).getYjsConnectionStatus);
@@ -300,15 +302,20 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
-          <SyncIndicator
-            isSyncing={isSyncing}
-            lastSyncTime={lastSyncTime}
-            realtimeEnabled={realtimeEnabled}
-          />
-          <div className="h-3 w-px bg-muted-foreground/30 mx-1"></div>
+          {/* Hide sync indicator on mobile */}
+          {!isMobile && (
+            <>
+              <SyncIndicator
+                isSyncing={isSyncing}
+                lastSyncTime={lastSyncTime}
+                realtimeEnabled={realtimeEnabled}
+              />
+              <div className="h-3 w-px bg-muted-foreground/30 mx-1"></div>
+            </>
+          )}
 
-          {/* Live collaboration status indicator */}
-          <Popover open={showCollaborators} onOpenChange={setShowCollaborators}>
+          {/* Live collaboration status indicator - hide on mobile */}
+          {!isMobile && <Popover open={showCollaborators} onOpenChange={setShowCollaborators}>
             <PopoverTrigger asChild>
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer hover:bg-muted/70 transition-colors">
                 {/* Only show the status dot when disconnected */}
@@ -406,34 +413,38 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
                 </div>
               </div>
             </PopoverContent>
-          </Popover>
+          </Popover>}
 
-          {/* Add comment quick icon */}
-          <IconButton
-            variant="ghost"
-            size="xs"
-            aria-label="Add comment"
-            onClick={() => {
-              try {
-                window.dispatchEvent(new CustomEvent('editor:force-edit-mode'));
-                window.dispatchEvent(new CustomEvent('comments:toggle-panel'));
-              } catch { }
-            }}
-          >
-            <MessageSquare size={14} />
-          </IconButton>
+          {/* Add comment quick icon - hide on mobile */}
+          {!isMobile && (
+            <IconButton
+              variant="ghost"
+              size="xs"
+              aria-label="Add comment"
+              onClick={() => {
+                try {
+                  window.dispatchEvent(new CustomEvent('editor:force-edit-mode'));
+                  window.dispatchEvent(new CustomEvent('comments:toggle-panel'));
+                } catch { }
+              }}
+            >
+              <MessageSquare size={14} />
+            </IconButton>
+          )}
 
-          {/* Primary Present button */}
-          <Button
-            size="xs"
-            className="h-7 px-2 sm:px-3 bg-[#FF4301] hover:bg-[#E63901] text-white flex items-center gap-1"
-            onClick={usePresentationStore.getState().enterPresentation}
-            title="Presentation mode (P)"
-            data-tour="present-button"
-          >
-            <Presentation size={14} />
-            <span className="hidden sm:inline">Present</span>
-          </Button>
+          {/* Primary Present button - hide on mobile (shown in SlideControlBar instead) */}
+          {!isMobile && (
+            <Button
+              size="xs"
+              className="h-7 px-2 sm:px-3 bg-[#FF4301] hover:bg-[#E63901] text-white flex items-center gap-1"
+              onClick={usePresentationStore.getState().enterPresentation}
+              title="Presentation mode (P)"
+              data-tour="present-button"
+            >
+              <Presentation size={14} />
+              <span className="hidden sm:inline">Present</span>
+            </Button>
+          )}
 
           {/* Secondary Share button (passed in) */}
           {rightSideComponents}

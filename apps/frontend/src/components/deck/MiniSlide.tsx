@@ -251,17 +251,6 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   const scaledWidth = baseWidth * scale;
   const scaledHeight = baseHeight * scale;
 
-  console.log('[MiniSlide] Render:', {
-    slideId,
-    containerDims,
-    baseWidth,
-    baseHeight,
-    scale,
-    scaledWidth,
-    scaledHeight,
-    hasValidDimensions,
-  });
-
   // Full slide render with providers and scaling
   // Use a wrapper that clips to the scaled size, containing a full-size slide that gets scaled
   return (

@@ -18,6 +18,18 @@ export const usePresentationStore = create<PresentationState>((set, get) => ({
   controlsTimeout: null,
 
   enterPresentation: () => {
+    // Try to lock orientation to landscape for mobile
+    try {
+      const screenApi = window.screen as any;
+      if (screenApi?.orientation && typeof screenApi.orientation.lock === 'function') {
+        screenApi.orientation.lock('landscape').catch(() => {
+          // Orientation lock not supported or denied - continue anyway
+        });
+      }
+    } catch {
+      // Orientation lock not supported - safe to ignore
+    }
+
     // Enter fullscreen (with try-catch for mobile Safari compatibility)
     try {
       if (document.documentElement.requestFullscreen) {
@@ -31,12 +43,12 @@ export const usePresentationStore = create<PresentationState>((set, get) => ({
       // Fullscreen not supported or blocked - continue presentation mode anyway
     }
     set({ isPresenting: true, showControls: true });
-    
+
     // Hide controls after 3 seconds
     const timeout = setTimeout(() => {
       set({ showControls: false });
     }, 3000);
-    
+
     set({ controlsTimeout: timeout });
   },
 

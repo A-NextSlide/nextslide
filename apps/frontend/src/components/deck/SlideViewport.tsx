@@ -1152,32 +1152,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
         document.body
       )}
 
-      {/* Mobile Present Button - rendered via portal to bypass stacking context issues */}
-      {typeof document !== 'undefined' && document.body && isMobileView && !isEditing && currentSlide && slides.length > 0 && createPortal(
-        <button
-          className="fixed top-[calc(env(safe-area-inset-top)+56px)] right-2 px-2 py-1 bg-[#FF4301] hover:bg-[#E63901] active:bg-[#D62F00] text-white rounded-md flex items-center gap-1 text-[11px] font-semibold shadow-lg transition-colors"
-          style={{
-            fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-            touchAction: 'manipulation',
-            zIndex: 999999,
-            pointerEvents: 'auto',
-          }}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            enterPresentation();
-          }}
-          onTouchEnd={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            enterPresentation();
-          }}
-        >
-          <Presentation size={12} />
-          Present
-        </button>,
-        document.body
-      )}
+      {/* Mobile Present Button moved to SlideControlBar */}
     </div>
   );
 };

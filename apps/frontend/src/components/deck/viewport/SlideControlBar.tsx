@@ -1,7 +1,9 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Presentation } from 'lucide-react';
 import { IconButton } from '../../ui/IconButton';
 import { COLORS } from '@/utils/colors';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { usePresentationStore } from '@/stores/presentationStore';
 
 interface SlideControlBarProps {
   currentSlideIndex: number;
@@ -20,9 +22,12 @@ const SlideControlBar: React.FC<SlideControlBarProps> = ({
   goToPrevSlide,
   goToNextSlide
 }) => {
+  const isMobile = useIsMobile();
+  const enterPresentation = usePresentationStore(state => state.enterPresentation);
+
   return (
-    <div 
-      className="flex flex-col items-center z-10" 
+    <div
+      className="flex flex-col items-center z-10"
       style={{
         width: '100%',
         marginTop: '10px',
@@ -30,9 +35,18 @@ const SlideControlBar: React.FC<SlideControlBarProps> = ({
       }}
     >
       <div className="flex items-center w-full py-0 px-1">
-        {/* Left side area */}
+        {/* Left side area - Present button on mobile */}
         <div className="flex items-center gap-1 justify-start flex-1 min-w-8">
-          {/* Left area is empty */}
+          {isMobile && (
+            <button
+              onClick={enterPresentation}
+              className="flex items-center gap-1 px-2 py-1 bg-[#FF4301] hover:bg-[#E63901] active:bg-[#D62F00] text-white rounded text-[11px] font-medium transition-colors"
+              style={{ touchAction: 'manipulation' }}
+            >
+              <Presentation size={12} />
+              Present
+            </button>
+          )}
         </div>
         
         {/* Slide indicator - centered */}
