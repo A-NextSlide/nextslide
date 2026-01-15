@@ -198,15 +198,6 @@ export const VirtualizedDeckGrid = React.memo(({
           if (entry.isIntersecting) {
             // Once visible, always rendered
             setRenderedDecks((prev) => new Set(prev).add(index));
-            if (isMobile) {
-              // Enqueue for full thumbnail rendering (1-at-a-time)
-              if (!upgradedDecks.has(index) && !upgradeQueueRef.current.includes(index)) {
-                upgradeQueueRef.current.push(index);
-              }
-              if (upgradingIndex === null && upgradeQueueRef.current.length > 0) {
-                setUpgradingIndex(upgradeQueueRef.current.shift() ?? null);
-              }
-            }
           }
         });
       },
@@ -225,7 +216,7 @@ export const VirtualizedDeckGrid = React.memo(({
     return () => {
       observer.disconnect();
     };
-  }, [isMobile, safeDecks.length, upgradedDecks, upgradingIndex]);
+  }, [safeDecks.length]);
 
   // Set up infinite scroll observer
   useEffect(() => {
@@ -357,38 +348,30 @@ export const VirtualizedPopupDeckGrid = React.memo(({
           const index = parseInt(entry.target.getAttribute('data-index') || '0');
           setVisibleDecks((prev) => {
             const next = new Set(prev);
-            if (entry.isIntersecting) {
-              next.add(index);
-              if (isMobile) {
-                if (!upgradedDecks.has(index) && !upgradeQueueRef.current.includes(index)) {
-                  upgradeQueueRef.current.push(index);
-                }
-                if (upgradingIndex === null && upgradeQueueRef.current.length > 0) {
-                  setUpgradingIndex(upgradeQueueRef.current.shift() ?? null);
-                }
-              }
-            } else {
-              next.delete(index);
-            }
-            return next;
-          });
+          if (entry.isIntersecting) {
+            next.add(index);
+          } else {
+            next.delete(index);
+          }
+          return next;
         });
-      },
-      {
-        root: null,
-        rootMargin: '50px',
-        threshold: 0
-      }
-    );
+      });
+    },
+    {
+      root: null,
+      rootMargin: '50px',
+      threshold: 0
+    }
+  );
 
-    itemRefs.current.forEach((element) => {
-      observer.observe(element);
-    });
+  itemRefs.current.forEach((element) => {
+    observer.observe(element);
+  });
 
-    return () => {
-      observer.disconnect();
-    };
-  }, [isMobile, safeDecks.length, upgradedDecks, upgradingIndex]);
+  return () => {
+    observer.disconnect();
+  };
+}, [safeDecks.length]);
 
   useEffect(() => {
     if (!isMobile) return;
