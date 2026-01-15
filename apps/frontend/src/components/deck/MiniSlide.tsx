@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SlideData } from '@/types/SlideTypes';
-import Slide from '@/components/Slide';
-import { EditorStateProvider } from '@/context/EditorStateContext';
-import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
-import { NavigationProvider } from '@/context/NavigationContext';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { cn } from '@/lib/utils';
 import { normalizeSlideForRender, resolveSlideSize } from '@/utils/slideNormalization';
+import { ComponentRenderer } from '@/renderers/ComponentRenderer';
+import { EditorStateProvider } from '@/context/EditorStateContext';
+import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 
 interface MiniSlideProps {
   slide: SlideData;
@@ -17,10 +16,6 @@ interface MiniSlideProps {
   responsive?: boolean;
   slideSize?: { width: number; height: number };
 }
-
-// Global counter to limit simultaneous renders on mobile
-let activeRenderCount = 0;
-const MAX_CONCURRENT_RENDERS = 1; // Only 1 at a time to prevent crash
 
 const MiniSlide: React.FC<MiniSlideProps> = ({
   slide,
@@ -34,7 +29,6 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [containerDims, setContainerDims] = useState<{ width: number; height: number } | null>(null);
-  const [canRender, setCanRender] = useState(false);
 
   // Normalize slide data
   const normalizedResult = useMemo(() => {
@@ -51,17 +45,6 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     if (normalizedResult?.slideSize) return normalizedResult.slideSize;
     return resolveSlideSize(normalizedSlide, slideSize);
   }, [normalizedResult, normalizedSlide, slideSize]);
-
-  const safeSlide = useMemo(() => {
-    if (normalizedSlide) return normalizedSlide;
-    return {
-      id: 'thumbnail-fallback',
-      deckId: '',
-      order: 0,
-      status: 'completed',
-      components: []
-    } as SlideData;
-  }, [normalizedSlide]);
 
   const baseWidth = resolvedSlideSize?.width || DEFAULT_SLIDE_WIDTH;
   const baseHeight = resolvedSlideSize?.height || DEFAULT_SLIDE_HEIGHT;
@@ -93,70 +76,83 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     }
     const obs = new IntersectionObserver(
       ([entry]) => setIsVisible(entry.isIntersecting),
-      { rootMargin: '100px' }
+      { rootMargin: '200px' }
     );
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
 
-  // Measure container once visible
+  // Measure container and track resize
   useEffect(() => {
     if (!isVisible || !containerRef.current) return;
+    const el = containerRef.current;
+
     const measure = () => {
-      const el = containerRef.current;
-      if (!el) return;
       const rect = el.getBoundingClientRect();
       if (rect.width > 10 && rect.height > 10) {
-        setContainerDims({ width: rect.width, height: rect.height });
+        setContainerDims(prev => {
+          // Only update if dimensions actually changed
+          if (prev && Math.abs(prev.width - rect.width) < 1 && Math.abs(prev.height - rect.height) < 1) {
+            return prev;
+          }
+          return { width: rect.width, height: rect.height };
+        });
       }
     };
+
     measure();
+
+    // Use ResizeObserver to track size changes
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(measure);
+      resizeObserver.observe(el);
+    }
+
+    // Also listen to window resize as fallback
+    window.addEventListener('resize', measure);
+
     // Also measure after a short delay in case layout isn't ready
     const t = setTimeout(measure, 50);
-    return () => clearTimeout(t);
-  }, [isVisible]);
-
-  // Calculate scale
-  const getScale = () => {
-    if (!responsive && fixedWidth && fixedHeight) {
-      return Math.min(fixedWidth / baseWidth, fixedHeight / baseHeight);
-    }
-    if (containerDims) {
-      return Math.min(containerDims.width / baseWidth, containerDims.height / baseHeight);
-    }
-    return 0.1; // fallback
-  };
-  const scale = Math.max(0.01, getScale());
-
-  // Track if we're allowed to render (limit concurrent renders to prevent crash)
-  useEffect(() => {
-    if (!isVisible || !containerDims) {
-      if (canRender) {
-        activeRenderCount--;
-        setCanRender(false);
-      }
-      return;
-    }
-
-    // Check if we can render
-    if (!canRender && activeRenderCount < MAX_CONCURRENT_RENDERS) {
-      activeRenderCount++;
-      setCanRender(true);
-    }
 
     return () => {
-      if (canRender) {
-        activeRenderCount--;
-      }
+      clearTimeout(t);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', measure);
     };
-  }, [isVisible, containerDims, canRender]);
+  }, [isVisible]);
 
-  // Render placeholder when not visible, no dimensions, or over render limit
-  const showPlaceholder = !isVisible || (responsive && !containerDims) || !canRender;
+  // Calculate scale - use container dims or fixed dims
+  const targetWidth = !responsive && fixedWidth ? fixedWidth : containerDims?.width || 160;
+  const targetHeight = !responsive && fixedHeight ? fixedHeight : containerDims?.height || 90;
+  const scale = Math.max(0.01, Math.min(targetWidth / baseWidth, targetHeight / baseHeight));
 
-  // DEBUG - remove after fixing
-  const compCount = safeSlide?.components?.length || 0;
-  const debugInfo = `v:${isVisible} d:${containerDims?.width?.toFixed(0)}x${containerDims?.height?.toFixed(0)} s:${scale.toFixed(3)} c:${compCount} r:${canRender}`;
+  // Get components to render
+  const components = useMemo(() => {
+    return normalizedSlide?.components || [];
+  }, [normalizedSlide]);
+
+  // Separate background from other components
+  const { backgroundComponent, otherComponents } = useMemo(() => {
+    const bg = components.find((c: any) => c.type === 'Background' || c.id?.toLowerCase().includes('background'));
+    const others = components.filter((c: any) => c.type !== 'Background' && !c.id?.toLowerCase().includes('background'));
+    return { backgroundComponent: bg, otherComponents: others };
+  }, [components]);
+
+  // Create safe slide for provider
+  const safeSlide = useMemo(() => {
+    if (normalizedSlide) return normalizedSlide;
+    return {
+      id: 'thumbnail-fallback',
+      deckId: '',
+      order: 0,
+      status: 'completed',
+      components: []
+    } as SlideData;
+  }, [normalizedSlide]);
+
+  // Show placeholder when not visible or no dimensions
+  const showPlaceholder = !isVisible || (responsive && !containerDims);
 
   return (
     <div
@@ -169,23 +165,21 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       onClick={onClick}
       style={{ background: fallbackBg }}
     >
-      {/* DEBUG overlay */}
-      <div style={{ position: 'absolute', top: 0, left: 0, fontSize: 8, color: 'red', zIndex: 999, background: 'white', padding: 2 }}>
-        {debugInfo}
-      </div>
       {!showPlaceholder && (
         <div
           style={{
             position: 'absolute',
             top: 0,
             left: 0,
-            width: containerDims?.width || '100%',
-            height: containerDims?.height || '100%',
+            width: targetWidth,
+            height: targetHeight,
             overflow: 'hidden'
           }}
         >
+          {/* Inner container at base slide dimensions, scaled down */}
           <div
             style={{
+              position: 'relative',
               width: baseWidth,
               height: baseHeight,
               transform: `scale(${scale})`,
@@ -193,26 +187,37 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
               pointerEvents: 'none'
             }}
           >
-            <NavigationProvider initialSlideIndex={0}>
-              <EditorStateProvider
-                syncConfig={{ enabled: false, useRealtimeSubscription: false }}
-                initialEditingState={false}
-                slideSizeOverride={resolvedSlideSize}
-              >
-                <StaticActiveSlideProvider slide={safeSlide}>
-                  <Slide
-                    slide={safeSlide}
-                    isActive={true}
-                    isEditing={false}
+            <EditorStateProvider
+              syncConfig={{ enabled: false, useRealtimeSubscription: false }}
+              initialEditingState={false}
+              slideSizeOverride={resolvedSlideSize}
+            >
+              <StaticActiveSlideProvider slide={safeSlide}>
+                {/* Background */}
+                {backgroundComponent && (
+                  <div
+                    className="absolute inset-0 w-full h-full overflow-hidden"
+                    style={{ zIndex: 0 }}
+                  >
+                    <ComponentRenderer
+                      component={backgroundComponent}
+                      isThumbnail={true}
+                      allComponents={components}
+                    />
+                  </div>
+                )}
+
+                {/* Other components */}
+                {otherComponents.map((component: any) => (
+                  <ComponentRenderer
+                    key={component.id}
+                    component={component}
                     isThumbnail={true}
-                    style={{
-                      width: baseWidth,
-                      height: baseHeight
-                    }}
+                    allComponents={components}
                   />
-                </StaticActiveSlideProvider>
-              </EditorStateProvider>
-            </NavigationProvider>
+                ))}
+              </StaticActiveSlideProvider>
+            </EditorStateProvider>
           </div>
         </div>
       )}
