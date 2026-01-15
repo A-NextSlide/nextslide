@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SlideData } from '@/types/SlideTypes';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { cn } from '@/lib/utils';
@@ -124,7 +124,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   const STABILITY_THRESHOLD = 100; // Only "lock" dimensions above this size
 
   // Measure container for responsive mode
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!containerRef.current) return;
 
     // Track if we have ever had a "stable" size (reasonable resolution)
@@ -186,7 +186,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       resizeObserver?.disconnect();
       window.removeEventListener('resize', handleWindowResize);
     };
-  }, []);
+  }, [renderMode, responsive]);
 
   // Common container classes
   const containerClasses = cn(

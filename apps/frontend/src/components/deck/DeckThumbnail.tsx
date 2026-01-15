@@ -35,6 +35,7 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'b
   return (
     <div className="w-full h-full">
       <MiniSlide
+        key={renderMode} // Force remount on mode change to ensure clean measurement
         slide={firstSlide}
         responsive={true}
         slideSize={deck.size}
