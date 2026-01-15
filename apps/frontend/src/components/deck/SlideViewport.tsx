@@ -218,17 +218,25 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer) return;
 
+    // SKIP ALL CUSTOM ZOOM HANDLERS ON MOBILE
+    // The native browser zoom or a simplified mobile-specific handler should be used instead
+    // Attempting to manually handle touch/gesture events for zoom on mobile is causing crashes
+    if (isMobileView) return;
+
     const pinchState = { initialDistance: 0, initialZoom: zoomLevelRef.current };
     let gestureInitialZoom = zoomLevelRef.current;
+
     const handleWheel = (e: WheelEvent) => {
+      // ... same logic as before, just wrapped in the effect ...
+      // Keeping existing implementation for desktop
       const target = e.target as HTMLElement | null;
       const guardEl = target && typeof target.closest === 'function' ? (target.closest('[data-scroll-guard="true"]') as HTMLElement | null) : null;
       if (guardEl && !(e.ctrlKey || e.metaKey)) {
         const maxScrollTop = guardEl.scrollHeight - guardEl.clientHeight;
         let deltaY = e.deltaY;
         const dm = (e as any).deltaMode;
-        if (dm === 1) deltaY *= 16; // lines → px
-        else if (dm === 2) deltaY *= guardEl.clientHeight; // pages → px
+        if (dm === 1) deltaY *= 16;
+        else if (dm === 2) deltaY *= guardEl.clientHeight;
 
         if (maxScrollTop <= 0) {
           e.preventDefault();
@@ -250,9 +258,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       if (e.ctrlKey || e.metaKey) return;
     };
 
-    // Only set up pinch-to-zoom handlers on desktop - causes crashes on mobile
     const handleTouchStart = (e: TouchEvent) => {
-      if (isMobileView) return; // Skip custom zoom on mobile - let native browser handle it
       if (e.touches.length === 2) {
         const [touch1, touch2] = e.touches;
         pinchState.initialDistance = Math.hypot(
@@ -264,7 +270,6 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (isMobileView) return; // Skip custom zoom on mobile - let native browser handle it
       if (e.touches.length === 2) {
         e.preventDefault();
         const [touch1, touch2] = e.touches;
@@ -293,14 +298,12 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     };
 
     const handleWindowGestureStart = (e: Event) => {
-      if (isMobileView) return; // Skip custom zoom on mobile
       e.preventDefault();
       e.stopPropagation();
       gestureInitialZoom = zoomLevelRef.current;
     };
 
     const handleWindowGestureChange = (e: Event) => {
-      if (isMobileView) return; // Skip custom zoom on mobile
       e.preventDefault();
       e.stopPropagation();
       const gestureEvent = e as any;
@@ -310,19 +313,17 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     };
 
     const handleWindowGestureEnd = (e: Event) => {
-      if (isMobileView) return; // Skip custom zoom on mobile
       e.preventDefault();
       e.stopPropagation();
     };
 
     scrollContainer.addEventListener('wheel', handleWheel, { passive: false });
-    // Only add touch zoom handlers on desktop - they cause crashes on mobile
-    if (!isMobileView) {
-      scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
-      scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
-    }
+    // Only setup desktop zoom handlers
+    scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
+    scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+
     window.addEventListener('wheel', handleWindowWheel, { passive: false, capture: true });
-    if (supportsGestureEvents && !isMobileView) {
+    if (supportsGestureEvents) {
       window.addEventListener('gesturestart', handleWindowGestureStart as EventListener, { passive: false, capture: true });
       window.addEventListener('gesturechange', handleWindowGestureChange as EventListener, { passive: false, capture: true });
       window.addEventListener('gestureend', handleWindowGestureEnd as EventListener, { passive: false, capture: true });
@@ -330,12 +331,11 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 
     return () => {
       scrollContainer.removeEventListener('wheel', handleWheel as EventListener);
-      if (!isMobileView) {
-        scrollContainer.removeEventListener('touchstart', handleTouchStart as EventListener);
-        scrollContainer.removeEventListener('touchmove', handleTouchMove as EventListener);
-      }
+      scrollContainer.removeEventListener('touchstart', handleTouchStart as EventListener);
+      scrollContainer.removeEventListener('touchmove', handleTouchMove as EventListener);
+
       window.removeEventListener('wheel', handleWindowWheel, { capture: true });
-      if (supportsGestureEvents && !isMobileView) {
+      if (supportsGestureEvents) {
         window.removeEventListener('gesturestart', handleWindowGestureStart as EventListener, { capture: true });
         window.removeEventListener('gesturechange', handleWindowGestureChange as EventListener, { capture: true });
         window.removeEventListener('gestureend', handleWindowGestureEnd as EventListener, { capture: true });
@@ -1045,105 +1045,105 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
                 ease: "easeInOut"
               }}
             >
-            {showCommentsPanel ? (
-              <CommentsPanel
-                deckId={deckUuid}
-                slideId={currentSlide?.id}
-                getCollaborators={getCollaborators}
-                onClose={() => setShowCommentsPanel(false)}
-              />
-            ) : (
-              <>
-                <div className="sticky top-0 flex justify-between items-center p-2 border-b border-border bg-background z-10">
-                  <h3 className="text-sm font-medium">Properties</h3>
-                  <button
-                    className="p-1 rounded-sm hover:bg-accent"
-                    onClick={handleSaveAndExit}
-                    title="Save and exit"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M18 6L6 18" />
-                      <path d="M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-                <div className="overflow-y-auto flex-1">
-                  {(() => {
-                    const { selectedComponentIds } = useEditorStore.getState();
-                    if (selectedComponentIds.size > 1) {
-                      const selectedComponents = activeComponents.filter(c => selectedComponentIds.has(c.id));
-                      const componentTypes = new Set(selectedComponents.map(c => c.type));
-                      const isSameType = componentTypes.size === 1;
-                      if (isSameType) {
+              {showCommentsPanel ? (
+                <CommentsPanel
+                  deckId={deckUuid}
+                  slideId={currentSlide?.id}
+                  getCollaborators={getCollaborators}
+                  onClose={() => setShowCommentsPanel(false)}
+                />
+              ) : (
+                <>
+                  <div className="sticky top-0 flex justify-between items-center p-2 border-b border-border bg-background z-10">
+                    <h3 className="text-sm font-medium">Properties</h3>
+                    <button
+                      className="p-1 rounded-sm hover:bg-accent"
+                      onClick={handleSaveAndExit}
+                      title="Save and exit"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 6L6 18" />
+                        <path d="M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="overflow-y-auto flex-1">
+                    {(() => {
+                      const { selectedComponentIds } = useEditorStore.getState();
+                      if (selectedComponentIds.size > 1) {
+                        const selectedComponents = activeComponents.filter(c => selectedComponentIds.has(c.id));
+                        const componentTypes = new Set(selectedComponents.map(c => c.type));
+                        const isSameType = componentTypes.size === 1;
+                        if (isSameType) {
+                          return (
+                            <MultiComponentSettingsEditor
+                              components={selectedComponents}
+                              onUpdate={(componentId, updates) => {
+                                if (currentSlide) {
+                                  handleComponentUpdate(componentId, updates);
+                                }
+                              }}
+                              onDelete={() => {
+                                selectedComponents.forEach(comp => {
+                                  const isBackground = comp.type === 'Background' ||
+                                    (comp.id && comp.id.toLowerCase().includes('background'));
+                                  if (!isBackground && currentSlide) {
+                                    removeComponent(comp.id, false);
+                                  }
+                                });
+                                useEditorStore.getState().clearSelection();
+                              }}
+                            />
+                          );
+                        }
                         return (
-                          <MultiComponentSettingsEditor
-                            components={selectedComponents}
-                            onUpdate={(componentId, updates) => {
-                              if (currentSlide) {
-                                handleComponentUpdate(componentId, updates);
+                          <div className="p-4 space-y-4">
+                            <div className="text-sm font-medium">{selectedComponentIds.size} components selected (mixed types)</div>
+                            <div className="space-y-2">
+                              <button
+                                className="w-full px-3 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                                onClick={() => { if (currentSlide) { useEditorStore.getState().groupSelectedComponents(currentSlide.id); } }}
+                              >
+                                Group Selection
+                              </button>
+                              <div className="grid grid-cols-2 gap-2">
+                                <button className="px-3 py-2 text-sm bg-secondary rounded-md hover:bg-secondary/80" onClick={() => { if (currentSlide) { useEditorStore.getState().alignSelectedComponents(currentSlide.id, 'left'); } }}>Align Left</button>
+                                <button className="px-3 py-2 text-sm bg-secondary rounded-md hover:bg-secondary/80" onClick={() => { if (currentSlide) { useEditorStore.getState().alignSelectedComponents(currentSlide.id, 'right'); } }}>Align Right</button>
+                              </div>
+                              {selectedComponentIds.size >= 3 && (
+                                <button className="w-full px-3 py-2 text-sm bg-secondary rounded-md hover:bg-secondary/80" onClick={() => { if (currentSlide) { useEditorStore.getState().distributeSelectedComponents(currentSlide.id, 'horizontal'); } }}>Distribute Horizontally</button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      } else {
+                        return (
+                          <ComponentSettingsEditor
+                            component={selectedComponent}
+                            onUpdate={(updates) => {
+                              if (selectedComponent && currentSlide) {
+                                handleComponentUpdate(selectedComponent.id, updates);
                               }
                             }}
                             onDelete={() => {
-                              selectedComponents.forEach(comp => {
-                                const isBackground = comp.type === 'Background' ||
-                                  (comp.id && comp.id.toLowerCase().includes('background'));
-                                if (!isBackground && currentSlide) {
-                                  removeComponent(comp.id, false);
+                              if (selectedComponent && currentSlide) {
+                                const isBackgroundComponent = selectedComponent.type === 'Background' || (selectedComponent.id && selectedComponent.id.toLowerCase().includes('background'));
+                                if (isBackgroundComponent) {
+                                  toast({ title: "Cannot Delete Background", description: "Background components cannot be removed", duration: 2000, variant: "destructive" });
+                                  return;
                                 }
-                              });
-                              useEditorStore.getState().clearSelection();
+                                const componentId = selectedComponent.id;
+                                setSelectedComponentId(null);
+                                removeComponent(componentId, false);
+                              }
                             }}
                           />
                         );
                       }
-                      return (
-                        <div className="p-4 space-y-4">
-                          <div className="text-sm font-medium">{selectedComponentIds.size} components selected (mixed types)</div>
-                          <div className="space-y-2">
-                            <button
-                              className="w-full px-3 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-                              onClick={() => { if (currentSlide) { useEditorStore.getState().groupSelectedComponents(currentSlide.id); } }}
-                            >
-                              Group Selection
-                            </button>
-                            <div className="grid grid-cols-2 gap-2">
-                              <button className="px-3 py-2 text-sm bg-secondary rounded-md hover:bg-secondary/80" onClick={() => { if (currentSlide) { useEditorStore.getState().alignSelectedComponents(currentSlide.id, 'left'); } }}>Align Left</button>
-                              <button className="px-3 py-2 text-sm bg-secondary rounded-md hover:bg-secondary/80" onClick={() => { if (currentSlide) { useEditorStore.getState().alignSelectedComponents(currentSlide.id, 'right'); } }}>Align Right</button>
-                            </div>
-                            {selectedComponentIds.size >= 3 && (
-                              <button className="w-full px-3 py-2 text-sm bg-secondary rounded-md hover:bg-secondary/80" onClick={() => { if (currentSlide) { useEditorStore.getState().distributeSelectedComponents(currentSlide.id, 'horizontal'); } }}>Distribute Horizontally</button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    } else {
-                      return (
-                        <ComponentSettingsEditor
-                          component={selectedComponent}
-                          onUpdate={(updates) => {
-                            if (selectedComponent && currentSlide) {
-                              handleComponentUpdate(selectedComponent.id, updates);
-                            }
-                          }}
-                          onDelete={() => {
-                            if (selectedComponent && currentSlide) {
-                              const isBackgroundComponent = selectedComponent.type === 'Background' || (selectedComponent.id && selectedComponent.id.toLowerCase().includes('background'));
-                              if (isBackgroundComponent) {
-                                toast({ title: "Cannot Delete Background", description: "Background components cannot be removed", duration: 2000, variant: "destructive" });
-                                return;
-                              }
-                              const componentId = selectedComponent.id;
-                              setSelectedComponentId(null);
-                              removeComponent(componentId, false);
-                            }
-                          }}
-                        />
-                      );
-                    }
-                  })()}
-                </div>
-              </>
-            )}
+                    })()}
+                  </div>
+                </>
+              )}
             </motion.div>
           )}
         </AnimatePresence>,

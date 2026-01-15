@@ -33,11 +33,14 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData }> = React.memo(({ deck }
 
   // Use MiniSlide - it has IntersectionObserver for lazy loading
   return (
-    <MiniSlide
-      slide={firstSlide}
-      responsive={true}
-      slideSize={deck.size}
-    />
+    <div className="w-full h-full">
+      <MiniSlide
+        slide={firstSlide}
+        responsive={true}
+        slideSize={deck.size}
+        className="w-full h-full"
+      />
+    </div>
   );
 }, (prevProps, nextProps) => {
   const prevFirstSlide = (prevProps.deck as any).first_slide || prevProps.deck.slides?.[0];

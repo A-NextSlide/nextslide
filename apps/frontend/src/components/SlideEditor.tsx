@@ -45,7 +45,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 const SlideEditorContent: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const isNewDeck = searchParams.get('new') === 'true';
-  
+
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
   const [chatOpacity, setChatOpacity] = useState(1);
   const [hasSyncError, setHasSyncError] = useState(false);
@@ -68,7 +68,7 @@ const SlideEditorContent: React.FC = () => {
     }
     return null;
   });
-  
+
   // Set initial system message for new decks
   useEffect(() => {
     if (isNewDeck && deckStatus?.state === 'pending') {
@@ -140,7 +140,18 @@ const SlideEditorContent: React.FC = () => {
     if (!isMobile) return;
     try {
       setHasShownChatDragHint(localStorage.getItem(chatHintStorageKey) === '1');
-    } catch {}
+    } catch { }
+
+    // Lock body scroll on mobile to prevent overscroll
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.height = '100dvh'; // Use dynamic viewport height
+
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      document.documentElement.style.height = '';
+    };
   }, [isMobile]);
 
   useLayoutEffect(() => {
@@ -201,7 +212,7 @@ const SlideEditorContent: React.FC = () => {
     setHasShownChatDragHint(true);
     try {
       localStorage.setItem(chatHintStorageKey, '1');
-    } catch {}
+    } catch { }
   }, [hasShownChatDragHint, isMobile]);
 
   const handleChatHandlePointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
@@ -233,7 +244,7 @@ const SlideEditorContent: React.FC = () => {
   // Allow starting the tour manually via header trigger
   useEffect(() => {
     const handleStart = () => {
-      try { setIsEditing(false); } catch {}
+      try { setIsEditing(false); } catch { }
       setShowTour(true);
     };
     window.addEventListener('tour:start', handleStart as EventListener);
@@ -245,7 +256,7 @@ const SlideEditorContent: React.FC = () => {
   // Ensure chat panel is visible for the chat step
   useEffect(() => {
     const openChat = () => {
-      try { setIsChatCollapsed(false); } catch {}
+      try { setIsChatCollapsed(false); } catch { }
     };
     window.addEventListener('tour:open-chat', openChat as EventListener);
     return () => window.removeEventListener('tour:open-chat', openChat as EventListener);
@@ -254,7 +265,7 @@ const SlideEditorContent: React.FC = () => {
   // Allow forced exit from edit mode at any step
   useEffect(() => {
     const exitEdit = () => {
-      try { setIsEditing(false); } catch {}
+      try { setIsEditing(false); } catch { }
     };
     window.addEventListener('tour:exit-edit', exitEdit as EventListener);
     return () => window.removeEventListener('tour:exit-edit', exitEdit as EventListener);
@@ -277,7 +288,7 @@ const SlideEditorContent: React.FC = () => {
             isSystemEvent: true
           }
         });
-      } catch {}
+      } catch { }
     };
     window.addEventListener('deck_import_complete', handler as EventListener);
     return () => window.removeEventListener('deck_import_complete', handler as EventListener);
@@ -295,7 +306,7 @@ const SlideEditorContent: React.FC = () => {
     useState<ChatPanelProps['newSystemMessage']>(null);
   const previousDeckStatusRef = useRef<DeckStatus | null>(null);
   const processedSlideIdsRef = useRef<Set<string>>(new Set()); // Track which slides have had images applied
-  
+
   // Expose deck status globally for editor store to access
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -306,7 +317,7 @@ const SlideEditorContent: React.FC = () => {
   const { toast } = useToast();
   const { isHistoryPanelOpen } = useVersionHistory();
   const { deckId } = useParams<{ deckId: string }>();
-  
+
   // Constants for panel management
   const CHAT_MIN_SIZE = 22; // Reduced from 22 to give more space to slides
   const COLLAPSE_THRESHOLD = 3;
@@ -316,39 +327,39 @@ const SlideEditorContent: React.FC = () => {
   const updateDeckData = useDeckStore(state => state.updateDeckData);
   const updateSlide = useDeckStore(state => state.updateSlide);
   const addSlide = useDeckStore(state => state.addSlide);
-  
+
   // Remove the automatic font optimization check since it should only trigger after generation
   // and only when there's actual overflow
-  
+
   // Check deck data silently - store initialization handles loading
   useEffect(() => {
     // No need to log this on every render - store initializer handles it
   }, [deckData]);
-  
+
   // Add beforeunload handler to ensure saves complete before navigation
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       // Check if there are unsaved changes
       const deckData = useDeckStore.getState().deckData;
       const isSyncing = useDeckStore.getState().isSyncing;
-      
+
       if (deckData && deckData.uuid && isSyncing) {
         // Prevent the default dialog and show custom message
         e.preventDefault();
         e.returnValue = 'Changes are still being saved. Are you sure you want to leave?';
-        
+
         // Try to save synchronously (though this might not always complete)
         deckSyncService.saveDeck(deckData).catch(console.error);
       }
     };
-    
+
     window.addEventListener('beforeunload', handleBeforeUnload);
-    
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
-  
+
 
   // Select sync states individually to avoid object reference issues
   const isSyncing = useDeckStore((state: DeckState) => state.isSyncing);
@@ -356,25 +367,25 @@ const SlideEditorContent: React.FC = () => {
   const realtimeEnabled = true;
 
   const { currentSlideIndex, goToSlide, currentSlide } = useSlideNavigation();
-  
+
   // Guided tour fallback: force edit mode when requested (now that setIsEditing is available)
   useEffect(() => {
     const handler = () => {
-      try { setIsEditing(true); } catch {}
+      try { setIsEditing(true); } catch { }
       try {
         window.dispatchEvent(new CustomEvent('editor:force-edit-mode'));
         window.dispatchEvent(new CustomEvent('editor:toggle-edit-mode'));
-      } catch {}
+      } catch { }
     };
     window.addEventListener('tour:force-edit', handler as EventListener);
     return () => window.removeEventListener('tour:force-edit', handler as EventListener);
   }, [setIsEditing]);
-  
+
   // Function to fetch latest deck data
   const lastFetchTimeRef = useRef<number>(0);
   const fetchLatestDeck = useCallback(async () => {
     if (!deckId) return;
-    
+
     // Prevent fetching too frequently (minimum 2 seconds between fetches)
     const now = Date.now();
     if (now - lastFetchTimeRef.current < 2000) {
@@ -382,29 +393,29 @@ const SlideEditorContent: React.FC = () => {
       return;
     }
     lastFetchTimeRef.current = now;
-    
+
     try {
       console.log('[fetchLatestDeck] Fetching deck:', deckId);
       const deck = await deckSyncService.getFullDeck(deckId);
-      
+
       if (deck && deck.slides) {
         let slides = deck.slides;
-        
+
         if (Array.isArray(slides) && slides.length > 0) {
           console.log('[fetchLatestDeck] Got deck with slides:', {
             slideCount: slides.length,
             firstSlideComponents: slides[0]?.components?.length || 0
           });
-          
+
           const currentDeckData = useDeckStore.getState().deckData;
-          
+
           // Calculate total component count
           const currentComponentCount = currentDeckData.slides.reduce((sum, s) => sum + (s.components?.length || 0), 0);
           const newComponentCount = slides.reduce((sum: number, s: any) => sum + ((s as any).components?.length || 0), 0);
-          
+
           // Always update during generation to ensure we get the latest slides
           const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating';
-          
+
           if (currentComponentCount === 0 || newComponentCount > currentComponentCount || slides.length > currentDeckData.slides.length || isGenerating) {
             console.log('[fetchLatestDeck] Updating slides:', {
               currentComponents: currentComponentCount,
@@ -412,7 +423,7 @@ const SlideEditorContent: React.FC = () => {
               slideCount: slides.length,
               isGenerating
             });
-            
+
             useDeckStore.getState().updateDeckData({
               ...currentDeckData,
               uuid: currentDeckData.uuid || deckId,
@@ -425,7 +436,7 @@ const SlideEditorContent: React.FC = () => {
             // Check ALL slides, not just count difference (handles batched updates)
             const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages;
             if (autoSelectImages) {
-              const newSlides: Array<{slide: any, index: number}> = [];
+              const newSlides: Array<{ slide: any, index: number }> = [];
 
               // Find slides that haven't been processed yet
               for (let i = 0; i < slides.length; i++) {
@@ -468,12 +479,12 @@ const SlideEditorContent: React.FC = () => {
       }
     } catch (error: any) {
       console.error('[fetchLatestDeck] Error fetching deck:', error);
-      
+
       // If we get a 500 error, it might be because the deck is still being created
       // Retry once after a delay
       if (error?.status === 500 || error?.message?.includes('500')) {
         console.log('[fetchLatestDeck] Got 500 error, retrying in 2 seconds...');
-        
+
         // Update status to show error
         setDeckStatus(prev => ({
           ...(prev || {
@@ -489,7 +500,7 @@ const SlideEditorContent: React.FC = () => {
           message: 'Failed to load deck. The server is experiencing issues. Retrying...',
           error: 'Failed to load deck. The server is experiencing issues. Retrying...'
         }));
-        
+
         setTimeout(async () => {
           try {
             const deck = await deckSyncService.getFullDeck(deckId);
@@ -500,18 +511,18 @@ const SlideEditorContent: React.FC = () => {
                 uuid: currentDeckData.uuid || deckId,
                 slides: deck.slides as unknown as SlideData[]
               });
-              
+
               // Clear error status if successful
-            setDeckStatus(prev => ({
-              ...(prev as DeckStatus),
-              state: 'completed',
-              message: prev?.message || 'Deck loaded',
-              error: undefined
-            }));
+              setDeckStatus(prev => ({
+                ...(prev as DeckStatus),
+                state: 'completed',
+                message: prev?.message || 'Deck loaded',
+                error: undefined
+              }));
             }
           } catch (retryError) {
             console.error('[fetchLatestDeck] Retry failed:', retryError);
-            
+
             // Update status to show persistent error
             setDeckStatus(prev => ({
               ...(prev || {
@@ -526,7 +537,7 @@ const SlideEditorContent: React.FC = () => {
               message: 'Unable to load deck. Please refresh the page or try again later.',
               error: 'Unable to load deck. Please refresh the page or try again later.'
             }));
-            
+
             // Show error toast
             toast({
               title: 'Error Loading Deck',
@@ -554,7 +565,7 @@ const SlideEditorContent: React.FC = () => {
       }
     }
   }, [deckId]);
-  
+
   // Add event listener for programmatic navigation
   useEffect(() => {
     const handleNavigateToSlide = (event: CustomEvent) => {
@@ -564,9 +575,9 @@ const SlideEditorContent: React.FC = () => {
         goToSlide(slideIndex, { force: true });
       }
     };
-    
+
     window.addEventListener('navigate-to-slide', handleNavigateToSlide as EventListener);
-    
+
     return () => {
       window.removeEventListener('navigate-to-slide', handleNavigateToSlide as EventListener);
     };
@@ -601,13 +612,13 @@ const SlideEditorContent: React.FC = () => {
     if (!isPlaceholder) return;
     try {
       const pendingName = (typeof window !== 'undefined' && (window as any).__activeGenerationDeckName) ||
-                          (typeof window !== 'undefined' && sessionStorage.getItem('activeGenerationDeckName')) || '';
+        (typeof window !== 'undefined' && sessionStorage.getItem('activeGenerationDeckName')) || '';
       const trimmed = (pendingName || '').trim();
       if (trimmed) {
         setDeckName(trimmed);
         updateDeckData({ name: trimmed }, { skipBackend: true });
       }
-    } catch {}
+    } catch { }
   }, [isNewDeck]);
 
   const isTextEditing = useEditorSettingsStore(state => state.isTextEditing);
@@ -640,7 +651,7 @@ const SlideEditorContent: React.FC = () => {
           redo();
         }
       }
-      
+
       // Presentation mode shortcut (P key)
       if (e.key === 'p' || e.key === 'P') {
         e.preventDefault();
@@ -668,8 +679,8 @@ const SlideEditorContent: React.FC = () => {
     const newSlideIndex = deckData.slides.length;
     try {
       const defaultBackground = createComponent('Background', { color: '#000000' });
-      const newSlideData = { 
-        title: 'New Slide', 
+      const newSlideData = {
+        title: 'New Slide',
         components: [defaultBackground],
         order: newSlideIndex,
         deckId: deckId || '',
@@ -703,7 +714,7 @@ const SlideEditorContent: React.FC = () => {
     const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating';
     const opacity = Math.max(0.3, Math.min(1, (sizes[0] - COLLAPSE_THRESHOLD) / (CHAT_MIN_SIZE - COLLAPSE_THRESHOLD)));
     setChatOpacity(isGenerating ? 1 : opacity);
-    
+
     // Don't allow collapsing during generation
     if (!isGenerating && sizes[0] < COLLAPSE_THRESHOLD) {
       setIsChatCollapsed(true);
@@ -791,7 +802,7 @@ const SlideEditorContent: React.FC = () => {
         // Slide-level background image (legacy)
         const slideBgImg = (normalizedSlide as any).backgroundImage;
         if (typeof slideBgImg === 'string' && slideBgImg) return `url(${slideBgImg})`;
-      } catch {}
+      } catch { }
       return undefined as string | undefined;
     })();
 
@@ -820,7 +831,7 @@ const SlideEditorContent: React.FC = () => {
           ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
         }}
       >
-        <NavigationProvider initialSlideIndex={index} onSlideChange={() => {}}>
+        <NavigationProvider initialSlideIndex={index} onSlideChange={() => { }}>
           <EditorStateProvider initialEditingState={false} slideSizeOverride={renderSlideSize}>
             <StaticActiveSlideProvider slide={normalizedSlide}>
               <Slide
@@ -829,9 +840,9 @@ const SlideEditorContent: React.FC = () => {
                 isActive={true}
                 direction={null}
                 isEditing={false}
-                onSave={() => {}}
+                onSave={() => { }}
                 selectedComponentId={undefined}
-                onComponentSelect={() => {}}
+                onComponentSelect={() => { }}
               />
             </StaticActiveSlideProvider>
           </EditorStateProvider>
@@ -843,15 +854,15 @@ const SlideEditorContent: React.FC = () => {
   // Helper function to parse message if it's JSON
   const parseMessageIfJSON = (message: string): string => {
     if (!message) return '';
-    
+
     // Check if message looks like JSON
     if (message.trim().startsWith('{')) {
       try {
         const parsed = JSON.parse(message);
-        
+
         // Extract the actual message from the JSON object
         if (parsed.message) return parsed.message;
-        
+
         // If no message field, try to create a readable message from the JSON
         if (parsed.type === 'slide_completed') {
           return `Completed slide ${(parsed.slide_index || 0) + 1}: ${parsed.slide_title || 'Untitled'}`;
@@ -862,7 +873,7 @@ const SlideEditorContent: React.FC = () => {
         } else if (parsed.type === 'slide_started') {
           return `Generating slide ${(parsed.slide_index || 0) + 1}: ${parsed.slide_title || 'Untitled'}`;
         }
-        
+
         // If we can't create a readable message, don't show raw JSON
         return 'Processing...';
       } catch (e) {
@@ -870,10 +881,10 @@ const SlideEditorContent: React.FC = () => {
         return message;
       }
     }
-    
+
     return message;
   };
-  
+
   // Expose setDeckStatus to window for debugging
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -895,10 +906,10 @@ const SlideEditorContent: React.FC = () => {
   // Subscribe to realtime deck status updates for new decks
   useEffect(() => {
     if (!deckId || realtimeSetupRef.current) return;
-    
+
 
     realtimeSetupRef.current = true;
-    
+
     // Fetch initial deck status
     const fetchDeckStatus = async () => {
       try {
@@ -910,21 +921,21 @@ const SlideEditorContent: React.FC = () => {
             uuid: deckId
           });
         }
-        
+
         const deckData = await deckSyncService.getFullDeck(deckId);
-          
-    
-          
+
+
+
         if (deckData) {
           // Validate that the data is for the correct deck
           if (deckData.uuid !== deckId) {
             return;
           }
-          
+
           // Store slides if available
           if (deckData.slides) {
             let slides = deckData.slides;
-            
+
             // Parse slides if they're a JSON string
             if (typeof slides === 'string') {
               try {
@@ -935,7 +946,7 @@ const SlideEditorContent: React.FC = () => {
                 slides = [];
               }
             }
-            
+
             if (Array.isArray(slides)) {
               console.log('[fetchDeckStatus] Updating deck with slides:', {
                 slideCount: slides.length,
@@ -943,7 +954,7 @@ const SlideEditorContent: React.FC = () => {
               });
 
               const updatedDeckData = useDeckStore.getState().deckData;
-              
+
               // Only update if it's the same deck
               if (!updatedDeckData.uuid || updatedDeckData.uuid === deckId) {
                 useDeckStore.getState().updateDeckData({
@@ -956,38 +967,38 @@ const SlideEditorContent: React.FC = () => {
               }
             }
           }
-          
+
           // Store outline if available
           if (deckData.outline) {
-            
+
             updateDeckData({ outline: deckData.outline }, { skipBackend: true, isRealtimeUpdate: true });
           }
-          
+
           // Store notes (narrative flow) if available
           if (deckData.notes) {
             console.log('[fetchDeckStatus] Found narrative flow in deck notes');
             updateDeckData({ notes: deckData.notes }, { skipBackend: true, isRealtimeUpdate: true });
           }
-          
+
           if (deckData.status) {
 
             const initialStatus = deckData.status as DeckStatus;
             setDeckStatus(initialStatus);
-            
+
             // More detailed logging
-            
+
             // If deck is generating, show initial status in chat
             if (initialStatus.state === 'generating' || initialStatus.state === 'pending' || initialStatus.state === 'creating') {
-            setLastSystemMessageForChat({
-              message: parseMessageIfJSON(initialStatus.message) || 'Starting deck generation...',
-              metadata: {
-                stage: 'init',
-                progress: typeof initialStatus.progress === 'number' ? initialStatus.progress : 0,
-                type: 'progress',  // Mark as progress type
-                totalSlides: initialStatus.totalSlides,
-                isStreamingUpdate: true
-              }
-            });
+              setLastSystemMessageForChat({
+                message: parseMessageIfJSON(initialStatus.message) || 'Starting deck generation...',
+                metadata: {
+                  stage: 'init',
+                  progress: typeof initialStatus.progress === 'number' ? initialStatus.progress : 0,
+                  type: 'progress',  // Mark as progress type
+                  totalSlides: initialStatus.totalSlides,
+                  isStreamingUpdate: true
+                }
+              });
             }
             // If deck is already completed, just set the status (ChatPanel handles the welcome message)
             else if (initialStatus.state === 'completed' || (typeof initialStatus.progress === 'number' && initialStatus.progress >= 100)) {
@@ -1052,16 +1063,16 @@ const SlideEditorContent: React.FC = () => {
         // Silently fail - realtime will pick up status
       }
     };
-    
+
     fetchDeckStatus();
-    
+
     // Only fetch deck data on mount if it's not a new deck being generated
     const timer = setTimeout(() => {
       if (!isNewDeck) {
         fetchLatestDeck();
       }
     }, 1000);
-    
+
     // Disable local Supabase deck subscription; rely on store-level subscription for consistency
     /* BEGIN disabled local deck subscription
     const channel = supabase
@@ -1519,15 +1530,15 @@ const SlideEditorContent: React.FC = () => {
     */
     // Log initial subscription attempt status
     setRealtimeChannel(null);
-    
+
     // NOTE: Removed slide subscription as slides are now part of the decks table
     // Component streaming updates should come through the deck channel above
-    
+
     // Listen for component generation events from your backend
     // This could be via WebSocket, SSE, or another realtime channel
     // Disable component broadcast subscription locally too; rely on store updates
     const componentChannel: any = null;
-    
+
     // Cleanup subscription
     return () => {
       clearTimeout(timer);
@@ -1560,7 +1571,7 @@ const SlideEditorContent: React.FC = () => {
         const deckData = useDeckStore.getState().deckData;
         const totalSlides = deckData.slides?.length || 0;
         const isFontOptimized = deckData.data?.fontOptimized === true;
-        
+
         // Force completion status
         setDeckStatus({
           state: 'completed',
@@ -1570,7 +1581,7 @@ const SlideEditorContent: React.FC = () => {
           totalSlides: totalSlides,
           startedAt: deckStatus?.startedAt || new Date().toISOString()
         });
-        
+
         // Force completion message (guard against duplicates)
         if (previousDeckStatusRef.current?.progress !== 100) {
           setLastSystemMessageForChat({
@@ -1585,7 +1596,7 @@ const SlideEditorContent: React.FC = () => {
             }
           });
         }
-        
+
         console.log('✅ Forced completion state');
         return 'Completion message sent!';
       };
@@ -1597,19 +1608,19 @@ const SlideEditorContent: React.FC = () => {
     // Expose deck status globally for editor store to access
     if (typeof window !== 'undefined') {
       (window as any).__deckStatus = deckStatus;
-      
+
       // Also expose a way to get current deck data for debugging
       (window as any).__getCurrentDeckData = () => {
         return useDeckStore.getState().deckData;
       };
     }
-    
+
     const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating';
     if (isGenerating && isChatCollapsed) {
       setIsChatCollapsed(false);
       setChatOpacity(1);
     }
-    
+
   }, [deckStatus?.state, isChatCollapsed]);
 
   // Debug: Log slide status changes (only once per deck load)
@@ -1618,7 +1629,7 @@ const SlideEditorContent: React.FC = () => {
       (window as any).__debugLoggedDeck = deckId;
     }
   }, [deckData.slides.length, deckId]);
-  
+
   // Font optimization handler
   const handleSlideOptimization = useCallback(async (slide: SlideData) => {
     // Individual slide optimization removed - handled by manual button
@@ -1628,7 +1639,7 @@ const SlideEditorContent: React.FC = () => {
   useEffect(() => {
     const slideCount = deckData.slides?.length || 0;
     const hasComponents = deckData.slides?.some(s => s.components?.length > 0);
-    
+
     // Only log if there's a meaningful change
     if (slideCount > 0 || deckStatus?.state === 'completed') {
       console.log('[SlideEditor] Deck state update:', {
@@ -1637,7 +1648,7 @@ const SlideEditorContent: React.FC = () => {
         hasComponents,
         deckStatus: deckStatus?.state
       });
-      
+
       // Debug: Check what images are in the slides
       if (slideCount > 0 && deckStatus?.state === 'completed') {
         debugSlideImages(deckData.slides);
@@ -1666,9 +1677,9 @@ const SlideEditorContent: React.FC = () => {
         try {
           localStorage.setItem(shownKey, '1');
           delete (window as any).__pendingImportMessage;
-        } catch {}
+        } catch { }
       }
-    } catch {}
+    } catch { }
   }, [deckData?.uuid]);
 
   return (
@@ -1690,7 +1701,7 @@ const SlideEditorContent: React.FC = () => {
         rightSideComponents={
           <div className="flex items-center gap-1.5">
             {/* Hidden trigger; opened via header actions menu */}
-            <DeckNotes 
+            <DeckNotes
               deckId={deckId || deckData.uuid || ''}
               isGenerating={deckStatus?.state === 'generating' || deckStatus?.state === 'creating'}
               hideTrigger
@@ -1703,10 +1714,10 @@ const SlideEditorContent: React.FC = () => {
           </div>
         }
       />
-      
+
       {/* Show generation progress if generating */}
       {/* Removed DeckGenerationProgress - using orange animated loading only */}
-      
+
       <div className="flex-1 overflow-hidden pt-14">
         {isMobile ? (
           <div
@@ -1716,9 +1727,9 @@ const SlideEditorContent: React.FC = () => {
           >
             <div className="absolute inset-0 flex flex-col">
               <div className="flex-1 min-h-0 p-2" style={{ paddingBottom: `${minMobileChatHeight}px` }}>
-                <DeckPanel 
-                  deckStatus={deckStatus} 
-                  isNewDeck={isNewDeck} 
+                <DeckPanel
+                  deckStatus={deckStatus}
+                  isNewDeck={isNewDeck}
                   slides={deckData.slides}
                   currentSlideIndex={currentSlideIndex}
                   hideThumbnails
@@ -1789,9 +1800,9 @@ const SlideEditorContent: React.FC = () => {
                 />
               </div>
             </ResizablePanel>
-            
+
             <ResizableHandle withHandle />
-            
+
             <ResizablePanel
               defaultSize={100 - CHAT_MIN_SIZE}
               minSize={60}
@@ -1799,16 +1810,16 @@ const SlideEditorContent: React.FC = () => {
               style={{ minWidth: 0 }}
               collapsible={false}
             >
-              <DeckPanel 
-                deckStatus={deckStatus} 
-                isNewDeck={isNewDeck} 
+              <DeckPanel
+                deckStatus={deckStatus}
+                isNewDeck={isNewDeck}
                 slides={deckData.slides}
                 currentSlideIndex={currentSlideIndex}
               />
-              
-              <div 
+
+              <div
                 className="absolute top-0 right-0 bottom-0 z-10 bg-background border-l border-border"
-                style={{ 
+                style={{
                   width: '350px',
                   transform: isHistoryPanelOpen ? 'translateX(0)' : 'translateX(100%)',
                   opacity: isHistoryPanelOpen ? 1 : 0,
@@ -1818,7 +1829,7 @@ const SlideEditorContent: React.FC = () => {
               >
                 {isHistoryPanelOpen && <VersionHistoryPanel />}
               </div>
-              
+
               {/* Presentation Mode Overlay */}
               {deckData.slides && deckData.slides.length > 0 && (
                 <PresentationMode
@@ -1833,7 +1844,7 @@ const SlideEditorContent: React.FC = () => {
           </ResizablePanelGroup>
         )}
       </div>
-      
+
       {/* Quick tip bubble */}
       <QuickTipBubble show={showQuickTip} />
 
@@ -1844,11 +1855,11 @@ const SlideEditorContent: React.FC = () => {
         showAiHints={shouldShowAiHints}
         onAction={(action) => {
           if (action === 'enterEditMode') {
-            try { setIsEditing(true); } catch {}
+            try { setIsEditing(true); } catch { }
             try {
               window.dispatchEvent(new CustomEvent('editor:force-edit-mode'));
               window.dispatchEvent(new CustomEvent('editor:toggle-edit-mode'));
-            } catch {}
+            } catch { }
           }
           if (action === 'openTheme') {
             // No-op here; clicking the theme button is already handled in the tour
@@ -1916,7 +1927,7 @@ const SlideEditor: React.FC = () => {
   const AUTO_SYNC_INTERVAL = 30000;
 
   const setAutoSaveInterval = useDeckStore(state => state.setAutoSaveInterval);
-  
+
   // Reset document styles when editor loads
   // This fixes the layout issue when navigating from DeckList
   useEffect(() => {
@@ -1929,7 +1940,7 @@ const SlideEditor: React.FC = () => {
     document.body.style.overflow = '';
     document.body.style.width = '';
     document.body.style.height = '';
-    
+
     // Cleanup function - don't set fixed positioning on cleanup
     // Let each page manage its own styles
     return () => {
@@ -1937,39 +1948,39 @@ const SlideEditor: React.FC = () => {
       sessionStorage.setItem('lastEditedDeckId', 'true');
     };
   }, []);
-  
+
   // Check if this is a newly generated deck
   const isNewDeck = searchParams.get('new') === 'true';
-  
+
   // Delay collaboration for new decks to avoid connection errors
   useEffect(() => {
     if (isNewDeck) {
 
       setCollaborationEnabled(false);
-      
+
       // Enable collaboration after a delay
       const timer = setTimeout(() => {
 
         setCollaborationEnabled(true);
       }, 10000); // 10 second delay
-      
+
       return () => clearTimeout(timer);
     }
   }, [isNewDeck]);
 
   useEffect(() => {
     setAutoSaveInterval(300000);
-    
+
     return () => setAutoSaveInterval(null);
   }, [setAutoSaveInterval]);
-  
+
   useEffect(() => {
     const handleSlideDoubleClick = () => {
       window.dispatchEvent(new CustomEvent('editor:force-edit-mode'));
     };
-    
+
     window.addEventListener('slide:doubleclick', handleSlideDoubleClick);
-    
+
     return () => {
       window.removeEventListener('slide:doubleclick', handleSlideDoubleClick);
     };
@@ -1985,7 +1996,7 @@ const SlideEditor: React.FC = () => {
         window.dispatchEvent(new CustomEvent('editor:edit-mode-changed', { detail: { isEditing } }));
         // Nudge UI to refresh header if needed
         window.dispatchEvent(new CustomEvent('deck:refresh-ui'));
-      } catch {}
+      } catch { }
     };
     window.addEventListener('deck_generation_complete', handleDeckGenerationComplete);
     return () => {
@@ -2013,8 +2024,8 @@ const SlideEditor: React.FC = () => {
     useRealtimeSubscription: true
   };
 
-  const handleSlideChange = (index: number) => {};
-  
+  const handleSlideChange = (index: number) => { };
+
   const handleEditingChange = (editing: boolean) => {
     setIsEditing(editing);
   };
@@ -2029,7 +2040,7 @@ const SlideEditor: React.FC = () => {
   return (
     <CollaborationWrapper enabled={collaborationEnabled} showPanel={false}>
       <NavigationProvider initialSlideIndex={0} onSlideChange={handleSlideChange}>
-        <EditorStateProvider 
+        <EditorStateProvider
           syncConfig={adjustedSyncConfig}
           initialEditingState={isEditing}
           onEditingChange={handleEditingChange}

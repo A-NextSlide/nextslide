@@ -120,21 +120,39 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       const el = containerRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      if (rect.width > 10 && rect.height > 10) {
+      // Expanded safety check: ensure strictly positive dimensions
+      if (rect.width > 0 && rect.height > 0) {
         setContainerDims({ width: rect.width, height: rect.height });
       }
     };
 
+    // Initial measure
     measure();
 
     let resizeObserver: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined') {
-      resizeObserver = new ResizeObserver(measure);
+      resizeObserver = new ResizeObserver((entries) => {
+        // Use the first entry's contentRect if available for more immediate/accurate updates
+        const entry = entries[0];
+        if (entry) {
+          const { width, height } = entry.contentRect;
+          if (width > 0 && height > 0) {
+            setContainerDims({ width, height });
+            return;
+          }
+        }
+        // Fallback to getBoundingClientRect
+        measure();
+      });
       resizeObserver.observe(containerRef.current);
     }
 
+    // Additional fallback for mobile layout shifts (e.g. address bar toggling)
+    window.addEventListener('resize', measure);
+
     return () => {
       resizeObserver?.disconnect();
+      window.removeEventListener('resize', measure);
     };
   }, []);
 
@@ -146,9 +164,15 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   );
 
   // Calculate dimensions and scale
-  const targetWidth = !responsive && fixedWidth ? fixedWidth : containerDims?.width || 160;
-  const targetHeight = !responsive && fixedHeight ? fixedHeight : containerDims?.height || 90;
-  const scale = Math.max(0.01, Math.min(targetWidth / baseWidth, targetHeight / baseHeight));
+  // Default to a reasonable size if no dims yet to prevent layout thrashing
+  const targetWidth = !responsive && fixedWidth ? fixedWidth : (containerDims?.width || 200);
+  const targetHeight = !responsive && fixedHeight ? fixedHeight : (containerDims?.height || 112);
+
+  // Safe scale calculation to avoid Infinity/NaN
+  const scale = Math.min(
+    targetWidth / Math.max(1, baseWidth),
+    targetHeight / Math.max(1, baseHeight)
+  );
 
   // Wait for container dimensions in responsive mode
   if (responsive && !containerDims) {
