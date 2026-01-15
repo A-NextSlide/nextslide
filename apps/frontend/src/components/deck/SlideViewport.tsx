@@ -75,7 +75,12 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   const enterPresentation = usePresentationStore(state => state.enterPresentation);
   const viewportRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
-  const { width: slideWidth, height: slideHeight } = useSlideViewportSize(viewportRef);
+  const currentSlide = slides[currentSlideIndex];
+  // Reserve UI chrome height so the slide itself fits without forcing scroll (especially on mobile)
+  const reservedTopBarHeight = currentSlide && (!isMobileView || isEditing) ? 48 : 0;
+  const reservedBottomBarHeight = slides.length > 0 ? 56 : 0;
+  const reservedChromeHeight = reservedTopBarHeight + reservedBottomBarHeight;
+  const { width: slideWidth, height: slideHeight } = useSlideViewportSize(viewportRef, { reservedHeight: reservedChromeHeight });
 
   // Add ref for the scrollable container
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -88,7 +93,6 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   // Get editing capability from editor hook
   const { isEditing: isEditingMode, setIsEditing } = useEditor();
 
-  const currentSlide = slides[currentSlideIndex];
   const deckUuid = useDeckStore(state => state.deckData?.uuid || '');
 
   // Check if current slide exists and has any components
@@ -131,9 +135,9 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   const scaledSlideWidth = Math.max(1, Math.round(slideWidth * zoomScale));
   const scaledSlideHeight = Math.max(1, Math.round(slideHeight * zoomScale));
   // Controls bar is hidden on mobile when not editing
-  const topBarHeight = currentSlide && (!isMobileView || isEditing) ? 48 : 0;
-  const bottomBarHeight = slides.length > 0 ? 56 : 0;
-  const chromeHeight = topBarHeight + bottomBarHeight;
+  const topBarHeight = reservedTopBarHeight;
+  const bottomBarHeight = reservedBottomBarHeight;
+  const chromeHeight = reservedChromeHeight;
   const canvasHeight = Math.max(1, scaledSlideHeight + chromeHeight);
 
   const [showCommentsPanel, setShowCommentsPanel] = useState(false);
@@ -361,6 +365,9 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     const handleMessage = (event: MessageEvent) => {
       const data = event.data as any;
       if (!data || data.source !== 'ns-slide-zoom') return;
+      // IMPORTANT: ignore zoom relays on mobile; they can trigger rapid zoom updates + huge relayouts
+      // (especially when interacting with iframed components), which has been crashing the app.
+      if (isMobileView) return;
 
       const anchor = (typeof data.clientX === 'number' && typeof data.clientY === 'number')
         ? getZoomAnchor(data.clientX, data.clientY)
@@ -379,7 +386,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [getViewportCenter, getZoomAnchor, normalizeWheelDelta, zoomTo]);
+  }, [getViewportCenter, getZoomAnchor, isMobileView, normalizeWheelDelta, zoomTo]);
 
   // Add keyboard shortcuts for zooming
   React.useEffect(() => {
@@ -868,13 +875,13 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       {/* Mobile Present Button - floating top right */}
       {isMobileView && !isEditing && currentSlide && slides.length > 0 && (
         <button
-          className="fixed top-16 right-3 z-50 px-3 py-1.5 bg-[#FF4301] hover:bg-[#E63901] active:bg-[#D62F00] text-white rounded-md flex items-center gap-1.5 text-xs font-semibold shadow-lg transition-colors"
+          className="fixed top-[calc(env(safe-area-inset-top)+56px)] right-2 z-50 px-2 py-1 bg-[#FF4301] hover:bg-[#E63901] active:bg-[#D62F00] text-white rounded-md flex items-center gap-1 text-[11px] font-semibold shadow-lg transition-colors"
           style={{
             fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
           }}
           onClick={enterPresentation}
         >
-          <Presentation size={14} />
+          <Presentation size={12} />
           Present
         </button>
       )}
@@ -882,8 +889,9 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       {/* Scrollable Container */}
       <div
         ref={scrollContainerRef}
-        className="absolute inset-0 overflow-auto"
+        className="absolute inset-0"
         style={{
+          overflow: zoomLevel > 100 ? 'auto' : 'hidden',
           scrollbarWidth: zoomLevel > 100 ? 'thin' : 'none',
           scrollbarColor: 'rgba(155, 155, 155, 0.5) transparent',
           overscrollBehavior: 'contain',
@@ -1020,8 +1028,8 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
               style={{
                 zIndex: 50000, // Above selection overlay (40000) but below modals/popovers
                 width: isMobileView ? '100%' : '280px',
-                height: isMobileView ? '50vh' : '74vh',
-                maxHeight: isMobileView ? '50vh' : '635px',
+                height: isMobileView ? '42vh' : '74vh',
+                maxHeight: isMobileView ? '42vh' : '635px',
                 display: 'flex',
                 flexDirection: 'column',
                 backgroundColor: 'var(--background)',

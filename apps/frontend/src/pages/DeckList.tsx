@@ -41,7 +41,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import GoogleSlidesImportModal from '@/components/Import/GoogleSlidesImportModal';
 import { useOutlineManager } from '@/hooks/useOutlineManager';
 import ChatPanel from '@/components/ChatPanel';
-import { DeckOutline as FrontendDeckOutline, SlideOutline as FrontendSlideOutline, TaggedMedia as FrontendTaggedMedia, DiscardedFile as FrontendDiscardedFile, ColorConfig } from '@/types/SlideTypes';
+import { DeckOutline as FrontendDeckOutline, SlideOutline as FrontendSlideOutline, TaggedMedia as FrontendTaggedMedia, DiscardedFile as FrontendDiscardedFile, ColorConfig, AssignedVideo } from '@/types/SlideTypes';
 import OutlineHeader from '@/components/outline/OutlineHeader';
 import BrandWordmark from '@/components/common/BrandWordmark';
 import { useSlideResearch } from '@/hooks/useSlideResearch';
@@ -103,7 +103,7 @@ const normalizeUploadedMedia = (
       content: item.content,
       previewUrl: item.previewUrl || item.url,
       interpretation: undefined,
-      status: 'processed',
+      status: 'processed' as const,
       metadata: {
         originalType: item.type,
         size: item.size,
@@ -643,6 +643,8 @@ const DeckList: React.FC = () => {
       subtitle?: string;
       content?: string;
       key_points?: string[];
+      assignedVideo?: AssignedVideo;
+      taggedMedia?: FrontendTaggedMedia[];
     }>;
     narrative?: string;
     scrapedVideos?: Array<{
@@ -689,6 +691,8 @@ const DeckList: React.FC = () => {
       subtitle?: string;
       content?: string;
       key_points?: string[];
+      assignedVideo?: AssignedVideo;
+      taggedMedia?: FrontendTaggedMedia[];
     }>;
     narrative?: string;
     // Videos scraped from website URLs for embedding in the deck
@@ -1289,13 +1293,9 @@ const DeckList: React.FC = () => {
       // Don't abort deck generation on cleanup - let it complete
       // The abort should only happen on explicit error or user cancellation
 
-      // Reset to fixed positioning when leaving the page (for editor)
-      if (typeof document !== 'undefined') {
-        document.documentElement.style.position = 'fixed';
-        document.documentElement.style.overflow = 'hidden';
-        document.body.style.position = 'fixed';
-        document.body.style.overflow = 'hidden';
-      }
+      // IMPORTANT: do NOT force html/body to `position: fixed` on unmount.
+      // This has been causing mobile layout to recalc to tiny (top-left) and crash.
+      // Each page (DeckList / SlideEditor) should manage its own scroll behavior.
     };
   }, []); // Empty dependency array - only run on mount
 
@@ -1303,23 +1303,19 @@ const DeckList: React.FC = () => {
     if (typeof document === 'undefined') return;
 
     if (isMobileView) {
-      document.documentElement.style.position = 'fixed';
+      // On mobile, just prevent background scrolling while the DeckList is open.
+      // Avoid `position: fixed` which is brittle on iOS and can break layout sizing.
       document.documentElement.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
       document.body.style.overflow = 'hidden';
       document.body.style.width = '100%';
     } else {
-      document.documentElement.style.position = '';
       document.documentElement.style.overflow = '';
-      document.body.style.position = '';
       document.body.style.overflow = '';
       document.body.style.width = '';
     }
 
     return () => {
-      document.documentElement.style.position = '';
       document.documentElement.style.overflow = '';
-      document.body.style.position = '';
       document.body.style.overflow = '';
       document.body.style.width = '';
     };

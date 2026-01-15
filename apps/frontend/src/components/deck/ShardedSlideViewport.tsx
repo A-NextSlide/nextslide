@@ -35,6 +35,7 @@ import ZoomIndicator from './ZoomIndicator';
 import { clampZoom, ZOOM_LIMITS, ZOOM_STEP } from '@/utils/zoom';
 import { useSlideViewportSize } from './viewport/useSlideViewportSize';
 import { BROWSER } from '@/utils/browser';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface ShardedSlideViewportProps {
   slides: SlideData[];
@@ -67,6 +68,7 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
   const viewportRef = useRef<HTMLDivElement>(null);
   const { width: slideWidth, height: slideHeight } = useSlideViewportSize(viewportRef);
   const { toast } = useToast();
+  const isMobileView = useIsMobile();
   
   // Track visible slides for document sharding
   const [visibleSlideIds, setVisibleSlideIds] = useState<string[]>([]);
@@ -129,6 +131,8 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
   React.useEffect(() => {
     const slideContainer = viewportRef.current;
     if (!slideContainer) return;
+    // Mobile: skip custom zoom handlers (pinch/gesture/wheel relays). Native browser zoom is safer here.
+    if (isMobileView) return;
 
     let initialDistance = 0;
     let initialZoom = zoomLevelRef.current;
@@ -253,7 +257,7 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
         window.removeEventListener('gestureend', handleWindowGestureEnd as EventListener, { capture: true });
       }
     };
-  }, [applyZoom, normalizeWheelDelta, supportsGestureEvents, viewportRef]);
+  }, [applyZoom, isMobileView, normalizeWheelDelta, supportsGestureEvents, viewportRef]);
   
   // Add keyboard shortcuts for zooming
   React.useEffect(() => {
@@ -288,6 +292,7 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
     const handleMessage = (event: MessageEvent) => {
       const data = event.data as any;
       if (!data || data.source !== 'ns-slide-zoom') return;
+      if (isMobileView) return;
 
       if (data.method === 'wheel' && typeof data.deltaY === 'number') {
         const deltaY = normalizeWheelDelta(data.deltaY, data.deltaMode);
@@ -302,7 +307,7 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [applyZoom, normalizeWheelDelta]);
+  }, [applyZoom, isMobileView, normalizeWheelDelta]);
   
   // Cursor tracking and visible slides integration is now handled by the cursor components directly
   

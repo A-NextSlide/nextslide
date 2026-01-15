@@ -112,53 +112,77 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   // Extract background style
   const backgroundStyle = useMemo(() => extractBackgroundStyle(normalizedSlide), [normalizedSlide]);
 
+  // Constants for stability
+  const STABILITY_THRESHOLD = 100; // Only "lock" dimensions above this size
+
   // Measure container for responsive mode
   useEffect(() => {
     if (!containerRef.current) return;
+
+    // Track if we have ever had a "stable" size (reasonable resolution)
+    let isStable = false;
 
     const measure = () => {
       const el = containerRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
+
       // Expanded safety check: ensure strictly positive dimensions
       if (rect.width > 0 && rect.height > 0) {
+        // If we already had a stable size, ignore very small "glitch" sizes (e.g. < STABILITY_THRESHOLD) 
+        // that might happen during mobile layout shifts (address bar, etc)
+        if (isStable && (rect.width < STABILITY_THRESHOLD || rect.height < STABILITY_THRESHOLD)) {
+          return;
+        }
+
+        if (rect.width >= STABILITY_THRESHOLD && rect.height >= STABILITY_THRESHOLD) {
+          isStable = true;
+        }
+
         setContainerDims({ width: rect.width, height: rect.height });
       }
     };
 
-    // Initial measure
-    measure();
+    // Initial measure with a small delay to allow mobile layout to settle
+    const initialTimer = setTimeout(() => {
+      measure();
+    }, 100);
 
     let resizeObserver: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver((entries) => {
-        // Use the first entry's contentRect if available for more immediate/accurate updates
         const entry = entries[0];
         if (entry) {
           const { width, height } = entry.contentRect;
+          // Stability check: ignore zero/tiny sizes if we already have a stable size
           if (width > 0 && height > 0) {
+            if (isStable && (width < STABILITY_THRESHOLD || height < STABILITY_THRESHOLD)) return;
+
+            if (width >= STABILITY_THRESHOLD && height >= STABILITY_THRESHOLD) {
+              isStable = true;
+            }
             setContainerDims({ width, height });
             return;
           }
         }
-        // Fallback to getBoundingClientRect
         measure();
       });
       resizeObserver.observe(containerRef.current);
     }
 
-    // Additional fallback for mobile layout shifts (e.g. address bar toggling)
-    window.addEventListener('resize', measure);
+    const handleWindowResize = () => measure();
+    window.addEventListener('resize', handleWindowResize);
 
     return () => {
+      clearTimeout(initialTimer);
       resizeObserver?.disconnect();
-      window.removeEventListener('resize', measure);
+      window.removeEventListener('resize', handleWindowResize);
     };
   }, []);
 
   // Common container classes
   const containerClasses = cn(
-    "relative overflow-hidden rounded cursor-pointer w-full h-full",
+    "relative overflow-hidden rounded cursor-pointer w-full h-full flex items-center justify-center", // Added flex centering
     "hover:ring-2 hover:ring-primary/50",
     className
   );
@@ -220,12 +244,13 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     >
       <div
         style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
+          position: 'relative', // Changed to relative for flex centering from parent
           width: targetWidth,
           height: targetHeight,
-          overflow: 'hidden'
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
         }}
       >
         <div
@@ -233,8 +258,9 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
             width: baseWidth,
             height: baseHeight,
             transform: `scale(${scale})`,
-            transformOrigin: 'top left',
-            pointerEvents: 'none'
+            transformOrigin: 'center center', // Changed to center center
+            pointerEvents: 'none',
+            flexShrink: 0 // Prevent flex from squishing the scaled content
           }}
         >
           <NavigationProvider initialSlideIndex={0}>

@@ -8,7 +8,19 @@ const getViewportFallback = () => {
   return { width: window.innerWidth || FALLBACK_VIEWPORT.width, height: window.innerHeight || FALLBACK_VIEWPORT.height };
 };
 
-const computeSlideSize = (viewportWidth: number, viewportHeight: number) => {
+type SlideViewportSizeOptions = {
+  /**
+   * Extra "chrome" height to reserve for UI (toolbars/control bars) so the slide
+   * itself can still fit without forcing scroll.
+   */
+  reservedHeight?: number;
+  /**
+   * Extra width to reserve for side panels, etc.
+   */
+  reservedWidth?: number;
+};
+
+const computeSlideSize = (viewportWidth: number, viewportHeight: number, options?: SlideViewportSizeOptions) => {
   const safeViewport = {
     width: viewportWidth > 0 ? viewportWidth : getViewportFallback().width,
     height: viewportHeight > 0 ? viewportHeight : getViewportFallback().height
@@ -20,8 +32,11 @@ const computeSlideSize = (viewportWidth: number, viewportHeight: number) => {
   const verticalPadding = isCompact ? 24 : 120;
   const horizontalPadding = isCompact ? 12 : 64;
 
-  const availableWidth = Math.max(0, safeViewport.width - horizontalPadding);
-  const availableHeight = Math.max(0, safeViewport.height - verticalPadding);
+  const reservedWidth = Math.max(0, Math.floor(options?.reservedWidth ?? 0));
+  const reservedHeight = Math.max(0, Math.floor(options?.reservedHeight ?? 0));
+
+  const availableWidth = Math.max(0, safeViewport.width - horizontalPadding - reservedWidth);
+  const availableHeight = Math.max(0, safeViewport.height - verticalPadding - reservedHeight);
 
   const heightConstrainedWidth = availableHeight * aspectRatio;
   const width = Math.max(1, Math.min(availableWidth, heightConstrainedWidth));
@@ -36,7 +51,7 @@ const computeSlideSize = (viewportWidth: number, viewportHeight: number) => {
   };
 };
 
-export const useSlideViewportSize = (viewportRef: RefObject<HTMLElement>) => {
+export const useSlideViewportSize = (viewportRef: RefObject<HTMLElement>, options?: SlideViewportSizeOptions) => {
   const [viewportSize, setViewportSize] = useState(getViewportFallback());
 
   useEffect(() => {
@@ -72,8 +87,8 @@ export const useSlideViewportSize = (viewportRef: RefObject<HTMLElement>) => {
   }, [viewportRef]);
 
   return useMemo(
-    () => computeSlideSize(viewportSize.width, viewportSize.height),
-    [viewportSize.width, viewportSize.height]
+    () => computeSlideSize(viewportSize.width, viewportSize.height, options),
+    [viewportSize.width, viewportSize.height, options?.reservedHeight, options?.reservedWidth]
   );
 };
 
