@@ -97,6 +97,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerDims, setContainerDims] = useState<{ width: number; height: number } | null>(null);
+  const slideId = slide?.id || 'unknown';
 
   // Normalize slide data
   const normalizedResult = useMemo(() => {
@@ -134,12 +135,14 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       const el = containerRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
+      console.log('[MiniSlide] measure():', { slideId, width: rect.width, height: rect.height, isStable });
 
       // Expanded safety check: ensure strictly positive dimensions
       if (rect.width > 0 && rect.height > 0) {
-        // If we already had a stable size, ignore very small "glitch" sizes (e.g. < STABILITY_THRESHOLD) 
+        // If we already had a stable size, ignore very small "glitch" sizes (e.g. < STABILITY_THRESHOLD)
         // that might happen during mobile layout shifts (address bar, etc)
         if (isStable && (rect.width < STABILITY_THRESHOLD || rect.height < STABILITY_THRESHOLD)) {
+          console.log('[MiniSlide] Skipping small measurement (isStable)');
           return;
         }
 
@@ -147,6 +150,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
           isStable = true;
         }
 
+        console.log('[MiniSlide] Setting containerDims:', { width: rect.width, height: rect.height });
         setContainerDims({ width: rect.width, height: rect.height });
       }
     };
@@ -205,6 +209,20 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     targetWidth / Math.max(1, baseWidth),
     targetHeight / Math.max(1, baseHeight)
   );
+
+  console.log('[MiniSlide] Render:', {
+    slideId,
+    renderMode,
+    containerDims,
+    targetWidth,
+    targetHeight,
+    baseWidth,
+    baseHeight,
+    scale,
+    responsive,
+    fixedWidth,
+    fixedHeight
+  });
 
   // Lightweight background-only rendering (used for mobile deck list stability/perf)
   if (renderMode === 'background') {
