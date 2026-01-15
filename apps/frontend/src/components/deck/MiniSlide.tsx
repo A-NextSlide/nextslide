@@ -261,6 +261,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   }
 
   // Full slide render with providers and scaling
+  // Use absolute positioning with top-left transform origin for correct scaling
   return (
     <div
       ref={containerRef}
@@ -270,30 +271,22 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     >
       <div
         style={{
-          position: 'relative', // Changed to relative for flex centering from parent
+          position: 'relative',
           width: targetWidth,
           height: targetHeight,
           overflow: 'hidden',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
         }}
       >
         <div
           style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
             width: baseWidth,
             height: baseHeight,
-            // FORCE dimensions to prevent flex/grid parent from squishing us before the scale is applied.
-            // This is critical on mobile where space is constrained.
-            minWidth: baseWidth,
-            minHeight: baseHeight,
-            maxWidth: 'none',
-            maxHeight: 'none',
             transform: `scale(${scale})`,
-            transformOrigin: 'center center', // Changed to center center
-            position: 'relative', // IMPORTANT: Slide renders absolutely; it needs a relative parent at base dimensions
+            transformOrigin: 'top left', // Scale from top-left so visual size = targetWidth x targetHeight
             pointerEvents: 'none',
-            flexShrink: 0 // Prevent flex from squishing the scaled content
           }}
         >
           <NavigationProvider initialSlideIndex={0}>
