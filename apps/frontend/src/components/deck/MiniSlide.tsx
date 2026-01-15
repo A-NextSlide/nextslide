@@ -219,9 +219,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     baseWidth,
     baseHeight,
     scale,
-    responsive,
-    fixedWidth,
-    fixedHeight
+    hasValidDimensions: !!(containerDims && containerDims.width > 100 && containerDims.height > 50),
   });
 
   // Lightweight background-only rendering (used for mobile deck list stability/perf)
@@ -260,6 +258,10 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     );
   }
 
+  // Don't render full slide content until we have valid container dimensions
+  // This prevents the tiny initial render from getting "stuck" due to memoization
+  const hasValidDimensions = containerDims && containerDims.width > 100 && containerDims.height > 50;
+
   // Full slide render with providers and scaling
   // Use absolute positioning with top-left transform origin for correct scaling
   return (
@@ -269,50 +271,53 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       onClick={onClick}
       style={backgroundStyle}
     >
-      <div
-        style={{
-          position: 'relative',
-          width: targetWidth,
-          height: targetHeight,
-          overflow: 'hidden',
-        }}
-      >
+      {hasValidDimensions && (
         <div
           style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: baseWidth,
-            height: baseHeight,
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left', // Scale from top-left so visual size = targetWidth x targetHeight
-            pointerEvents: 'none',
+            position: 'relative',
+            width: targetWidth,
+            height: targetHeight,
+            overflow: 'hidden',
           }}
         >
-          <NavigationProvider initialSlideIndex={0}>
-            <EditorStateProvider
-              syncConfig={{ enabled: false, useRealtimeSubscription: false }}
-              initialEditingState={false}
-              slideSizeOverride={resolvedSlideSize}
-            >
-              <StaticActiveSlideProvider slide={safeSlide}>
-                <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
-                  <Slide
-                    slide={safeSlide}
-                    isActive={true}
-                    isEditing={false}
-                    isThumbnail={true}
-                    style={{
-                      width: baseWidth,
-                      height: baseHeight
-                    }}
-                  />
-                </ThumbnailRenderProvider>
-              </StaticActiveSlideProvider>
-            </EditorStateProvider>
-          </NavigationProvider>
+          <div
+            key={`scale-${Math.round(scale * 1000)}`} // Force re-render when scale changes significantly
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: baseWidth,
+              height: baseHeight,
+              transform: `scale(${scale})`,
+              transformOrigin: 'top left',
+              pointerEvents: 'none',
+            }}
+          >
+            <NavigationProvider initialSlideIndex={0}>
+              <EditorStateProvider
+                syncConfig={{ enabled: false, useRealtimeSubscription: false }}
+                initialEditingState={false}
+                slideSizeOverride={resolvedSlideSize}
+              >
+                <StaticActiveSlideProvider slide={safeSlide}>
+                  <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
+                    <Slide
+                      slide={safeSlide}
+                      isActive={true}
+                      isEditing={false}
+                      isThumbnail={true}
+                      style={{
+                        width: baseWidth,
+                        height: baseHeight
+                      }}
+                    />
+                  </ThumbnailRenderProvider>
+                </StaticActiveSlideProvider>
+              </EditorStateProvider>
+            </NavigationProvider>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
