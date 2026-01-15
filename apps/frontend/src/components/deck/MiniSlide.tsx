@@ -285,10 +285,12 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
               position: 'relative',
               width: `${baseWidth}px`,
               height: `${baseHeight}px`,
+              WebkitTransform: `scale(${scale})`,
               transform: `scale(${scale})`,
+              WebkitTransformOrigin: 'top left',
               transformOrigin: 'top left',
               pointerEvents: 'none',
-            }}
+            } as React.CSSProperties}
           >
             {/* Force the slide to fill this exact container */}
             <div
