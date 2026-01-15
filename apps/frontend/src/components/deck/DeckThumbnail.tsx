@@ -51,7 +51,8 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'b
   return (
     prevProps.deck.uuid === nextProps.deck.uuid &&
     prevFirstSlide?.id === nextFirstSlide?.id &&
-    prevFirstSlide?.lastModified === nextFirstSlide?.lastModified
+    prevFirstSlide?.lastModified === nextFirstSlide?.lastModified &&
+    prevProps.renderMode === nextProps.renderMode
   );
 });
 

@@ -215,6 +215,19 @@ export const VirtualizedDeckGrid = React.memo(({
           if (entry.isIntersecting) {
             // Once visible, always rendered
             setRenderedDecks((prev) => new Set(prev).add(index));
+            // Track visibility for progressive mobile upgrade
+            setVisibleDecks((prev) => {
+              const next = new Set(prev);
+              next.add(index);
+              return next;
+            });
+          } else {
+            // Track when items leave viewport (for mobile memory management)
+            setVisibleDecks((prev) => {
+              const next = new Set(prev);
+              next.delete(index);
+              return next;
+            });
           }
         });
       },

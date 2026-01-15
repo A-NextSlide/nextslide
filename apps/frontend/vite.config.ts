@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    allowedHosts: true,
     proxy: {
       '/api/auth': {
         target: 'http://localhost:9090',
