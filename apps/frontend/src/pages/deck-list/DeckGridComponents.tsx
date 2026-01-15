@@ -113,6 +113,7 @@ export const VirtualizedDeckGrid = React.memo(({
     // Start with first few decks rendered to prevent flash
     return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
   });
+  const [visibleDecks, setVisibleDecks] = useState<Set<number>>(() => new Set());
   // Progressive upgrade: on mobile, render full thumbnails one at a time to avoid crashes.
   const [upgradedDecks, setUpgradedDecks] = useState<Set<number>>(() => new Set());
   const [upgradingIndex, setUpgradingIndex] = useState<number | null>(null);
@@ -163,17 +164,33 @@ export const VirtualizedDeckGrid = React.memo(({
 
   useEffect(() => {
     if (!isMobile) return;
-    // Enqueue already-rendered items on mount/when list length changes (e.g., initial 6)
-    renderedDecks.forEach((idx) => {
+    
+    // 1. Clean up upgradedDecks: downgrade items that are no longer visible to save memory (iframe limit)
+    setUpgradedDecks(prev => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const idx of next) {
+        if (!visibleDecks.has(idx)) {
+          next.delete(idx);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+
+    // 2. Enqueue visible items not yet upgraded
+    visibleDecks.forEach((idx) => {
       if (upgradedDecks.has(idx)) return;
       if (upgradeQueueRef.current.includes(idx)) return;
+      if (upgradingIndex === idx) return; // Already processing
       upgradeQueueRef.current.push(idx);
     });
+
     // Kick processing loop
     if (upgradingIndex === null && upgradeQueueRef.current.length > 0) {
       setUpgradingIndex(upgradeQueueRef.current.shift() ?? null);
     }
-  }, [isMobile, renderedDecks, upgradedDecks, upgradingIndex]);
+  }, [isMobile, visibleDecks, upgradedDecks, upgradingIndex]);
 
   useEffect(() => {
     if (!isMobile) return;
@@ -264,7 +281,7 @@ export const VirtualizedDeckGrid = React.memo(({
         const shouldAnimate = initiallyVisibleDecks.has(index);
         const shouldRender = renderedDecks.has(index);
         const thumbnailRenderMode: 'full' | 'background' =
-          !isMobile ? 'full' : ((upgradedDecks.has(index) || upgradingIndex === index) ? 'full' : 'background');
+          !isMobile ? 'full' : ((visibleDecks.has(index) && (upgradedDecks.has(index) || upgradingIndex === index)) ? 'full' : 'background');
 
         return (
           <div
@@ -376,11 +393,26 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   useEffect(() => {
     if (!isMobile) return;
     // Enqueue all currently visible decks for progressive upgrade
+    // Also clean up non-visible ones
+    setUpgradedDecks(prev => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const idx of next) {
+        if (!visibleDecks.has(idx)) {
+          next.delete(idx);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+
     visibleDecks.forEach((idx) => {
       if (upgradedDecks.has(idx)) return;
       if (upgradeQueueRef.current.includes(idx)) return;
+      if (upgradingIndex === idx) return;
       upgradeQueueRef.current.push(idx);
     });
+    
     if (upgradingIndex === null && upgradeQueueRef.current.length > 0) {
       setUpgradingIndex(upgradeQueueRef.current.shift() ?? null);
     }
@@ -458,7 +490,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
                 <div className="absolute inset-0 w-full h-full flex items-center justify-center">
                   <DeckThumbnail
                     deck={deck}
-                    renderMode={!isMobile ? 'full' : ((upgradedDecks.has(index) || upgradingIndex === index) ? 'full' : 'background')}
+                    renderMode={!isMobile ? 'full' : ((visibleDecks.has(index) && (upgradedDecks.has(index) || upgradingIndex === index)) ? 'full' : 'background')}
                   />
                 </div>
                 {/* Text overlay at bottom */}
