@@ -349,6 +349,12 @@ const SlideContent: React.FC<SlideProps> = ({
 
   // Removed font optimization overlay/events
 
+  // For thumbnails, use a simple div instead of AspectRatio to avoid sizing conflicts
+  const SlideContainer = isThumbnail ? 'div' : AspectRatio;
+  const containerProps = isThumbnail
+    ? {}
+    : { ratio: slideSize.width / slideSize.height };
+
   return (
     <div
       className={`absolute top-0 left-0 w-full h-full ${className}`}
@@ -364,11 +370,11 @@ const SlideContent: React.FC<SlideProps> = ({
       data-slide-width={slideSize.width}
       data-slide-height={slideSize.height}
       data-dragging={isDraggingRef.current ? 'true' : 'false'}
-      
+
       data-position-update-count={positionUpdateCounter}
     >
-      <AspectRatio 
-        ratio={slideSize.width / slideSize.height} 
+      <SlideContainer
+        {...containerProps}
         className={`w-full h-full p-0 m-0 relative slide-container ${isDraggingRef.current ? 'dragging' : ''}`}
         style={{
           cursor: showCrosshairCursor ? 'crosshair' : 'default'
@@ -469,7 +475,7 @@ const SlideContent: React.FC<SlideProps> = ({
         {/* Citations overlay removed */}
 
         {/* Font optimization overlay removed */}
-      </AspectRatio>
+      </SlideContainer>
     </div>
   );
 };
