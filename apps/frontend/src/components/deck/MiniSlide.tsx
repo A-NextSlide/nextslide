@@ -8,6 +8,7 @@ import { StaticEditorStateProvider } from '@/context/EditorStateContext';
 import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { StaticNavigationProvider } from '@/context/NavigationContext';
 import { ThumbnailRenderProvider } from '@/context/ThumbnailRenderContext';
+import { BROWSER } from '@/utils/browser';
 
 interface MiniSlideProps {
   slide: SlideData;
@@ -287,7 +288,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
             <StaticNavigationProvider slideIndex={0}>
               <StaticEditorStateProvider slideSize={resolvedSlideSize}>
                 <StaticActiveSlideProvider slide={safeSlide}>
-                  <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
+                  {/* Force 'lite' mode on iOS to prevent CustomComponent iframe crashes */}
+                  <ThumbnailRenderProvider mode={BROWSER.isIOS ? 'lite' : (renderMode === 'full' ? 'full' : 'lite')}>
                     <Slide
                       slide={safeSlide}
                       isActive={true}

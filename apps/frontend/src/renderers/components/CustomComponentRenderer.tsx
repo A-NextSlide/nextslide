@@ -80,7 +80,9 @@ export const CustomComponentRenderer: React.FC<{
   // Rendering full CustomComponents inside deck thumbnails can spawn many iframes and heavy scripts,
   // which is especially unstable on mobile and has been causing "shrink then crash" behavior.
   // For thumbnails, render a lightweight placeholder instead of an iframe.
-  if (isThumbnail && thumbnailMode !== 'full') {
+  // CRITICAL: On iOS Safari, ALWAYS use lite mode for thumbnails to prevent crashes
+  const shouldUseLiteMode = isThumbnail && (thumbnailMode !== 'full' || BROWSER.isIOS);
+  if (shouldUseLiteMode) {
     return (
       <div
         data-custom-component="true"
