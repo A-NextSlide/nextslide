@@ -1249,6 +1249,30 @@ export const CustomComponentRenderer: React.FC<{
   const [scale, setScale] = useState(1);
   const rootRef = useRef<HTMLDivElement>(null);
 
+  // Blob URL for thumbnail iframes - bypasses iOS Safari srcDoc rendering bugs in scaled containers
+  const [thumbnailBlobUrl, setThumbnailBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Only use Blob URL for thumbnails on iOS/mobile where srcDoc in scaled containers fails
+    if (!isThumbnail || !stableIframeSrcDoc || !isIframeComponent) {
+      setThumbnailBlobUrl(null);
+      return;
+    }
+    
+    try {
+      const blob = new Blob([stableIframeSrcDoc], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      setThumbnailBlobUrl(url);
+      
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    } catch (err) {
+      console.error('[CustomComponent] Failed to create blob URL:', err);
+      setThumbnailBlobUrl(null);
+    }
+  }, [isThumbnail, stableIframeSrcDoc, isIframeComponent]);
+
   useEffect(() => {
     // If thumbnail, disable internal scaling (handled by parent MiniSlide)
     if (isThumbnail) {
@@ -1554,11 +1578,13 @@ export const CustomComponentRenderer: React.FC<{
           }}
         >
           {/* IFRAME RENDERING - Simple 100% fill, HTML handles responsive layout */}
-          {isIframeComponent && stableIframeSrcDoc && (
+          {/* For thumbnails, use Blob URL to bypass iOS Safari srcDoc rendering bugs in scaled containers */}
+          {isIframeComponent && stableIframeSrcDoc && (isThumbnail ? thumbnailBlobUrl : true) && (
             <iframe
               ref={iframeRef}
               key={`${component.id}-${renderCodeHash}-${propsKey.length}-${propsKey.slice(-20)}`}
-              srcDoc={stableIframeSrcDoc}
+              src={isThumbnail ? thumbnailBlobUrl! : undefined}
+              srcDoc={isThumbnail ? undefined : stableIframeSrcDoc}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -1568,10 +1594,12 @@ export const CustomComponentRenderer: React.FC<{
                 border: 'none',
                 backgroundColor: 'transparent',
                 display: 'block',
-                pointerEvents: 'auto' // Always interactive - edit mode script handles selection notification
+                pointerEvents: isThumbnail ? 'none' : 'auto' // Disable interaction for thumbnails
               }}
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
               title="Custom Component"
+              loading={isThumbnail ? 'eager' : undefined}
+              scrolling="no"
             />
           )}
 
