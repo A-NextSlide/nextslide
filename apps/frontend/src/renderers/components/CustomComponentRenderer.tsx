@@ -1250,6 +1250,12 @@ export const CustomComponentRenderer: React.FC<{
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // If thumbnail, disable internal scaling (handled by parent MiniSlide)
+    if (isThumbnail) {
+      setScale(1);
+      return;
+    }
+
     const element = rootRef.current;
     if (!element) return;
 
@@ -1299,7 +1305,7 @@ export const CustomComponentRenderer: React.FC<{
         // Ignore disconnect errors
       }
     };
-  }, [containerWidth]);
+  }, [containerWidth, isThumbnail]);
 
   // Handler for HTML updates from CustomComponentEditOverlay
   const handleHtmlUpdate = useCallback((newHtml: string) => {
