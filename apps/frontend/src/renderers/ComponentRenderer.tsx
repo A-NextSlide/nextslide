@@ -88,14 +88,27 @@ export const ComponentRenderer: React.FC<Props> = memo(({
   // Extract props with fallbacks from TypeBox schema defaults or basic defaults
   let {
     position = { x: 50, y: 50 },
-    width = "auto",
-    height = "auto",
+    width,
+    height,
     opacity = 1,
     rotation = 0,
     zIndex = 0,
     textColor = "#000000",
-    debug = false
+    debug = false,
+    size
   } = componentProps;
+
+  // Also check size object and component-level size/position for width/height
+  if (width === undefined || width === null || width === "auto") {
+    width = size?.width ?? (component as any).size?.width ?? (component as any).width ?? "auto";
+  }
+  if (height === undefined || height === null || height === "auto") {
+    height = size?.height ?? (component as any).size?.height ?? (component as any).height ?? "auto";
+  }
+  // Also check component-level position
+  if (!position || position.x === undefined) {
+    position = (component as any).position ?? { x: 50, y: 50 };
+  }
 
   // For Lines components, calculate position/width/height from endpoints
   if (componentType === "Lines" || componentType === 'Line' || componentType === 'line') {
@@ -103,6 +116,29 @@ export const ComponentRenderer: React.FC<Props> = memo(({
     position = { x: 0, y: 0 };
     width = slideSize.width;
     height = slideSize.height;
+  }
+
+  // Debug logging for thumbnail rendering
+  if (isThumbnail && componentType !== 'Background') {
+    console.log(`[ComponentRenderer DEBUG] ${componentType}:${componentId}`, {
+      slideSize,
+      position,
+      width,
+      height,
+      size,
+      rawProps: {
+        position: componentProps?.position,
+        width: componentProps?.width,
+        height: componentProps?.height,
+        size: componentProps?.size,
+      },
+      componentLevel: {
+        position: (component as any).position,
+        size: (component as any).size,
+        width: (component as any).width,
+        height: (component as any).height,
+      }
+    });
   }
 
   const isBackground = componentType === "Background" || (componentId && componentId.toLowerCase().includes('background'));
@@ -489,6 +525,8 @@ export const ComponentRenderer: React.FC<Props> = memo(({
       data-component-type={componentType}
       data-position-x={(normalizedPosition as any).x}
       data-position-y={(normalizedPosition as any).y}
+      data-slide-size={`${slideSize?.width}x${slideSize?.height}`}
+      data-position-percent={`${positionX.toFixed(1)}%,${positionY.toFixed(1)}%`}
       data-is-dragging={isDragging ? 'true' : 'false'}
       onClick={(e) => {
         // Check if the click is on the button, link, or button area

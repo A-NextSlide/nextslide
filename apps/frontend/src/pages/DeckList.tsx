@@ -122,7 +122,7 @@ const DeckList: React.FC = () => {
   const outlineThemeRequestsRef = useRef<Set<string>>(new Set());
   const { isAuthenticated, refreshAdminStatus } = useAuth();
   const isMobileView = useIsMobile();
-  const heroTextareaBaseHeight = isMobileView ? 44 : 48;
+  const heroTextareaBaseHeight = isMobileView ? 40 : 48;
   const hasCalledAdminCheckRef = useRef(false);
 
   // Get deck management state and functions first, before using isLoading
@@ -2411,7 +2411,7 @@ const DeckList: React.FC = () => {
                               <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                               <div
                                 className={cn(
-                                  "relative flex items-end bg-white dark:bg-zinc-900 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-black/30 border p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
+                                  "relative flex items-end bg-white dark:bg-zinc-900 rounded-xl md:rounded-2xl shadow-lg md:shadow-xl shadow-slate-200/50 dark:shadow-black/30 border p-1.5 md:p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
                                   isHeroDraggingOver ? "border-orange-500 border-dashed border-2 bg-orange-50 dark:bg-orange-950/30" : "border-slate-200 dark:border-zinc-700"
                                 )}
                                 onDragEnter={handleHeroDragEnter}
@@ -2445,10 +2445,10 @@ const DeckList: React.FC = () => {
                                 )}
 
                                 {/* Input Field with Typewriter Placeholder */}
-                                <div className="flex-1 relative min-h-[44px] sm:min-h-[48px]">
+                                <div className="flex-1 relative min-h-[40px] md:min-h-[48px]">
                                   <Textarea
                                     ref={heroTextareaRef}
-                                    className="w-full border-none shadow-none focus-visible:ring-0 min-h-[44px] sm:min-h-[48px] max-h-[150px] bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-3 py-2.5 sm:px-4 sm:py-3 font-sans dark:text-zinc-100 resize-none overflow-y-auto text-base leading-normal"
+                                    className="w-full border-none shadow-none focus-visible:ring-0 min-h-[40px] md:min-h-[48px] max-h-[150px] bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-2 py-2.5 md:px-4 md:py-3 font-sans dark:text-zinc-100 resize-none overflow-y-auto text-sm md:text-base leading-normal"
                                     value={heroInput}
                                     onChange={(e) => setHeroInput(e.target.value)}
                                     onKeyDown={(e) => {
@@ -2465,7 +2465,7 @@ const DeckList: React.FC = () => {
                                     }}
                                   />
                                   {!heroInput && (
-                                    <div className="absolute top-0 left-0 right-0 pointer-events-none flex items-center px-3 sm:px-4 h-[44px] sm:h-[48px] text-sm sm:text-base leading-tight text-slate-400 dark:text-zinc-500 min-w-0 overflow-hidden">
+                                    <div className="absolute top-0 left-0 right-0 pointer-events-none flex items-center px-2 md:px-4 h-[40px] md:h-[48px] text-sm md:text-base leading-tight text-slate-400 dark:text-zinc-500 min-w-0 overflow-hidden">
                                       <span className="whitespace-nowrap">{heroPlaceholderPrefix}</span>
                                       <span className="min-w-0 truncate text-slate-300 dark:text-zinc-600">{typewriterText}</span>
                                       <span className="ml-0.5 animate-pulse text-orange-500">|</span>
@@ -2473,20 +2473,20 @@ const DeckList: React.FC = () => {
                                   )}
                                 </div>
 
-                                {/* Actions Divider */}
-                                <div className="h-6 sm:h-8 w-px bg-slate-200 dark:bg-zinc-700 mx-1 sm:mx-2 self-center"></div>
+                                {/* Actions Divider - hidden on mobile */}
+                                <div className="hidden md:block h-7 w-px bg-slate-200 dark:bg-zinc-700 mx-2 self-center"></div>
 
                                 {/* Action Buttons */}
-                                <div className="flex items-center gap-0.5 sm:gap-1 pr-1 sm:pr-2 flex-shrink-0">
+                                <div className="flex items-center gap-0 pr-0.5 md:pr-2 flex-shrink-0">
                                   {/* Upload Button */}
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-7 w-7 sm:h-8 sm:w-8 text-slate-500 dark:text-zinc-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/50 rounded-xl transition-colors"
+                                    className="h-7 w-7 md:h-8 md:w-8 text-slate-500 dark:text-zinc-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-transparent md:hover:bg-orange-50 dark:md:hover:bg-orange-950/50 rounded-lg md:rounded-xl transition-colors"
                                     onClick={() => fileInputRef.current?.click()}
                                     title="Upload files"
                                   >
-                                    <Upload className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
+                                    <Upload className="h-4 w-4 md:h-[18px] md:w-[18px]" />
                                   </Button>
                                   <input
                                     type="file"
@@ -2502,10 +2502,10 @@ const DeckList: React.FC = () => {
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-7 w-7 sm:h-8 sm:w-8 text-slate-500 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-xl transition-colors"
+                                        className="h-7 w-7 md:h-8 md:w-8 text-slate-500 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-transparent md:hover:bg-blue-50 dark:md:hover:bg-blue-950/50 rounded-lg md:rounded-xl transition-colors"
                                         title="Add link"
                                       >
-                                        <LinkIcon className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
+                                        <LinkIcon className="h-4 w-4 md:h-[18px] md:w-[18px]" />
                                       </Button>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-80 p-4 dark:bg-zinc-900 dark:border-zinc-700" side="top" align="center">
@@ -2552,21 +2552,21 @@ const DeckList: React.FC = () => {
                                     onError={(error) => {
                                       console.error('Voice recording error:', error);
                                     }}
-                                    size="sm"
+                                    size={isMobileView ? "xs" : "sm"}
                                     variant="mic"
                                   />
 
                                   {/* Submit Button */}
                                   <Button
                                     size="icon"
-                                    className="h-10 w-10 sm:h-12 sm:w-12 ml-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95"
+                                    className="h-9 w-9 md:h-10 md:w-10 ml-0.5 md:ml-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white shadow-md md:shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95"
                                     onClick={() => {
                                       if (heroInput.trim() || uploadedFiles.length > 0) {
                                         openConversationalOnboarding(heroInput);
                                       }
                                     }}
                                   >
-                                    <ArrowRight size={isMobileView ? 20 : 24} />
+                                    <ArrowRight size={18} />
                                   </Button>
                                 </div>
                               </div>

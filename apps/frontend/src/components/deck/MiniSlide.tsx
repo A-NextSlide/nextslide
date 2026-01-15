@@ -247,6 +247,29 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   // This prevents the tiny initial render from getting "stuck" due to memoization
   const hasValidDimensions = containerDims && containerDims.width > 100 && containerDims.height > 50;
 
+  // Debug logging for iOS Safari - comprehensive thumbnail info
+  if (hasContent && containerDims) {
+    console.log(`[MiniSlide DEBUG] slideId=${slideId}`, {
+      containerDims,
+      baseWidth,
+      baseHeight,
+      scale: scale.toFixed(4),
+      scaledWidth: (baseWidth * scale).toFixed(1),
+      scaledHeight: (baseHeight * scale).toFixed(1),
+      resolvedSlideSize,
+      hasValidDimensions,
+      componentCount: safeSlide?.components?.length || 0,
+      components: safeSlide?.components?.slice(0, 3).map((c: any) => ({
+        type: c.type,
+        id: c.id,
+        propsWidth: c.props?.width,
+        propsHeight: c.props?.height,
+        propsSize: c.props?.size,
+        position: c.props?.position,
+      }))
+    });
+  }
+
   // Calculate the scaled dimensions for the wrapper
   const scaledWidth = baseWidth * scale;
   const scaledHeight = baseHeight * scale;
@@ -258,58 +281,49 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       ref={containerRef}
       className={containerClasses}
       onClick={onClick}
-      style={backgroundStyle}
+      style={{
+        ...backgroundStyle,
+        position: 'relative',
+      }}
+      data-mini-slide-debug={`scale:${scale.toFixed(3)},baseW:${baseWidth},baseH:${baseHeight},containerW:${containerDims?.width || 0},containerH:${containerDims?.height || 0}`}
     >
       {hasValidDimensions && (
         <div
+          key={`scale-${Math.round(scale * 1000)}`}
           style={{
-            width: `${scaledWidth}px`,
-            height: `${scaledHeight}px`,
-            overflow: 'hidden',
-          }}
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: `${baseWidth}px`,
+            height: `${baseHeight}px`,
+            WebkitTransform: `scale(${scale})`,
+            transform: `scale(${scale})`,
+            WebkitTransformOrigin: 'top left',
+            transformOrigin: 'top left',
+            pointerEvents: 'none',
+            willChange: 'transform',
+          } as React.CSSProperties}
         >
-          <div
-            key={`scale-${Math.round(scale * 1000)}`}
-            style={{
-              position: 'relative',
-              width: `${baseWidth}px`,
-              height: `${baseHeight}px`,
-              WebkitTransform: `scale(${scale})`,
-              transform: `scale(${scale})`,
-              WebkitTransformOrigin: 'top left',
-              transformOrigin: 'top left',
-              pointerEvents: 'none',
-            } as React.CSSProperties}
-          >
-            {/* Force the slide to fill this exact container */}
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: `${baseWidth}px`,
-                height: `${baseHeight}px`,
-              }}
-            >
-              <NavigationProvider initialSlideIndex={0}>
-                <EditorStateProvider
-                  syncConfig={{ enabled: false, useRealtimeSubscription: false }}
-                  initialEditingState={false}
-                  slideSizeOverride={resolvedSlideSize}
-                >
-                  <StaticActiveSlideProvider slide={safeSlide}>
-                    <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
-                      <Slide
-                        slide={safeSlide}
-                        isActive={true}
-                        isEditing={false}
-                        isThumbnail={true}
-                      />
-                    </ThumbnailRenderProvider>
-                  </StaticActiveSlideProvider>
-                </EditorStateProvider>
-              </NavigationProvider>
-            </div>
+          {/* Inner wrapper with explicit dimensions to ensure proper sizing */}
+          <div style={{ width: `${baseWidth}px`, height: `${baseHeight}px`, position: 'relative' }}>
+            <NavigationProvider initialSlideIndex={0}>
+              <EditorStateProvider
+                syncConfig={{ enabled: false, useRealtimeSubscription: false }}
+                initialEditingState={false}
+                slideSizeOverride={resolvedSlideSize}
+              >
+                <StaticActiveSlideProvider slide={safeSlide}>
+                  <ThumbnailRenderProvider mode={renderMode === 'full' ? 'full' : 'lite'}>
+                    <Slide
+                      slide={safeSlide}
+                      isActive={true}
+                      isEditing={false}
+                      isThumbnail={true}
+                    />
+                  </ThumbnailRenderProvider>
+                </StaticActiveSlideProvider>
+              </EditorStateProvider>
+            </NavigationProvider>
           </div>
         </div>
       )}

@@ -22,7 +22,7 @@ interface VoiceRecorderProps {
   onError?: (error: string) => void;
   disabled?: boolean;
   className?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   variant?: 'default' | 'minimal' | 'mic';
 }
 
@@ -524,12 +524,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
   // Size configs matching other buttons
   const sizeConfig = {
+    xs: 'h-7 w-7',
     sm: 'h-8 w-8',
     md: 'h-9 w-9',
     lg: 'h-10 w-10',
   };
 
   const iconSize = {
+    xs: 16,
     sm: 16,
     md: 18,
     lg: 20,
@@ -563,7 +565,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
           onPointerLeave={handlePointerLeave}
           disabled={disabled || isProcessing || permissionDenied}
           className={cn(
-            "relative flex items-center justify-center rounded-xl transition-all duration-150",
+            "relative flex items-center justify-center rounded-lg md:rounded-xl transition-all duration-150",
             "touch-none select-none cursor-pointer",
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50",
             sizeConfig[size],

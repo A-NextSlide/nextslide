@@ -498,7 +498,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
               onClick={() => onEdit(deck)}
             >
               <div className="relative aspect-[16/9] w-full overflow-hidden bg-muted">
-                <div className="absolute inset-0 w-full h-full flex items-center justify-center">
+                <div className="absolute inset-0 w-full h-full">
                   <DeckThumbnail
                     deck={deck}
                     renderMode={!isMobile ? 'full' : ((visibleDecks.has(index) && (upgradedDecks.has(index) || upgradingIndex === index)) ? 'full' : 'background')}
