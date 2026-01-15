@@ -19,28 +19,6 @@ interface MiniSlideProps {
 }
 
 /**
- * Synchronous mobile detection using matchMedia
- * This runs during render, not in useEffect, so we get the correct value on first render
- */
-const checkIsMobile = (): boolean => {
-  if (typeof window === 'undefined') return true; // SSR: assume mobile for safety
-
-  // Check touch capability
-  const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-
-  // Check screen size using matchMedia (synchronous)
-  const isNarrowScreen = window.matchMedia('(max-width: 768px)').matches;
-  const isShortScreen = window.matchMedia('(max-height: 500px)').matches;
-
-  // Also check userAgent for mobile devices
-  const userAgent = navigator.userAgent.toLowerCase();
-  const isMobileUA = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile/i.test(userAgent);
-
-  // Mobile if: touch device with small screen, OR mobile user agent
-  return (isTouch && (isNarrowScreen || isShortScreen)) || isMobileUA;
-};
-
-/**
  * Extract background style from slide components
  */
 const extractBackgroundStyle = (slide: SlideData | null): React.CSSProperties => {
@@ -98,9 +76,7 @@ const extractBackgroundStyle = (slide: SlideData | null): React.CSSProperties =>
 
 /**
  * MiniSlide - Thumbnail renderer for slides
- *
- * Mobile: Renders simple background only to prevent memory crashes
- * Desktop: Renders full slide content with proper scaling
+ * Renders full slide content with proper scaling
  */
 const MiniSlide: React.FC<MiniSlideProps> = ({
   slide,
@@ -113,10 +89,6 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerDims, setContainerDims] = useState<{ width: number; height: number } | null>(null);
-
-  // Check mobile synchronously on every render
-  // This ensures we NEVER render heavy components on mobile
-  const isMobile = checkIsMobile();
 
   // Normalize slide data
   const normalizedResult = useMemo(() => {
@@ -140,10 +112,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   // Extract background style
   const backgroundStyle = useMemo(() => extractBackgroundStyle(normalizedSlide), [normalizedSlide]);
 
-  // Measure container for responsive mode (desktop only)
+  // Measure container for responsive mode
   useEffect(() => {
-    // Skip measurement on mobile - we don't need it
-    if (isMobile) return;
     if (!containerRef.current) return;
 
     const measure = () => {
@@ -166,7 +136,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     return () => {
       resizeObserver?.disconnect();
     };
-  }, [isMobile]);
+  }, []);
 
   // Common container classes
   const containerClasses = cn(
@@ -174,24 +144,6 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     "hover:ring-2 hover:ring-primary/50",
     className
   );
-
-  // ========================================
-  // MOBILE: Simple background-only rendering
-  // ========================================
-  if (isMobile) {
-    return (
-      <div
-        ref={containerRef}
-        className={containerClasses}
-        onClick={onClick}
-        style={backgroundStyle}
-      />
-    );
-  }
-
-  // ========================================
-  // DESKTOP: Full slide rendering
-  // ========================================
 
   // Calculate dimensions and scale
   const targetWidth = !responsive && fixedWidth ? fixedWidth : containerDims?.width || 160;
@@ -234,7 +186,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     );
   }
 
-  // Desktop: Full slide render with providers and scaling
+  // Full slide render with providers and scaling
   return (
     <div
       ref={containerRef}
