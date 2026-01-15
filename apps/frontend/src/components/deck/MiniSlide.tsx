@@ -279,6 +279,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
             height: baseHeight,
             transform: `scale(${scale})`,
             transformOrigin: 'center center', // Changed to center center
+            position: 'relative', // IMPORTANT: Slide renders absolutely; it needs a relative parent at base dimensions
             pointerEvents: 'none',
             flexShrink: 0 // Prevent flex from squishing the scaled content
           }}
