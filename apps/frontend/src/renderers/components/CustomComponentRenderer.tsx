@@ -19,12 +19,12 @@ import { useThumbnailRenderMode } from '@/context/ThumbnailRenderContext';
 // Browser detection for iOS-specific safety checks
 import { BROWSER } from '@/utils/browser';
 
-// Simple error boundary
+// Simple error boundary with callback support
 class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
+  { children: React.ReactNode; onError?: () => void; fallback?: React.ReactNode },
   { hasError: boolean; error: Error | null }
 > {
-  constructor(props: { children: React.ReactNode }) {
+  constructor(props: { children: React.ReactNode; onError?: () => void; fallback?: React.ReactNode }) {
     super(props);
     this.state = { hasError: false, error: null };
   }
@@ -35,22 +35,33 @@ class ErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error) {
     console.error('[CustomComponent] Error caught by boundary:', error);
+    // Notify parent component of error
+    this.props.onError?.();
   }
 
   render() {
     if (this.state.hasError) {
+      // Use custom fallback if provided, otherwise show default error UI
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
       return (
         <div style={{
-          padding: '10px',
-          color: '#d32f2f',
-          backgroundColor: '#ffebee',
-          border: '1px solid #ffcdd2',
-          borderRadius: '4px',
-          fontSize: '12px',
-          fontFamily: 'monospace'
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 6,
+          background: 'rgba(211,47,47,0.1)',
+          border: '1px solid rgba(211,47,47,0.3)',
+          color: 'rgba(211,47,47,0.8)',
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
         }}>
-          <div style={{ fontWeight: 'bold' }}>Component Error</div>
-          <div style={{ marginTop: '5px' }}>{this.state.error?.message || 'Unknown error'}</div>
+          Error
         </div>
       );
     }
@@ -76,26 +87,33 @@ export const CustomComponentRenderer: React.FC<{
   isEditing?: boolean;
 }> = memo(({ component, baseStyles, containerRef, isThumbnail = false, isSelected = false, isEditing = false }) => {
   const thumbnailMode = useThumbnailRenderMode();
+
+  // Track if rendering has crashed - show fallback instead
+  const [hasRenderError, setHasRenderError] = useState(false);
+
   // THUMBNAIL SAFETY:
   // Rendering full CustomComponents inside deck thumbnails can spawn many iframes and heavy scripts,
   // which is especially unstable on mobile and has been causing "shrink then crash" behavior.
   // For thumbnails, render a lightweight placeholder instead of an iframe.
   // CRITICAL: On iOS Safari, ALWAYS use lite mode for thumbnails to prevent crashes
   const shouldUseLiteMode = isThumbnail && (thumbnailMode !== 'full' || BROWSER.isIOS);
-  if (shouldUseLiteMode) {
+
+  // Show simple placeholder for thumbnails OR if there was a render error
+  if (shouldUseLiteMode || hasRenderError) {
     return (
       <div
         data-custom-component="true"
-        data-thumbnail="true"
+        data-thumbnail={isThumbnail ? "true" : undefined}
+        data-error={hasRenderError ? "true" : undefined}
         style={{
           ...baseStyles,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: 6,
-          background: 'rgba(0,0,0,0.06)',
-          border: '1px solid rgba(0,0,0,0.08)',
-          color: 'rgba(0,0,0,0.55)',
+          background: hasRenderError ? 'rgba(211,47,47,0.1)' : 'rgba(0,0,0,0.06)',
+          border: hasRenderError ? '1px solid rgba(211,47,47,0.3)' : '1px solid rgba(0,0,0,0.08)',
+          color: hasRenderError ? 'rgba(211,47,47,0.8)' : 'rgba(0,0,0,0.55)',
           fontSize: 10,
           fontWeight: 700,
           letterSpacing: '0.06em',
@@ -103,7 +121,7 @@ export const CustomComponentRenderer: React.FC<{
           pointerEvents: 'none',
         }}
       >
-        Custom
+        {hasRenderError ? 'Error' : 'Custom'}
       </div>
     );
   }
@@ -1515,7 +1533,7 @@ export const CustomComponentRenderer: React.FC<{
   }, []);
 
   return (
-    <ErrorBoundary>
+    <ErrorBoundary onError={() => setHasRenderError(true)}>
       <div
         ref={rootRef}
         data-scroll-guard="true"
@@ -1568,6 +1586,10 @@ export const CustomComponentRenderer: React.FC<{
               }}
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
               title="Custom Component"
+              onError={() => {
+                console.error('[CustomComponent] iframe error, showing fallback');
+                setHasRenderError(true);
+              }}
             />
           )}
 
