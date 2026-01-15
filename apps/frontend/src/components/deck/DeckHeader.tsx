@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { IconButton } from '../ui/IconButton';
-import { Edit, Plus, ChevronLeft, Undo, Redo, History, ZoomIn, ZoomOut, Search, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileJson, Layers, UploadCloud, Sun, Moon, MessageSquare, Settings, Plug, LogOut } from 'lucide-react';
+import { Edit, Plus, ChevronLeft, Undo, Redo, History, ZoomIn, ZoomOut, Search, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileJson, Layers, UploadCloud, Sun, Moon, MessageSquare, Settings, Plug, LogOut, Share2 } from 'lucide-react';
 import { useVersionHistory } from '@/context/VersionHistoryContext';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 import { ZOOM_LIMITS, ZOOM_STEP } from '@/utils/zoom';
@@ -227,8 +227,8 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
 
   return (
     <>
-      <div className="w-full py-2 px-4 border-b border-border flex items-center justify-between bg-card/80 fixed top-0 left-0 right-0 z-50">
-        <div className="flex items-center gap-2">
+      <div className={`w-full py-2 ${isMobile ? 'px-2' : 'px-4'} border-b border-border flex items-center justify-between bg-card/80 fixed top-0 left-0 right-0 z-50`}>
+        <div className={`flex items-center ${isMobile ? 'gap-1' : 'gap-2'}`}>
           <IconButton
             onClick={handleBackToDeckList}
             variant="ghost"
@@ -238,21 +238,26 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
             <ChevronLeft size={14} />
           </IconButton>
 
-          <div className="h-3 w-px bg-muted-foreground/30 mx-1"></div>
+          {/* Hide edit button and divider on mobile */}
+          {!isMobile && (
+            <>
+              <div className="h-3 w-px bg-muted-foreground/30 mx-1"></div>
 
-          {!isChatSelecting && (
-            <IconButton
-              onClick={() => setIsEditing(!isEditing)}
-              active={isEditing}
-              variant="ghost"
-              size="xs"
-              aria-label={isEditing ? "Exit edit mode" : "Enter edit mode"}
-            >
-              <Edit3 size={14} />
-            </IconButton>
+              {!isChatSelecting && (
+                <IconButton
+                  onClick={() => setIsEditing(!isEditing)}
+                  active={isEditing}
+                  variant="ghost"
+                  size="xs"
+                  aria-label={isEditing ? "Exit edit mode" : "Enter edit mode"}
+                >
+                  <Edit3 size={14} />
+                </IconButton>
+              )}
+            </>
           )}
 
-          {isEditing && (
+          {isEditing && !isMobile && (
             <>
               <IconButton
                 onClick={handleAddNewSlide}
@@ -290,13 +295,13 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
             </>
           )}
 
-          <div className="h-3 w-px bg-muted-foreground/30 mx-1"></div>
+          {!isMobile && <div className="h-3 w-px bg-muted-foreground/30 mx-1"></div>}
 
           <input
             type="text"
             value={deckName}
             onChange={(e) => setDeckName(e.target.value)}
-            className="text-xs font-medium bg-transparent border-none outline-none focus:ring-1 focus:ring-primary/20 px-3 py-1 rounded w-96 max-w-[40vw]"
+            className={`text-xs font-medium bg-transparent border-none outline-none focus:ring-1 focus:ring-primary/20 ${isMobile ? 'px-1 py-0.5' : 'px-3 py-1'} rounded ${isMobile ? 'w-auto max-w-[45vw]' : 'w-96 max-w-[40vw]'}`}
             aria-label="Deck name"
           />
         </div>
@@ -432,7 +437,31 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
             </IconButton>
           )}
 
-          {/* Primary Present button - hide on mobile (shown in SlideControlBar instead) */}
+          {/* Mobile: Tiny Share and Present buttons side by side */}
+          {isMobile && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  try {
+                    window.dispatchEvent(new CustomEvent('open-deck-sharing'));
+                  } catch { }
+                }}
+                className="flex items-center justify-center w-7 h-7 bg-muted hover:bg-muted/80 rounded text-foreground transition-colors"
+                title="Share"
+              >
+                <Share2 size={14} />
+              </button>
+              <button
+                onClick={usePresentationStore.getState().enterPresentation}
+                className="flex items-center justify-center w-7 h-7 bg-[#FF4301] hover:bg-[#E63901] rounded text-white transition-colors"
+                title="Present"
+              >
+                <Presentation size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Desktop: Primary Present button */}
           {!isMobile && (
             <Button
               size="xs"
@@ -446,8 +475,8 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
             </Button>
           )}
 
-          {/* Secondary Share button (passed in) */}
-          {rightSideComponents}
+          {/* Desktop: Secondary Share button (passed in) */}
+          {!isMobile && rightSideComponents}
 
           {/* Actions menu */}
           <DropdownMenu>

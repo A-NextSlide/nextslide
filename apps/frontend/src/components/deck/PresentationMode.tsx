@@ -9,6 +9,7 @@ import { DEFAULT_SLIDE_HEIGHT, DEFAULT_SLIDE_WIDTH } from '@/utils/deckUtils';
 import { normalizeSlideForRender } from '@/utils/slideNormalization';
 import Watermark from '@/components/common/Watermark';
 import MiniSlide from './MiniSlide';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface PresentationModeProps {
   slides: SlideData[];
@@ -67,6 +68,25 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   // State
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [slideScale, setSlideScale] = useState(1);
+  const [isPortrait, setIsPortrait] = useState(false);
+  const isMobile = useIsMobile();
+
+  // Detect portrait orientation on mobile
+  useEffect(() => {
+    const checkOrientation = () => {
+      setIsPortrait(window.innerHeight > window.innerWidth);
+    };
+    checkOrientation();
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
+    return () => {
+      window.removeEventListener('resize', checkOrientation);
+      window.removeEventListener('orientationchange', checkOrientation);
+    };
+  }, []);
+
+  // Should we force landscape rotation?
+  const forceLandscape = isMobile && isPortrait;
 
   // Computed values
   const deckSlideSize = useMemo(
@@ -110,11 +130,17 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
       try {
         const rect = container.getBoundingClientRect();
-        const containerWidth = rect.width || window.innerWidth;
-        const containerHeight = rect.height || window.innerHeight;
+        let containerWidth = rect.width || window.innerWidth;
+        let containerHeight = rect.height || window.innerHeight;
 
         // Skip if container has no dimensions yet
         if (!containerWidth || !containerHeight) return;
+
+        // When forcing landscape on portrait mobile, swap container dimensions
+        // because we'll rotate the content 90 degrees
+        if (forceLandscape) {
+          [containerWidth, containerHeight] = [containerHeight, containerWidth];
+        }
 
         // Calculate scale to fit the slide within the container
         const scaleX = containerWidth / baseSlideWidth;
@@ -153,7 +179,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       if (resizeObserver) resizeObserver.disconnect();
       window.removeEventListener('resize', calculateScale);
     };
-  }, [isPresenting, baseSlideWidth, baseSlideHeight]);
+  }, [isPresenting, baseSlideWidth, baseSlideHeight, forceLandscape]);
 
   // Scroll current slide into view when thumbnails open
   useEffect(() => {
@@ -382,7 +408,21 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[100] bg-black"
-      style={{ height: '100dvh' }}
+      style={{
+        height: '100dvh',
+        // When forcing landscape, rotate the entire container
+        ...(forceLandscape ? {
+          transform: 'rotate(90deg)',
+          transformOrigin: 'center center',
+          width: '100dvh',
+          height: '100vw',
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          marginTop: '-50vw',
+          marginLeft: '-50dvh',
+        } : {})
+      }}
     >
       {/* Main slide display - container for measuring available space */}
       <div
