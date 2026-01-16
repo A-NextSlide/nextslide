@@ -12,6 +12,7 @@ import { showcaseService, ShowcaseDeck } from '@/services/showcaseService';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import CommunityGallery from '@/components/community/CommunityGallery';
 import CommunityBottomSheet from '@/components/community/CommunityBottomSheet';
+import { useTypewriter } from '@/hooks/useTypewriter';
 
 // Lazy load MiniSlide
 const MiniSlide = lazy(() => import('@/components/deck/MiniSlide'));
@@ -41,6 +42,24 @@ const Landing: React.FC = () => {
   // Community bottom sheet
   const [showCommunity, setShowCommunity] = useState(false);
 
+  // Hero carousel state
+  const [heroCarouselIndex, setHeroCarouselIndex] = useState(0);
+  const heroCarouselRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Typewriter effect for hero input placeholder
+  const typewriterText = useTypewriter({
+    phrases: [
+      'a pitch deck for my AI startup',
+      'a quarterly business review',
+      'a lecture on machine learning',
+      'a wedding speech for my best friend',
+      'a product launch presentation',
+    ],
+    typingSpeed: 50,
+    deletingSpeed: 30,
+    pauseDuration: 2500,
+  });
+
   // Load showcase decks
   useEffect(() => {
     const loadShowcase = async () => {
@@ -56,6 +75,19 @@ const Landing: React.FC = () => {
     };
     loadShowcase();
   }, []);
+
+  // Hero carousel auto-rotation
+  useEffect(() => {
+    if (showcaseDecks.length === 0) return;
+
+    heroCarouselRef.current = setInterval(() => {
+      setHeroCarouselIndex((prev) => (prev + 1) % Math.min(showcaseDecks.length, 6));
+    }, 4000);
+
+    return () => {
+      if (heroCarouselRef.current) clearInterval(heroCarouselRef.current);
+    };
+  }, [showcaseDecks.length]);
 
   // Handle scroll events
   useEffect(() => {
@@ -407,54 +439,294 @@ const Landing: React.FC = () => {
         )}
       </nav>
 
-      {/* Hero */}
-      <section className="relative min-h-screen flex items-center justify-center px-8 pt-16">
-        <div className="max-w-[1400px] mx-auto">
-          <div className="text-center max-w-4xl mx-auto animate-on-scroll opacity-0">
-            <h1
-              className="text-black dark:text-white mb-6"
-              style={{
-                fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-                fontWeight: 900,
-                fontSize: 'clamp(48px, 6vw, 86px)',
-                lineHeight: '1.05',
-                letterSpacing: '-0.02em',
-                textTransform: 'uppercase'
-              }}
-            >
-              Professional presentations
-              <br />
-              in 90 seconds
-            </h1>
-            <p className="text-xl text-black/60 dark:text-white/60 mb-10 max-w-3xl mx-auto leading-relaxed">
-              The only AI presentation tool with a full editor and custom components. Generate complete decks instantly, then customize everything.
-            </p>
+      {/* Hero - Figma-style with slide carousel */}
+      <section className="relative min-h-screen overflow-hidden bg-[#FCFBF8] dark:bg-[#0a0a0a]">
+        {/* Top headline - bigger, 2 lines */}
+        <div className="relative z-20 pt-24 sm:pt-28 pb-6 text-center animate-on-scroll opacity-0">
+          <h1
+            className="text-black dark:text-white"
+            style={{
+              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+              fontWeight: 900,
+              fontSize: 'clamp(32px, 5vw, 56px)',
+              lineHeight: '1.1',
+              letterSpacing: '-0.02em',
+              textTransform: 'uppercase'
+            }}
+          >
+            <span>Pitch ready</span>
+            <span className="text-[#FF4301]"> & </span>
+            <span>pitch perfect</span>
+            <br />
+            <span className="text-black/60 dark:text-white/60">in 90 seconds</span>
+          </h1>
+        </div>
 
-            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center mb-8 px-4 sm:px-0">
-              <Button
-                size="lg"
-                onClick={() => navigate(isSignedIn ? '/app' : '/signup')}
-                className="bg-[#FF4301] hover:bg-[#E63901] text-white px-6 sm:px-10 py-5 sm:py-6 text-sm sm:text-base font-semibold w-full sm:w-auto min-h-[48px] touch-manipulation"
-              >
-                {isSignedIn ? 'My Slides' : 'Create Full Deck Free'}
-                <ArrowRight className="ml-2 w-4 h-4 sm:w-5 sm:h-5" />
-              </Button>
+        {/* Slide carousel mosaic - Figma-inspired layout */}
+        <div className="relative w-full h-[calc(100vh-180px)] min-h-[500px] max-h-[700px]">
+          {/* Gradient overlays for fade effect */}
+          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-[#FCFBF8] dark:from-[#0a0a0a] to-transparent z-10 pointer-events-none" />
+          <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#FCFBF8] dark:from-[#0a0a0a] to-transparent z-10 pointer-events-none" />
+          <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-[#FCFBF8] dark:from-[#0a0a0a] to-transparent z-10 pointer-events-none" />
+          <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-[#FCFBF8] dark:from-[#0a0a0a] to-transparent z-10 pointer-events-none" />
+
+          {/* Carousel container */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            {/* Slides arranged in a dynamic mosaic pattern */}
+            <div className="relative w-full max-w-[1600px] h-full mx-auto px-4">
+              {/* Loading state */}
+              {isLoadingShowcase ? (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="grid grid-cols-3 gap-4 opacity-30">
+                    {[...Array(6)].map((_, i) => (
+                      <div
+                        key={i}
+                        className="w-[200px] sm:w-[280px] aspect-video bg-zinc-200 dark:bg-zinc-800 rounded-xl animate-pulse"
+                        style={{
+                          transform: `rotate(${(i % 2 === 0 ? -1 : 1) * (Math.random() * 3)}deg)`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* Slide positions - creating a Figma-like scattered effect with bigger slides */
+                <>
+                  {/* Far left - top */}
+                  {showcaseDecks[0]?.slides?.[0] && (
+                    <div
+                      className={cn(
+                        "absolute hidden xl:block transition-all duration-1000 ease-out",
+                        heroCarouselIndex === 0 ? "opacity-100 scale-100" : "opacity-70 scale-95"
+                      )}
+                      style={{
+                        left: '-8%',
+                        top: '5%',
+                        width: 'clamp(220px, 22vw, 340px)',
+                        transform: 'rotate(-8deg)',
+                      }}
+                    >
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10">
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={showcaseDecks[0].slides[0]} />
+                        </Suspense>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Left side - middle */}
+                  {showcaseDecks[1]?.slides?.[0] && (
+                    <div
+                      className={cn(
+                        "absolute hidden lg:block transition-all duration-1000 ease-out",
+                        heroCarouselIndex === 1 ? "opacity-100 scale-100" : "opacity-80 scale-95"
+                      )}
+                      style={{
+                        left: '0%',
+                        top: '28%',
+                        width: 'clamp(260px, 26vw, 400px)',
+                        transform: 'rotate(-4deg)',
+                      }}
+                    >
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10">
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={showcaseDecks[1].slides[0]} />
+                        </Suspense>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Left bottom */}
+                  {showcaseDecks[2]?.slides?.[0] && (
+                    <div
+                      className={cn(
+                        "absolute hidden md:block transition-all duration-1000 ease-out",
+                        heroCarouselIndex === 2 ? "opacity-100 scale-100" : "opacity-60 scale-95"
+                      )}
+                      style={{
+                        left: '-2%',
+                        bottom: '2%',
+                        width: 'clamp(200px, 20vw, 300px)',
+                        transform: 'rotate(5deg)',
+                      }}
+                    >
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/25 ring-1 ring-black/10">
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={showcaseDecks[2].slides[0]} />
+                        </Suspense>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Far right - top */}
+                  {showcaseDecks[3]?.slides?.[0] && (
+                    <div
+                      className={cn(
+                        "absolute hidden xl:block transition-all duration-1000 ease-out",
+                        heroCarouselIndex === 3 ? "opacity-100 scale-100" : "opacity-70 scale-95"
+                      )}
+                      style={{
+                        right: '-8%',
+                        top: '3%',
+                        width: 'clamp(220px, 22vw, 340px)',
+                        transform: 'rotate(7deg)',
+                      }}
+                    >
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10">
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={showcaseDecks[3].slides[0]} />
+                        </Suspense>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Right side - middle */}
+                  {showcaseDecks[4]?.slides?.[0] && (
+                    <div
+                      className={cn(
+                        "absolute hidden lg:block transition-all duration-1000 ease-out",
+                        heroCarouselIndex === 4 ? "opacity-100 scale-100" : "opacity-80 scale-95"
+                      )}
+                      style={{
+                        right: '0%',
+                        top: '25%',
+                        width: 'clamp(260px, 26vw, 400px)',
+                        transform: 'rotate(5deg)',
+                      }}
+                    >
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10">
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={showcaseDecks[4].slides[0]} />
+                        </Suspense>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Right bottom */}
+                  {showcaseDecks[5]?.slides?.[0] && (
+                    <div
+                      className={cn(
+                        "absolute hidden md:block transition-all duration-1000 ease-out",
+                        heroCarouselIndex === 5 ? "opacity-100 scale-100" : "opacity-60 scale-95"
+                      )}
+                      style={{
+                        right: '-2%',
+                        bottom: '5%',
+                        width: 'clamp(200px, 20vw, 300px)',
+                        transform: 'rotate(-6deg)',
+                      }}
+                    >
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/25 ring-1 ring-black/10">
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={showcaseDecks[5].slides[0]} />
+                        </Suspense>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Additional slides for more variety - using different slides from same decks */}
+                  {showcaseDecks[0]?.slides?.[1] && (
+                    <div
+                      className={cn(
+                        "absolute hidden lg:block transition-all duration-1000 ease-out",
+                        heroCarouselIndex === 0 ? "opacity-90 scale-100" : "opacity-50 scale-95"
+                      )}
+                      style={{
+                        left: '18%',
+                        bottom: '8%',
+                        width: 'clamp(180px, 18vw, 280px)',
+                        transform: 'rotate(-2deg)',
+                      }}
+                    >
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/20 ring-1 ring-black/10">
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={showcaseDecks[0].slides[1]} />
+                        </Suspense>
+                      </div>
+                    </div>
+                  )}
+
+                  {showcaseDecks[3]?.slides?.[1] && (
+                    <div
+                      className={cn(
+                        "absolute hidden lg:block transition-all duration-1000 ease-out",
+                        heroCarouselIndex === 3 ? "opacity-90 scale-100" : "opacity-50 scale-95"
+                      )}
+                      style={{
+                        right: '20%',
+                        bottom: '10%',
+                        width: 'clamp(180px, 18vw, 280px)',
+                        transform: 'rotate(3deg)',
+                      }}
+                    >
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/20 ring-1 ring-black/10">
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={showcaseDecks[3].slides[1]} />
+                        </Suspense>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-black/50 dark:text-white/50">
-              <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-[#FF4301]" />
-                <span>Free forever plan</span>
+          </div>
+
+          {/* Centered floating input box - overlaid on slides */}
+          <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+            <div className="pointer-events-auto w-full max-w-2xl px-4 sm:px-8 animate-on-scroll opacity-0" style={{ transitionDelay: '200ms' }}>
+              {/* The prompt card */}
+              <div className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-2xl shadow-black/20 dark:shadow-black/50 border border-black/5 dark:border-white/10 p-6 sm:p-8">
+                {/* Input with typewriter effect */}
+                <div className="relative mb-6">
+                  <div className="text-lg sm:text-2xl md:text-3xl font-medium text-black dark:text-white leading-relaxed">
+                    <span className="text-black/40 dark:text-white/40">Create </span>
+                    <span className="text-black dark:text-white">{typewriterText}</span>
+                    <span className="inline-block w-0.5 h-[1em] bg-[#FF4301] ml-1 animate-pulse align-middle" />
+                  </div>
+                </div>
+
+                {/* Action button */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4 text-sm text-black/40 dark:text-white/40">
+                    <span className="hidden sm:inline">Type anything</span>
+                    <span className="hidden sm:inline">•</span>
+                    <span>AI-powered</span>
+                  </div>
+                  <Button
+                    size="lg"
+                    onClick={() => navigate(isSignedIn ? '/app' : '/signup')}
+                    className="bg-[#FF4301] hover:bg-[#E63901] text-white px-6 sm:px-8 py-3 text-sm sm:text-base font-semibold rounded-xl shadow-lg shadow-orange-500/25 transition-all hover:scale-105 active:scale-95"
+                  >
+                    Get started
+                    <ArrowRight className="ml-2 w-4 h-4 sm:w-5 sm:h-5" />
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-[#FF4301]" />
-                <span>No credit card required</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-[#FF4301]" />
-                <span>Export to PowerPoint</span>
+
+              {/* Trust badges below the card */}
+              <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 mt-6 text-xs sm:text-sm text-black/50 dark:text-white/50">
+                <div className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-[#FF4301]" />
+                  <span>Free forever</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-[#FF4301]" />
+                  <span>No credit card</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-[#FF4301]" />
+                  <span>Full editor access</span>
+                </div>
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Subtle bottom tagline */}
+        <div className="relative z-20 pb-8 text-center animate-on-scroll opacity-0" style={{ transitionDelay: '400ms' }}>
+          <p className="text-sm sm:text-base text-black/50 dark:text-white/50 max-w-xl mx-auto px-4">
+            The only AI presentation tool with a full editor and custom components.
+          </p>
         </div>
       </section>
 
@@ -485,9 +757,9 @@ const Landing: React.FC = () => {
           </div>
 
           <div className="animate-on-scroll opacity-0">
-            <div className="grid lg:grid-cols-[1fr_260px] gap-4 items-start">
-              {/* Main slide viewer with left sidebar */}
-              <div className="rounded-2xl overflow-hidden bg-zinc-900/80 border border-white/10">
+            <div className="flex flex-col lg:flex-row gap-4 items-start justify-center">
+              {/* Main slide viewer */}
+              <div className="rounded-2xl overflow-hidden bg-zinc-900/80 border border-white/10 w-full lg:w-auto lg:max-w-[900px]">
                 {/* Top bar */}
                 <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-white/5">
                   <div className="flex items-center gap-2">
@@ -496,7 +768,7 @@ const Landing: React.FC = () => {
                       <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
                       <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
                     </div>
-                    <span className="text-[11px] text-white/40 font-mono truncate max-w-[200px] sm:max-w-[300px]">
+                    <span className="text-[11px] text-white/40 font-mono truncate max-w-[200px] sm:max-w-[400px]">
                       {activeDeck?.name || 'Loading...'}
                     </span>
                   </div>
@@ -517,11 +789,11 @@ const Landing: React.FC = () => {
                 </div>
 
                 {/* Content with slide thumbnails underneath - fixed height container */}
-                <div className="flex flex-col h-[420px] sm:h-[480px] lg:h-[500px]">
+                <div className="flex flex-col h-[420px] sm:h-[520px] lg:h-[560px]">
                   {/* Main slide */}
-                  <div className="flex-1 p-3 md:p-4 flex items-center justify-center min-h-0">
+                  <div className="flex-1 p-3 md:p-6 flex items-center justify-center min-h-0">
                     <div
-                      className="aspect-video w-full max-h-full max-w-4xl relative rounded-lg overflow-hidden bg-black group"
+                      className="aspect-video w-full max-h-full relative rounded-lg overflow-hidden bg-black group"
                       onClick={() => {
                         handleUserInteraction();
                         showcaseRef.current?.focus();
@@ -620,7 +892,7 @@ const Landing: React.FC = () => {
               </div>
 
               {/* Deck gallery - match height with main viewer */}
-              <div className="rounded-2xl overflow-hidden bg-zinc-900/50 border border-white/10 flex flex-col h-auto lg:h-[540px]">
+              <div className="rounded-2xl overflow-hidden bg-zinc-900/50 border border-white/10 flex flex-col h-auto lg:h-[600px] w-full lg:w-[240px] lg:flex-shrink-0">
                 <div className="px-3 py-2 border-b border-white/5 flex-shrink-0">
                   <h4 className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Explore Examples</h4>
                 </div>
