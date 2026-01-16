@@ -706,7 +706,7 @@ const Landing: React.FC = () => {
             presentation platform
           </h1>
           <p className="mt-3 text-base sm:text-xl text-black/50 dark:text-white/50 max-w-2xl mx-auto px-4">
-            Beautiful decks for every idea. Sales. Teaching. Or just to learn something!
+            Beautiful decks for every idea. Sales, Finance, Pitch Decks, Teaching, or just to learn something!
           </p>
           <p className="mt-1 text-base sm:text-xl text-black/50 dark:text-white/50 max-w-2xl mx-auto px-4">
             Perfected in seconds.
