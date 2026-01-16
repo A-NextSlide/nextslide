@@ -85,15 +85,18 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     };
   }, []);
 
-  // Don't force landscape rotation - let slides scale naturally to fit the viewport
-  // This prevents complex rotation issues on mobile
-  const forceLandscape = false;
+  // Force landscape rotation on mobile portrait mode
+  const forceLandscape = isMobile && isPortrait;
 
-  // Computed values
+  // Computed values - use deck size consistently for all slides
   const deckSlideSize = useMemo(
     () => slideSize || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT },
     [slideSize]
   );
+
+  // Use deck size for scale calculation (consistent across all slides)
+  const baseSlideWidth = deckSlideSize.width;
+  const baseSlideHeight = deckSlideSize.height;
 
   const validIndex = useMemo(() => {
     if (!slides.length) return 0;
@@ -104,15 +107,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     () => (slides.length ? slides[validIndex] : null),
     [slides, validIndex]
   );
-
-  const normalizedResult = useMemo(() => {
-    if (!currentSlide) return null;
-    return normalizeSlideForRender(currentSlide, deckSlideSize, { preferFallbackSize: true });
-  }, [currentSlide, deckSlideSize]);
-
-  const resolvedSlideSize = normalizedResult?.slideSize || deckSlideSize;
-  const baseSlideWidth = resolvedSlideSize.width;
-  const baseSlideHeight = resolvedSlideSize.height;
 
   // Thumbnail dimensions - guard against invalid values
   const thumbnailHeight = 120;
@@ -409,7 +403,19 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[100] bg-black"
-      style={{ height: '100dvh' }}
+      style={forceLandscape ? {
+        // Rotate container 90deg for landscape view on portrait mobile
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100vh',
+        height: '100vw',
+        transform: 'rotate(90deg)',
+        transformOrigin: 'top left',
+        marginLeft: '100vw',
+      } : {
+        height: '100dvh'
+      }}
     >
       {/* Main slide display - container for measuring available space */}
       <div

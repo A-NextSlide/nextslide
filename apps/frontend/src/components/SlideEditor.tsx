@@ -1714,8 +1714,9 @@ const SlideEditorContent: React.FC = () => {
             className="relative h-full w-full overflow-hidden"
             onPointerDownCapture={handleMobileChatHintDismiss}
           >
+            {/* Slide area takes full height - chat overlays on top */}
             <div className="absolute inset-0 flex flex-col">
-              <div className="flex-1 min-h-0 p-2" style={{ paddingBottom: `${minMobileChatHeight}px` }}>
+              <div className="flex-1 min-h-0 p-2">
                 <DeckPanel
                   deckStatus={deckStatus}
                   isNewDeck={isNewDeck}
@@ -1726,8 +1727,9 @@ const SlideEditorContent: React.FC = () => {
               </div>
             </div>
 
+            {/* Chat panel overlays on top of slides */}
             <div
-              className={`absolute inset-x-0 bottom-0 z-20 flex flex-col border-t border-border bg-background/95 backdrop-blur-md shadow-2xl ${isChatDragging ? 'cursor-row-resize' : ''}`}
+              className={`absolute inset-x-0 bottom-0 z-20 flex flex-col border-t border-border bg-background/98 backdrop-blur-md shadow-2xl ${isChatDragging ? 'cursor-row-resize' : ''}`}
               style={{ height: `${mobileChatHeight || minMobileChatHeight}px` }}
             >
               <div className="relative flex items-center justify-center h-8">
