@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { deckSyncService } from '@/lib/deckSyncService';
 import { Progress } from '@/components/ui/progress';
 
-const MAX_SLIDES_LIMIT = 50;
+const MAX_SLIDES_LIMIT = 30;
 
 interface GoogleSlidesImportModalProps {
   open: boolean;

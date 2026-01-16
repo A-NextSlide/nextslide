@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { Button } from '@/components/ui/button';
-import { Plus, User as UserIcon, Search as SearchIcon, GripVertical, X, Grid, Trash2, ChevronDown, FilePlus, Pencil, Upload, Link as LinkIcon, Image as ImageIcon, Check, Loader2, Sparkles, ArrowRight } from 'lucide-react';
+import { Plus, User as UserIcon, Search as SearchIcon, GripVertical, X, Grid, Trash2, ChevronDown, FilePlus, Upload, Link as LinkIcon, Image as ImageIcon, Check, Loader2, Sparkles, ArrowRight } from 'lucide-react';
 import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import { useToast } from '@/hooks/use-toast';
 import { useDeckStore } from '@/stores/deckStore';
@@ -588,29 +588,6 @@ const DeckList: React.FC = () => {
     handleSlideReorder(fromSlide.id, toSlide.id);
   }, [currentOutline, handleSlideReorder]);
 
-  // Handle manual mode creation
-  const handleManualMode = useCallback(() => {
-    // Create a manual outline with initial slide
-    const manualOutline = {
-      id: uuidv4(),
-      title: 'Manual Presentation',
-      topic: 'Manual Presentation',
-      slides: [{
-        id: uuidv4(),
-        title: 'Slide 1',
-        content: '',
-        deepResearch: false,
-        taggedMedia: [],
-        narrative_role: 'supporting',
-        slide_type: 'content',
-        speaker_notes: '',
-        manualCharts: []
-      }],
-      isManualMode: true
-    };
-
-    setCurrentOutline(manualOutline);
-  }, [setCurrentOutline]);
 
   // State to hold conversational data for outline generation
   const [conversationalData, setConversationalData] = useState<{
@@ -1836,10 +1813,6 @@ const DeckList: React.FC = () => {
                     <FilePlus className="mr-2 h-4 w-4" />
                     <span>Blank Presentation</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleManualMode} className="cursor-pointer">
-                    <Pencil className="mr-2 h-4 w-4" />
-                    <span>Create Outline</span>
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setShowGoogleImport(true)} className="cursor-pointer">
                     <span className="mr-2 inline-flex items-center justify-center h-4 w-4">
                       <svg className="h-4 w-4" viewBox="0 0 256 262" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -2392,7 +2365,7 @@ const DeckList: React.FC = () => {
                                 className="text-lg sm:text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
                                 style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
                               >
-                                TURN{' '}<RotatingWords compact={isMobileView} />{' '}INTO<br />PERFECT PRESENTATIONS
+                                TURN<RotatingWords compact={isMobileView} />INTO<br />PERFECT PRESENTATIONS
                               </h1>
                               <div className="space-y-2">
                                 <p className="text-xs sm:text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
@@ -2411,7 +2384,7 @@ const DeckList: React.FC = () => {
                               <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                               <div
                                 className={cn(
-                                  "relative flex items-end bg-white dark:bg-zinc-900 rounded-xl md:rounded-2xl shadow-lg md:shadow-xl shadow-slate-200/50 dark:shadow-black/30 border p-1.5 md:p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
+                                  "relative flex items-center bg-white dark:bg-zinc-900 rounded-xl md:rounded-2xl shadow-lg md:shadow-xl shadow-slate-200/50 dark:shadow-black/30 border p-1.5 md:p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
                                   isHeroDraggingOver ? "border-orange-500 border-dashed border-2 bg-orange-50 dark:bg-orange-950/30" : "border-slate-200 dark:border-zinc-700"
                                 )}
                                 onDragEnter={handleHeroDragEnter}
@@ -2559,7 +2532,7 @@ const DeckList: React.FC = () => {
                                   {/* Submit Button */}
                                   <Button
                                     size="icon"
-                                    className="h-9 w-9 md:h-10 md:w-10 ml-0.5 md:ml-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white shadow-md md:shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95"
+                                    className="h-9 w-9 md:h-10 md:w-10 md:ml-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white shadow-md md:shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95"
                                     onClick={() => {
                                       if (heroInput.trim() || uploadedFiles.length > 0) {
                                         openConversationalOnboarding(heroInput);

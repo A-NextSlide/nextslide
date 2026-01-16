@@ -72,6 +72,23 @@ export function NavigationProvider({
     if (onSlideChange) onSlideChange(index);
   };
 
+  // Listen for PDF export navigation requests
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handlePdfExportNavigate = (event: CustomEvent<{ slideIndex: number }>) => {
+      const { slideIndex } = event.detail;
+      if (typeof slideIndex === 'number' && slideIndex >= 0 && slideIndex < slides.length) {
+        setCurrentSlideIndex(slideIndex);
+      }
+    };
+
+    window.addEventListener('pdf-export:navigate', handlePdfExportNavigate as EventListener);
+    return () => {
+      window.removeEventListener('pdf-export:navigate', handlePdfExportNavigate as EventListener);
+    };
+  }, [slides.length, setCurrentSlideIndex]);
+
   // Dispatch a slidechange event any time the active slide index updates.
   useEffect(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { IconButton } from '../ui/IconButton';
-import { Edit, Plus, ChevronLeft, Undo, Redo, History, ZoomIn, ZoomOut, Search, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileJson, Layers, UploadCloud, Sun, Moon, MessageSquare, Settings, Plug, LogOut, Share2 } from 'lucide-react';
+import { Edit, Plus, ChevronLeft, Undo, Redo, History, ZoomIn, ZoomOut, Search, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileText, Loader2, Sun, Moon, MessageSquare, Settings, Plug, LogOut, Share2 } from 'lucide-react';
 import { useVersionHistory } from '@/context/VersionHistoryContext';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 import { ZOOM_LIMITS, ZOOM_STEP } from '@/utils/zoom';
@@ -20,9 +20,10 @@ import { DeckStatus } from '@/types/DeckTypes';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
 import { useTheme } from "next-themes";
-import { extractDeckComponents } from '@/lib/componentExtractor';
-import { googleIntegrationApi } from '@/services/googleIntegrationApi';
 import { useToast } from '@/hooks/use-toast';
+import { exportDeckToPDF } from '@/utils/pdfExport';
+import { exportDeckToHTML } from '@/utils/htmlExport';
+import { trackDeckExported } from '@/services/analytics';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import { IntegrationsDialog } from '@/components/integrations';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -141,89 +142,79 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
     navigate('/app');
   };
 
-  // Export handlers (moved from DeckExporter into header actions menu)
-  const handleExportJSON = useCallback(async () => {
+  // PDF Export handler
+  const handleExportPDF = useCallback(async () => {
     try {
       setIsExporting(true);
-      const data = await extractDeckComponents(deckName, deckData?.slides || []);
-      const deckString = JSON.stringify(data, null, 2);
-      const blob = new Blob([deckString], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${deckName}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const slides = deckData?.slides || [];
+
+      toast({
+        title: "Generating PDF",
+        description: `Processing ${slides.length} slides...`,
+      });
+
+      await exportDeckToPDF(slides, deckName, (current, total) => {
+        console.log(`Processing slide ${current}/${total}`);
+      });
+
+      trackDeckExported({
+        deckId: deckData?.uuid || deckName,
+        format: 'pdf',
+        slideCount: slides.length
+      });
+
+      toast({
+        title: "PDF Export Complete",
+        description: `Successfully exported ${slides.length} slides`,
+      });
+    } catch (error) {
+      console.error('PDF export failed:', error);
+      toast({
+        title: "Export Failed",
+        description: error instanceof Error ? error.message : "Failed to export PDF",
+        variant: "destructive"
+      });
     } finally {
       setIsExporting(false);
     }
-  }, [deckName, deckData?.slides]);
+  }, [deckName, deckData?.slides, deckData?.uuid, toast]);
 
+  // HTML Export handler (offline presentation)
   const handleExportHTML = useCallback(async () => {
     try {
       setIsExporting(true);
-      const data = await extractDeckComponents(deckName, deckData?.slides || []);
-      // Reuse exporter by dynamic import if needed, otherwise simple wrapper
-      const { default: DeckExporterModule } = await import('./DeckExporter');
-      // Fallback: simple HTML wrapper via Blob if module API not available
-      try {
-        // Prefer using the same generation as DeckExporter by temporarily creating the module instance
-        const generateHtml = (DeckExporterModule as any)?.generateHtmlExport;
-        if (typeof generateHtml === 'function') {
-          const htmlContent = generateHtml(data);
-          const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
-          const htmlUrl = URL.createObjectURL(htmlBlob);
-          const htmlLink = document.createElement('a');
-          htmlLink.href = htmlUrl;
-          htmlLink.download = `${deckName}.html`;
-          document.body.appendChild(htmlLink);
-          htmlLink.click();
-          document.body.removeChild(htmlLink);
-          URL.revokeObjectURL(htmlUrl);
-          return;
-        }
-      } catch { }
-      // Minimal HTML if exporter helper is not exposed
-      const html = `<html><head><meta charset="utf-8"><title>${deckName}</title></head><body><pre>${
-        // Escape HTML for safety
-        String(JSON.stringify(data, null, 2)).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string))
-        }</pre></body></html>`;
-      const htmlBlob = new Blob([html], { type: 'text/html' });
-      const htmlUrl = URL.createObjectURL(htmlBlob);
-      const htmlLink = document.createElement('a');
-      htmlLink.href = htmlUrl;
-      htmlLink.download = `${deckName}.html`;
-      document.body.appendChild(htmlLink);
-      htmlLink.click();
-      document.body.removeChild(htmlLink);
-      URL.revokeObjectURL(htmlUrl);
-    } finally {
-      setIsExporting(false);
-    }
-  }, [deckName, deckData?.slides]);
+      const slides = deckData?.slides || [];
 
-  const startGoogleExport = useCallback(async (mode: 'images' | 'editable') => {
-    try {
-      setIsExporting(true);
-      const completeDeck = await extractDeckComponents(deckName, deckData?.slides || []);
-      const status = await googleIntegrationApi.getAuthStatus();
-      if (!status.connected) {
-        const url = await googleIntegrationApi.initiateAuth();
-        window.location.href = url;
-        return;
-      }
-      const jobId = mode === 'images'
-        ? await googleIntegrationApi.exportSlidesImages(completeDeck as any, { title: (completeDeck as any).name || deckName })
-        : await googleIntegrationApi.exportSlidesEditable(completeDeck as any, { title: (completeDeck as any).name || deckName, createNew: true });
-      const job = await googleIntegrationApi.pollJob<{ presentationId: string; webViewLink?: string }>(jobId, { intervalMs: 1500, timeoutMs: 300000 });
-      const link = (job.result as any)?.webViewLink;
-      if (link) window.open(link, '_blank');
+      toast({
+        title: "Generating Offline Presentation",
+        description: `Processing ${slides.length} slides...`,
+      });
+
+      await exportDeckToHTML(slides, deckName, (current, total) => {
+        console.log(`Processing slide ${current}/${total}`);
+      });
+
+      trackDeckExported({
+        deckId: deckData?.uuid || deckName,
+        format: 'html',
+        slideCount: slides.length
+      });
+
+      toast({
+        title: "Export Complete",
+        description: `Successfully exported ${slides.length} slides to HTML`,
+      });
+    } catch (error) {
+      console.error('HTML export failed:', error);
+      toast({
+        title: "Export Failed",
+        description: error instanceof Error ? error.message : "Failed to export HTML",
+        variant: "destructive"
+      });
     } finally {
       setIsExporting(false);
     }
-  }, [deckName, deckData?.slides]);
+  }, [deckName, deckData?.slides, deckData?.uuid, toast]);
 
   return (
     <>
@@ -543,26 +534,22 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
               <DropdownMenuSeparator />
 
               <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <Layers size={14} className="mr-2" />
+                <DropdownMenuSubTrigger disabled={isExporting}>
+                  {isExporting ? (
+                    <Loader2 size={14} className="mr-2 animate-spin" />
+                  ) : (
+                    <FileText size={14} className="mr-2" />
+                  )}
                   Export
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
-                  <DropdownMenuItem onClick={handleExportJSON} disabled={isExporting}>
-                    <FileJson size={14} className="mr-2" />
-                    Export as JSON
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleExportHTML} disabled={isExporting}>
-                    <Layers size={14} className="mr-2" />
-                    Export as HTML
+                    <FileText size={14} className="mr-2" />
+                    Export to NextSlide (Offline)
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => startGoogleExport('images')} disabled={isExporting}>
-                    <UploadCloud size={14} className="mr-2" />
-                    Google Slides (Images)
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => startGoogleExport('editable')} disabled={isExporting}>
-                    <UploadCloud size={14} className="mr-2" />
-                    Google Slides (Editable)
+                  <DropdownMenuItem onClick={handleExportPDF} disabled={isExporting}>
+                    <FileText size={14} className="mr-2" />
+                    Export to PDF
                   </DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>

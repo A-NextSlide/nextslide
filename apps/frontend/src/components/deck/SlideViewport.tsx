@@ -76,11 +76,10 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   const viewportRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const currentSlide = slides[currentSlideIndex];
-  // Reserve UI chrome height so the slide itself fits without forcing scroll (especially on mobile)
-  const reservedTopBarHeight = currentSlide && (!isMobileView || isEditing) ? 48 : 0;
-  const reservedBottomBarHeight = slides.length > 0 ? 56 : 0;
-  const reservedChromeHeight = reservedTopBarHeight + reservedBottomBarHeight;
-  const { width: slideWidth, height: slideHeight } = useSlideViewportSize(viewportRef, { reservedHeight: reservedChromeHeight });
+  // Note: The viewport element already contains the chrome (controls bar, slide control bar)
+  // and the computeSlideSize function adds its own padding. We don't need additional reserved height
+  // as that was double-counting space and making slides too small.
+  const { width: slideWidth, height: slideHeight } = useSlideViewportSize(viewportRef);
 
   // Add ref for the scrollable container
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -143,9 +142,9 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   const scaledSlideWidth = Math.max(1, Math.round(slideWidth * zoomScale));
   const scaledSlideHeight = Math.max(1, Math.round(slideHeight * zoomScale));
   // Controls bar is hidden on mobile when not editing
-  const topBarHeight = reservedTopBarHeight;
-  const bottomBarHeight = reservedBottomBarHeight;
-  const chromeHeight = reservedChromeHeight;
+  const topBarHeight = currentSlide && (!isMobileView || isEditing) ? 48 : 0;
+  const bottomBarHeight = slides.length > 0 ? 56 : 0;
+  const chromeHeight = topBarHeight + bottomBarHeight;
   const canvasHeight = Math.max(1, scaledSlideHeight + chromeHeight);
 
   const [showCommentsPanel, setShowCommentsPanel] = useState(false);

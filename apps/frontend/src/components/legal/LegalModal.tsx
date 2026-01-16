@@ -1,0 +1,375 @@
+import React from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
+type LegalDocType = 'privacy' | 'terms';
+
+interface LegalModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  documentType: LegalDocType;
+}
+
+const COMPANY_NAME = 'NextSlide';
+const COMPANY_EMAIL = 'legal@nextslide.ai';
+const WEBSITE_URL = 'nextslide.ai';
+const EFFECTIVE_DATE = 'January 1, 2026';
+const LAST_UPDATED = 'January 16, 2026';
+
+const PrivacyPolicy: React.FC = () => (
+  <div className="prose prose-sm dark:prose-invert max-w-none">
+    <p className="text-sm text-muted-foreground mb-6">
+      Effective Date: {EFFECTIVE_DATE} | Last Updated: {LAST_UPDATED}
+    </p>
+
+    <h2>1. Introduction</h2>
+    <p>
+      Welcome to {COMPANY_NAME} ("{COMPANY_NAME}," "we," "us," or "our"). This Privacy Policy describes how we collect, use, disclose, and protect your information when you use our website, applications, and services (collectively, the "Services"). By accessing or using our Services, you agree to this Privacy Policy. If you do not agree, please do not use our Services.
+    </p>
+
+    <h2>2. Information We Collect</h2>
+
+    <h3>2.1 Information You Provide</h3>
+    <ul>
+      <li><strong>Account Information:</strong> Name, email address, password, and profile information when you create an account.</li>
+      <li><strong>Payment Information:</strong> Billing address and payment details processed through our secure third-party payment processors.</li>
+      <li><strong>Content:</strong> All presentations, slides, text, images, documents, and other materials you create, upload, or generate using our Services ("User Content").</li>
+      <li><strong>Communications:</strong> Messages, feedback, and correspondence you send to us.</li>
+      <li><strong>Prompts and Inputs:</strong> All text prompts, instructions, and inputs you provide to our AI systems.</li>
+    </ul>
+
+    <h3>2.2 Information Collected Automatically</h3>
+    <ul>
+      <li><strong>Usage Data:</strong> Pages visited, features used, time spent, clicks, and interaction patterns.</li>
+      <li><strong>Device Information:</strong> IP address, browser type, operating system, device identifiers, and hardware information.</li>
+      <li><strong>Cookies and Tracking:</strong> We use cookies, pixels, and similar technologies to collect information about your browsing activities.</li>
+      <li><strong>Analytics Data:</strong> Performance metrics, error logs, and diagnostic information.</li>
+      <li><strong>AI Interaction Data:</strong> All inputs, outputs, and interaction patterns with our AI features.</li>
+    </ul>
+
+    <h3>2.3 Information from Third Parties</h3>
+    <ul>
+      <li>Social login providers (Google, etc.) if you choose to authenticate via these services.</li>
+      <li>Analytics and advertising partners.</li>
+      <li>Public databases and data enrichment services.</li>
+    </ul>
+
+    <h2>3. How We Use Your Information</h2>
+    <p>We use collected information for the following purposes:</p>
+    <ul>
+      <li><strong>Service Delivery:</strong> To provide, maintain, and improve our Services.</li>
+      <li><strong>AI Training and Improvement:</strong> To train, improve, and develop our AI models, algorithms, and machine learning systems. This includes using your User Content, prompts, and AI interaction data.</li>
+      <li><strong>Product Development:</strong> To develop new features, products, and services.</li>
+      <li><strong>Analytics:</strong> To analyze usage patterns and optimize user experience.</li>
+      <li><strong>Communications:</strong> To send transactional emails, updates, marketing communications, and promotional materials.</li>
+      <li><strong>Security:</strong> To detect, prevent, and address fraud, abuse, and security issues.</li>
+      <li><strong>Legal Compliance:</strong> To comply with legal obligations and enforce our terms.</li>
+      <li><strong>Business Operations:</strong> For internal operations, research, and business intelligence.</li>
+      <li><strong>Aggregated Insights:</strong> To create and share aggregated, anonymized, or de-identified data.</li>
+    </ul>
+
+    <h2>4. Data Ownership and License</h2>
+    <p>
+      <strong>Your Ownership:</strong> You retain ownership of the original content you upload to our Services.
+    </p>
+    <p>
+      <strong>License Grant:</strong> By using our Services, you grant {COMPANY_NAME} a worldwide, non-exclusive, royalty-free, sublicensable, transferable, perpetual, and irrevocable license to use, reproduce, modify, adapt, publish, translate, create derivative works from, distribute, perform, and display your User Content in connection with operating, improving, and promoting our Services, including for AI training purposes. This license survives termination of your account.
+    </p>
+    <p>
+      <strong>AI-Generated Content:</strong> Content generated by our AI systems based on your inputs may be used by {COMPANY_NAME} without restriction. You receive a license to use AI-generated content for your purposes, but {COMPANY_NAME} retains rights to all AI-generated outputs.
+    </p>
+
+    <h2>5. Information Sharing and Disclosure</h2>
+    <p>We may share your information with:</p>
+    <ul>
+      <li><strong>Service Providers:</strong> Third-party vendors who assist in operating our Services (hosting, analytics, payment processing, AI infrastructure).</li>
+      <li><strong>Business Partners:</strong> Partners for joint offerings, integrations, or promotional activities.</li>
+      <li><strong>Affiliates:</strong> Our parent company, subsidiaries, and affiliated entities.</li>
+      <li><strong>Legal Requirements:</strong> When required by law, legal process, or government request.</li>
+      <li><strong>Business Transfers:</strong> In connection with a merger, acquisition, bankruptcy, or sale of assets, your information may be transferred to the acquiring entity.</li>
+      <li><strong>Protection of Rights:</strong> To protect our rights, privacy, safety, or property, and that of our users or others.</li>
+      <li><strong>With Consent:</strong> With your consent or at your direction.</li>
+    </ul>
+
+    <h2>6. Data Retention</h2>
+    <p>
+      We retain your information for as long as your account is active, as needed to provide Services, and as necessary to comply with legal obligations, resolve disputes, and enforce our agreements. Even after account deletion, we may retain certain information for legitimate business purposes, including AI training data derived from your use of the Services.
+    </p>
+
+    <h2>7. Data Security</h2>
+    <p>
+      We implement industry-standard security measures including encryption, firewalls, and secure server infrastructure. However, no method of transmission or storage is 100% secure. You acknowledge that you provide information at your own risk, and we cannot guarantee absolute security.
+    </p>
+
+    <h2>8. Your Rights and Choices</h2>
+    <ul>
+      <li><strong>Account Information:</strong> You may update or delete your account information through your account settings.</li>
+      <li><strong>Marketing Communications:</strong> You may opt out of promotional emails by clicking "unsubscribe" in any marketing email.</li>
+      <li><strong>Cookies:</strong> You can manage cookie preferences through your browser settings.</li>
+      <li><strong>Data Access/Deletion:</strong> You may request access to or deletion of your personal information by contacting us at {COMPANY_EMAIL}. Note that some data may be retained as permitted by law.</li>
+    </ul>
+    <p>
+      <strong>California Residents:</strong> California residents may have additional rights under the CCPA. Contact us for more information.
+    </p>
+    <p>
+      <strong>European Users:</strong> Users in the EEA may have additional rights under GDPR. Our legal basis for processing includes consent, contract performance, legitimate interests, and legal compliance.
+    </p>
+
+    <h2>9. Children's Privacy</h2>
+    <p>
+      Our Services are not intended for children under 13 (or 16 in certain jurisdictions). We do not knowingly collect personal information from children. If we learn we have collected information from a child, we will delete it promptly.
+    </p>
+
+    <h2>10. International Data Transfers</h2>
+    <p>
+      Your information may be transferred to and processed in countries other than your own, including the United States. By using our Services, you consent to such transfers. We implement appropriate safeguards for international data transfers.
+    </p>
+
+    <h2>11. Third-Party Links and Services</h2>
+    <p>
+      Our Services may contain links to third-party websites or services. We are not responsible for the privacy practices of these third parties. We encourage you to review their privacy policies.
+    </p>
+
+    <h2>12. Changes to This Policy</h2>
+    <p>
+      We may update this Privacy Policy at any time. We will notify you of material changes by posting the new policy on our website and updating the "Last Updated" date. Your continued use of the Services after changes constitutes acceptance of the updated policy.
+    </p>
+
+    <h2>13. Contact Us</h2>
+    <p>
+      For questions about this Privacy Policy or our data practices, contact us at:
+    </p>
+    <p>
+      {COMPANY_NAME}<br />
+      Email: {COMPANY_EMAIL}<br />
+      Website: {WEBSITE_URL}
+    </p>
+  </div>
+);
+
+const TermsOfService: React.FC = () => (
+  <div className="prose prose-sm dark:prose-invert max-w-none">
+    <p className="text-sm text-muted-foreground mb-6">
+      Effective Date: {EFFECTIVE_DATE} | Last Updated: {LAST_UPDATED}
+    </p>
+
+    <h2>1. Acceptance of Terms</h2>
+    <p>
+      By accessing or using {COMPANY_NAME}'s website, applications, and services (collectively, the "Services"), you agree to be bound by these Terms of Service ("Terms"), our Privacy Policy, and all applicable laws and regulations. If you do not agree to these Terms, you may not use our Services.
+    </p>
+    <p>
+      We reserve the right to modify these Terms at any time. Changes are effective immediately upon posting. Your continued use of the Services constitutes acceptance of modified Terms.
+    </p>
+
+    <h2>2. Description of Services</h2>
+    <p>
+      {COMPANY_NAME} provides an AI-powered presentation creation platform that allows users to create, edit, and share presentations. Our Services include web applications, AI features, templates, and related tools.
+    </p>
+
+    <h2>3. Account Registration</h2>
+    <ul>
+      <li>You must be at least 13 years old (or 16 in certain jurisdictions) to use our Services.</li>
+      <li>You must provide accurate, current, and complete information during registration.</li>
+      <li>You are responsible for maintaining the confidentiality of your account credentials.</li>
+      <li>You are responsible for all activities that occur under your account.</li>
+      <li>You must notify us immediately of any unauthorized use of your account.</li>
+    </ul>
+
+    <h2>4. User Content and License Grant</h2>
+
+    <h3>4.1 Your Content</h3>
+    <p>
+      "User Content" includes all presentations, slides, text, images, documents, prompts, inputs, and other materials you create, upload, submit, or generate using our Services.
+    </p>
+
+    <h3>4.2 License to {COMPANY_NAME}</h3>
+    <p>
+      By submitting User Content, you grant {COMPANY_NAME} a worldwide, non-exclusive, royalty-free, sublicensable, transferable, perpetual, and irrevocable license to:
+    </p>
+    <ul>
+      <li>Use, reproduce, modify, adapt, publish, translate, and create derivative works from your User Content;</li>
+      <li>Distribute, publicly perform, and publicly display your User Content;</li>
+      <li>Use your User Content to train, improve, and develop our AI models, algorithms, and machine learning systems;</li>
+      <li>Use your User Content for analytics, research, and product development;</li>
+      <li>Sublicense these rights to our service providers and partners;</li>
+      <li>Use your User Content for any purpose related to operating and improving our Services.</li>
+    </ul>
+    <p>
+      This license survives termination of your account or these Terms.
+    </p>
+
+    <h3>4.3 AI-Generated Content</h3>
+    <p>
+      Content generated by our AI systems ("AI-Generated Content") is owned by {COMPANY_NAME}. We grant you a limited, non-exclusive, non-transferable license to use AI-Generated Content for your personal or internal business purposes, subject to these Terms. {COMPANY_NAME} retains all rights to AI-Generated Content and may use it without restriction, including for AI training, marketing, and other purposes.
+    </p>
+
+    <h3>4.4 Your Representations</h3>
+    <p>You represent and warrant that:</p>
+    <ul>
+      <li>You own or have necessary rights to your User Content;</li>
+      <li>Your User Content does not infringe any third-party rights;</li>
+      <li>Your User Content complies with all applicable laws;</li>
+      <li>You have obtained all necessary consents for any personal information in your User Content.</li>
+    </ul>
+
+    <h2>5. Acceptable Use Policy</h2>
+    <p>You agree not to:</p>
+    <ul>
+      <li>Use the Services for any unlawful purpose or in violation of any laws;</li>
+      <li>Upload content that is illegal, harmful, threatening, abusive, harassing, defamatory, obscene, or objectionable;</li>
+      <li>Infringe any intellectual property rights or other proprietary rights;</li>
+      <li>Upload malware, viruses, or other harmful code;</li>
+      <li>Attempt to gain unauthorized access to our systems or other users' accounts;</li>
+      <li>Interfere with or disrupt the Services or servers;</li>
+      <li>Use automated systems (bots, scrapers) to access the Services without permission;</li>
+      <li>Resell, redistribute, or sublicense the Services without authorization;</li>
+      <li>Reverse engineer, decompile, or disassemble any part of the Services;</li>
+      <li>Use the Services to generate content for competing AI training without written consent;</li>
+      <li>Circumvent any usage limits, access controls, or security measures;</li>
+      <li>Impersonate any person or entity or misrepresent your affiliation.</li>
+    </ul>
+
+    <h2>6. Intellectual Property</h2>
+
+    <h3>6.1 Our Intellectual Property</h3>
+    <p>
+      The Services, including all software, designs, text, graphics, logos, icons, images, audio, video, AI models, algorithms, and other content (excluding User Content), are owned by {COMPANY_NAME} or our licensors and are protected by copyright, trademark, patent, and other intellectual property laws.
+    </p>
+
+    <h3>6.2 Limited License to You</h3>
+    <p>
+      We grant you a limited, non-exclusive, non-transferable, revocable license to access and use the Services for your personal or internal business purposes, subject to these Terms. This license does not include the right to modify, copy, distribute, or create derivative works from the Services.
+    </p>
+
+    <h3>6.3 Feedback</h3>
+    <p>
+      If you provide feedback, suggestions, or ideas about the Services ("Feedback"), you grant {COMPANY_NAME} a perpetual, irrevocable, worldwide, royalty-free license to use such Feedback without restriction or compensation to you.
+    </p>
+
+    <h2>7. Payment Terms</h2>
+    <ul>
+      <li><strong>Pricing:</strong> Fees for paid plans are as described on our pricing page. We may change pricing at any time with notice.</li>
+      <li><strong>Billing:</strong> Paid subscriptions are billed in advance on a recurring basis. You authorize us to charge your payment method.</li>
+      <li><strong>Refunds:</strong> Payments are non-refundable except as required by law or at our sole discretion.</li>
+      <li><strong>Taxes:</strong> You are responsible for all applicable taxes.</li>
+      <li><strong>Credits:</strong> Service credits have no cash value and expire as specified. Unused credits are non-refundable.</li>
+    </ul>
+
+    <h2>8. Termination</h2>
+    <ul>
+      <li><strong>By You:</strong> You may terminate your account at any time through account settings or by contacting us.</li>
+      <li><strong>By Us:</strong> We may suspend or terminate your account at any time, with or without cause, with or without notice. Reasons include, but are not limited to, violation of these Terms, suspected fraud, non-payment, or any conduct we deem harmful.</li>
+      <li><strong>Effect of Termination:</strong> Upon termination, your right to use the Services ceases immediately. We may delete your User Content. Provisions that by their nature should survive termination will survive, including Sections 4, 6, 9, 10, 11, and 12.</li>
+    </ul>
+
+    <h2>9. Disclaimers</h2>
+    <p>
+      <strong>THE SERVICES ARE PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, ACCURACY, OR AVAILABILITY.</strong>
+    </p>
+    <p>
+      We do not warrant that:
+    </p>
+    <ul>
+      <li>The Services will be uninterrupted, secure, or error-free;</li>
+      <li>AI-generated content will be accurate, complete, or appropriate;</li>
+      <li>The Services will meet your requirements;</li>
+      <li>Any defects will be corrected;</li>
+      <li>The Services are free of viruses or harmful components.</li>
+    </ul>
+    <p>
+      You acknowledge that AI-generated content may contain errors, biases, or inaccuracies. You are solely responsible for reviewing and verifying all content before use.
+    </p>
+
+    <h2>10. Limitation of Liability</h2>
+    <p>
+      <strong>TO THE MAXIMUM EXTENT PERMITTED BY LAW, {COMPANY_NAME.toUpperCase()}, ITS OFFICERS, DIRECTORS, EMPLOYEES, AGENTS, AFFILIATES, SUCCESSORS, AND ASSIGNS SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, PUNITIVE, OR EXEMPLARY DAMAGES, INCLUDING DAMAGES FOR LOSS OF PROFITS, GOODWILL, USE, DATA, OR OTHER INTANGIBLE LOSSES, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.</strong>
+    </p>
+    <p>
+      <strong>OUR TOTAL LIABILITY FOR ANY CLAIMS ARISING FROM OR RELATED TO THESE TERMS OR THE SERVICES SHALL NOT EXCEED THE GREATER OF (A) THE AMOUNT YOU PAID US IN THE TWELVE (12) MONTHS PRECEDING THE CLAIM, OR (B) ONE HUNDRED DOLLARS ($100).</strong>
+    </p>
+    <p>
+      Some jurisdictions do not allow the exclusion of certain warranties or limitation of liability, so some of the above limitations may not apply to you.
+    </p>
+
+    <h2>11. Indemnification</h2>
+    <p>
+      You agree to indemnify, defend, and hold harmless {COMPANY_NAME}, its officers, directors, employees, agents, affiliates, successors, and assigns from and against any claims, liabilities, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or related to:
+    </p>
+    <ul>
+      <li>Your use of the Services;</li>
+      <li>Your User Content;</li>
+      <li>Your violation of these Terms;</li>
+      <li>Your violation of any third-party rights;</li>
+      <li>Your violation of any applicable laws.</li>
+    </ul>
+
+    <h2>12. Dispute Resolution</h2>
+
+    <h3>12.1 Governing Law</h3>
+    <p>
+      These Terms are governed by the laws of the State of Delaware, United States, without regard to conflict of law principles.
+    </p>
+
+    <h3>12.2 Arbitration Agreement</h3>
+    <p>
+      <strong>PLEASE READ THIS CAREFULLY. IT AFFECTS YOUR RIGHTS.</strong>
+    </p>
+    <p>
+      You and {COMPANY_NAME} agree that any dispute, claim, or controversy arising out of or relating to these Terms or the Services shall be resolved by binding arbitration, rather than in court, except that either party may seek equitable relief in court for infringement or misuse of intellectual property rights.
+    </p>
+    <p>
+      The arbitration will be conducted by JAMS under its Comprehensive Arbitration Rules. The arbitration will take place in Delaware, or another mutually agreed location. The arbitrator's decision will be final and binding.
+    </p>
+
+    <h3>12.3 Class Action Waiver</h3>
+    <p>
+      <strong>YOU AND {COMPANY_NAME.toUpperCase()} AGREE THAT EACH MAY BRING CLAIMS AGAINST THE OTHER ONLY IN YOUR OR ITS INDIVIDUAL CAPACITY AND NOT AS A PLAINTIFF OR CLASS MEMBER IN ANY PURPORTED CLASS OR REPRESENTATIVE PROCEEDING.</strong>
+    </p>
+
+    <h2>13. General Provisions</h2>
+    <ul>
+      <li><strong>Entire Agreement:</strong> These Terms, together with our Privacy Policy, constitute the entire agreement between you and {COMPANY_NAME}.</li>
+      <li><strong>Severability:</strong> If any provision is found unenforceable, the remaining provisions remain in effect.</li>
+      <li><strong>Waiver:</strong> Our failure to enforce any right or provision is not a waiver of such right or provision.</li>
+      <li><strong>Assignment:</strong> You may not assign these Terms without our consent. We may assign our rights and obligations without restriction.</li>
+      <li><strong>Force Majeure:</strong> We are not liable for delays or failures due to circumstances beyond our reasonable control.</li>
+      <li><strong>No Agency:</strong> Nothing in these Terms creates a partnership, joint venture, or agency relationship.</li>
+    </ul>
+
+    <h2>14. Contact Information</h2>
+    <p>
+      For questions about these Terms, contact us at:
+    </p>
+    <p>
+      {COMPANY_NAME}<br />
+      Email: {COMPANY_EMAIL}<br />
+      Website: {WEBSITE_URL}
+    </p>
+  </div>
+);
+
+const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose, documentType }) => {
+  const title = documentType === 'privacy' ? 'Privacy Policy' : 'Terms of Service';
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0">
+        <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
+          <DialogTitle className="text-xl font-bold" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+            {title}
+          </DialogTitle>
+        </DialogHeader>
+        <ScrollArea className="flex-1 px-6 py-4">
+          {documentType === 'privacy' ? <PrivacyPolicy /> : <TermsOfService />}
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+export default LegalModal;

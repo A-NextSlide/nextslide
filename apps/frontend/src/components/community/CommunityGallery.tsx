@@ -1,9 +1,27 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, X, Loader2, FileStack } from 'lucide-react';
+import {
+  Search,
+  X,
+  Loader2,
+  FileStack,
+  Briefcase,
+  GraduationCap,
+  Megaphone,
+  Palette,
+  Cpu,
+  Heart,
+} from 'lucide-react';
+
+const CATEGORY_ICONS = {
+  Briefcase,
+  GraduationCap,
+  Megaphone,
+  Palette,
+  Cpu,
+  Heart,
+} as const;
 import {
   communityService,
   CommunityDeck,
@@ -182,20 +200,21 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
           {/* Search */}
           {showSearch && (
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
               <Input
-                placeholder="Search community slides..."
+                placeholder="Search for slides..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
                   setPage(1);
                 }}
-                className="pl-9 pr-9"
+                className="pl-11 pr-10 h-12 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                style={{ fontFamily: '"HK Grotesk", "Hanken Grotesk", sans-serif' }}
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-zinc-400 hover:text-zinc-600 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -209,37 +228,50 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
               {Object.entries(COMMUNITY_CATEGORIES).map(([key, value]) => {
                 const cat = categories.find((c) => c.name === key);
                 const isSelected = selectedCategory === key;
+                const IconComponent = CATEGORY_ICONS[value.icon as keyof typeof CATEGORY_ICONS];
                 return (
-                  <Badge
+                  <button
                     key={key}
-                    variant={isSelected ? 'default' : 'outline'}
+                    onClick={() => handleCategoryClick(key)}
                     className={cn(
-                      'cursor-pointer transition-colors',
-                      isSelected && 'ring-2 ring-offset-2'
+                      'group relative px-4 py-2 rounded-full font-semibold text-sm transition-all duration-200',
+                      'hover:scale-105 active:scale-95',
+                      isSelected
+                        ? `bg-gradient-to-r ${value.gradient} text-white shadow-lg`
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                     )}
                     style={{
-                      backgroundColor: isSelected ? value.color : 'transparent',
-                      borderColor: value.color,
-                      color: isSelected ? 'white' : value.color,
+                      fontFamily: '"HK Grotesk", "Hanken Grotesk", sans-serif',
+                      boxShadow: isSelected ? `0 4px 14px ${value.color}40` : undefined,
                     }}
-                    onClick={() => handleCategoryClick(key)}
                   >
-                    {value.name}
-                    {cat && cat.count > 0 && (
-                      <span className="ml-1 opacity-75">({cat.count})</span>
-                    )}
-                  </Badge>
+                    <span className="flex items-center gap-1.5">
+                      <IconComponent className={cn(
+                        'h-4 w-4 transition-transform duration-200',
+                        isSelected ? 'scale-110' : 'group-hover:scale-110'
+                      )} />
+                      <span>{value.name}</span>
+                      <span className={cn(
+                        'ml-0.5 min-w-[1.5rem] px-1.5 py-0.5 rounded-full text-xs font-bold text-center',
+                        isSelected
+                          ? 'bg-white/25 text-white'
+                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400'
+                      )}>
+                        {cat?.count ?? 0}
+                      </span>
+                    </span>
+                  </button>
                 );
               })}
               {hasActiveFilters && (
-                <Button
-                  variant="ghost"
-                  size="sm"
+                <button
                   onClick={clearFilters}
-                  className="text-xs h-6"
+                  className="px-3 py-2 rounded-full text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1"
+                  style={{ fontFamily: '"HK Grotesk", "Hanken Grotesk", sans-serif' }}
                 >
-                  Clear filters
-                </Button>
+                  Clear all
+                  <X className="h-3.5 w-3.5" />
+                </button>
               )}
             </div>
           )}
@@ -261,13 +293,27 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
           ))}
         </div>
       ) : decks.length === 0 ? (
-        <div className="py-12 text-center">
-          <FileStack className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-          <p className="text-gray-500 mb-2">No community slides found</p>
+        <div className="py-16 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-700 mb-4">
+            <FileStack className="h-8 w-8 text-zinc-400" />
+          </div>
+          <p
+            className="text-lg font-semibold text-zinc-700 dark:text-zinc-300 mb-1"
+            style={{ fontFamily: '"HK Grotesk", "Hanken Grotesk", sans-serif' }}
+          >
+            No slides found
+          </p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+            {hasActiveFilters ? 'Try adjusting your filters' : 'Check back soon for new community slides!'}
+          </p>
           {hasActiveFilters && (
-            <Button variant="outline" size="sm" onClick={clearFilters}>
-              Clear filters
-            </Button>
+            <button
+              onClick={clearFilters}
+              className="px-4 py-2 rounded-full text-sm font-medium bg-gradient-to-r from-orange-500 to-pink-500 text-white hover:opacity-90 transition-opacity"
+              style={{ fontFamily: '"HK Grotesk", "Hanken Grotesk", sans-serif' }}
+            >
+              Clear all filters
+            </button>
           )}
         </div>
       ) : (
@@ -295,21 +341,22 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
 
           {/* Load More */}
           {hasMore && !maxItems && (
-            <div className="flex justify-center pt-4">
-              <Button
-                variant="outline"
+            <div className="flex justify-center pt-6">
+              <button
                 onClick={() => fetchDecks(true)}
                 disabled={isLoadingMore}
+                className="px-6 py-3 rounded-full text-sm font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 disabled:opacity-50 transition-all hover:scale-105 active:scale-95"
+                style={{ fontFamily: '"HK Grotesk", "Hanken Grotesk", sans-serif' }}
               >
                 {isLoadingMore ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     Loading...
-                  </>
+                  </span>
                 ) : (
-                  'Load More'
+                  'Load more slides'
                 )}
-              </Button>
+              </button>
             </div>
           )}
         </>

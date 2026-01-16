@@ -6,13 +6,17 @@ import { cn } from '@/lib/utils';
 import {
   ArrowRight, Check, Menu, X, Clock, Frown, DollarSign,
   Zap, Palette, Brain, ChevronDown, ChevronUp,
-  ChevronLeft, ChevronRight, Bot, Layers, Settings, Crown, Star
+  ChevronLeft, ChevronRight, Bot, Layers, Settings, Crown, Star,
+  Search, FileText, Image, Users, Share2, Code, MessageSquare,
+  Sparkles, MousePointer2, BookOpen, BarChart3, Wand2, PenTool
 } from 'lucide-react';
 import { showcaseService, ShowcaseDeck } from '@/services/showcaseService';
+import { communityService, CommunityDeck } from '@/services/communityService';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import CommunityGallery from '@/components/community/CommunityGallery';
 import CommunityBottomSheet from '@/components/community/CommunityBottomSheet';
 import { useTypewriter } from '@/hooks/useTypewriter';
+import LegalModal from '@/components/legal/LegalModal';
 
 // Lazy load MiniSlide
 const MiniSlide = lazy(() => import('@/components/deck/MiniSlide'));
@@ -27,14 +31,17 @@ const Landing: React.FC = () => {
 
   // Showcase state
   const [showcaseDecks, setShowcaseDecks] = useState<ShowcaseDeck[]>([]);
+  const [communityDecks, setCommunityDecks] = useState<CommunityDeck[]>([]);
   const [isLoadingShowcase, setIsLoadingShowcase] = useState(true);
   const [activeShowcaseIndex, setActiveShowcaseIndex] = useState(0);
   const [activeDeckSlideIndex, setActiveDeckSlideIndex] = useState(0);
   const [userInteracted, setUserInteracted] = useState(false);
   const [showcaseFocused, setShowcaseFocused] = useState(false);
   const [showcaseInView, setShowcaseInView] = useState(false);
+  const [heroInView, setHeroInView] = useState(true);
   const autoScrollRef = useRef<NodeJS.Timeout | null>(null);
   const showcaseRef = useRef<HTMLDivElement>(null);
+  const heroRef = useRef<HTMLDivElement>(null);
 
   // Sticky CTA text
   const [ctaText, setCtaText] = useState('Get Started Free');
@@ -42,13 +49,133 @@ const Landing: React.FC = () => {
   // Community bottom sheet
   const [showCommunity, setShowCommunity] = useState(false);
 
+  // Legal modal
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalDocType, setLegalDocType] = useState<'privacy' | 'terms'>('privacy');
+
+  const openLegalModal = (type: 'privacy' | 'terms') => {
+    setLegalDocType(type);
+    setLegalModalOpen(true);
+  };
+
+  // Hero slide positions - each tracks which deck/slide to show
+  // source: 'showcase' uses showcaseDecks with slideIdx, 'community' uses communityDecks firstSlide
+  const [heroSlides, setHeroSlides] = useState<Array<{ source: 'showcase' | 'community'; deckIdx: number; slideIdx: number }>>(() =>
+    Array.from({ length: 15 }, (_, i) => ({
+      source: 'showcase' as const,
+      deckIdx: i % 8,
+      slideIdx: (i % 6) + 1
+    }))
+  );
+
+  // Helper to generate unique random slides (no duplicates)
+  const generateUniqueSlides = (count: number) => {
+    const slides: Array<{ source: 'showcase' | 'community'; deckIdx: number; slideIdx: number }> = [];
+    const usedKeys = new Set<string>();
+
+    // Build pool of all available slides
+    const pool: Array<{ source: 'showcase' | 'community'; deckIdx: number; slideIdx: number }> = [];
+
+    // Add showcase slides (random slides from each deck, not just covers)
+    showcaseDecks.forEach((deck, deckIdx) => {
+      const slideCount = deck.slides?.length || 0;
+      for (let slideIdx = 0; slideIdx < slideCount; slideIdx++) {
+        pool.push({ source: 'showcase', deckIdx, slideIdx });
+      }
+    });
+
+    // Add community slides (first slide of each)
+    communityDecks.forEach((_, deckIdx) => {
+      pool.push({ source: 'community', deckIdx, slideIdx: 0 });
+    });
+
+    // Shuffle the pool
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+
+    // Pick unique slides
+    for (const slide of pool) {
+      if (slides.length >= count) break;
+      const key = `${slide.source}-${slide.deckIdx}-${slide.slideIdx}`;
+      if (!usedKeys.has(key)) {
+        usedKeys.add(key);
+        slides.push(slide);
+      }
+    }
+
+    // Fill remaining with random if needed
+    while (slides.length < count) {
+      slides.push({ source: 'showcase', deckIdx: 0, slideIdx: slides.length % 5 });
+    }
+
+    return slides;
+  };
+
+  // Initialize hero slides with unique random positions once decks load
+  useEffect(() => {
+    if (showcaseDecks.length === 0 && communityDecks.length === 0) return;
+
+    setHeroSlides(generateUniqueSlides(15));
+  }, [showcaseDecks.length > 0, communityDecks.length > 0]);
+
+  // Randomly swap hero slides every few seconds (avoiding duplicates)
+  useEffect(() => {
+    if (showcaseDecks.length === 0 && communityDecks.length === 0) return;
+
+    const swapInterval = setInterval(() => {
+      setHeroSlides(prev => {
+        const newSlides = [...prev];
+        const usedKeys = new Set(prev.map(s => `${s.source}-${s.deckIdx}-${s.slideIdx}`));
+
+        // Pick 1-2 random positions to swap
+        const numToSwap = Math.random() > 0.5 ? 2 : 1;
+        for (let i = 0; i < numToSwap; i++) {
+          const posIdx = Math.floor(Math.random() * 15);
+
+          // Try to find a unique slide
+          let attempts = 0;
+          while (attempts < 20) {
+            const useCommunity = communityDecks.length > 0 && Math.random() > 0.6;
+            let newSlide;
+
+            if (useCommunity) {
+              const deckIdx = Math.floor(Math.random() * communityDecks.length);
+              newSlide = { source: 'community' as const, deckIdx, slideIdx: 0 };
+            } else if (showcaseDecks.length > 0) {
+              const deckIdx = Math.floor(Math.random() * showcaseDecks.length);
+              const deck = showcaseDecks[deckIdx];
+              const slideIdx = Math.floor(Math.random() * (deck?.slides?.length || 1));
+              newSlide = { source: 'showcase' as const, deckIdx, slideIdx };
+            }
+
+            if (newSlide) {
+              const key = `${newSlide.source}-${newSlide.deckIdx}-${newSlide.slideIdx}`;
+              if (!usedKeys.has(key)) {
+                usedKeys.add(key);
+                usedKeys.delete(`${newSlides[posIdx].source}-${newSlides[posIdx].deckIdx}-${newSlides[posIdx].slideIdx}`);
+                newSlides[posIdx] = newSlide;
+                break;
+              }
+            }
+            attempts++;
+          }
+        }
+        return newSlides;
+      });
+    }, 4000);
+
+    return () => clearInterval(swapInterval);
+  }, [showcaseDecks.length, communityDecks.length]);
+
   // Typewriter effect for hero input placeholder
   const typewriterText = useTypewriter({
     phrases: [
-      'a pitch deck for my AI startup',
+      'course material on the French Revolution for grade 11',
       'a quarterly business review',
-      'a lecture on machine learning',
-      'a wedding speech for my best friend',
+      'a lecture on quantum computing',
+      'a team onboarding guide',
       'a product launch presentation',
     ],
     typingSpeed: 50,
@@ -56,23 +183,28 @@ const Landing: React.FC = () => {
     pauseDuration: 2500,
   });
 
-  // Load showcase decks
+  // Load showcase decks and community decks
   useEffect(() => {
-    const loadShowcase = async () => {
+    const loadDecks = async () => {
       setIsLoadingShowcase(true);
       try {
-        const decks = await showcaseService.getFeaturedDecks(8);
-        setShowcaseDecks(decks);
+        // Fetch both in parallel
+        const [showcaseResults, communityResults] = await Promise.all([
+          showcaseService.getFeaturedDecks(8),
+          communityService.getDecks({ limit: 20 }).catch(() => ({ decks: [] }))
+        ]);
+        setShowcaseDecks(showcaseResults);
+        setCommunityDecks(communityResults.decks || []);
       } catch (err) {
-        console.error('Failed to load showcase:', err);
+        console.error('Failed to load decks:', err);
       } finally {
         setIsLoadingShowcase(false);
       }
     };
-    loadShowcase();
+    loadDecks();
   }, []);
 
-  // Handle scroll events
+  // Handle scroll events - throttled for performance
   useEffect(() => {
     // On mount - ensure scrolling works on landing page
     document.documentElement.style.position = '';
@@ -80,13 +212,20 @@ const Landing: React.FC = () => {
     document.body.style.position = '';
     document.body.style.overflow = '';
 
-    const handleScroll = () => setScrollY(window.scrollY);
-    window.addEventListener('scroll', handleScroll);
+    let ticking = false;
+    const handleScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          setScrollY(window.scrollY);
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
-      // DON'T set fixed positioning on cleanup - this breaks scrolling on other pages
-      // The app's shell manages its own scroll behavior
     };
   }, []);
 
@@ -125,6 +264,23 @@ const Landing: React.FC = () => {
     observer.observe(showcaseRef.current);
     return () => observer.disconnect();
   }, [showcaseInView]);
+
+  // Track hero section visibility - unmount slides when scrolled past
+  useEffect(() => {
+    if (!heroRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          setHeroInView(entry.isIntersecting);
+        });
+      },
+      { threshold: 0, rootMargin: '100px' }
+    );
+
+    observer.observe(heroRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   // Auto-rotate showcase (only after section is in view and user hasn't interacted)
   useEffect(() => {
@@ -217,39 +373,39 @@ const Landing: React.FC = () => {
   const problems = [
     {
       icon: Clock,
-      title: "Hours wasted on slides",
-      description: "Your team spends 5-10 hours building every presentation from scratch. That's time not spent selling, closing, or shipping."
+      title: "Hours lost to busywork",
+      description: "Formatting slides, hunting for images, tweaking layouts pixel by pixel. Your best ideas deserve better than death by PowerPoint."
     },
     {
       icon: Frown,
-      title: "Templates that don't work",
-      description: "PowerPoint templates look amateur. Canva feels like homework. Nothing matches your brand or saves real time."
+      title: "Tools that fight you",
+      description: "Templates feel generic. AI tools give you thin content. Nothing understands what you're actually trying to communicate."
     },
     {
       icon: DollarSign,
-      title: "Designer dependency",
-      description: "You're either paying agencies thousands per deck, or settling for presentations that hurt your credibility."
+      title: "The expertise gap",
+      description: "Great presentations need research, design, and storytelling. You shouldn't need three different tools—or three different people."
     }
   ];
 
   const features = [
     {
-      icon: Zap,
-      tag: "SPEED",
-      title: "90-second presentations",
-      description: "Describe what you're presenting. AI generates your entire deck—slides, layouts, visuals—in 90 seconds."
+      icon: Search,
+      tag: "RESEARCH & ANALYSIS",
+      title: "Data in, insights out",
+      description: "Upload financials, reports, spreadsheets—we extract, analyze, and visualize. Cited sources, accurate numbers, boardroom-ready analysis."
     },
     {
-      icon: Palette,
-      title: "Professional design, automatically",
-      tag: "DESIGN",
-      description: "Every slide is perfectly balanced and on-brand. Our AI understands design principles—spacing, hierarchy, color theory."
+      icon: Bot,
+      tag: "AGENTIC EDITOR",
+      title: "AI that actually edits",
+      description: "Not just generation—a real editor. Drag-and-drop, direct text editing, or chat to make changes. It does whatever a human designer would do."
     },
     {
-      icon: Brain,
-      tag: "INTELLIGENCE",
-      title: "AI that understands context",
-      description: "Not just template-filling. Our AI understands your industry, audience, and goals to create presentations that work."
+      icon: Sparkles,
+      tag: "COMPLETE CREATION",
+      title: "Every visual you need",
+      description: "Charts, tables, diagrams, AI images, smart image search. From complex data viz to beautiful graphics—created or found instantly."
     }
   ];
 
@@ -349,6 +505,14 @@ const Landing: React.FC = () => {
   const activeDeck = showcaseDecks[activeShowcaseIndex];
   const activeSlide = activeDeck?.slides?.[activeDeckSlideIndex];
 
+  // Helper to get slide data for a hero position
+  const getHeroSlide = (pos: { source: 'showcase' | 'community'; deckIdx: number; slideIdx: number }) => {
+    if (pos.source === 'community') {
+      return communityDecks[pos.deckIdx]?.firstSlide;
+    }
+    return showcaseDecks[pos.deckIdx]?.slides?.[pos.slideIdx];
+  };
+
   return (
     <div className="min-h-screen bg-[#FCFBF8] dark:bg-[#0a0a0a]">
 
@@ -423,233 +587,342 @@ const Landing: React.FC = () => {
       </nav>
 
       {/* Hero - Figma-style with slide carousel */}
-      <section className="relative min-h-screen overflow-hidden bg-[#FCFBF8] dark:bg-[#0a0a0a]">
-        {/* Top headline - bigger, 2 lines */}
-        <div className="relative z-20 pt-28 sm:pt-36 pb-4 text-center animate-on-scroll opacity-0">
+      <section ref={heroRef} className="relative min-h-screen overflow-hidden bg-[#FCFBF8] dark:bg-[#0a0a0a]">
+        {/* Top headline - Apple-like, premium */}
+        <div className="relative z-30 pt-20 sm:pt-24 pb-2 text-center">
           <h1
             className="text-black dark:text-white"
             style={{
               fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
               fontWeight: 900,
-              fontSize: 'clamp(28px, 4.5vw, 52px)',
-              lineHeight: '1.15',
+              fontSize: 'clamp(28px, 5vw, 56px)',
+              lineHeight: '1.1',
               letterSpacing: '-0.02em',
               textTransform: 'uppercase'
             }}
           >
-            <span>From idea to </span>
-            <span className="text-[#FF4301]">wow</span>
-            <br />
-            <span className="text-black/50 dark:text-white/50">in 90 seconds</span>
+            <span>The presentation platform</span>
           </h1>
+          <p className="mt-3 text-base sm:text-xl text-black/50 dark:text-white/50 max-w-2xl mx-auto px-4">
+            Beautiful decks for every idea. Sales. Teaching. Internal.
+          </p>
+          <p className="mt-1 text-base sm:text-xl text-black/50 dark:text-white/50 max-w-2xl mx-auto px-4">
+            Perfected in seconds.
+          </p>
         </div>
 
-        {/* Slide carousel mosaic - Figma-inspired layout */}
-        <div className="relative w-full h-[calc(100vh-180px)] min-h-[500px] max-h-[700px]">
-          {/* Gradient overlays for fade effect */}
-          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-[#FCFBF8] dark:from-[#0a0a0a] to-transparent z-10 pointer-events-none" />
-          <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#FCFBF8] dark:from-[#0a0a0a] to-transparent z-10 pointer-events-none" />
-          <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-[#FCFBF8] dark:from-[#0a0a0a] to-transparent z-10 pointer-events-none" />
-          <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-[#FCFBF8] dark:from-[#0a0a0a] to-transparent z-10 pointer-events-none" />
+        {/* Slide carousel mosaic - scattered U-shape */}
+        <div className="relative w-full h-[calc(100vh-200px)] min-h-[500px]">
+          {/* Very subtle edge gradients */}
+          <div className="absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-[#FCFBF8] dark:from-[#0a0a0a] to-transparent z-20 pointer-events-none" />
+          <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[#FCFBF8] dark:from-[#0a0a0a] to-transparent z-20 pointer-events-none" />
 
-          {/* Carousel container */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            {/* Slides arranged in a dynamic mosaic pattern */}
-            <div className="relative w-full max-w-[1600px] h-full mx-auto px-4">
-              {/* Loading state */}
-              {isLoadingShowcase ? (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="grid grid-cols-3 gap-4 opacity-30">
-                    {[...Array(6)].map((_, i) => (
-                      <div
-                        key={i}
-                        className="w-[200px] sm:w-[280px] aspect-video bg-zinc-200 dark:bg-zinc-800 rounded-xl animate-pulse"
-                        style={{
-                          transform: `rotate(${(i % 2 === 0 ? -1 : 1) * (Math.random() * 3)}deg)`,
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                /* Slide positions - staggered entrance animations, using varied slides */
+          {/* Slides layer - scattered around the input - unmount when scrolled past */}
+          <div className="absolute inset-0 z-10 overflow-hidden">
+            <div className="relative w-full h-full">
+              {/* Show skeleton placeholders while loading */}
+              {isLoadingShowcase && (
                 <>
-                  {/* Far left - top */}
-                  {showcaseDecks[0]?.slides?.[2] && (
+                  {/* Skeleton slides - simplified positions */}
+                  {[
+                    { left: '-3%', top: '5%', rotation: '-10deg', width: 'clamp(280px, 22vw, 380px)', delay: '0s' },
+                    { left: '8%', top: '28%', rotation: '5deg', width: 'clamp(240px, 18vw, 320px)', delay: '0.05s' },
+                    { right: '-3%', top: '5%', rotation: '10deg', width: 'clamp(280px, 22vw, 380px)', delay: '0.1s' },
+                    { right: '8%', top: '28%', rotation: '-5deg', width: 'clamp(240px, 18vw, 320px)', delay: '0.15s' },
+                    { left: '3%', bottom: '5%', rotation: '-8deg', width: 'clamp(300px, 24vw, 400px)', delay: '0.2s' },
+                    { right: '3%', bottom: '5%', rotation: '8deg', width: 'clamp(300px, 24vw, 400px)', delay: '0.25s' },
+                  ].map((pos, i) => (
                     <div
-                      className="absolute hidden xl:block animate-in fade-in slide-in-from-left-8 duration-700"
+                      key={i}
+                      className="hero-slide absolute hidden md:block"
                       style={{
-                        left: '-6%',
-                        top: '8%',
-                        width: 'clamp(240px, 24vw, 380px)',
-                        transform: 'rotate(-6deg)',
-                        animationDelay: '100ms',
-                        animationFillMode: 'backwards',
-                      }}
+                        width: pos.width,
+                        left: pos.left,
+                        right: pos.right,
+                        top: pos.top,
+                        bottom: pos.bottom,
+                        animationDelay: pos.delay,
+                      } as React.CSSProperties}
                     >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[0].slides[2]} />
-                        </Suspense>
-                      </div>
+                      <div
+                        className="aspect-video rounded-2xl overflow-hidden bg-black/5 dark:bg-white/5 animate-pulse ring-1 ring-black/10"
+                        style={{ transform: `rotate(${pos.rotation})` }}
+                      />
                     </div>
-                  )}
+                  ))}
+                </>
+              )}
+              {!isLoadingShowcase && (showcaseDecks.length > 0 || communityDecks.length > 0) && (
+                <>
+                  {/* ====== LEFT SIDE ====== */}
 
-                  {/* Left side - middle */}
-                  {showcaseDecks[1]?.slides?.[1] && (
+                  {/* L1 - Top left corner */}
+                  <div
+                    className="hero-slide absolute hidden lg:block"
+                    style={{
+                      width: 'clamp(300px, 24vw, 400px)',
+                      left: '-5%',
+                      top: '2%',
+                      animationDelay: '0.1s'
+                    }}
+                  >
                     <div
-                      className="absolute hidden lg:block animate-in fade-in slide-in-from-left-8 duration-700"
-                      style={{
-                        left: '2%',
-                        top: '32%',
-                        width: 'clamp(280px, 28vw, 420px)',
-                        transform: 'rotate(-3deg)',
-                        animationDelay: '250ms',
-                        animationFillMode: 'backwards',
-                      }}
+                      key={`hs0-${heroSlides[0]?.source}-${heroSlides[0]?.deckIdx}-${heroSlides[0]?.slideIdx}`}
+                      className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5"
+                      style={{ '--rotation': '-8deg', '--wobble-amount': '1.5deg' } as React.CSSProperties}
                     >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[1].slides[1]} />
+                      {getHeroSlide(heroSlides[0]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[0])!} />
                         </Suspense>
-                      </div>
+                      )}
                     </div>
-                  )}
+                  </div>
 
-                  {/* Left bottom */}
-                  {showcaseDecks[2]?.slides?.[3] && (
-                    <div
-                      className="absolute hidden md:block animate-in fade-in slide-in-from-bottom-8 duration-700"
-                      style={{
-                        left: '-4%',
-                        bottom: '0%',
-                        width: 'clamp(220px, 22vw, 340px)',
-                        transform: 'rotate(4deg)',
-                        animationDelay: '400ms',
-                        animationFillMode: 'backwards',
-                      }}
-                    >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/25 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[2].slides[3]} />
+                  {/* L2 - Mid left */}
+                  <div
+                    className="hero-slide absolute hidden md:block"
+                    style={{
+                      width: 'clamp(260px, 20vw, 340px)',
+                      left: '5%',
+                      top: '38%',
+                      animationDelay: '0.2s'
+                    }}
+                  >
+                    <div key={`hs1-${heroSlides[1]?.source}-${heroSlides[1]?.deckIdx}-${heroSlides[1]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '4deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                      {getHeroSlide(heroSlides[1]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[1])!} />
                         </Suspense>
-                      </div>
+                      )}
                     </div>
-                  )}
+                  </div>
 
-                  {/* Far right - top */}
-                  {showcaseDecks[3]?.slides?.[2] && (
-                    <div
-                      className="absolute hidden xl:block animate-in fade-in slide-in-from-right-8 duration-700"
-                      style={{
-                        right: '-6%',
-                        top: '5%',
-                        width: 'clamp(240px, 24vw, 380px)',
-                        transform: 'rotate(5deg)',
-                        animationDelay: '150ms',
-                        animationFillMode: 'backwards',
-                      }}
-                    >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[3].slides[2]} />
+                  {/* L3 - Lower left - BIGGER, leans RIGHT (into corner) */}
+                  <div
+                    className="hero-slide absolute hidden lg:block z-20"
+                    style={{
+                      width: 'clamp(360px, 30vw, 480px)',
+                      left: '-4%',
+                      bottom: '-2%',
+                      animationDelay: '0.3s'
+                    }}
+                  >
+                    <div key={`hs2-${heroSlides[2]?.source}-${heroSlides[2]?.deckIdx}-${heroSlides[2]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-2xl ring-1 ring-black/10" style={{ '--rotation': '5deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                      {getHeroSlide(heroSlides[2]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[2])!} />
                         </Suspense>
-                      </div>
+                      )}
                     </div>
-                  )}
+                  </div>
 
-                  {/* Right side - middle */}
-                  {showcaseDecks[4]?.slides?.[1] && (
-                    <div
-                      className="absolute hidden lg:block animate-in fade-in slide-in-from-right-8 duration-700"
-                      style={{
-                        right: '2%',
-                        top: '28%',
-                        width: 'clamp(280px, 28vw, 420px)',
-                        transform: 'rotate(4deg)',
-                        animationDelay: '300ms',
-                        animationFillMode: 'backwards',
-                      }}
-                    >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[4].slides[1]} />
-                        </Suspense>
-                      </div>
-                    </div>
-                  )}
+                  {/* ====== BOTTOM ====== */}
 
-                  {/* Right bottom */}
-                  {showcaseDecks[5]?.slides?.[2] && (
-                    <div
-                      className="absolute hidden md:block animate-in fade-in slide-in-from-bottom-8 duration-700"
-                      style={{
-                        right: '-4%',
-                        bottom: '3%',
-                        width: 'clamp(220px, 22vw, 340px)',
-                        transform: 'rotate(-5deg)',
-                        animationDelay: '450ms',
-                        animationFillMode: 'backwards',
-                      }}
-                    >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/25 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[5].slides[2]} />
+                  {/* B1 - Bottom left of center - leans LEFT */}
+                  <div
+                    className="hero-slide absolute hidden lg:block"
+                    style={{
+                      width: 'clamp(280px, 22vw, 380px)',
+                      left: '22%',
+                      bottom: '-5%',
+                      animationDelay: '0.5s'
+                    }}
+                  >
+                    <div key={`hs4-${heroSlides[4]?.source}-${heroSlides[4]?.deckIdx}-${heroSlides[4]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-6deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                      {getHeroSlide(heroSlides[4]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[4])!} />
                         </Suspense>
-                      </div>
+                      )}
                     </div>
-                  )}
+                  </div>
 
-                  {/* Additional inner slides */}
-                  {showcaseDecks[0]?.slides?.[4] && (
-                    <div
-                      className="absolute hidden lg:block animate-in fade-in slide-in-from-bottom-4 duration-700"
-                      style={{
-                        left: '20%',
-                        bottom: '6%',
-                        width: 'clamp(200px, 20vw, 300px)',
-                        transform: 'rotate(-1deg)',
-                        animationDelay: '550ms',
-                        animationFillMode: 'backwards',
-                      }}
-                    >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/20 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[0].slides[4]} />
+                  {/* B2 - Bottom center */}
+                  <div
+                    className="hero-slide absolute hidden xl:block"
+                    style={{
+                      width: 'clamp(300px, 24vw, 400px)',
+                      left: '50%',
+                      bottom: '-6%',
+                      transform: 'translateX(-50%)',
+                      animationDelay: '0.6s'
+                    }}
+                  >
+                    <div key={`hs5-${heroSlides[5]?.source}-${heroSlides[5]?.deckIdx}-${heroSlides[5]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '2deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                      {getHeroSlide(heroSlides[5]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[5])!} />
                         </Suspense>
-                      </div>
+                      )}
                     </div>
-                  )}
+                  </div>
 
-                  {showcaseDecks[3]?.slides?.[4] && (
-                    <div
-                      className="absolute hidden lg:block animate-in fade-in slide-in-from-bottom-4 duration-700"
-                      style={{
-                        right: '22%',
-                        bottom: '8%',
-                        width: 'clamp(200px, 20vw, 300px)',
-                        transform: 'rotate(2deg)',
-                        animationDelay: '600ms',
-                        animationFillMode: 'backwards',
-                      }}
-                    >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/20 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[3].slides[4]} />
+                  {/* B3 - Bottom right of center - leans RIGHT */}
+                  <div
+                    className="hero-slide absolute hidden lg:block"
+                    style={{
+                      width: 'clamp(280px, 22vw, 380px)',
+                      right: '22%',
+                      bottom: '-5%',
+                      animationDelay: '0.55s'
+                    }}
+                  >
+                    <div key={`hs6-${heroSlides[6]?.source}-${heroSlides[6]?.deckIdx}-${heroSlides[6]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '6deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                      {getHeroSlide(heroSlides[6]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[6])!} />
                         </Suspense>
-                      </div>
+                      )}
                     </div>
-                  )}
+                  </div>
+
+                  {/* ====== RIGHT SIDE ====== */}
+
+                  {/* R1 - Top right corner */}
+                  <div
+                    className="hero-slide absolute hidden lg:block"
+                    style={{
+                      width: 'clamp(300px, 24vw, 400px)',
+                      right: '-5%',
+                      top: '2%',
+                      animationDelay: '0.15s'
+                    }}
+                  >
+                    <div key={`hs7-${heroSlides[7]?.source}-${heroSlides[7]?.deckIdx}-${heroSlides[7]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '8deg', '--wobble-amount': '1.5deg' } as React.CSSProperties}>
+                      {getHeroSlide(heroSlides[7]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[7])!} />
+                        </Suspense>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* R2 - Mid right */}
+                  <div
+                    className="hero-slide absolute hidden md:block"
+                    style={{
+                      width: 'clamp(260px, 20vw, 340px)',
+                      right: '5%',
+                      top: '38%',
+                      animationDelay: '0.25s'
+                    }}
+                  >
+                    <div key={`hs8-${heroSlides[8]?.source}-${heroSlides[8]?.deckIdx}-${heroSlides[8]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-4deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                      {getHeroSlide(heroSlides[8]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[8])!} />
+                        </Suspense>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* R3 - Lower right - BIGGER, leans LEFT (into corner) */}
+                  <div
+                    className="hero-slide absolute hidden lg:block z-20"
+                    style={{
+                      width: 'clamp(360px, 30vw, 480px)',
+                      right: '-4%',
+                      bottom: '-2%',
+                      animationDelay: '0.35s'
+                    }}
+                  >
+                    <div key={`hs9-${heroSlides[9]?.source}-${heroSlides[9]?.deckIdx}-${heroSlides[9]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-2xl ring-1 ring-black/10" style={{ '--rotation': '-5deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                      {getHeroSlide(heroSlides[9]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[9])!} />
+                        </Suspense>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ====== EXTRA FILLS ====== */}
+
+                  {/* Extra - far left edge */}
+                  <div
+                    className="hero-slide absolute hidden xl:block"
+                    style={{
+                      width: 'clamp(220px, 16vw, 300px)',
+                      left: '-8%',
+                      top: '18%',
+                      animationDelay: '0.2s'
+                    }}
+                  >
+                    <div key={`hs11-${heroSlides[11]?.source}-${heroSlides[11]?.deckIdx}-${heroSlides[11]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-14deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                      {getHeroSlide(heroSlides[11]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[11])!} />
+                        </Suspense>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Extra - far right edge */}
+                  <div
+                    className="hero-slide absolute hidden xl:block"
+                    style={{
+                      width: 'clamp(220px, 16vw, 300px)',
+                      right: '-8%',
+                      top: '18%',
+                      animationDelay: '0.22s'
+                    }}
+                  >
+                    <div key={`hs12-${heroSlides[12]?.source}-${heroSlides[12]?.deckIdx}-${heroSlides[12]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '14deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                      {getHeroSlide(heroSlides[12]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[12])!} />
+                        </Suspense>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Extra - left bottom edge */}
+                  <div
+                    className="hero-slide absolute hidden xl:block"
+                    style={{
+                      width: 'clamp(240px, 18vw, 320px)',
+                      left: '-7%',
+                      bottom: '22%',
+                      animationDelay: '0.38s'
+                    }}
+                  >
+                    <div key={`hs13-${heroSlides[13]?.source}-${heroSlides[13]?.deckIdx}-${heroSlides[13]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-12deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                      {getHeroSlide(heroSlides[13]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[13])!} />
+                        </Suspense>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Extra - right bottom edge */}
+                  <div
+                    className="hero-slide absolute hidden xl:block"
+                    style={{
+                      width: 'clamp(240px, 18vw, 320px)',
+                      right: '-7%',
+                      bottom: '22%',
+                      animationDelay: '0.4s'
+                    }}
+                  >
+                    <div key={`hs14-${heroSlides[14]?.source}-${heroSlides[14]?.deckIdx}-${heroSlides[14]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '12deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                      {getHeroSlide(heroSlides[14]) && (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={getHeroSlide(heroSlides[14])!} />
+                        </Suspense>
+                      )}
+                    </div>
+                  </div>
                 </>
               )}
             </div>
           </div>
 
-          {/* Centered floating input box - overlaid on slides, positioned higher */}
-          <div className="absolute inset-0 flex items-start justify-center z-20 pointer-events-none pt-[12%] sm:pt-[10%]">
-            <div className="pointer-events-auto w-full max-w-2xl px-4 sm:px-8 animate-in fade-in slide-in-from-bottom-6 duration-700" style={{ animationDelay: '400ms', animationFillMode: 'backwards' }}>
+          {/* Centered floating input box - z-30, sits above everything */}
+          <div className="absolute inset-0 flex items-start justify-center z-30 pointer-events-none pt-[10%] sm:pt-[8%]">
+            <div className="pointer-events-auto w-full max-w-2xl px-4 sm:px-8 hero-input-box">
               {/* The prompt card */}
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-2xl shadow-black/20 dark:shadow-black/50 border border-black/5 dark:border-white/10 p-6 sm:p-8">
+              <div className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-lg shadow-black/10 dark:shadow-black/50 border border-black/5 dark:border-white/10 p-6 sm:p-8">
                 {/* Input with typewriter effect */}
                 <div className="relative mb-6">
                   <div className="text-lg sm:text-2xl md:text-3xl font-medium text-black dark:text-white leading-relaxed">
@@ -662,11 +935,7 @@ const Landing: React.FC = () => {
                 {/* Action button */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3 text-xs sm:text-sm text-black/40 dark:text-white/40">
-                    <span className="hidden sm:inline">Teach a class</span>
-                    <span className="hidden sm:inline">•</span>
-                    <span className="hidden sm:inline">Nail your pitch</span>
-                    <span className="hidden sm:inline">•</span>
-                    <span>Ship faster</span>
+                    <span>Any topic, any style</span>
                   </div>
                   <Button
                     size="lg"
@@ -697,12 +966,80 @@ const Landing: React.FC = () => {
             </div>
           </div>
         </div>
+      </section>
 
-        {/* Subtle bottom tagline */}
-        <div className="relative z-20 pb-8 text-center animate-on-scroll opacity-0" style={{ transitionDelay: '400ms' }}>
-          <p className="text-sm sm:text-base text-black/50 dark:text-white/50 max-w-xl mx-auto px-4">
-            The only AI presentation tool with a full editor and custom components.
-          </p>
+      {/* Why NextSlide - Feature Grid */}
+      <section className="py-20 px-8 bg-white dark:bg-zinc-950">
+        <div className="max-w-[1200px] mx-auto">
+          <div className="text-center mb-16 animate-on-scroll opacity-0">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FF4301]/10 border border-[#FF4301]/20 mb-6">
+              <Wand2 className="w-4 h-4 text-[#FF4301]" />
+              <span className="text-sm font-bold text-[#FF4301]" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>10 TOOLS IN ONE</span>
+            </div>
+            <h2
+              className="text-black dark:text-white mb-4"
+              style={{
+                fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                fontWeight: 900,
+                fontSize: 'clamp(32px, 5vw, 52px)',
+                lineHeight: '1.1',
+                letterSpacing: '-0.02em',
+                textTransform: 'uppercase'
+              }}
+            >
+              Everything you need. Nothing you don't.
+            </h2>
+            <p className="text-lg text-black/60 dark:text-white/60 max-w-2xl mx-auto">
+              Research. Design. Edit. Collaborate. Present. One platform that does it all.
+            </p>
+          </div>
+
+          {/* Feature Pills Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 animate-on-scroll opacity-0">
+            {[
+              { icon: Search, label: 'Deep Research', desc: 'Real cited sources' },
+              { icon: FileText, label: 'File Analysis', desc: 'PDFs, Excel, docs' },
+              { icon: Image, label: 'AI Images', desc: 'Generate any visual' },
+              { icon: Bot, label: 'Agent Editor', desc: 'Chat to edit' },
+              { icon: MousePointer2, label: 'Drag & Drop', desc: 'Full control' },
+              { icon: Palette, label: 'Auto Design', desc: 'Always beautiful' },
+              { icon: PenTool, label: 'Brand Kit', desc: 'Your style, applied' },
+              { icon: BarChart3, label: 'Data Analysis', desc: 'Financials & metrics' },
+              { icon: Users, label: 'Live Cursors', desc: 'Team collaboration' },
+              { icon: Share2, label: 'Share & Track', desc: 'Analytics built-in' },
+              { icon: MessageSquare, label: 'Conversational', desc: 'Build by chatting' },
+              { icon: Code, label: 'Developer API', desc: 'Automate anything' },
+            ].map((feature, i) => (
+              <div
+                key={i}
+                className="group p-4 rounded-2xl bg-[#FCFBF8] dark:bg-zinc-900 border border-black/5 dark:border-white/5 hover:border-[#FF4301]/30 hover:bg-[#FF4301]/5 transition-all duration-200"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#FF4301]/10 flex items-center justify-center flex-shrink-0 group-hover:bg-[#FF4301]/20 transition-colors">
+                    <feature.icon className="w-5 h-5 text-[#FF4301]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm text-black dark:text-white truncate" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                      {feature.label}
+                    </div>
+                    <div className="text-xs text-black/50 dark:text-white/50 truncate">
+                      {feature.desc}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Bottom tagline */}
+          <div className="mt-12 text-center animate-on-scroll opacity-0">
+            <p className="text-black/50 dark:text-white/50 text-sm font-medium">
+              Investor decks. Board reports. Financial analysis. Quarterly reviews. Market research. Strategic planning.
+            </p>
+            <p className="text-black/40 dark:text-white/40 text-sm mt-1">
+              From fun and creative to boardroom-ready. Every style. Every audience.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -950,8 +1287,11 @@ const Landing: React.FC = () => {
                 textTransform: 'uppercase'
               }}
             >
-              Your presentation workflow is broken
+              The old way is over
             </h2>
+            <p className="text-lg text-black/50 dark:text-white/50 max-w-xl mx-auto">
+              Presentations haven't evolved in 20 years. Until now.
+            </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
@@ -990,8 +1330,11 @@ const Landing: React.FC = () => {
                 textTransform: 'uppercase'
               }}
             >
-              How we fix it
+              The NextSlide difference
             </h2>
+            <p className="text-lg text-black/50 dark:text-white/50 max-w-xl mx-auto">
+              Not another template tool. A complete presentation studio.
+            </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
@@ -1216,9 +1559,9 @@ const Landing: React.FC = () => {
           {/* Key differentiators */}
           <div className="mt-12 grid md:grid-cols-3 gap-6">
             {[
-              { icon: Bot, title: 'Agentic AI Editor', description: 'Our AI edits with you—real-time suggestions, smart formatting, context-aware changes.' },
-              { icon: Layers, title: 'Custom Components', description: 'Build anything. Interactive cards, animated diagrams, data viz. No template limits.' },
-              { icon: Settings, title: 'Full Control', description: 'Every element is editable. Move, resize, restyle. Your presentation, your rules.' }
+              { icon: Users, title: 'Real-time Collaboration', description: 'See teammates\' cursors live. Share with one click. Track views and engagement with built-in analytics.' },
+              { icon: PenTool, title: 'Your Brand, Automatic', description: 'We research your company and apply your colors, fonts, and style. Logos placed perfectly. Every slide on-brand.' },
+              { icon: Code, title: 'Developer API', description: 'Build presentations programmatically. Automate deck creation, integrate with your tools, scale without limits.' }
             ].map((item, i) => (
               <div key={i} className="animate-on-scroll opacity-0 p-6 rounded-2xl bg-white dark:bg-black/50 border border-black/10 dark:border-white/10">
                 <div className="w-12 h-12 rounded-xl bg-[#FF4301]/10 flex items-center justify-center mb-4">
@@ -1502,10 +1845,20 @@ const Landing: React.FC = () => {
       {/* Footer */}
       <footer className="bg-black text-white/60 py-16 px-8">
         <div className="max-w-[1400px] mx-auto">
-          <div className="grid md:grid-cols-4 gap-12 mb-12">
+          <div className="grid md:grid-cols-3 gap-12 mb-12">
             <div>
-              <BrandWordmark tag="h3" sizePx={18} textColor="#ffffff" />
-              <p className="text-sm mt-4">Professional presentations, built by AI.</p>
+              <BrandWordmark
+                tag="h3"
+                sizePx={18}
+                textColor="#ffffff"
+                xImageUrl="/brand/nextslide-x.png"
+                gapLeftPx={-3}
+                gapRightPx={-8}
+                liftPx={-4}
+                xLiftPx={-4}
+                rightLiftPx={0}
+              />
+              <p className="text-sm mt-4">Your ideas, perfectly visualized.</p>
             </div>
             <div>
               <h4 className="text-white font-semibold mb-4 text-sm" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Product</h4>
@@ -1515,25 +1868,25 @@ const Landing: React.FC = () => {
               </ul>
             </div>
             <div>
-              <h4 className="text-white font-semibold mb-4 text-sm" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Company</h4>
-              <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white transition-colors">About</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Contact</a></li>
-              </ul>
-            </div>
-            <div>
               <h4 className="text-white font-semibold mb-4 text-sm" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Legal</h4>
               <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white transition-colors">Privacy</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Terms</a></li>
+                <li><button onClick={() => openLegalModal('privacy')} className="hover:text-white transition-colors">Privacy Policy</button></li>
+                <li><button onClick={() => openLegalModal('terms')} className="hover:text-white transition-colors">Terms of Service</button></li>
               </ul>
             </div>
           </div>
           <div className="border-t border-white/10 pt-8 text-center text-sm">
-            <p>&copy; 2025 NextSlide</p>
+            <p>&copy; 2026 NextSlide</p>
           </div>
         </div>
       </footer>
+
+      {/* Legal Modal */}
+      <LegalModal
+        isOpen={legalModalOpen}
+        onClose={() => setLegalModalOpen(false)}
+        documentType={legalDocType}
+      />
 
       {/* Animations */}
       <style>{`
@@ -1576,6 +1929,46 @@ const Landing: React.FC = () => {
         .custom-scrollbar {
           scrollbar-width: thin;
           scrollbar-color: rgba(255,255,255,0.2) rgba(255,255,255,0.05);
+        }
+
+        /* Hero slide fade-in */
+        .hero-slide {
+          opacity: 0;
+          animation: heroSlideFadeIn 0.5s ease-out forwards;
+        }
+        @keyframes heroSlideFadeIn {
+          to { opacity: 1; }
+        }
+
+        /* Hero slides - static rotation, no wobble for performance */
+        .hero-slide-wobble {
+          transform: rotate(var(--rotation, 0deg));
+        }
+
+        /* Content swap fade */
+        .hero-slide-swap {
+          animation: heroSlideSwapFade 0.3s ease-out;
+        }
+        @keyframes heroSlideSwapFade {
+          from { opacity: 0.5; }
+          to { opacity: 1; }
+        }
+
+        /* Hero input box animation */
+        @keyframes heroInputSlideUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .hero-input-box {
+          opacity: 0;
+          animation: heroInputSlideUp 0.7s ease-out 0.3s forwards;
         }
       `}</style>
     </div>

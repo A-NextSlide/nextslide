@@ -81,14 +81,14 @@ export interface SubmissionStatus {
   reviewedAt?: string;
 }
 
-// Category display names and colors
+// Category display names, colors, and icons
 export const COMMUNITY_CATEGORIES = {
-  business: { name: 'Business', color: '#3B82F6' },
-  education: { name: 'Education', color: '#10B981' },
-  marketing: { name: 'Marketing', color: '#F59E0B' },
-  creative: { name: 'Creative', color: '#EC4899' },
-  technology: { name: 'Technology', color: '#8B5CF6' },
-  personal: { name: 'Personal', color: '#6366F1' },
+  business: { name: 'Business', color: '#3B82F6', gradient: 'from-blue-500 to-cyan-400', icon: 'Briefcase' },
+  education: { name: 'Education', color: '#10B981', gradient: 'from-emerald-500 to-teal-400', icon: 'GraduationCap' },
+  marketing: { name: 'Marketing', color: '#F59E0B', gradient: 'from-amber-500 to-orange-400', icon: 'Megaphone' },
+  creative: { name: 'Creative', color: '#EC4899', gradient: 'from-pink-500 to-rose-400', icon: 'Palette' },
+  technology: { name: 'Technology', color: '#8B5CF6', gradient: 'from-violet-500 to-purple-400', icon: 'Cpu' },
+  personal: { name: 'Personal', color: '#6366F1', gradient: 'from-indigo-500 to-blue-400', icon: 'Heart' },
 } as const;
 
 // ============================================================================

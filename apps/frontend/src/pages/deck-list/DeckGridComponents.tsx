@@ -58,7 +58,7 @@ export const RotatingWords = ({ compact = false }: { compact?: boolean }) => {
 
   return (
     <span
-      className="text-orange-500 inline-block overflow-hidden transition-[width] duration-300"
+      className="text-orange-500 inline-block overflow-hidden transition-[width] duration-300 mx-1 sm:mx-2"
       style={{
         height: compact ? '0.9em' : '1em',
         width: wordWidths[WORDS[currentIndex]],

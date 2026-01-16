@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import asyncio
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
@@ -2054,16 +2054,317 @@ def _create_error_slide_component(error_message: str) -> Dict[str, Any]:
 
 
 # ==============================================================================
+# Vision-Based Google Slides Import (Screenshot → AI Recreation)
+# ==============================================================================
+
+# Maximum slides allowed for vision-based import
+MAX_VISION_IMPORT_SLIDES = 30
+
+
+async def _convert_google_slides_via_vision(
+    presentation: Dict[str, Any],
+    user_id: str,
+    api: "GoogleApiClient",
+    job_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Convert Google Slides presentation using vision AI.
+
+    Strategy:
+    1. Fetch high-resolution thumbnails for each slide
+    2. Pass each thumbnail through Gemini Vision to recreate as HTML
+    3. Return deck with CustomComponents
+
+    This provides better visual fidelity than data parsing for complex slides.
+    """
+    from google import genai
+    from google.genai import types
+    from agents.config import GEMINI_3_FLASH
+
+    # Get presentation metadata
+    title = presentation.get("title", "Imported Presentation")
+    presentation_id = presentation.get("presentationId", "")
+    slides_data = presentation.get("slides", [])
+    total_slides = len(slides_data)
+
+    logger.info(f"[GoogleSlidesVisionImport] ===== STARTING VISION IMPORT =====")
+    logger.info(f"[GoogleSlidesVisionImport] Presentation: {title} ({presentation_id})")
+    logger.info(f"[GoogleSlidesVisionImport] Slide count: {total_slides}")
+
+    # Enforce slide limit
+    if total_slides > MAX_VISION_IMPORT_SLIDES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Presentation has {total_slides} slides. Maximum allowed is {MAX_VISION_IMPORT_SLIDES} slides."
+        )
+
+    # Initialize Gemini client
+    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Gemini API key not configured")
+
+    gemini_client = genai.Client(api_key=api_key)
+
+    async def fetch_thumbnail_image(slide_idx: int, page_id: str) -> Optional[bytes]:
+        """Fetch thumbnail image data for a slide."""
+        try:
+            # Get thumbnail URL with LARGE size for best quality
+            thumbnail_data = await api.slides_get_page_thumbnail(
+                user_id=user_id,
+                presentation_id=presentation_id,
+                page_id=page_id,
+                size="LARGE",  # Highest resolution available
+                mime="PNG"
+            )
+
+            content_url = thumbnail_data.get("contentUrl")
+            if not content_url:
+                logger.warning(f"[GoogleSlidesVisionImport] No thumbnail URL for slide {slide_idx + 1}")
+                return None
+
+            # Download the image
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(content_url)
+                if response.status_code == 200:
+                    return response.content
+                else:
+                    logger.warning(f"[GoogleSlidesVisionImport] Failed to download thumbnail for slide {slide_idx + 1}: {response.status_code}")
+                    return None
+
+        except Exception as e:
+            logger.warning(f"[GoogleSlidesVisionImport] Error fetching thumbnail for slide {slide_idx + 1}: {e}")
+            return None
+
+    async def recreate_slide_with_vision(slide_idx: int, image_bytes: bytes) -> Dict[str, Any]:
+        """Use Gemini Vision to recreate a slide from its thumbnail."""
+
+        # Convert to base64 for storage
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        image_data_url = f"data:image/png;base64,{image_b64}"
+
+        # Prompt for slide recreation
+        prompt = """Recreate this presentation slide as HTML. Match the visual design EXACTLY.
+
+RULES:
+- Canvas size: 1920x1080px, overflow:hidden
+- Use Tailwind CSS: <script src="https://cdn.tailwindcss.com"></script>
+- Load fonts from Google Fonts as needed
+- Match exact colors (use hex values like #RRGGBB)
+- Match exact spacing, font sizes, and positions
+- Recreate any charts/graphs using CSS or SVG
+- For images, use a solid color placeholder div with similar dimensions
+- Preserve all text content exactly as shown
+
+Output a complete HTML document starting with <!DOCTYPE html>. No markdown, just HTML."""
+
+        try:
+            # Build contents with image and prompt
+            contents = [
+                types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+                prompt
+            ]
+
+            response = gemini_client.models.generate_content(
+                model=GEMINI_3_FLASH,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,  # Low temp for precise recreation
+                    max_output_tokens=16384,
+                )
+            )
+
+            if response and response.text:
+                html_code = _extract_html_from_vision_response(response.text)
+                if html_code:
+                    return {
+                        "id": str(uuid.uuid4()),
+                        "title": f"Slide {slide_idx + 1}",
+                        "components": [{
+                            "id": str(uuid.uuid4()),
+                            "type": "CustomComponent",
+                            "props": {
+                                "position": {"x": 0, "y": 0},
+                                "width": 1920,
+                                "height": 1080,
+                                "x": 0,
+                                "y": 0,
+                                "zIndex": 1,
+                                "opacity": 1,
+                                "rotation": 0,
+                                "render": html_code,
+                                # Note: originalImageUrl removed to avoid large base64 payloads in API response
+                                "props": {
+                                    "slideIndex": slide_idx,
+                                    "sourceType": "google_slides_vision"
+                                }
+                            }
+                        }]
+                    }
+        except Exception as e:
+            logger.error(f"[GoogleSlidesVisionImport] Vision AI error for slide {slide_idx + 1}: {e}")
+
+        # Fallback: use the image directly
+        return _create_image_slide_fallback(image_data_url, slide_idx)
+
+    # Process slides in batches to avoid rate limits
+    slides_out = []
+    batch_size = 5
+
+    for batch_start in range(0, total_slides, batch_size):
+        batch_end = min(batch_start + batch_size, total_slides)
+        batch_slides = slides_data[batch_start:batch_end]
+
+        logger.info(f"[GoogleSlidesVisionImport] Processing slides {batch_start + 1}-{batch_end}...")
+
+        # Fetch thumbnails for this batch
+        thumbnail_tasks = []
+        for i, slide in enumerate(batch_slides):
+            slide_idx = batch_start + i
+            page_id = slide.get("objectId", str(slide_idx))
+            thumbnail_tasks.append(fetch_thumbnail_image(slide_idx, page_id))
+
+        thumbnails = await asyncio.gather(*thumbnail_tasks)
+
+        # Helper to create error slides as async function
+        async def create_error_slide(idx: int) -> Dict[str, Any]:
+            return {
+                "id": str(uuid.uuid4()),
+                "title": f"Slide {idx + 1}",
+                "components": [_create_error_slide_component("Failed to fetch slide thumbnail")]
+            }
+
+        # Recreate slides with vision
+        recreation_tasks = []
+        for i, (slide, thumbnail_bytes) in enumerate(zip(batch_slides, thumbnails)):
+            slide_idx = batch_start + i
+            if thumbnail_bytes:
+                recreation_tasks.append(recreate_slide_with_vision(slide_idx, thumbnail_bytes))
+            else:
+                # No thumbnail available - create error slide
+                recreation_tasks.append(create_error_slide(slide_idx))
+
+        batch_results = await asyncio.gather(*recreation_tasks)
+        slides_out.extend(batch_results)
+
+        # Update progress
+        if job_id:
+            jobs_store.update_progress(job_id, batch_end, total_slides)
+
+        logger.info(f"[GoogleSlidesVisionImport] Completed batch: {len(slides_out)}/{total_slides} slides")
+
+    logger.info(f"[GoogleSlidesVisionImport] ===== IMPORT COMPLETE: {len(slides_out)} slides =====")
+
+    return {
+        "uuid": str(uuid.uuid4()),
+        "name": title,
+        "slides": slides_out,
+        "size": {"width": 1920, "height": 1080},
+        "metadata": {
+            "source": "google_slides_vision",
+            "import_stats": {
+                "slides": len(slides_out),
+                "method": "vision_ai"
+            }
+        }
+    }
+
+
+def _extract_html_from_vision_response(response: str) -> Optional[str]:
+    """Extract HTML code from Gemini Vision response."""
+    import re
+
+    response = response.strip()
+
+    # Try to find HTML code block first
+    html_block = re.search(r"```html\s*([\s\S]*?)```", response, re.IGNORECASE)
+    if html_block:
+        code = html_block.group(1).strip()
+        if code.lower().startswith('<!doctype') or code.lower().startswith('<html'):
+            return code
+
+    # Try generic code block
+    generic_block = re.search(r"```\s*([\s\S]*?)```", response, re.IGNORECASE)
+    if generic_block:
+        code = generic_block.group(1).strip()
+        if code.lower().startswith('<!doctype') or code.lower().startswith('<html'):
+            return code
+
+    # Try to find complete HTML document directly
+    html_doc = re.search(r"(<!DOCTYPE html[\s\S]*?</html>)", response, re.IGNORECASE)
+    if html_doc:
+        return html_doc.group(1).strip()
+
+    # Try to find <html> tag if no DOCTYPE
+    html_tag = re.search(r"(<html[\s\S]*?</html>)", response, re.IGNORECASE)
+    if html_tag:
+        return "<!DOCTYPE html>\n" + html_tag.group(1).strip()
+
+    # If response starts with DOCTYPE or html, use as-is
+    if response.lower().startswith('<!doctype') or response.lower().startswith('<html'):
+        return response
+
+    return None
+
+
+def _create_image_slide_fallback(image_data_url: str, slide_idx: int) -> Dict[str, Any]:
+    """Create a slide that displays the original image as fallback."""
+    return {
+        "id": str(uuid.uuid4()),
+        "title": f"Slide {slide_idx + 1}",
+        "components": [
+            {
+                "id": str(uuid.uuid4()),
+                "type": "Background",
+                "props": {
+                    "position": {"x": 0, "y": 0},
+                    "width": 1920,
+                    "height": 1080,
+                    "x": 0,
+                    "y": 0,
+                    "zIndex": 0,
+                    "opacity": 1,
+                    "rotation": 0,
+                    "backgroundType": "solid",
+                    "backgroundColor": "#ffffffff"
+                }
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "type": "Image",
+                "props": {
+                    "position": {"x": 0, "y": 0},
+                    "width": 1920,
+                    "height": 1080,
+                    "x": 0,
+                    "y": 0,
+                    "zIndex": 1,
+                    "opacity": 1,
+                    "rotation": 0,
+                    "src": image_data_url,
+                    "alt": f"Slide {slide_idx + 1}",
+                    "objectFit": "contain"
+                }
+            }
+        ]
+    }
+
+
+# ==============================================================================
 # Import Job Functions
 # ==============================================================================
 
 
 async def _run_import_slides_job(user_id: str, job_id: str, presentation_id: str) -> None:
     """
-    Import Google Slides using the new CustomComponent-based approach.
+    Import Google Slides using vision-based approach (screenshot → AI recreation).
 
-    This replaces the old PPTX-export approach with direct conversion to
-    CustomComponents for perfect visual fidelity.
+    Strategy:
+    1. Fetch high-resolution thumbnails for each slide from Google Slides API
+    2. Pass each thumbnail through Gemini Vision to recreate as HTML
+    3. Build deck with CustomComponents
+
+    This provides better visual fidelity than data parsing for complex slides.
+    Limited to MAX_VISION_IMPORT_SLIDES (30) slides.
     """
     oauth = GoogleOAuthService()
     api = GoogleApiClient(oauth)
@@ -2078,12 +2379,20 @@ async def _run_import_slides_job(user_id: str, job_id: str, presentation_id: str
         # Get the full presentation data from Google Slides API
         presentation = await api.slides_get_presentation(user_id, presentation_id)
 
-        # Convert directly to CustomComponents using data parsing (no AI)
-        logger.info(f"[GoogleSlidesImport] Converting to CustomComponents using data parsing...")
-        deck = await _convert_google_slides_to_custom_components(
+        # Check slide count limit
+        slides_data = presentation.get("slides", [])
+        if len(slides_data) > MAX_VISION_IMPORT_SLIDES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Presentation has {len(slides_data)} slides. Maximum allowed is {MAX_VISION_IMPORT_SLIDES} slides."
+            )
+
+        # Convert using vision-based approach (screenshot → AI recreation)
+        logger.info(f"[GoogleSlidesImport] Converting to CustomComponents using VISION AI...")
+        deck = await _convert_google_slides_via_vision(
             presentation=presentation,
             user_id=user_id,
-            access_token=access_token,
+            api=api,
             job_id=job_id
         )
 
@@ -2095,14 +2404,14 @@ async def _run_import_slides_job(user_id: str, job_id: str, presentation_id: str
         result_data = {
             "deck": deck,
             "importMetadata": {
-                "source": "google_slides_custom_component",
+                "source": "google_slides_vision",
                 "presentation_id": presentation_id,
                 **deck.pop("metadata", {})
             }
         }
 
         jobs_store.update(job_id, JobStatus.SUCCEEDED, result_data)
-        logger.info(f"[GoogleSlidesImport] Completed: {len(deck.get('slides', []))} slides")
+        logger.info(f"[GoogleSlidesImport] Completed: {len(deck.get('slides', []))} slides via vision AI")
 
     except Exception as e:
         logger.exception("[GoogleSlidesImport] Job failed")
@@ -2539,7 +2848,10 @@ async def get_job_status(job_id: str, token: Optional[str] = Depends(get_auth_he
     job = jobs_store.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return {"status": job.get("status"), "result": job.get("result"), "error": job.get("error")}
+    # Use explicit JSON encoding to avoid Content-Length mismatch with large payloads
+    content = {"status": job.get("status"), "result": job.get("result"), "error": job.get("error")}
+    body = json.dumps(content, ensure_ascii=False).encode("utf-8")
+    return Response(content=body, media_type="application/json")
 
 
 @router.get("/jobs/{job_id}/result")
@@ -2549,7 +2861,10 @@ async def get_job_result(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
     if job.get("status") != JobStatus.SUCCEEDED:
         raise HTTPException(status_code=409, detail="Job not completed")
-    return job.get("result") or {}
+    # Use explicit JSON encoding to avoid Content-Length mismatch with large payloads
+    result = job.get("result") or {}
+    body = json.dumps(result, ensure_ascii=False).encode("utf-8")
+    return Response(content=body, media_type="application/json")
 
 
 # ============================
