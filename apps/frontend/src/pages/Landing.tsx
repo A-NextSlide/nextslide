@@ -58,6 +58,50 @@ const Landing: React.FC = () => {
   // Community bottom sheet
   const [showCommunity, setShowCommunity] = useState(false);
 
+  // ========== MOBILE DEBUG LOGGING ==========
+  useEffect(() => {
+    console.log('[Landing] 🚀 MOUNT | isMobile:', BROWSER.isMobile, '| isIOS:', BROWSER.isIOS, '| scrollY:', window.scrollY);
+    console.log('[Landing] 📍 URL:', window.location.href, '| hash:', window.location.hash);
+
+    // Track scroll position
+    const logScroll = () => {
+      console.log('[Landing] 📜 SCROLL | scrollY:', window.scrollY);
+    };
+
+    // Track focus events
+    const logFocus = (e: FocusEvent) => {
+      console.log('[Landing] 🎯 FOCUS | target:', (e.target as HTMLElement)?.tagName, (e.target as HTMLElement)?.id, (e.target as HTMLElement)?.className?.slice(0, 50));
+    };
+
+    window.addEventListener('scroll', logScroll, { passive: true });
+    window.addEventListener('focusin', logFocus);
+
+    // Log initial state after a tick
+    setTimeout(() => {
+      console.log('[Landing] ⏱️ AFTER 100ms | scrollY:', window.scrollY, '| showcaseInView:', showcaseInView, '| heroInView:', heroInView);
+    }, 100);
+
+    setTimeout(() => {
+      console.log('[Landing] ⏱️ AFTER 500ms | scrollY:', window.scrollY);
+    }, 500);
+
+    return () => {
+      window.removeEventListener('scroll', logScroll);
+      window.removeEventListener('focusin', logFocus);
+    };
+  }, []);
+
+  // Log showcaseInView changes
+  useEffect(() => {
+    console.log('[Landing] 👁️ showcaseInView CHANGED:', showcaseInView);
+  }, [showcaseInView]);
+
+  // Log heroInView changes
+  useEffect(() => {
+    console.log('[Landing] 👁️ heroInView CHANGED:', heroInView);
+  }, [heroInView]);
+  // ========== END MOBILE DEBUG LOGGING ==========
+
   // Legal modal
   const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [legalDocType, setLegalDocType] = useState<'privacy' | 'terms'>('privacy');
@@ -294,6 +338,7 @@ const Landing: React.FC = () => {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
+          console.log('[Landing] 🔍 SHOWCASE IntersectionObserver | isIntersecting:', entry.isIntersecting, '| ratio:', entry.intersectionRatio.toFixed(2), '| boundingTop:', entry.boundingClientRect.top.toFixed(0));
           setShowcaseInView(entry.isIntersecting);
         });
       },
@@ -311,6 +356,7 @@ const Landing: React.FC = () => {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
+          console.log('[Landing] 🔍 HERO IntersectionObserver | isIntersecting:', entry.isIntersecting, '| ratio:', entry.intersectionRatio.toFixed(2), '| boundingTop:', entry.boundingClientRect.top.toFixed(0));
           setHeroInView(entry.isIntersecting);
         });
       },
@@ -660,7 +706,7 @@ const Landing: React.FC = () => {
             presentation platform
           </h1>
           <p className="mt-3 text-base sm:text-xl text-black/50 dark:text-white/50 max-w-2xl mx-auto px-4">
-            Beautiful decks for every idea. Sales. Teaching. Internal.
+            Beautiful decks for every idea. Sales. Teaching. Or just to learn something!
           </p>
           <p className="mt-1 text-base sm:text-xl text-black/50 dark:text-white/50 max-w-2xl mx-auto px-4">
             Perfected in seconds.
