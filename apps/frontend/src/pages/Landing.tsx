@@ -1165,45 +1165,40 @@ const Landing: React.FC = () => {
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
                           <div className="text-white/40 text-xl font-medium mb-2">Loading...</div>
                         </div>
-                      ) : !showcaseInView ? (
-                        // Placeholder when scrolled out of view
-                        <div className="w-full h-full bg-zinc-900" />
+                      ) : !showcaseInView || BROWSER.isMobile ? (
+                        // Placeholder when scrolled out of view OR on mobile (no heavy components on mobile)
+                        <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center">
+                          {BROWSER.isMobile && showcaseInView && (
+                            <div className="text-white/40 text-sm text-center px-4">
+                              <Layers className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                              <p>View on desktop for<br />interactive preview</p>
+                            </div>
+                          )}
+                        </div>
                       ) : activeSlide ? (
-                        BROWSER.isMobile ? (
-                          // Mobile: use lightweight MiniSlide with background-only mode to prevent crashes
+                        // Desktop only: use full Slide component with proper scaling
+                        <div
+                          className="absolute top-0 left-0 origin-top-left"
+                          style={{
+                            width: `${DEFAULT_SLIDE_WIDTH}px`,
+                            height: `${DEFAULT_SLIDE_HEIGHT}px`,
+                            transform: `scale(${mainSlideScale})`,
+                          }}
+                        >
                           <Suspense fallback={<div className="w-full h-full bg-zinc-900 animate-pulse" />}>
-                            <MiniSlide
-                              slide={activeSlide}
-                              renderMode="background"
-                              responsive={true}
-                              className="w-full h-full"
-                            />
+                            <StaticNavigationProvider>
+                              <StaticEditorStateProvider slideSize={{ width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT }}>
+                                <StaticActiveSlideProvider slide={activeSlide}>
+                                  <Slide
+                                    slide={activeSlide}
+                                    isActive={true}
+                                    isEditing={false}
+                                  />
+                                </StaticActiveSlideProvider>
+                              </StaticEditorStateProvider>
+                            </StaticNavigationProvider>
                           </Suspense>
-                        ) : (
-                          // Desktop: use full Slide component with proper scaling
-                          <div
-                            className="absolute top-0 left-0 origin-top-left"
-                            style={{
-                              width: `${DEFAULT_SLIDE_WIDTH}px`,
-                              height: `${DEFAULT_SLIDE_HEIGHT}px`,
-                              transform: `scale(${mainSlideScale})`,
-                            }}
-                          >
-                            <Suspense fallback={<div className="w-full h-full bg-zinc-900 animate-pulse" />}>
-                              <StaticNavigationProvider>
-                                <StaticEditorStateProvider slideSize={{ width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT }}>
-                                  <StaticActiveSlideProvider slide={activeSlide}>
-                                    <Slide
-                                      slide={activeSlide}
-                                      isActive={true}
-                                      isEditing={false}
-                                    />
-                                  </StaticActiveSlideProvider>
-                                </StaticEditorStateProvider>
-                              </StaticNavigationProvider>
-                            </Suspense>
-                          </div>
-                        )
+                        </div>
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
                           <div className="text-white/40 text-xl font-medium mb-2">No slides available</div>
@@ -1257,10 +1252,16 @@ const Landing: React.FC = () => {
                         [...Array(5)].map((_, idx) => (
                           <div key={idx} className="w-[100px] sm:w-[120px] aspect-video rounded overflow-hidden relative bg-white/5 animate-pulse flex-shrink-0" />
                         ))
-                      ) : !showcaseInView ? (
-                        // Placeholder thumbnails when scrolled out of view
+                      ) : !showcaseInView || BROWSER.isMobile ? (
+                        // Placeholder thumbnails when scrolled out of view or on mobile
                         [...Array(Math.min(5, activeDeck?.slideCount || 5))].map((_, idx) => (
-                          <div key={idx} className="w-[100px] sm:w-[120px] aspect-video rounded overflow-hidden relative bg-white/5 flex-shrink-0" />
+                          <div
+                            key={idx}
+                            className={cn(
+                              "w-[100px] sm:w-[120px] aspect-video rounded overflow-hidden relative bg-white/5 flex-shrink-0",
+                              idx === activeDeckSlideIndex && "ring-2 ring-[#FF4301]"
+                            )}
+                          />
                         ))
                       ) : (
                         activeDeck?.slides?.map((slide, idx) => (
@@ -1281,7 +1282,7 @@ const Landing: React.FC = () => {
                             <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
                               <MiniSlide
                                 slide={slide}
-                                renderMode={BROWSER.isMobile ? 'background' : 'full'}
+                                renderMode="full"
                                 responsive={true}
                                 className="w-full h-full"
                               />
@@ -1307,10 +1308,18 @@ const Landing: React.FC = () => {
                         <div className="aspect-[16/9] relative bg-white/5 animate-pulse rounded-lg" />
                       </div>
                     ))
-                  ) : !showcaseInView ? (
-                    // Placeholder gallery items when scrolled out of view
+                  ) : !showcaseInView || BROWSER.isMobile ? (
+                    // Placeholder gallery items when scrolled out of view or on mobile
                     [...Array(showcaseDecks.length || 6)].map((_, index) => (
-                      <div key={index} className="rounded-lg relative ring-1 ring-white/5 min-w-[160px] lg:min-w-0 flex-shrink-0">
+                      <div
+                        key={index}
+                        className={cn(
+                          "rounded-lg relative min-w-[160px] lg:min-w-0 flex-shrink-0",
+                          index === activeShowcaseIndex
+                            ? "ring-2 ring-[#FF4301]"
+                            : "ring-1 ring-white/5"
+                        )}
+                      >
                         <div className="aspect-[16/9] relative bg-white/5 rounded-lg" />
                       </div>
                     ))
@@ -1331,7 +1340,7 @@ const Landing: React.FC = () => {
                             <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
                               <MiniSlide
                                 slide={deck.slides[0]}
-                                renderMode={BROWSER.isMobile ? 'background' : 'full'}
+                                renderMode="full"
                                 responsive={true}
                                 className="w-full h-full"
                               />
