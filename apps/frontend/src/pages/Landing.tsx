@@ -521,7 +521,7 @@ const Landing: React.FC = () => {
                   {/* Main slide */}
                   <div className="flex-1 p-3 md:p-4 flex items-center justify-center min-h-0">
                     <div
-                      className="aspect-video w-full max-h-full relative rounded-lg overflow-hidden bg-black group"
+                      className="aspect-video w-full max-h-full max-w-4xl relative rounded-lg overflow-hidden bg-black group"
                       onClick={() => {
                         handleUserInteraction();
                         showcaseRef.current?.focus();
