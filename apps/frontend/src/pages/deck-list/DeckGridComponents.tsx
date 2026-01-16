@@ -371,50 +371,90 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLElement | null>(null);
 
+  // Store observer reference so we can observe new elements as they mount
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const observedElementsRef = useRef<Set<HTMLDivElement>>(new Set());
+
   useEffect(() => {
-    const observer = new IntersectionObserver(
+    observerRef.current = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           const index = parseInt(entry.target.getAttribute('data-index') || '0');
           setVisibleDecks((prev) => {
             const next = new Set(prev);
-          if (entry.isIntersecting) {
-            next.add(index);
-          } else {
-            next.delete(index);
-          }
-          return next;
+            if (entry.isIntersecting) {
+              next.add(index);
+            } else {
+              next.delete(index);
+            }
+            return next;
+          });
         });
+      },
+      {
+        root: null,
+        rootMargin: '50px',
+        threshold: 0
+      }
+    );
+
+    // Observe any elements that were already mounted
+    itemRefs.current.forEach((element) => {
+      if (!observedElementsRef.current.has(element)) {
+        observerRef.current?.observe(element);
+        observedElementsRef.current.add(element);
+      }
+    });
+
+    return () => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      observedElementsRef.current.clear();
+    };
+  }, []);
+
+  // Re-observe when deck count changes (new decks loaded)
+  useEffect(() => {
+    if (!observerRef.current) return;
+
+    // Small delay to ensure new elements have their refs set
+    const timer = setTimeout(() => {
+      itemRefs.current.forEach((element) => {
+        if (!observedElementsRef.current.has(element)) {
+          observerRef.current?.observe(element);
+          observedElementsRef.current.add(element);
+        }
       });
-    },
-    {
-      root: null,
-      rootMargin: '50px',
-      threshold: 0
-    }
-  );
+    }, 50);
 
-  itemRefs.current.forEach((element) => {
-    observer.observe(element);
-  });
+    return () => clearTimeout(timer);
+  }, [safeDecks.length]);
 
-  return () => {
-    observer.disconnect();
-  };
-}, [safeDecks.length]);
-
-  // Queue management: Enqueue visible items that need upgrade
+  // Queue management: Enqueue visible items that need upgrade + downgrade non-visible
   useEffect(() => {
     if (!isMobile) return;
-    
-    // Enqueue visible items not yet upgraded
+
+    // 1. Clean up upgradedDecks: downgrade items that are no longer visible to save memory (iframe limit)
+    setUpgradedDecks(prev => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const idx of next) {
+        if (!visibleDecks.has(idx)) {
+          next.delete(idx);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+
+    // 2. Enqueue visible items not yet upgraded
     visibleDecks.forEach((idx) => {
       if (upgradedDecks.has(idx)) return;
       if (upgradeQueueRef.current.includes(idx)) return;
       if (upgradingIndex === idx) return;
       upgradeQueueRef.current.push(idx);
     });
-    
+
     // Kick processing loop
     if (upgradingIndex === null && upgradeQueueRef.current.length > 0) {
       // Find the next VISIBLE item in the queue
@@ -422,7 +462,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
       while (next !== undefined && !visibleDecks.has(next)) {
         next = upgradeQueueRef.current.shift();
       }
-      
+
       if (next !== undefined) {
         setUpgradingIndex(next);
       }
@@ -483,7 +523,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   }, [hasMore, isLoadingMore, onLoadMore]);
 
   return (
-    <div ref={containerRef} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 w-full">
+    <div ref={containerRef} className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 w-full">
       {safeDecks.map((deck, index) => (
         <div
           key={deck.uuid}
@@ -494,7 +534,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
         >
           {visibleDecks.has(index) ? (
             <div
-              className="group relative cursor-pointer ring-1 ring-zinc-200 dark:ring-zinc-700 hover:shadow-md dark:hover:shadow-black/40 transition-all duration-300 rounded-lg overflow-hidden"
+              className="group relative cursor-pointer ring-1 ring-zinc-200 dark:ring-zinc-700 hover:shadow-sm dark:hover:shadow-black/40 hover:ring-orange-300 dark:hover:ring-orange-500/50 transition-all duration-200 rounded-md overflow-hidden"
               onClick={() => onEdit(deck)}
             >
               <div className="relative aspect-[16/9] w-full overflow-hidden bg-muted">
@@ -504,35 +544,30 @@ export const VirtualizedPopupDeckGrid = React.memo(({
                     renderMode={!isMobile ? 'full' : ((visibleDecks.has(index) && (upgradedDecks.has(index) || upgradingIndex === index)) ? 'full' : 'background')}
                   />
                 </div>
-                {/* Text overlay at bottom */}
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent pt-6 pb-2 px-3">
-                  <h3 className="text-xs font-bold text-white truncate" title={deck.name || 'Untitled presentation'}>
-                    {deck.name || 'Untitled presentation'}
+                {/* Compact text overlay at bottom */}
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent pt-4 pb-1.5 px-2">
+                  <h3 className="text-[10px] font-medium text-white truncate leading-tight" title={deck.name || 'Untitled'}>
+                    {deck.name || 'Untitled'}
                   </h3>
-                  <span className="text-[10px] text-white/70 whitespace-nowrap">
-                    Updated {formatDistanceToNow(new Date(deck.lastModified), { addSuffix: true })}
-                  </span>
                 </div>
-                {/* Hover overlay with actions */}
-                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-end p-2">
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onShowDeleteDialog(deck.uuid || '', e);
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
+                {/* Hover overlay with delete action */}
+                <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-end p-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 bg-white/20 backdrop-blur-sm hover:bg-red-500/80 text-white"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onShowDeleteDialog(deck.uuid || '', e);
+                    }}
+                  >
+                    <Trash2 size={12} />
+                  </Button>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
+            <div className="border border-zinc-200 dark:border-zinc-800 rounded-md overflow-hidden">
               <div className="aspect-[16/9] bg-zinc-200 dark:bg-zinc-800"></div>
             </div>
           )}

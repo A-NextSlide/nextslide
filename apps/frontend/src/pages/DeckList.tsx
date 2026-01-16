@@ -2762,6 +2762,8 @@ const DeckList: React.FC = () => {
                                 placeholder="Search all presentations..."
                                 value={popupSearchQuery}
                                 onChange={(e) => handlePopupSearchChange(e.target.value)}
+                                autoFocus={false}
+                                tabIndex={-1}
                                 className="w-full bg-white/80 dark:bg-zinc-800/50 border-zinc-200/80 dark:border-zinc-700/50 hover:border-orange-300/50 dark:hover:border-orange-500/30 focus:border-orange-400 dark:focus:border-orange-500/50 text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 pl-11 pr-4 rounded-xl h-11 text-sm shadow-sm focus-visible:ring-2 focus-visible:ring-orange-500/20 focus-visible:ring-offset-0 transition-all duration-200"
                               />
                               {isPopupSearching ? (

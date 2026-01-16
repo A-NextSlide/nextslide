@@ -85,8 +85,9 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     };
   }, []);
 
-  // Should we force landscape rotation?
-  const forceLandscape = isMobile && isPortrait;
+  // Don't force landscape rotation - let slides scale naturally to fit the viewport
+  // This prevents complex rotation issues on mobile
+  const forceLandscape = false;
 
   // Computed values
   const deckSlideSize = useMemo(
@@ -408,21 +409,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[100] bg-black"
-      style={{
-        height: '100dvh',
-        // When forcing landscape, rotate the entire container
-        ...(forceLandscape ? {
-          transform: 'rotate(90deg)',
-          transformOrigin: 'center center',
-          width: '100dvh',
-          height: '100vw',
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          marginTop: '-50vw',
-          marginLeft: '-50dvh',
-        } : {})
-      }}
+      style={{ height: '100dvh' }}
     >
       {/* Main slide display - container for measuring available space */}
       <div
@@ -498,7 +485,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.15 }}
                     onClick={() => setShowThumbnails(true)}
-                    className="bg-black/60 rounded-full p-2 text-white/90 hover:bg-black/80 transition-colors border border-white/20"
+                    className="bg-black/60 rounded-full w-10 h-10 flex items-center justify-center text-white/90 hover:bg-black/80 transition-colors border border-white/20"
                     title="Show all slides (G)"
                   >
                     <Grid3X3 size={18} />
@@ -510,7 +497,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.2 }}
                     onClick={toggleFullscreen}
-                    className="bg-black/60 rounded-full p-2 text-white/90 hover:bg-black/80 transition-colors border border-white/20"
+                    className="bg-black/60 rounded-full w-10 h-10 flex items-center justify-center text-white/90 hover:bg-black/80 transition-colors border border-white/20"
                     title={isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
                   >
                     {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
@@ -522,7 +509,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.25 }}
                     onClick={handleExitPresentation}
-                    className="bg-black/60 rounded-full p-2 text-white/90 hover:bg-black/80 transition-colors border border-white/20"
+                    className="bg-black/60 rounded-full w-10 h-10 flex items-center justify-center text-white/90 hover:bg-black/80 transition-colors border border-white/20"
                     title="Exit presentation (ESC)"
                   >
                     <X size={18} />
@@ -540,7 +527,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 onClick={goToPrevSlide}
                 disabled={validIndex === 0}
                 className={cn(
-                  'bg-black/60 rounded-full p-3 text-white/90 transition-all border border-white/20',
+                  'bg-black/60 rounded-full w-12 h-12 flex items-center justify-center text-white/90 transition-all border border-white/20',
                   validIndex === 0
                     ? 'opacity-30 cursor-not-allowed'
                     : 'hover:bg-black/80 hover:scale-110'
@@ -556,7 +543,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 onClick={goToNextSlide}
                 disabled={validIndex === slides.length - 1}
                 className={cn(
-                  'bg-black/60 rounded-full p-3 text-white/90 transition-all border border-white/20',
+                  'bg-black/60 rounded-full w-12 h-12 flex items-center justify-center text-white/90 transition-all border border-white/20',
                   validIndex === slides.length - 1
                     ? 'opacity-30 cursor-not-allowed'
                     : 'hover:bg-black/80 hover:scale-110'

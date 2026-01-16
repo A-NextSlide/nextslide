@@ -1,6 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { useTheme } from 'next-themes';
 
+// Safari detection for performance adjustments
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  ((navigator as any).platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1);
+
 interface GritParticle {
     x: number;
     y: number;
@@ -68,7 +73,14 @@ const ParticleAnimation: React.FC<ParticleAnimationProps> = ({ isTyping = false,
 
         const initParticles = () => {
             particles = [];
-            const count = Math.floor((window.innerWidth * window.innerHeight) / 450);
+            // Drastically reduce particle count for performance
+            // Safari/iOS: much lower count, all others: capped at 800
+            const baseDivisor = (isSafari || isIOS) ? 4000 : 1500;
+            const maxParticles = (isSafari || isIOS) ? 400 : 800;
+            const count = Math.min(
+                Math.floor((window.innerWidth * window.innerHeight) / baseDivisor),
+                maxParticles
+            );
 
             for (let i = 0; i < count; i++) {
                 const z = Math.random();
@@ -84,8 +96,21 @@ const ParticleAnimation: React.FC<ParticleAnimationProps> = ({ isTyping = false,
             }
         };
 
-        const animate = () => {
+        // FPS throttling - Safari gets 30fps, others get 60fps
+        const targetFPS = (isSafari || isIOS) ? 30 : 60;
+        const frameInterval = 1000 / targetFPS;
+        let lastFrameTime = 0;
+
+        const animate = (currentTime: number = 0) => {
             if (!ctx || !canvas) return;
+
+            // Throttle frame rate
+            const elapsed = currentTime - lastFrameTime;
+            if (elapsed < frameInterval) {
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+            lastFrameTime = currentTime - (elapsed % frameInterval);
 
             const isDark = themeRef.current === 'dark';
 
@@ -190,12 +215,27 @@ const ParticleAnimation: React.FC<ParticleAnimationProps> = ({ isTyping = false,
             animationFrameId = requestAnimationFrame(animate);
         };
 
+        // Pause animation when tab is hidden
+        let isPaused = false;
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                isPaused = true;
+                cancelAnimationFrame(animationFrameId);
+            } else {
+                isPaused = false;
+                lastFrameTime = 0;
+                animationFrameId = requestAnimationFrame(animate);
+            }
+        };
+
         window.addEventListener('resize', handleResize);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
         handleResize();
         animate();
 
         return () => {
             window.removeEventListener('resize', handleResize);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             cancelAnimationFrame(animationFrameId);
         };
     }, []); // Empty dependency array = No resets!

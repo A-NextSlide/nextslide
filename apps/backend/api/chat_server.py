@@ -222,7 +222,7 @@ if ENVIRONMENT != "production":
             "http://127.0.0.1:8080",
             "http://127.0.0.1:8081",
             # Local network for mobile testing
-            "http://192.168.1.33:8080",
+            "http://169.254.229.54:8080",
         }
     )
 
@@ -231,7 +231,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=list(allowed_origins),
     # Allow any subdomain of nextslide.ai over HTTPS, localhost over HTTP, and local network IPs for mobile testing
-    allow_origin_regex=r"https://([a-z0-9-]+\\.)?nextslide\\.ai$|http://(localhost|127\\.0\\.0\\.1|192\\.168\\.\\d+\\.\\d+|10\\.\\d+\\.\\d+\\.\\d+)(:\\d+)?$",
+    allow_origin_regex=r"https://([a-z0-9-]+\\.)?nextslide\\.ai$|http://(localhost|127\\.0\\.0\\.1|192\\.168\\.\\d+\\.\\d+|10\\.\\d+\\.\\d+\\.\\d+|169\\.254\\.\\d+\\.\\d+)(:\\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],  # Allow all methods to simplify dev preflights
     allow_headers=["*"],  # Echo requested headers for preflight
