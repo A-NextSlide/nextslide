@@ -35,6 +35,7 @@ playwright>=1.40.0  # For JS-rendered site scraping (optional, gracefully degrad
 
 # Monitoring and Error Tracking
 sentry-sdk[fastapi]==2.33.0
+posthog>=3.7.0
 
 # Authentication Dependencies
 google-auth>=2.36.0

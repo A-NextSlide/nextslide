@@ -6,6 +6,11 @@ import { useDeckStore } from '@/stores/deckStore';
 import { v4 as uuidv4 } from 'uuid';
 import { useThemeStore } from '@/stores/themeStore';
 import { initialWorkspaceTheme } from '@/types/themes';
+import {
+  trackOutlineGenerationStarted,
+  trackOutlineGenerationCompleted,
+  trackOutlineGenerationFailed
+} from '@/services/analytics';
 
 interface UseOutlineChatProps {
   initialIdea: string; // Main presentation idea/prompt
@@ -975,11 +980,22 @@ export const useOutlineChat = ({
       return prev;
     });
 
+    // Track generation start time for duration calculation
+    const generationStartTime = Date.now();
+
     try {
       console.warn('[useOutlineChat] Calling generateOutlineStream...');
       console.warn('[useOutlineChat] slideCount value:', actualSlideCount);
       console.warn('[useOutlineChat] Using streaming endpoint');
       console.warn('[useOutlineChat] handleProgressUpdate callback:', typeof handleProgressUpdate);
+
+      // Track outline generation started in PostHog
+      trackOutlineGenerationStarted({
+        detailLevel: actualDetailLevel,
+        slideCount: actualSlideCount ?? undefined,
+        hasAttachments: uploadedFiles.length > 0,
+        hasUrl: referenceLinks.length > 0,
+      });
 
       // Clear previous research events when starting new generation; seed only if enabled
       setResearchEvents([]);
@@ -1181,10 +1197,25 @@ export const useOutlineChat = ({
       //   setUploadedFiles([]);
       // }
 
+      // Track successful outline generation in PostHog
+      const generationDurationMs = Date.now() - generationStartTime;
+      trackOutlineGenerationCompleted({
+        detailLevel: actualDetailLevel,
+        slideCount: result.slides.length,
+        durationMs: generationDurationMs,
+      });
+
       // console.log('[useOutlineChat] Successfully completed outline generation');
     } catch (error) {
       console.error('❌ Outline generation failed:', error);
       setIsGenerating(false); // Set to false on catch error
+
+      // Track failed outline generation in PostHog
+      trackOutlineGenerationFailed({
+        error: error instanceof Error ? error.message : 'Unknown error',
+        detailLevel: actualDetailLevel,
+      });
+
       toast({
         title: "Error generating outline",
         description: error instanceof Error ? error.message : "An unexpected error occurred",

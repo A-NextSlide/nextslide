@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDeckStore } from '@/stores/deckStore';
+import { trackMediaSelected } from '@/services/analytics';
 
 // Updated MediaSource type
 export type MediaSource = 'image' | 'video' | 'recent' | 'search' | 'generate';
@@ -80,8 +81,14 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
     };
 
     const handleSelect = (url: string, type: 'image' | 'video' | 'icon' | 'other', source: MediaSource) => {
+        // Track media selection in PostHog
+        trackMediaSelected({
+            source: source === 'generate' ? 'upload' : source === 'recent' ? 'upload' : source as any,
+            mediaType: type === 'icon' || type === 'other' ? 'image' : type,
+        });
+
         onSelect(url, type, source);
-        
+
         // Add to recent media
         if (type === 'image' || type === 'video') {
             const newRecent: RecentMedia = {

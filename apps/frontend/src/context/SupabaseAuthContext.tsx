@@ -6,6 +6,7 @@ import { useToast } from '@/hooks/use-toast';
 import { authService } from '@/services/authService';
 import { authRecoveryService } from '@/services/authRecoveryService';
 import { API_CONFIG } from '@/config/environment';
+import { identifyUser, resetUser, trackSignIn, trackSignUp, trackSignOut } from '@/services/analytics';
 
 interface AuthContextType {
   user: User | null;
@@ -175,6 +176,14 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
       switch (_event) {
         case 'SIGNED_IN':
           // Defer admin role resolution to post-load UI triggers
+          // Identify user in PostHog for analytics
+          if (session?.user) {
+            identifyUser(session.user.id, {
+              email: session.user.email,
+              name: session.user.user_metadata?.full_name,
+              createdAt: session.user.created_at,
+            });
+          }
           break;
         case 'SIGNED_OUT':
 
@@ -185,6 +194,8 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
           setAdminRole(null);
           hasCheckedAdminRef.current = false;
           lastCheckedUserIdRef.current = null;
+          // Reset PostHog user identification
+          resetUser();
           navigate('/');
           break;
         case 'TOKEN_REFRESHED':
@@ -242,9 +253,11 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       if (data.user && !data.session) {
         // Email confirmation required
+        trackSignUp('email');
         navigate('/verify-email/pending');
       } else if (data.session) {
         // Auto-confirmed, redirect to app
+        trackSignUp('email');
         toast({
           title: "Account created successfully!",
           description: "Welcome to Next.Slide!",
@@ -275,7 +288,10 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
 
       console.log('[Auth] Sign-in successful for user:', data.user?.id);
-      
+
+      // Track successful sign in
+      trackSignIn('email');
+
       toast({
         title: "Welcome back!",
         description: "Successfully signed in.",
@@ -328,6 +344,9 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
         throw error;
       }
 
+      // Track Google sign in attempt (actual sign in tracked on SIGNED_IN event)
+      trackSignIn('google');
+
       console.log('[Auth] OAuth initiated successfully, redirecting to Google...');
       // User will be redirected to Google
     } catch (error: any) {
@@ -377,6 +396,9 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // - Clearing auth data via authService.clearAllAuthData()
       // - Navigation to home page
       // This prevents duplicate clearing and ensures proper cleanup
+
+      // Track sign out event
+      trackSignOut();
 
       toast({
         title: "Signed out",

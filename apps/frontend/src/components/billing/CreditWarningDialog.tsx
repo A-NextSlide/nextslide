@@ -10,7 +10,7 @@
  * - Pre-generation warning before clicking generate
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Dialog,
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Sparkles, X, Rocket, CheckCircle2, CreditCard, AlertTriangle } from 'lucide-react';
+import { trackUpgradePromptShown, trackEvent } from '@/services/analytics';
 
 export type CreditWarningMode =
   | 'free_no_credits'      // Free user, 0 credits
@@ -71,12 +72,25 @@ export function CreditWarningDialog({
   const overageCost = (overageCredits * overageCostPerCredit).toFixed(2);
   const isPaidUser = ['starter', 'pro', 'enterprise'].includes(planName.toLowerCase());
 
+  // Track when dialog opens
+  useEffect(() => {
+    if (open) {
+      trackUpgradePromptShown({
+        trigger: effectiveMode === 'free_no_credits' ? 'credits_low' : 'feature_gate',
+        currentPlan: planName.toLowerCase() as 'free' | 'pro' | 'enterprise',
+        creditsRemaining: remainingCredits,
+      });
+    }
+  }, [open, effectiveMode, planName, remainingCredits]);
+
   const handleUpgrade = () => {
+    trackEvent('upgrade_clicked', { mode: effectiveMode, plan: planName });
     onClose();
     navigate('/profile?tab=billing');
   };
 
   const handleProceed = () => {
+    trackEvent('overage_confirmed', { overageCost, creditsNeeded: overageCredits });
     if (onProceed) {
       onProceed();
     }

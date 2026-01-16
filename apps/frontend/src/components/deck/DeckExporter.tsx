@@ -5,7 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import { SlideData } from '@/types/SlideTypes';
 import { extractDeckComponents } from '@/lib/componentExtractor';
 import { CompleteDeckData } from '@/types/DeckTypes';
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -15,6 +15,7 @@ import { getFontFamilyWithFallback } from '../../utils/fontUtils';
 import { googleIntegrationApi } from '@/services/googleIntegrationApi';
 import { useDeckStore } from '@/stores/deckStore';
 import { Loader2, UploadCloud } from 'lucide-react';
+import { trackDeckExported } from '@/services/analytics';
 
 interface DeckExporterProps {
   deckName: string;
@@ -352,6 +353,9 @@ const DeckExporter: React.FC<DeckExporterProps> = ({ deckName, slides }) => {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
+      // Track export in PostHog
+      trackDeckExported({ deckId: deckName, format: 'json', slideCount: slides.length });
+
       toast({
         title: "JSON Export Complete",
         description: "Exported deck as JSON file",
@@ -393,7 +397,10 @@ const DeckExporter: React.FC<DeckExporterProps> = ({ deckName, slides }) => {
       // Cleanup
       document.body.removeChild(htmlLink);
       URL.revokeObjectURL(htmlUrl);
-      
+
+      // Track export in PostHog
+      trackDeckExported({ deckId: deckName, format: 'html', slideCount: slides.length });
+
       toast({
         title: "HTML Export Complete",
         description: "Exported deck as standalone HTML file",
@@ -429,6 +436,9 @@ const DeckExporter: React.FC<DeckExporterProps> = ({ deckName, slides }) => {
         : await googleIntegrationApi.exportSlidesEditable(completeDeck, { title: completeDeck.name || deckName, createNew: true });
       const job = await googleIntegrationApi.pollJob<{ presentationId: string; webViewLink?: string }>(jobId, { intervalMs: 1500, timeoutMs: 300000 });
       const link = (job.result as any)?.webViewLink;
+      // Track export in PostHog
+      trackDeckExported({ deckId: deckName, format: 'google_slides', slideCount: slides.length });
+
       if (link) {
         window.open(link, '_blank');
         toast({ title: `Exported to Google Slides (${mode})`, description: 'Opening your presentation in a new tab.' });

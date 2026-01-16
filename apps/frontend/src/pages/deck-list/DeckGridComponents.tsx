@@ -3,7 +3,7 @@
  * Contains: RotatingWords, VirtualizedDeckGrid, VirtualizedPopupDeckGrid
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { Button } from '@/components/ui/button';
 import { Trash2 } from 'lucide-react';
@@ -11,6 +11,7 @@ import DeckCard from '@/components/deck/DeckCard';
 import DeckThumbnail from '@/components/deck/DeckThumbnail';
 import { formatDistanceToNow } from 'date-fns';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { BROWSER } from '@/utils/browser';
 
 // Rotating words animation for hero heading - vertical slot machine style
 const WORDS = ['PROPOSALS', 'STRATEGIES', 'REPORTS', 'DOCS', 'NOTES', 'IDEAS'];
@@ -110,7 +111,9 @@ export const VirtualizedDeckGrid = React.memo(({
   const isMobile = useIsMobile();
   const safeDecks: CompleteDeckData[] = Array.isArray(decks) ? decks : [];
   const [renderedDecks, setRenderedDecks] = useState<Set<number>>(() => {
-    // Start with first few decks rendered to prevent flash
+    // On iOS, start empty and let throttled queue handle rendering one at a time
+    // On desktop, render first few immediately to prevent flash
+    if (BROWSER.isIOS) return new Set();
     return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
   });
   const [visibleDecks, setVisibleDecks] = useState<Set<number>>(() => new Set());
@@ -119,7 +122,8 @@ export const VirtualizedDeckGrid = React.memo(({
   const [upgradingIndex, setUpgradingIndex] = useState<number | null>(null);
   const upgradeQueueRef = useRef<number[]>([]);
   const [initiallyVisibleDecks, setInitiallyVisibleDecks] = useState<Set<number>>(() => {
-    // Start with first few decks visible to prevent flash
+    // On iOS, don't pre-mark any as visible - let observer handle it
+    if (BROWSER.isIOS) return new Set();
     return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
   });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -162,72 +166,234 @@ export const VirtualizedDeckGrid = React.memo(({
     }
   }, [safeDecks.length]);
 
+  // iOS Safari has a limit on concurrent iframes before crashing
+  // Be very conservative - only 2 upgraded at a time
+  const MAX_UPGRADED_ON_IOS = 2;
+
   useEffect(() => {
-    if (!isMobile) return;
-    
-    // 1. Clean up upgradedDecks: downgrade items that are no longer visible to save memory (iframe limit)
+    // Progressive upgrade needed on iOS and mobile
+    if (!BROWSER.isIOS && !isMobile) return;
+
+    // 1. Clean up upgradedDecks: downgrade items that are no longer visible to save memory
     setUpgradedDecks(prev => {
       let changed = false;
       const next = new Set(prev);
+      const removed: number[] = [];
       for (const idx of next) {
         if (!visibleDecks.has(idx)) {
           next.delete(idx);
+          removed.push(idx);
           changed = true;
         }
+      }
+      if (BROWSER.isIOS && removed.length > 0) {
+        console.log(`[iOS] 💨 DOWNGRADE #${removed.join(',')} | upgraded=${next.size}`);
       }
       return changed ? next : prev;
     });
 
-    // 2. Enqueue visible items not yet upgraded
+    // 2. Enqueue visible AND rendered items not yet upgraded
     visibleDecks.forEach((idx) => {
+      if (!renderedDecks.has(idx)) return;
       if (upgradedDecks.has(idx)) return;
       if (upgradeQueueRef.current.includes(idx)) return;
-      if (upgradingIndex === idx) return; // Already processing
+      if (upgradingIndex === idx) return;
       upgradeQueueRef.current.push(idx);
     });
 
-    // Kick processing loop
-    if (upgradingIndex === null && upgradeQueueRef.current.length > 0) {
-      setUpgradingIndex(upgradeQueueRef.current.shift() ?? null);
+    // Kick processing loop - respect the max upgraded limit
+    const currentUpgradedCount = upgradedDecks.size + (upgradingIndex !== null ? 1 : 0);
+    const canUpgradeMore = !BROWSER.isIOS || currentUpgradedCount < MAX_UPGRADED_ON_IOS;
+
+    if (upgradingIndex === null && upgradeQueueRef.current.length > 0 && canUpgradeMore) {
+      let next = upgradeQueueRef.current.shift();
+      while (next !== undefined && (!visibleDecks.has(next) || !renderedDecks.has(next))) {
+        next = upgradeQueueRef.current.shift();
+      }
+      if (next !== undefined) {
+        setUpgradingIndex(next);
+      }
     }
-  }, [isMobile, visibleDecks, upgradedDecks, upgradingIndex]);
+  }, [isMobile, visibleDecks, upgradedDecks, upgradingIndex, renderedDecks]);
+
+  // Ref for scroll state (defined earlier, used here for upgrade pausing)
+  const isScrollingForUpgradeRef = useRef(false);
 
   useEffect(() => {
-    if (!isMobile) return;
+    // Progressive upgrade needed on iOS and mobile
+    if (!BROWSER.isIOS && !isMobile) return;
     if (upgradingIndex === null) return;
+
     // Yield to the browser; then mark upgraded and proceed to the next.
+    // iOS needs much more time between upgrades to prevent crashes
+    const delay = BROWSER.isIOS ? 800 : 50;
     const t = window.setTimeout(() => {
       setUpgradedDecks((prev) => {
         const next = new Set(prev);
         next.add(upgradingIndex);
+        if (BROWSER.isIOS) {
+          console.log(`[iOS] 🔥 UPGRADE #${upgradingIndex} | upgraded=${next.size}`);
+        }
         return next;
       });
       setUpgradingIndex(null);
-    }, 50);
+    }, delay);
     return () => window.clearTimeout(t);
   }, [isMobile, upgradingIndex]);
 
+  // Store observer reference so we can observe new elements as they mount
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const observedElementsRef = useRef<Set<HTMLDivElement>>(new Set());
+  // Queue for throttled rendering on iOS
+  const renderQueueRef = useRef<number[]>([]);
+  const isProcessingRenderQueueRef = useRef(false);
+  // Ref to track currently visible items (for queue processing without state dependency)
+  const visibleDecksRef = useRef<Set<number>>(new Set());
+  // Track if user is actively scrolling (pause rendering during fast scroll)
+  const isScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Delayed unload timers to prevent thrashing during scroll
+  const unloadTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Process render queue one item at a time on iOS to prevent crashes
+  const processRenderQueue = useCallback(() => {
+    if (!BROWSER.isIOS || renderQueueRef.current.length === 0) {
+      isProcessingRenderQueueRef.current = false;
+      return;
+    }
+
+    // Pause rendering while user is actively scrolling
+    if (isScrollingRef.current) {
+      console.log(`[iOS] ⏸️ PAUSED - scrolling, queue=${renderQueueRef.current.length}`);
+      // Check again after scroll settles
+      setTimeout(processRenderQueue, 200);
+      return;
+    }
+
+    isProcessingRenderQueueRef.current = true;
+
+    // Skip items that are no longer visible (user scrolled past them)
+    let nextIndex = renderQueueRef.current.shift();
+    let skipped = 0;
+    while (nextIndex !== undefined && !visibleDecksRef.current.has(nextIndex)) {
+      skipped++;
+      nextIndex = renderQueueRef.current.shift();
+    }
+    if (skipped > 0) {
+      console.log(`[iOS] ⏭️ Skipped ${skipped} stale items`);
+    }
+
+    if (nextIndex !== undefined) {
+      setRenderedDecks((prev) => {
+        const next = new Set(prev).add(nextIndex);
+        console.log(`[iOS] ✅ RENDER #${nextIndex} | rendered=${next.size} visible=${visibleDecksRef.current.size} queue=${renderQueueRef.current.length}`);
+        return next;
+      });
+    }
+
+    // Process next item after delay - iOS needs more time between renders
+    setTimeout(processRenderQueue, 300);
+  }, []);
+
+  // Track scrolling to pause rendering during fast scroll
   useEffect(() => {
-    const observer = new IntersectionObserver(
+    if (!BROWSER.isIOS) return;
+
+    const handleScroll = () => {
+      isScrollingRef.current = true;
+      isScrollingForUpgradeRef.current = true;
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      // Mark scroll as ended after 150ms of no scroll events
+      scrollTimeoutRef.current = setTimeout(() => {
+        isScrollingRef.current = false;
+        isScrollingForUpgradeRef.current = false;
+      }, 150);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    observerRef.current = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           const index = parseInt(entry.target.getAttribute('data-index') || '0');
           if (entry.isIntersecting) {
-            // Once visible, always rendered
-            setRenderedDecks((prev) => new Set(prev).add(index));
+            // Cancel any pending unload for this item
+            const pendingUnload = unloadTimersRef.current.get(index);
+            if (pendingUnload) {
+              clearTimeout(pendingUnload);
+              unloadTimersRef.current.delete(index);
+            }
+
+            // Update ref immediately (for queue processing)
+            visibleDecksRef.current.add(index);
+
             // Track visibility for progressive mobile upgrade
             setVisibleDecks((prev) => {
               const next = new Set(prev);
               next.add(index);
               return next;
             });
+
+            // On iOS, queue items for throttled rendering to prevent crash
+            if (BROWSER.isIOS) {
+              setRenderedDecks((prev) => {
+                if (prev.has(index)) return prev;
+                // Queue for throttled processing - limit queue size to prevent buildup
+                if (!renderQueueRef.current.includes(index) && renderQueueRef.current.length < 10) {
+                  renderQueueRef.current.push(index);
+                  if (!isProcessingRenderQueueRef.current) {
+                    setTimeout(processRenderQueue, 50);
+                  }
+                }
+                return prev;
+              });
+            } else {
+              // Desktop: render immediately
+              setRenderedDecks((prev) => new Set(prev).add(index));
+            }
           } else {
+            // Update ref immediately (for queue processing)
+            visibleDecksRef.current.delete(index);
+
             // Track when items leave viewport (for mobile memory management)
             setVisibleDecks((prev) => {
               const next = new Set(prev);
               next.delete(index);
               return next;
             });
+
+            // On iOS: Delay unloading to prevent thrashing during scroll momentum
+            if (BROWSER.isIOS) {
+              // Remove from queues immediately
+              renderQueueRef.current = renderQueueRef.current.filter(i => i !== index);
+              upgradeQueueRef.current = upgradeQueueRef.current.filter(i => i !== index);
+
+              // Delay actual unload by 500ms - if item becomes visible again, cancel
+              const timer = setTimeout(() => {
+                unloadTimersRef.current.delete(index);
+                // Double-check still not visible before unloading
+                if (!visibleDecksRef.current.has(index)) {
+                  setRenderedDecks((prev) => {
+                    if (!prev.has(index)) return prev;
+                    const next = new Set(prev);
+                    next.delete(index);
+                    console.log(`[iOS] ❌ UNLOAD #${index} | rendered=${next.size}`);
+                    return next;
+                  });
+                }
+              }, 500);
+              unloadTimersRef.current.set(index, timer);
+            }
           }
         });
       },
@@ -238,14 +404,37 @@ export const VirtualizedDeckGrid = React.memo(({
       }
     );
 
-    // Observe all deck placeholders
+    // Observe any elements that were already mounted
     itemRefs.current.forEach((element) => {
-      observer.observe(element);
+      if (!observedElementsRef.current.has(element)) {
+        observerRef.current?.observe(element);
+        observedElementsRef.current.add(element);
+      }
     });
 
     return () => {
-      observer.disconnect();
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      observedElementsRef.current.clear();
+      renderQueueRef.current = [];
     };
+  }, [processRenderQueue]);
+
+  // Re-observe when deck count changes (new decks loaded via loadMore)
+  useEffect(() => {
+    if (!observerRef.current) return;
+
+    // Small delay to ensure new elements have their refs set
+    const timer = setTimeout(() => {
+      itemRefs.current.forEach((element) => {
+        if (!observedElementsRef.current.has(element)) {
+          observerRef.current?.observe(element);
+          observedElementsRef.current.add(element);
+        }
+      });
+    }, 50);
+
+    return () => clearTimeout(timer);
   }, [safeDecks.length]);
 
   // Set up infinite scroll observer
@@ -293,8 +482,9 @@ export const VirtualizedDeckGrid = React.memo(({
         // Only animate if this card was initially visible
         const shouldAnimate = initiallyVisibleDecks.has(index);
         const shouldRender = renderedDecks.has(index);
+        // On iOS: use progressive upgrade (background -> full) with strict limits
         const thumbnailRenderMode: 'full' | 'background' =
-          !isMobile ? 'full' : ((visibleDecks.has(index) && (upgradedDecks.has(index) || upgradingIndex === index)) ? 'full' : 'background');
+          !BROWSER.isIOS ? 'full' : (upgradedDecks.has(index) ? 'full' : 'background');
 
         return (
           <div
@@ -314,7 +504,23 @@ export const VirtualizedDeckGrid = React.memo(({
                 thumbnailRenderMode={thumbnailRenderMode}
               />
             ) : (
-              <div className="aspect-[16/9] bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
+              /* Placeholder with deck info - clickable to navigate immediately */
+              <div
+                className="relative aspect-[16/9] bg-zinc-200 dark:bg-zinc-800 rounded-lg cursor-pointer ring-1 ring-zinc-200 dark:ring-zinc-700 overflow-hidden"
+                onClick={() => onEdit(deck)}
+              >
+                {/* Title overlay at bottom - same style as DeckCard */}
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent pt-8 pb-2 px-3">
+                  <h3 className="text-sm font-bold text-white truncate">
+                    {deck.name || 'Untitled presentation'}
+                  </h3>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-white/70 whitespace-nowrap">
+                      {deck.slides?.length ? `${deck.slides.length} slides` : 'Loading...'}
+                    </span>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         );
@@ -359,7 +565,8 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   const isMobile = useIsMobile();
   const safeDecks: CompleteDeckData[] = Array.isArray(decks) ? decks : [];
   const [visibleDecks, setVisibleDecks] = useState<Set<number>>(() => {
-    // Start with just first few decks to avoid flooding the queue
+    // On iOS, start empty and let throttled queue handle visibility one at a time
+    if (BROWSER.isIOS) return new Set();
     return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
   });
   // Progressive upgrade for popup thumbnails on mobile too
@@ -374,21 +581,60 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   // Store observer reference so we can observe new elements as they mount
   const observerRef = useRef<IntersectionObserver | null>(null);
   const observedElementsRef = useRef<Set<HTMLDivElement>>(new Set());
+  // Queue for throttled visibility on iOS
+  const visibilityQueueRef = useRef<number[]>([]);
+  const isProcessingVisibilityQueueRef = useRef(false);
+
+  // Process visibility queue one item at a time on iOS to prevent crashes
+  const processVisibilityQueue = useCallback(() => {
+    if (!BROWSER.isIOS || visibilityQueueRef.current.length === 0) {
+      isProcessingVisibilityQueueRef.current = false;
+      return;
+    }
+
+    isProcessingVisibilityQueueRef.current = true;
+    const nextIndex = visibilityQueueRef.current.shift();
+    if (nextIndex !== undefined) {
+      setVisibleDecks((prev) => new Set(prev).add(nextIndex));
+    }
+
+    // Process next item after delay - iOS needs more time between renders
+    setTimeout(processVisibilityQueue, 300);
+  }, []);
 
   useEffect(() => {
     observerRef.current = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           const index = parseInt(entry.target.getAttribute('data-index') || '0');
-          setVisibleDecks((prev) => {
-            const next = new Set(prev);
-            if (entry.isIntersecting) {
-              next.add(index);
+          if (entry.isIntersecting) {
+            // On iOS, queue items for throttled visibility to prevent crash
+            if (BROWSER.isIOS) {
+              setVisibleDecks((prev) => {
+                if (prev.has(index)) return prev;
+                // Queue for throttled processing
+                if (!visibilityQueueRef.current.includes(index)) {
+                  visibilityQueueRef.current.push(index);
+                  if (!isProcessingVisibilityQueueRef.current) {
+                    setTimeout(processVisibilityQueue, 50);
+                  }
+                }
+                return prev;
+              });
             } else {
-              next.delete(index);
+              // Desktop: update immediately
+              setVisibleDecks((prev) => new Set(prev).add(index));
             }
-            return next;
-          });
+          } else {
+            // Always remove immediately when scrolling away (frees memory)
+            setVisibleDecks((prev) => {
+              const next = new Set(prev);
+              next.delete(index);
+              return next;
+            });
+            // Also remove from queue if pending
+            visibilityQueueRef.current = visibilityQueueRef.current.filter(i => i !== index);
+          }
         });
       },
       {
@@ -410,8 +656,9 @@ export const VirtualizedPopupDeckGrid = React.memo(({
       observerRef.current?.disconnect();
       observerRef.current = null;
       observedElementsRef.current.clear();
+      visibilityQueueRef.current = [];
     };
-  }, []);
+  }, [processVisibilityQueue]);
 
   // Re-observe when deck count changes (new decks loaded)
   useEffect(() => {
@@ -432,7 +679,8 @@ export const VirtualizedPopupDeckGrid = React.memo(({
 
   // Queue management: Enqueue visible items that need upgrade + downgrade non-visible
   useEffect(() => {
-    if (!isMobile) return;
+    // Progressive upgrade only needed on iOS/mobile
+    if (!BROWSER.isIOS && !isMobile) return;
 
     // 1. Clean up upgradedDecks: downgrade items that are no longer visible to save memory (iframe limit)
     setUpgradedDecks(prev => {
@@ -470,8 +718,10 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   }, [isMobile, visibleDecks, upgradedDecks, upgradingIndex]);
 
   useEffect(() => {
-    if (!isMobile) return;
+    // Progressive upgrade only needed on iOS/mobile
+    if (!BROWSER.isIOS && !isMobile) return;
     if (upgradingIndex === null) return;
+    // iOS needs more time between upgrades to prevent crashes
     const t = window.setTimeout(() => {
       setUpgradedDecks((prev) => {
         const next = new Set(prev);
@@ -479,7 +729,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
         return next;
       });
       setUpgradingIndex(null);
-    }, 50);
+    }, BROWSER.isIOS ? 500 : 50);
     return () => window.clearTimeout(t);
   }, [isMobile, upgradingIndex]);
 
@@ -522,8 +772,9 @@ export const VirtualizedPopupDeckGrid = React.memo(({
     };
   }, [hasMore, isLoadingMore, onLoadMore]);
 
+  // Simple text list - no thumbnails for better iOS performance
   return (
-    <div ref={containerRef} className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 w-full">
+    <div ref={containerRef} className="flex flex-col w-full divide-y divide-zinc-100 dark:divide-zinc-800">
       {safeDecks.map((deck, index) => (
         <div
           key={deck.uuid}
@@ -531,58 +782,41 @@ export const VirtualizedPopupDeckGrid = React.memo(({
             if (el) itemRefs.current.set(index, el);
           }}
           data-index={index}
+          className="group flex items-center justify-between py-3 px-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors rounded-lg"
+          onClick={() => onEdit(deck)}
         >
-          {visibleDecks.has(index) ? (
-            <div
-              className="group relative cursor-pointer ring-1 ring-zinc-200 dark:ring-zinc-700 hover:shadow-sm dark:hover:shadow-black/40 hover:ring-orange-300 dark:hover:ring-orange-500/50 transition-all duration-200 rounded-md overflow-hidden"
-              onClick={() => onEdit(deck)}
-            >
-              <div className="relative aspect-[16/9] w-full overflow-hidden bg-muted">
-                <div className="absolute inset-0 w-full h-full">
-                  <DeckThumbnail
-                    deck={deck}
-                    renderMode={!isMobile ? 'full' : ((visibleDecks.has(index) && (upgradedDecks.has(index) || upgradingIndex === index)) ? 'full' : 'background')}
-                  />
-                </div>
-                {/* Compact text overlay at bottom */}
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent pt-4 pb-1.5 px-2">
-                  <h3 className="text-[10px] font-medium text-white truncate leading-tight" title={deck.name || 'Untitled'}>
-                    {deck.name || 'Untitled'}
-                  </h3>
-                </div>
-                {/* Hover overlay with delete action */}
-                <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-end p-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 bg-white/20 backdrop-blur-sm hover:bg-red-500/80 text-white"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onShowDeleteDialog(deck.uuid || '', e);
-                    }}
-                  >
-                    <Trash2 size={12} />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="border border-zinc-200 dark:border-zinc-800 rounded-md overflow-hidden">
-              <div className="aspect-[16/9] bg-zinc-200 dark:bg-zinc-800"></div>
-            </div>
-          )}
+          <div className="flex-1 min-w-0 pr-4">
+            <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+              {deck.name || 'Untitled presentation'}
+            </h3>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+              {formatDistanceToNow(new Date(deck.lastModified), { addSuffix: true })}
+              {deck.slides?.length ? ` · ${deck.slides.length} slides` : ''}
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+            onClick={(e) => {
+              e.stopPropagation();
+              onShowDeleteDialog(deck.uuid || '', e);
+            }}
+          >
+            <Trash2 size={14} />
+          </Button>
         </div>
       ))}
 
       {/* Load more trigger */}
       {hasMore && (
-        <div ref={loadMoreTriggerRef} className="col-span-full py-4">
+        <div ref={loadMoreTriggerRef} className="py-4">
           {isLoadingMore ? (
             <div className="flex justify-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
             </div>
           ) : (
-            <div className="h-1" /> // Invisible trigger
+            <div className="h-1" />
           )}
         </div>
       )}

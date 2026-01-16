@@ -15,6 +15,7 @@ import type { ExtendedChatMessageProps } from '@/components/chat';
 import type AgentChatClient from '@/services/agentChat';
 import type { Attachment, PendingAttachment, RegisteredAttachment, SelectedElement } from '../types';
 import type { DeckDiff } from '@/utils/apiUtils';
+import { trackAIChatMessage } from '@/services/analytics';
 
 interface UseSendMessageOptions {
   input: string;
@@ -203,6 +204,9 @@ export function useSendMessage({
   const sendMessage = useCallback(async (overrideMessage?: string) => {
     const messageText = (overrideMessage ?? input).trim();
     if (!messageText) return;
+
+    // Track chat message in PostHog
+    trackAIChatMessage({ messageType: 'user', deckId: deckId });
 
     if (messageText.toLowerCase().includes('@linkedin')) {
       originalLinkedInRequestRef.current = messageText;

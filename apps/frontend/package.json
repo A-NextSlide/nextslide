@@ -127,6 +127,7 @@
     "next-themes": "^0.3.0",
     "node-fetch": "^3.3.2",
     "peerjs": "^1.5.4",
+    "posthog-js": "^1.324.1",
     "pptx-parser": "^1.1.7-beta.9",
     "pptxjs": "^0.0.0",
     "puppeteer": "^24.6.0",

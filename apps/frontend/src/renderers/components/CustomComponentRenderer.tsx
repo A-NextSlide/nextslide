@@ -92,16 +92,16 @@ export const CustomComponentRenderer: React.FC<{
   const [hasRenderError, setHasRenderError] = useState(false);
 
   // THUMBNAIL SAFETY:
-  // For thumbnails on iOS, we'll render static HTML (no scripts) to prevent memory crashes
-  // For full view, render with full scripts for interactivity
-  const shouldUseLiteMode = false; // Disabled - try rendering all content
+  // For thumbnails on iOS in 'lite' mode, render a simple placeholder instead of iframe
+  // This is controlled by ThumbnailRenderContext from the parent (MiniSlide/DeckCard)
+  const shouldUseLiteMode = isThumbnail && BROWSER.isIOS && thumbnailMode === 'lite';
   const shouldUseStaticHtml = isThumbnail && BROWSER.isIOS; // iOS thumbnails use static HTML
 
   // DEBUG: Log rendering decision (throttled - only first render)
   const renderCountRef = useRef(0);
   renderCountRef.current++;
   if (renderCountRef.current === 1) {
-    console.log(`[CustomComponent] id=${component.id} isThumbnail=${isThumbnail} isIOS=${BROWSER.isIOS} liteMode=${shouldUseLiteMode}`);
+    console.log(`[CustomComponent] id=${component.id} isThumbnail=${isThumbnail} isIOS=${BROWSER.isIOS} thumbnailMode=${thumbnailMode} liteMode=${shouldUseLiteMode}`);
   }
 
   // Show simple placeholder for thumbnails OR if there was a render error

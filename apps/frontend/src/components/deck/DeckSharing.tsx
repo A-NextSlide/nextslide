@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '../ui/button';
-import { 
-  Share2, 
-  Link, 
-  Mail, 
-  Copy, 
-  Eye, 
-  Edit, 
-  Trash2, 
+import {
+  Share2,
+  Link,
+  Mail,
+  Copy,
+  Eye,
+  Edit,
+  Trash2,
   Users,
   Clock,
   BarChart3,
@@ -36,6 +36,7 @@ import {
   Globe
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { trackDeckShared } from '@/services/analytics';
 import {
   Dialog,
   DialogContent,
@@ -281,6 +282,9 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
       }
 
       if (response.success && response.data) {
+        // Track share link created in PostHog
+        trackDeckShared({ deckId: deckUuid, shareType: 'link' });
+
         toast({
           title: "Share link created",
           description: "Your share link has been created successfully",

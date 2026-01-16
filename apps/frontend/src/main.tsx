@@ -11,6 +11,7 @@ import { setupGlobalErrorHandlers } from '@/utils/errorHandler'
 import { initializeStorage } from '@/integrations/supabase/client'
 import { BROWSER } from '@/utils/browser'
 import { setupDiagnostics } from '@/utils/authDiagnostics'
+import { initAnalytics } from '@/services/analytics'
 
 // Initialize Sentry for error tracking (production only)
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
@@ -31,6 +32,9 @@ if (import.meta.env.PROD && SENTRY_DSN) {
     enabled: import.meta.env.PROD,
   });
 }
+
+// Initialize PostHog for product analytics
+initAnalytics();
 
 // Configure logging to suppress all logs as early as possible
 configureLogging({

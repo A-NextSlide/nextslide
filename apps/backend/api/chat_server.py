@@ -102,6 +102,9 @@ sentry_sdk.init(
     before_send=lambda event, hint: event if event.get('level') != 'debug' else None  # Filter debug events
 )
 
+# Initialize PostHog for product analytics (lazy initialization in analytics_service)
+from services.analytics_service import track_event, track_deck_composition_started, track_deck_composition_completed
+
 from models.requests import ChatRequest, ChatResponse, RegistryUpdateRequest, QualityEvaluationRequest, QualityEvaluationResponse, DeckOutline, DeckOutlineResponse, SlideOutline, DeckComposeRequest
 from models.deck import DeckBase
 from models.registry import ComponentRegistry, set_global_registry
@@ -222,7 +225,7 @@ if ENVIRONMENT != "production":
             "http://127.0.0.1:8080",
             "http://127.0.0.1:8081",
             # Local network for mobile testing
-            "http://169.254.229.54:8080",
+            "http://169.254.135.222:8080",
         }
     )
 
@@ -1013,7 +1016,8 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
     Create and compose a deck from an outline with streaming updates
     """
     outline = request.get('outline', {})
-    logger.info(f"Deck creation started: {outline.get('title', 'Untitled')} ({len(outline.get('slides', []))} slides)")
+    num_slides = len(outline.get('slides', []))
+    logger.info(f"Deck creation started: {outline.get('title', 'Untitled')} ({num_slides} slides)")
     
     # Extract user from token if available
     user_id = None
@@ -1034,6 +1038,13 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
         logger.info(f"Generated outline ID: {outline['id']}")
     else:
         logger.info(f"Outline already has ID: {outline['id']}")
+
+    # Track deck composition started in PostHog
+    track_deck_composition_started(
+        user_id=user_id,
+        deck_id=outline['id'],
+        slide_count=num_slides
+    )
     
     # Log the request for debugging
     logger.warning(f"DECK CREATE REQUEST - Outline ID: {outline.get('id')}, Title: {outline.get('title')}, User: {user_id or 'anon'}")
