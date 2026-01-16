@@ -104,6 +104,7 @@ sentry_sdk.init(
 
 # Initialize PostHog for product analytics (lazy initialization in analytics_service)
 from services.analytics_service import track_event, track_deck_composition_started, track_deck_composition_completed
+from agents.ai.clients import set_current_user  # For LLM tracking per user
 
 from models.requests import ChatRequest, ChatResponse, RegistryUpdateRequest, QualityEvaluationRequest, QualityEvaluationResponse, DeckOutline, DeckOutlineResponse, SlideOutline, DeckComposeRequest
 from models.deck import DeckBase
@@ -407,6 +408,7 @@ async def api_chat_endpoint(request: ChatRequest, token: Optional[str] = Depends
         user = auth_service.get_user_with_token(token)
         if user:
             user_id = user.get('id')
+            set_current_user(user_id)  # Track LLM calls for this user
             billing = get_billing_service()
 
             # Check credits before processing
@@ -498,6 +500,58 @@ async def reset_circuit_breaker_endpoint():
         "message": "Circuit breaker reset to CLOSED",
         "status": result
     }
+
+
+# ============================================================================
+# PostHog Analytics Proxy (bypasses ad blockers)
+# ============================================================================
+
+POSTHOG_HOST = "https://us.i.posthog.com"
+
+@app.api_route("/ingest/{path:path}", methods=["GET", "POST", "OPTIONS"])
+async def posthog_proxy(request: Request, path: str):
+    """
+    Proxy requests to PostHog to bypass ad blockers.
+    Routes /ingest/* to us.i.posthog.com/*
+    """
+    # Build the target URL
+    target_url = f"{POSTHOG_HOST}/{path}"
+    if request.url.query:
+        target_url += f"?{request.url.query}"
+
+    # Forward headers (excluding host)
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    headers.pop("content-length", None)
+
+    # Get request body if present
+    body = await request.body()
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                content=body if body else None,
+            )
+
+            # Return the response from PostHog
+            return JSONResponse(
+                content=response.json() if response.headers.get("content-type", "").startswith("application/json") else {"status": "ok"},
+                status_code=response.status_code,
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                    "Access-Control-Allow-Headers": "*",
+                }
+            )
+        except Exception as e:
+            logger.error(f"PostHog proxy error: {e}")
+            return JSONResponse(
+                content={"status": "error", "message": str(e)},
+                status_code=500
+            )
 
 
 @app.get("/api/sentry-test")
@@ -659,10 +713,11 @@ async def api_openai_outline_stream_endpoint(request: OpenAIOutlineRequest, toke
             user = auth_service.get_user_with_token(token)
             if user:
                 user_id = user.get('id')
+                set_current_user(user_id)  # Track LLM calls for this user
                 logger.info(f"Authenticated user for outline generation: {user_id}")
         except Exception as e:
             logger.warning(f"Could not extract user from token: {str(e)}")
-    
+
     try:
         global REGISTRY
         if logger.isEnabledFor(logging.DEBUG):
@@ -706,6 +761,7 @@ async def api_openai_outline_stream_get_endpoint(
             user = auth_service.get_user_with_token(token)
             if user:
                 user_id = user.get('id')
+                set_current_user(user_id)  # Track LLM calls for this user
                 logger.info(f"Authenticated user for outline generation (GET): {user_id}")
         except Exception as e:
             logger.warning(f"Could not extract user from token (GET): {str(e)}")
@@ -1028,10 +1084,11 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
             user = auth_service.get_user_with_token(token)
             if user:
                 user_id = user.get('id')
+                set_current_user(user_id)  # Track LLM calls for this user
                 logger.info(f"Authenticated user for deck creation: {user_id}")
         except Exception as e:
             logger.warning(f"Could not extract user from token: {str(e)}")
-    
+
     # Ensure outline has an ID before deduplication check
     if 'id' not in outline:
         outline['id'] = str(uuid.uuid4())

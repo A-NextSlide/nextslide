@@ -8,11 +8,49 @@ import hashlib
 from typing import List, Dict, Any
 from datetime import datetime
 from pathlib import Path
+from contextvars import ContextVar
 from pydantic import BaseModel
 import instructor
 import langsmith as ls
 
 logger = logging.getLogger(__name__)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONTEXT FOR LLM TRACKING
+# ═══════════════════════════════════════════════════════════════════════════════
+_current_user_id: ContextVar[str] = ContextVar('current_user_id', default=None)
+
+def set_current_user(user_id: str):
+    """Set the current user ID for LLM tracking. Call this at request start."""
+    _current_user_id.set(user_id)
+
+def get_current_user() -> str:
+    """Get the current user ID for LLM tracking."""
+    return _current_user_id.get()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POSTHOG LLM ANALYTICS
+# ═══════════════════════════════════════════════════════════════════════════════
+_posthog_client = None
+
+def _get_posthog_client():
+    """Get or create the PostHog client for LLM analytics."""
+    global _posthog_client
+    if _posthog_client is None:
+        try:
+            from posthog import Posthog
+            api_key = os.getenv("POSTHOG_API_KEY")
+            if api_key:
+                _posthog_client = Posthog(
+                    api_key,
+                    host=os.getenv("POSTHOG_HOST", "https://us.i.posthog.com")
+                )
+                logger.info("[LLM Analytics] PostHog client initialized")
+            else:
+                logger.debug("[LLM Analytics] POSTHOG_API_KEY not set, LLM tracking disabled")
+        except Exception as e:
+            logger.warning(f"[LLM Analytics] Failed to initialize PostHog: {e}")
+    return _posthog_client
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PROVIDER IMPORTS
@@ -92,6 +130,108 @@ DEFAULT_SLIDE_MAX_TOKENS = 10000
 
 # Models that need max_completion_tokens instead of max_tokens
 MAX_COMPLETION_TOKEN_MODELS = {"o3-mini", "o4-mini", "gpt-5"}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODEL PRICING (USD per 1M tokens) - Updated Jan 2025
+# ═══════════════════════════════════════════════════════════════════════════════
+MODEL_PRICING = {
+    # Anthropic Claude
+    "claude-opus-4-5-20251101": {"input": 15.0, "output": 75.0},
+    "claude-sonnet-4-5-20250929": {"input": 3.0, "output": 15.0},
+    "claude-sonnet-4-20250514": {"input": 3.0, "output": 15.0},
+    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.0},
+    # Google Gemini
+    "gemini-2.5-flash": {"input": 0.15, "output": 0.60},
+    "gemini-2.5-flash-lite": {"input": 0.075, "output": 0.30},
+    "gemini-2.5-pro": {"input": 1.25, "output": 10.0},
+    "gemini-3-pro-preview": {"input": 1.25, "output": 10.0},
+    "gemini-3-flash-preview": {"input": 0.15, "output": 0.60},
+    # OpenAI
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+    "gpt-4.1-2025-04-14": {"input": 2.0, "output": 8.0},
+    "gpt-4.1-mini-2025-04-14": {"input": 0.40, "output": 1.60},
+    # Perplexity
+    "sonar": {"input": 1.0, "output": 1.0},
+    "sonar-pro": {"input": 3.0, "output": 15.0},
+    # DeepSeek
+    "deepseek-chat": {"input": 0.14, "output": 0.28},
+    # Groq
+    "deepseek-r1-distill-llama-70b": {"input": 0.75, "output": 0.99},
+}
+
+def _calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Calculate the cost in USD for a model call."""
+    pricing = MODEL_PRICING.get(model, {"input": 0, "output": 0})
+    input_cost = (input_tokens / 1_000_000) * pricing["input"]
+    output_cost = (output_tokens / 1_000_000) * pricing["output"]
+    return input_cost + output_cost
+
+def _track_llm_generation(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    latency_seconds: float,
+    messages: list = None,
+    output: str = None,
+    user_id: str = None,
+    error: str = None,
+    trace_id: str = None,
+):
+    """Track an LLM generation event in PostHog."""
+    posthog = _get_posthog_client()
+    if not posthog:
+        return
+
+    try:
+        cost = _calculate_cost(model, input_tokens, output_tokens)
+
+        # Determine provider from model name
+        provider = "unknown"
+        if "claude" in model:
+            provider = "anthropic"
+        elif "gemini" in model:
+            provider = "google"
+        elif "gpt" in model:
+            provider = "openai"
+        elif "sonar" in model:
+            provider = "perplexity"
+        elif "deepseek" in model:
+            provider = "deepseek"
+
+        # Generate trace ID if not provided (required for LLM analytics)
+        if not trace_id:
+            import uuid
+            trace_id = str(uuid.uuid4())
+
+        # Get user_id from context if not explicitly provided
+        effective_user_id = user_id or get_current_user() or "anonymous"
+
+        properties = {
+            "$ai_trace_id": trace_id,  # Required for PostHog LLM Analytics
+            "$ai_model": model,
+            "$ai_provider": provider,
+            "$ai_input_tokens": input_tokens,
+            "$ai_output_tokens": output_tokens,
+            "$ai_total_cost_usd": round(cost, 6),
+            "$ai_latency": round(latency_seconds, 3),
+            "$ai_input": messages[:3] if messages else [],  # First 3 messages
+            "$ai_output_choices": [{"role": "assistant", "content": str(output)[:500] if output else ""}],
+        }
+
+        if error:
+            properties["$ai_is_error"] = True
+            properties["$ai_error"] = error
+
+        posthog.capture(
+            distinct_id=effective_user_id,
+            event="$ai_generation",
+            properties=properties
+        )
+
+        # Flush immediately to ensure event is sent
+        posthog.flush()
+    except Exception as e:
+        logger.debug(f"[LLM Analytics] Failed to track: {e}")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PROVIDER CONFIGURATIONS
@@ -238,8 +378,12 @@ def invoke(
 
     from agents.generation.exceptions import AIGenerationError, AIOverloadedError, AIRateLimitError, AITimeoutError
 
+    import time as _time
+    _start_time = _time.time()
+
     # Extract custom params (not passed to underlying APIs)
     deck_uuid = kwargs.pop('deck_uuid', None)
+    user_id = kwargs.pop('user_id', None)  # For PostHog tracking
     stream = kwargs.pop('stream', False)
     kwargs.pop('theme_generation', None)  # Used for tracing only
     kwargs.pop('slide_generation', None)  # Used for tracing only
@@ -271,12 +415,52 @@ def invoke(
         try:
             # Freeform (no response_model)
             if response_model is None:
-                return _invoke_freeform(client, model, filtered_messages, system_content, invoke_kwargs)
+                result = _invoke_freeform(client, model, filtered_messages, system_content, invoke_kwargs)
+                # Track LLM usage in PostHog
+                _latency = _time.time() - _start_time
+                _input_text = str(system_content or "") + str(filtered_messages)
+                _output_text = str(result) if result else ""
+                _track_llm_generation(
+                    model=model,
+                    input_tokens=len(_input_text) // 4,  # Estimate: ~4 chars per token
+                    output_tokens=len(_output_text) // 4,
+                    latency_seconds=_latency,
+                    user_id=user_id,
+                    messages=filtered_messages,
+                    output=_output_text,
+                )
+                return result
 
             # Structured output
-            return _invoke_structured(client, model, filtered_messages, system_content, response_model, invoke_kwargs, max_retries)
+            result = _invoke_structured(client, model, filtered_messages, system_content, response_model, invoke_kwargs, max_retries)
+            # Track LLM usage in PostHog
+            _latency = _time.time() - _start_time
+            _input_text = str(system_content or "") + str(filtered_messages)
+            _output_text = str(result) if result else ""
+            _track_llm_generation(
+                model=model,
+                input_tokens=len(_input_text) // 4,
+                output_tokens=len(_output_text) // 4,
+                latency_seconds=_latency,
+                user_id=user_id,
+                messages=filtered_messages,
+                output=_output_text,
+            )
+            return result
 
         except Exception as e:
+            # Track error in PostHog
+            _latency = _time.time() - _start_time
+            _input_text = str(system_content or "") + str(filtered_messages)
+            _track_llm_generation(
+                model=model,
+                input_tokens=len(_input_text) // 4,
+                output_tokens=0,
+                latency_seconds=_latency,
+                user_id=user_id,
+                error=str(e)[:500],  # Truncate error message
+            )
+
             error_code = getattr(getattr(e, 'response', None), 'status_code', None) or getattr(e, 'status_code', None)
             error_str = str(e).lower()
 
@@ -697,4 +881,4 @@ def _invoke_structured(client, model: str, messages: List[Dict], system: str, re
 # ═══════════════════════════════════════════════════════════════════════════════
 # EXPORTS
 # ═══════════════════════════════════════════════════════════════════════════════
-__all__ = ['get_client', 'invoke', 'get_max_tokens_for_model', 'MODELS', 'MODEL_MAX_TOKENS']
+__all__ = ['get_client', 'invoke', 'get_max_tokens_for_model', 'MODELS', 'MODEL_MAX_TOKENS', 'set_current_user', 'get_current_user']

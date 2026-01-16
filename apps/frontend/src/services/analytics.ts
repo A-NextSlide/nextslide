@@ -9,7 +9,9 @@ import posthog from 'posthog-js';
 
 // Environment configuration
 const POSTHOG_KEY = import.meta.env.VITE_POSTHOG_KEY;
-const POSTHOG_HOST = import.meta.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.com';
+// Use backend proxy to bypass ad blockers - falls back to direct if not configured
+const API_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || '';
+const POSTHOG_HOST = API_URL ? `${API_URL}/ingest` : (import.meta.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.com');
 const IS_PRODUCTION = import.meta.env.PROD;
 
 // Track initialization state
@@ -24,7 +26,7 @@ export function initAnalytics(): void {
 
   if (!POSTHOG_KEY) {
     if (IS_PRODUCTION) {
-      console.warn('[Analytics] PostHog key not configured - analytics disabled');
+      console.warn('[Analytics] PostHog key not configured');
     }
     return;
   }
@@ -35,15 +37,9 @@ export function initAnalytics(): void {
       person_profiles: 'identified_only',
       capture_pageview: true,
       capture_pageleave: true,
-      autocapture: false, // Disable autocapture to reduce noise, enable explicit tracking
+      autocapture: false, // Disable autocapture to reduce noise
       persistence: 'localStorage',
-      disable_session_recording: !IS_PRODUCTION, // Only record sessions in production
-      loaded: (ph) => {
-        // Opt out of tracking in development unless explicitly enabled
-        if (!IS_PRODUCTION && !import.meta.env.VITE_POSTHOG_DEV_TRACKING) {
-          ph.opt_out_capturing();
-        }
-      },
+      disable_session_recording: !IS_PRODUCTION,
     });
 
     isInitialized = true;
