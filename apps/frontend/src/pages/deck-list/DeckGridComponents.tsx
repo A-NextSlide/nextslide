@@ -113,7 +113,7 @@ export const VirtualizedDeckGrid = React.memo(({
   const [renderedDecks, setRenderedDecks] = useState<Set<number>>(() => {
     // On iOS, start empty and let throttled queue handle rendering one at a time
     // On desktop, render first few immediately to prevent flash
-    if (BROWSER.isIOS) return new Set();
+    if (BROWSER.isMobile) return new Set();
     return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
   });
   const [visibleDecks, setVisibleDecks] = useState<Set<number>>(() => new Set());
@@ -123,7 +123,7 @@ export const VirtualizedDeckGrid = React.memo(({
   const upgradeQueueRef = useRef<number[]>([]);
   const [initiallyVisibleDecks, setInitiallyVisibleDecks] = useState<Set<number>>(() => {
     // On iOS, don't pre-mark any as visible - let observer handle it
-    if (BROWSER.isIOS) return new Set();
+    if (BROWSER.isMobile) return new Set();
     return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
   });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -168,11 +168,11 @@ export const VirtualizedDeckGrid = React.memo(({
 
   // iOS Safari has a limit on concurrent iframes before crashing
   // Be very conservative - only 2 upgraded at a time
-  const MAX_UPGRADED_ON_IOS = 2;
+  const MAX_UPGRADED_ON_MOBILE = 2;
 
   useEffect(() => {
     // Progressive upgrade needed on iOS and mobile
-    if (!BROWSER.isIOS && !isMobile) return;
+    if (!BROWSER.isMobile && !isMobile) return;
 
     // 1. Clean up upgradedDecks: downgrade items that are no longer visible to save memory
     setUpgradedDecks(prev => {
@@ -186,8 +186,8 @@ export const VirtualizedDeckGrid = React.memo(({
           changed = true;
         }
       }
-      if (BROWSER.isIOS && removed.length > 0) {
-        console.log(`[iOS] 💨 DOWNGRADE #${removed.join(',')} | upgraded=${next.size}`);
+      if (BROWSER.isMobile && removed.length > 0) {
+        console.log(`[Mobile] 💨 DOWNGRADE #${removed.join(',')} | upgraded=${next.size}`);
       }
       return changed ? next : prev;
     });
@@ -203,7 +203,7 @@ export const VirtualizedDeckGrid = React.memo(({
 
     // Kick processing loop - respect the max upgraded limit
     const currentUpgradedCount = upgradedDecks.size + (upgradingIndex !== null ? 1 : 0);
-    const canUpgradeMore = !BROWSER.isIOS || currentUpgradedCount < MAX_UPGRADED_ON_IOS;
+    const canUpgradeMore = !BROWSER.isMobile || currentUpgradedCount < MAX_UPGRADED_ON_MOBILE;
 
     if (upgradingIndex === null && upgradeQueueRef.current.length > 0 && canUpgradeMore) {
       let next = upgradeQueueRef.current.shift();
@@ -221,18 +221,18 @@ export const VirtualizedDeckGrid = React.memo(({
 
   useEffect(() => {
     // Progressive upgrade needed on iOS and mobile
-    if (!BROWSER.isIOS && !isMobile) return;
+    if (!BROWSER.isMobile && !isMobile) return;
     if (upgradingIndex === null) return;
 
     // Yield to the browser; then mark upgraded and proceed to the next.
     // iOS needs much more time between upgrades to prevent crashes
-    const delay = BROWSER.isIOS ? 800 : 50;
+    const delay = BROWSER.isMobile ? 800 : 50;
     const t = window.setTimeout(() => {
       setUpgradedDecks((prev) => {
         const next = new Set(prev);
         next.add(upgradingIndex);
-        if (BROWSER.isIOS) {
-          console.log(`[iOS] 🔥 UPGRADE #${upgradingIndex} | upgraded=${next.size}`);
+        if (BROWSER.isMobile) {
+          console.log(`[Mobile] 🔥 UPGRADE #${upgradingIndex} | upgraded=${next.size}`);
         }
         return next;
       });
@@ -257,14 +257,14 @@ export const VirtualizedDeckGrid = React.memo(({
 
   // Process render queue one item at a time on iOS to prevent crashes
   const processRenderQueue = useCallback(() => {
-    if (!BROWSER.isIOS || renderQueueRef.current.length === 0) {
+    if (!BROWSER.isMobile || renderQueueRef.current.length === 0) {
       isProcessingRenderQueueRef.current = false;
       return;
     }
 
     // Pause rendering while user is actively scrolling
     if (isScrollingRef.current) {
-      console.log(`[iOS] ⏸️ PAUSED - scrolling, queue=${renderQueueRef.current.length}`);
+      console.log(`[Mobile] ⏸️ PAUSED - scrolling, queue=${renderQueueRef.current.length}`);
       // Check again after scroll settles
       setTimeout(processRenderQueue, 200);
       return;
@@ -280,13 +280,13 @@ export const VirtualizedDeckGrid = React.memo(({
       nextIndex = renderQueueRef.current.shift();
     }
     if (skipped > 0) {
-      console.log(`[iOS] ⏭️ Skipped ${skipped} stale items`);
+      console.log(`[Mobile] ⏭️ Skipped ${skipped} stale items`);
     }
 
     if (nextIndex !== undefined) {
       setRenderedDecks((prev) => {
         const next = new Set(prev).add(nextIndex);
-        console.log(`[iOS] ✅ RENDER #${nextIndex} | rendered=${next.size} visible=${visibleDecksRef.current.size} queue=${renderQueueRef.current.length}`);
+        console.log(`[Mobile] ✅ RENDER #${nextIndex} | rendered=${next.size} visible=${visibleDecksRef.current.size} queue=${renderQueueRef.current.length}`);
         return next;
       });
     }
@@ -297,7 +297,7 @@ export const VirtualizedDeckGrid = React.memo(({
 
   // Track scrolling to pause rendering during fast scroll
   useEffect(() => {
-    if (!BROWSER.isIOS) return;
+    if (!BROWSER.isMobile) return;
 
     const handleScroll = () => {
       isScrollingRef.current = true;
@@ -345,7 +345,7 @@ export const VirtualizedDeckGrid = React.memo(({
             });
 
             // On iOS, queue items for throttled rendering to prevent crash
-            if (BROWSER.isIOS) {
+            if (BROWSER.isMobile) {
               setRenderedDecks((prev) => {
                 if (prev.has(index)) return prev;
                 // Queue for throttled processing - limit queue size to prevent buildup
@@ -373,7 +373,7 @@ export const VirtualizedDeckGrid = React.memo(({
             });
 
             // On iOS: Delay unloading to prevent thrashing during scroll momentum
-            if (BROWSER.isIOS) {
+            if (BROWSER.isMobile) {
               // Remove from queues immediately
               renderQueueRef.current = renderQueueRef.current.filter(i => i !== index);
               upgradeQueueRef.current = upgradeQueueRef.current.filter(i => i !== index);
@@ -387,7 +387,7 @@ export const VirtualizedDeckGrid = React.memo(({
                     if (!prev.has(index)) return prev;
                     const next = new Set(prev);
                     next.delete(index);
-                    console.log(`[iOS] ❌ UNLOAD #${index} | rendered=${next.size}`);
+                    console.log(`[Mobile] ❌ UNLOAD #${index} | rendered=${next.size}`);
                     return next;
                   });
                 }
@@ -484,7 +484,7 @@ export const VirtualizedDeckGrid = React.memo(({
         const shouldRender = renderedDecks.has(index);
         // On iOS: use progressive upgrade (background -> full) with strict limits
         const thumbnailRenderMode: 'full' | 'background' =
-          !BROWSER.isIOS ? 'full' : (upgradedDecks.has(index) ? 'full' : 'background');
+          !BROWSER.isMobile ? 'full' : (upgradedDecks.has(index) ? 'full' : 'background');
 
         return (
           <div
@@ -566,7 +566,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   const safeDecks: CompleteDeckData[] = Array.isArray(decks) ? decks : [];
   const [visibleDecks, setVisibleDecks] = useState<Set<number>>(() => {
     // On iOS, start empty and let throttled queue handle visibility one at a time
-    if (BROWSER.isIOS) return new Set();
+    if (BROWSER.isMobile) return new Set();
     return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
   });
   // Progressive upgrade for popup thumbnails on mobile too
@@ -587,7 +587,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
 
   // Process visibility queue one item at a time on iOS to prevent crashes
   const processVisibilityQueue = useCallback(() => {
-    if (!BROWSER.isIOS || visibilityQueueRef.current.length === 0) {
+    if (!BROWSER.isMobile || visibilityQueueRef.current.length === 0) {
       isProcessingVisibilityQueueRef.current = false;
       return;
     }
@@ -609,7 +609,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
           const index = parseInt(entry.target.getAttribute('data-index') || '0');
           if (entry.isIntersecting) {
             // On iOS, queue items for throttled visibility to prevent crash
-            if (BROWSER.isIOS) {
+            if (BROWSER.isMobile) {
               setVisibleDecks((prev) => {
                 if (prev.has(index)) return prev;
                 // Queue for throttled processing
@@ -680,7 +680,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   // Queue management: Enqueue visible items that need upgrade + downgrade non-visible
   useEffect(() => {
     // Progressive upgrade only needed on iOS/mobile
-    if (!BROWSER.isIOS && !isMobile) return;
+    if (!BROWSER.isMobile && !isMobile) return;
 
     // 1. Clean up upgradedDecks: downgrade items that are no longer visible to save memory (iframe limit)
     setUpgradedDecks(prev => {
@@ -719,7 +719,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
 
   useEffect(() => {
     // Progressive upgrade only needed on iOS/mobile
-    if (!BROWSER.isIOS && !isMobile) return;
+    if (!BROWSER.isMobile && !isMobile) return;
     if (upgradingIndex === null) return;
     // iOS needs more time between upgrades to prevent crashes
     const t = window.setTimeout(() => {
@@ -729,7 +729,7 @@ export const VirtualizedPopupDeckGrid = React.memo(({
         return next;
       });
       setUpgradingIndex(null);
-    }, BROWSER.isIOS ? 500 : 50);
+    }, BROWSER.isMobile ? 500 : 50);
     return () => window.clearTimeout(t);
   }, [isMobile, upgradingIndex]);
 
