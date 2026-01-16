@@ -5,13 +5,15 @@ interface UseTypewriterProps {
     typingSpeed?: number;
     deletingSpeed?: number;
     pauseDuration?: number;
+    paused?: boolean;
 }
 
 export const useTypewriter = ({
     phrases,
     typingSpeed = 50,
     deletingSpeed = 30,
-    pauseDuration = 2000
+    pauseDuration = 2000,
+    paused = false
 }: UseTypewriterProps) => {
     const [text, setText] = useState('');
     const [isDeleting, setIsDeleting] = useState(false);
@@ -19,6 +21,9 @@ export const useTypewriter = ({
     const [charIndex, setCharIndex] = useState(0);
 
     useEffect(() => {
+        // Don't run when paused
+        if (paused) return;
+
         const currentPhrase = phrases[phraseIndex];
 
         const timeout = setTimeout(() => {
@@ -50,7 +55,7 @@ export const useTypewriter = ({
         }, isDeleting ? deletingSpeed : typingSpeed);
 
         return () => clearTimeout(timeout);
-    }, [text, isDeleting, phraseIndex, charIndex, phrases, typingSpeed, deletingSpeed, pauseDuration]);
+    }, [text, isDeleting, phraseIndex, charIndex, phrases, typingSpeed, deletingSpeed, pauseDuration, paused]);
 
     return text;
 };

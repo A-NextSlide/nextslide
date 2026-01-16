@@ -80,7 +80,8 @@ interface EconomicsInputs {
   paidConversionPct: number; // % of new users who start as paid (direct conversion)
   monthlyGrowthPct: number;
   churnPct: number;
-  cac: number;
+  cac: number; // CAC per paid-acquired user
+  paidAcquisitionPct: number; // % of signups from paid channels (rest is organic)
   // Token consumption rates (% of allocated tokens actually used)
   freeTokenConsumptionPct: number;
   starterTokenConsumptionPct: number;
@@ -102,8 +103,8 @@ interface MonthlyScenario {
 }
 
 const DEFAULT_PLANS: PlanConfig[] = [
-  { name: 'Starter', price: 9, tokens: 500, pctOfPaid: 70 },
-  { name: 'Pro', price: 19, tokens: 1500, pctOfPaid: 25 },
+  { name: 'Starter', price: 12, tokens: 500, pctOfPaid: 70 },
+  { name: 'Pro', price: 24, tokens: 1500, pctOfPaid: 25 },
   { name: 'Team', price: 49, tokens: 5000, pctOfPaid: 5 },
 ];
 
@@ -161,13 +162,13 @@ const DEFAULT_EXPENSE_RATES: ExpenseDefaults = {
 };
 
 const DEFAULT_INPUTS: EconomicsInputs = {
-  tokensPerSlide: 10,
+  tokensPerSlide: 5,
   tokensPerEdit: 5,
   tokensPerResearch: 5,
-  apiCostPerSlide: COSTS.slideGen,
-  apiCostPerEdit: COSTS.edit,
-  apiCostPerResearch: COSTS.research,
-  apiCostPerTheme: COSTS.themeGen,
+  apiCostPerSlide: 0.045, // $0.045 per slide
+  apiCostPerEdit: 0.03, // $0.03 per edit
+  apiCostPerResearch: 0.005, // $0.005 per research call
+  apiCostPerTheme: 0.005, // $0.005 per theme/design
   slidesPerDeck: 10,
   editsPerDeck: 2,
   researchCallsPerDeck: 1,
@@ -177,7 +178,8 @@ const DEFAULT_INPUTS: EconomicsInputs = {
   paidConversionPct: 2, // 2% of new users start as paid directly
   monthlyGrowthPct: 10,
   churnPct: 5,
-  cac: 20,
+  cac: 10, // CAC per paid-acquired user (one-time)
+  paidAcquisitionPct: 20, // Only 20% of signups come from paid channels (rest is organic/viral)
   // Token consumption (% of allocated tokens actually used)
   freeTokenConsumptionPct: 80, // Free users use 80% of their trial tokens
   starterTokenConsumptionPct: 60, // Starter users use 60% of their plan
@@ -592,8 +594,9 @@ const AdminCosts: React.FC = () => {
     const starterUpgradeUsers = Math.round(starterUsers * (starterUpgradePct / 100));
     const upgradeRevenue = proPlan && starterPlan ? starterUpgradeUsers * (proPlan.price - starterPlan.price) : 0;
 
-    // Customer acquisition cost (CAC)
-    const acquisitionCostMonthly = newSignupsPerMonth * cac;
+    // Customer acquisition cost (CAC) - only applies to paid-acquired users, not organic/viral
+    const paidAcquiredUsers = Math.round(newSignupsPerMonth * (inputs.paidAcquisitionPct / 100));
+    const acquisitionCostMonthly = paidAcquiredUsers * cac;
 
     // Monthly costs - split by user type:
     const activeStarterUsers = Math.ceil(starterUsers * 0.7);
@@ -750,8 +753,9 @@ const AdminCosts: React.FC = () => {
       const freeDecks = tokensPerDeck > 0 ? freeTokensUsed / tokensPerDeck : 0;
       const freeTrialCosts = newFreeTrialU * freeDecks * costPerDeck;
 
-      // Customer acquisition cost
-      const acquisitionCosts = newSignups * inputs.cac;
+      // Customer acquisition cost - only for paid-acquired users
+      const paidAcquiredU = Math.round(newSignups * (inputs.paidAcquisitionPct / 100));
+      const acquisitionCosts = paidAcquiredU * inputs.cac;
 
       // API costs subtotal
       const apiCosts = paidCosts + enterpriseCosts + freeTrialCosts + acquisitionCosts;
@@ -1038,11 +1042,13 @@ const AdminCosts: React.FC = () => {
             <div className="space-y-1">
               <CompactInput label="Tok/Slide" value={inputs.tokensPerSlide} onChange={v => updateInput('tokensPerSlide', v)} />
               <CompactInput label="Tok/Edit" value={inputs.tokensPerEdit} onChange={v => updateInput('tokensPerEdit', v)} />
+              <CompactInput label="Tok/Rsch" value={inputs.tokensPerResearch} onChange={v => updateInput('tokensPerResearch', v)} />
               <CompactInput label="Free Tok" value={inputs.freeTokens} onChange={v => updateInput('freeTokens', v)} />
             </div>
             <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
               <CompactInput label="Slides/Dk" value={inputs.slidesPerDeck} onChange={v => updateInput('slidesPerDeck', v)} />
               <CompactInput label="Edits/Dk" value={inputs.editsPerDeck} onChange={v => updateInput('editsPerDeck', v)} />
+              <CompactInput label="Rsch/Dk" value={inputs.researchCallsPerDeck} onChange={v => updateInput('researchCallsPerDeck', v)} />
               <CompactInput label="Decks/Mo" value={inputs.decksPerActiveUserMonth} onChange={v => updateInput('decksPerActiveUserMonth', v)} />
             </div>
             <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
@@ -1053,12 +1059,29 @@ const AdminCosts: React.FC = () => {
               <CompactInput label="Enterpr" value={inputs.enterpriseTokenConsumptionPct} onChange={v => updateInput('enterpriseTokenConsumptionPct', v)} step={5} />
             </div>
             <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
+              <div className="text-[8px] text-[#888] font-medium">Conversion</div>
               <CompactInput label="Direct %" value={inputs.paidConversionPct} onChange={v => updateInput('paidConversionPct', v)} step={0.5} />
               <CompactInput label="Upgr %" value={inputs.freeToPayConvPct} onChange={v => updateInput('freeToPayConvPct', v)} step={1} />
               <div className="text-[8px] text-[#888] pl-1">→ {economics.effectivePaidConversionPct.toFixed(1)}% effective</div>
+            </div>
+            <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
+              <div className="text-[8px] text-[#888] font-medium">Growth & Churn</div>
               <CompactInput label="Growth %" value={inputs.monthlyGrowthPct} onChange={v => updateInput('monthlyGrowthPct', v)} />
               <CompactInput label="Churn %" value={inputs.churnPct} onChange={v => updateInput('churnPct', v)} />
-              <CompactInput label="CAC $" value={inputs.cac} onChange={v => updateInput('cac', v)} />
+              <div className="text-[8px] text-[#666] pl-1">
+                <div className="flex justify-between"><span>New/mo:</span><span>+{Math.round(totalUsers * inputs.monthlyGrowthPct / 100)}</span></div>
+                <div className="flex justify-between"><span>Lost/mo:</span><span>-{Math.round(totalUsers * inputs.churnPct / 100)}</span></div>
+              </div>
+            </div>
+            <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
+              <div className="text-[8px] text-[#888] font-medium">Customer Acquisition</div>
+              <CompactInput label="CAC $/user" value={inputs.cac} onChange={v => updateInput('cac', v)} />
+              <CompactInput label="Paid %" value={inputs.paidAcquisitionPct} onChange={v => updateInput('paidAcquisitionPct', v)} step={5} min={0} max={100} />
+              <div className="text-[8px] text-[#666] pl-1">
+                <div className="flex justify-between"><span>Paid:</span><span>{Math.round((totalUsers * inputs.monthlyGrowthPct / 100) * inputs.paidAcquisitionPct / 100)} new/mo</span></div>
+                <div className="flex justify-between"><span>Organic:</span><span>{Math.round((totalUsers * inputs.monthlyGrowthPct / 100) * (100 - inputs.paidAcquisitionPct) / 100)} new/mo</span></div>
+                <div className="flex justify-between text-red-600"><span>Spend:</span><span>${fmtMoney(Math.round((totalUsers * inputs.monthlyGrowthPct / 100) * inputs.paidAcquisitionPct / 100) * inputs.cac)}/mo</span></div>
+              </div>
             </div>
             <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
               <div className="text-[8px] text-[#888] font-medium">Starter → Pro</div>
@@ -1440,10 +1463,10 @@ const AdminCosts: React.FC = () => {
                       <div className="w-5" />
                     </div>
 
-                    {/* One-off Spend Row */}
+                    {/* One-off Costs Row (setup fees, custom work, etc.) */}
                     <div className="flex items-center gap-2">
                       <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-orange-500">One-off $</span>
+                        <span className="text-[9px] text-red-500">Costs $</span>
                       </div>
                       <div className="flex items-center gap-1 flex-1">
                         {userBreakdown.slice(0, projectionMonths + 1).map((item, i) => (

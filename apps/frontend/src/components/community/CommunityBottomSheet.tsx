@@ -9,7 +9,7 @@ import {
 import CommunityGallery from './CommunityGallery';
 import { CommunityDeck } from '@/services/communityService';
 import { cn } from '@/lib/utils';
-import { Sparkles } from 'lucide-react';
+import { Globe } from 'lucide-react';
 
 interface CommunityBottomSheetProps {
   isOpen: boolean;
@@ -44,7 +44,7 @@ const CommunityBottomSheet: React.FC<CommunityBottomSheetProps> = ({
           <SheetHeader className="text-left space-y-1">
             <div className="flex items-center gap-2">
               <div className="p-2 rounded-xl bg-gradient-to-br from-orange-400 to-pink-500 shadow-lg shadow-orange-500/25">
-                <Sparkles className="h-5 w-5 text-white" />
+                <Globe className="h-5 w-5 text-white" />
               </div>
               <SheetTitle
                 className="text-2xl bg-gradient-to-r from-zinc-900 via-zinc-700 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white bg-clip-text text-transparent"

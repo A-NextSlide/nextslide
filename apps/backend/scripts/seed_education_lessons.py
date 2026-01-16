@@ -283,8 +283,8 @@ async def main():
                 error_count += 1
         return result
 
-    # Run in parallel batches of 20
-    BATCH_SIZE = 20
+    # Run in parallel batches of 5 for stability
+    BATCH_SIZE = 5
     total = len(lessons)
 
     for batch_start in range(0, total, BATCH_SIZE):

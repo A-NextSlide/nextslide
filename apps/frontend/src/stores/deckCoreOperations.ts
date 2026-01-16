@@ -519,19 +519,27 @@ export const createCoreDeckOperations = (set, get) => {
       }
       
       // For non-realtime updates, defensively merge slides to avoid status/content regressions
+      // CRITICAL: Merge by SLIDE ID, not by array index!
       if (data.slides && Array.isArray(data.slides)) {
         try {
           const currentData = get().deckData;
-          const mergedSlides = data.slides.map((incoming: any, i: number) => {
-            const current = currentData.slides?.[i];
+          // Create a map of current slides by ID for fast lookup
+          const currentSlidesById = new Map(
+            (currentData.slides || []).map((s: any) => [s.id, s])
+          );
+
+          const mergedSlides = data.slides.map((incoming: any) => {
+            // Find current slide by ID, not by index
+            const current = currentSlidesById.get(incoming.id);
             if (!current) return incoming;
+
             const currentCompleted = current.status === 'completed';
             const incomingCompleted = incoming.status === 'completed';
             const currentComps = Array.isArray(current.components) ? current.components : [];
             const incomingComps = Array.isArray(incoming.components) ? incoming.components : [];
-            const id = current.id || incoming.id;
+            const id = incoming.id; // Use incoming ID since we're iterating over incoming slides
             const status = currentCompleted && !incomingCompleted ? 'completed' : (incoming.status || current.status);
-            
+
             // For batch updates, always preserve current components to avoid position resets
             let components;
             if (batchUpdate && currentComps.length > 0) {
@@ -544,7 +552,7 @@ export const createCoreDeckOperations = (set, get) => {
                 ? currentComps
                 : incomingComps;
             }
-            
+
             return { ...incoming, id, status, components };
           });
           data = { ...data, slides: mergedSlides };

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import {
   RefreshCw, Users, FileStack, Calendar, CreditCard, Share2, BarChart3, Activity,
   Download, ChevronDown, ArrowUpRight, ArrowDownRight, Minus, UserPlus, Zap,
-  AlertTriangle, CheckCircle, Target, DollarSign, TrendingUp, Cpu, Database,
+  AlertTriangle, CheckCircle, Target, TrendingUp, Database,
   Clock, Eye, Layers, PieChart, Settings2, ArrowRight, Palette, Server
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -13,12 +13,12 @@ import { useAdminData, DATE_RANGE_PRESETS, GRANULARITY_OPTIONS } from '@/context
 import {
   useAdminOverview, useUserTimeseries, useDeckTimeseries, useUserSegments,
   useTopUsers, useContentDistribution, useCreditBreakdown, useRecentActivity,
-  useServiceHealth, useCostEstimate, invalidateAllAdminData, useAdminQueryClient
+  useServiceHealth, invalidateAllAdminData, useAdminQueryClient
 } from '@/hooks/useAdminQueries';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   BarChart, Bar, LineChart, Line, CartesianGrid, ReferenceLine,
-  ComposedChart, Cell, PieChart as RechartsPie, Pie
+  ComposedChart
 } from 'recharts';
 
 // ============================================================================
@@ -39,30 +39,6 @@ interface Milestone {
   description: string;
   achieved?: boolean;
 }
-
-// Actual token pricing per million tokens (USD) - Updated Dec 2025
-// Gemini 3 Pro Preview: $2.00 input, $12.00 output (includes thinking tokens)
-const TOKEN_PRICING = {
-  'gemini-3-pro': { input: 2.00, output: 12.00, label: 'Gemini 3 Pro Preview' },
-  'claude-4.5-haiku': { input: 0.80, output: 4.00, label: 'Claude 4.5 Haiku' },
-  'claude-4.5-sonnet': { input: 3.00, output: 15.00, label: 'Claude 4.5 Sonnet' },
-  'perplexity-sonar-pro': { input: 1.00, output: 5.00, label: 'Perplexity Sonar Pro' },
-};
-
-// ACTUAL token usage from production logs (Dec 2025)
-// Slide generation: ~848 input, ~5831 output, ~1899 thinking (thinking billed as output)
-// Total billable output = candidatesTokenCount (5831) + thoughtsTokenCount (1899) = 7730
-// Edits also use 5-7k output tokens
-const MODEL_USAGE = {
-  slideGenerate: { model: 'gemini-3-pro', avgInputTokens: 850, avgOutputTokens: 7700 },  // includes thinking
-  slideEdit: { model: 'gemini-3-pro', avgInputTokens: 1500, avgOutputTokens: 6500 },     // edits are similar
-  componentCreate: { model: 'gemini-3-pro', avgInputTokens: 800, avgOutputTokens: 5500 },
-  customComponent: { model: 'gemini-3-pro', avgInputTokens: 850, avgOutputTokens: 7700 }, // same as slides
-  themeGenerate: { model: 'gemini-3-pro', avgInputTokens: 500, avgOutputTokens: 2000 },   // theme is lighter
-  research: { model: 'perplexity-sonar-pro', avgInputTokens: 500, avgOutputTokens: 2500 },
-  simpleTasks: { model: 'claude-4.5-haiku', avgInputTokens: 500, avgOutputTokens: 300 },  // routing/validation
-  chat: { model: 'claude-4.5-haiku', avgInputTokens: 800, avgOutputTokens: 600 },         // outline chat
-};
 
 // Startup milestones with revenue projections
 const MILESTONES: Milestone[] = [
@@ -185,86 +161,6 @@ const MilestoneTracker: React.FC<{ milestones: Milestone[]; currentUsers: number
   );
 };
 
-// Unit economics card
-const UnitEconomicsCard: React.FC<{
-  costPerDeck: number;
-  costPerUser: number;
-  revenuePerUser: number;
-  ltv: number;
-  cac: number;
-  grossMargin: number;
-}> = ({ costPerDeck, costPerUser, revenuePerUser, ltv, cac, grossMargin }) => {
-  const ltvCacRatio = cac > 0 ? ltv / cac : 0;
-  const isHealthy = ltvCacRatio >= 3;
-  const isWarning = ltvCacRatio >= 1 && ltvCacRatio < 3;
-
-  return (
-    <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
-      <div className="flex items-center gap-1.5 mb-3">
-        <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
-        <span className="text-xs font-medium">Unit Economics</span>
-      </div>
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div>
-          <div className="text-lg font-semibold text-emerald-500">${costPerDeck.toFixed(3)}</div>
-          <div className="text-[10px] text-[#888]">Cost/Deck</div>
-        </div>
-        <div>
-          <div className="text-lg font-semibold">${revenuePerUser.toFixed(2)}</div>
-          <div className="text-[10px] text-[#888]">ARPU</div>
-        </div>
-        <div>
-          <div className={cn("text-lg font-semibold", grossMargin >= 70 ? "text-emerald-500" : grossMargin >= 50 ? "text-amber-500" : "text-red-500")}>
-            {grossMargin.toFixed(0)}%
-          </div>
-          <div className="text-[10px] text-[#888]">Margin</div>
-        </div>
-      </div>
-      <div className="mt-3 pt-2 border-t border-[#eaeaea] dark:border-[#333] flex items-center justify-between">
-        <div className="text-[10px]">
-          <span className="text-[#888]">LTV:CAC</span>
-          <span className={cn("ml-1 font-medium", isHealthy ? "text-emerald-500" : isWarning ? "text-amber-500" : "text-red-500")}>
-            {ltvCacRatio.toFixed(1)}x
-          </span>
-        </div>
-        <div className="text-[10px]">
-          <span className="text-[#888]">LTV</span>
-          <span className="ml-1 font-medium">${ltv.toFixed(0)}</span>
-        </div>
-        <div className="text-[10px]">
-          <span className="text-[#888]">CAC</span>
-          <span className="ml-1 font-medium">${cac.toFixed(0)}</span>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Cost breakdown by provider
-const CostBreakdownChart: React.FC<{ breakdown: Array<{ name: string; cost: number; color: string }> }> = ({ breakdown }) => {
-  const total = breakdown.reduce((sum, item) => sum + item.cost, 0);
-
-  return (
-    <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
-      <div className="flex items-center gap-1.5 mb-2">
-        <Cpu className="h-3.5 w-3.5 text-blue-500" />
-        <span className="text-xs font-medium">API Costs (Est. Monthly)</span>
-        <span className="ml-auto text-sm font-semibold">${total.toFixed(2)}</span>
-      </div>
-      <div className="space-y-1.5">
-        {breakdown.map((item) => (
-          <div key={item.name} className="flex items-center gap-2">
-            <div className="w-16 text-[10px] text-[#888] truncate">{item.name}</div>
-            <div className="flex-1 h-2 bg-[#f5f5f5] dark:bg-[#222] rounded-full overflow-hidden">
-              <div className="h-full rounded-full" style={{ width: `${(item.cost / total) * 100}%`, backgroundColor: item.color }} />
-            </div>
-            <div className="w-14 text-right text-[10px] font-medium">${item.cost.toFixed(2)}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
 
 // ============================================================================
 // MAIN COMPONENT
@@ -348,7 +244,6 @@ const AdminAnalytics: React.FC = () => {
   const { data: deckTimeseries } = useDeckTimeseries(startDate, endDate, granularity, 'created');
   const { data: userSegments } = useUserSegments(startDate, endDate, 'activity');
   const { data: serviceHealth, isLoading: healthLoading } = useServiceHealth();
-  const { data: costEstimate } = useCostEstimate(10, 10);
 
   // Tab-specific data - only fetched when tab is active
   const { data: topUsers } = useTopUsers(startDate, endDate, 'decks', 10, activeTab === 'users');
@@ -358,137 +253,9 @@ const AdminAnalytics: React.FC = () => {
 
   const loading = overviewLoading && !overview;
 
-  // Adjustable economics settings
-  const [economicsSettings, setEconomicsSettings] = useState({
-    avgSlidesPerDeck: 10,
-    decksPerUserPerMonth: 5,
-    researchCallsPerDeck: 2,
-    customComponentsPerDeck: 3,
-    arpu: 10.00,           // Average revenue per user
-    paidConversionRate: 5, // Percentage of users who pay
-    cac: 15,               // Customer acquisition cost
-    avgUserLifetimeMonths: 12,
-  });
-
   // Computed values
   const totalUsers = overview?.metrics?.users?.total || 0;
   const targets = useMemo(() => getTargets(totalUsers), [totalUsers]);
-
-  // Calculate unit economics using ACTUAL model pricing and production token data
-  const unitEconomics = useMemo(() => {
-    const { avgSlidesPerDeck, decksPerUserPerMonth, researchCallsPerDeck, customComponentsPerDeck, arpu, paidConversionRate, cac, avgUserLifetimeMonths } = economicsSettings;
-    const decksPerMonth = (overview?.metrics?.decks?.created?.current || 0) * (30 / Math.max(1, overview?.period?.days || 30));
-    const slidesPerDeck = overview?.metrics?.decks?.avg_slides_per_deck || avgSlidesPerDeck;
-
-    // Calculate cost per operation using actual models and real token counts
-    const calcOpCost = (op: keyof typeof MODEL_USAGE) => {
-      const usage = MODEL_USAGE[op];
-      const pricing = TOKEN_PRICING[usage.model as keyof typeof TOKEN_PRICING];
-      if (!pricing) return 0;
-      const inputCost = (usage.avgInputTokens * pricing.input) / 1_000_000;
-      const outputCost = (usage.avgOutputTokens * pricing.output) / 1_000_000;
-      return inputCost + outputCost;
-    };
-
-    // ACTUAL costs per operation (calculated from real token data)
-    const costPerSlide = calcOpCost('slideGenerate');     // ~$0.094 per slide (850*2 + 7700*12)/1M
-    const costPerEdit = calcOpCost('slideEdit');          // ~$0.081 per edit
-    const costPerCustomComponent = calcOpCost('customComponent'); // ~$0.094 (same as slide)
-    const costPerTheme = calcOpCost('themeGenerate');     // ~$0.025
-    const costPerResearch = calcOpCost('research');       // ~$0.013 (Perplexity is cheaper)
-    const costPerSimpleTask = calcOpCost('simpleTasks');  // ~$0.002 (Haiku is very cheap)
-    const costPerChat = calcOpCost('chat');               // ~$0.003
-
-    // REALISTIC deck generation cost breakdown:
-    // 1 theme + (avgSlides * slide generation) + (1 research call for outline) + (2-3 routing/validation calls)
-    // Custom components are rare (~10% of slides have them, counted separately)
-    const customComponentsPerSlide = 0.10; // Only 10% of slides need custom components
-    const routingCalls = 3; // orchestrator routing, validation, context building
-    const chatTurns = 2; // outline conversation
-
-    const costPerDeck =
-      costPerTheme +                                               // Theme: $0.025
-      (costPerSlide * slidesPerDeck) +                            // Slides: $0.094 * 10 = $0.94
-      (costPerCustomComponent * slidesPerDeck * customComponentsPerSlide) + // Custom: $0.01
-      (costPerResearch * researchCallsPerDeck) +                  // Research: $0.026
-      (costPerSimpleTask * routingCalls) +                        // Routing: $0.006
-      (costPerChat * chatTurns);                                  // Chat: $0.006
-
-    // Edit operations (average 2 edits per deck after initial generation)
-    const avgEditsPerDeck = 2;
-    const costPerDeckWithEdits = costPerDeck + (costPerEdit * avgEditsPerDeck);
-
-    const monthlyCost = costPerDeckWithEdits * decksPerMonth;
-
-    // Per-user cost calculation
-    const activeUsers = overview?.metrics?.users?.active_in_period || Math.ceil(totalUsers * 0.1);
-    const decksPerActiveUser = activeUsers > 0 ? decksPerMonth / activeUsers : decksPerUserPerMonth;
-    const costPerActiveUser = costPerDeckWithEdits * decksPerActiveUser;
-
-    // Revenue calculations
-    const paidUsers = totalUsers * (paidConversionRate / 100);
-    const estimatedMRR = paidUsers * arpu;
-    const ltv = arpu * avgUserLifetimeMonths; // LTV per paying user
-    const ltvPerUser = ltv * (paidConversionRate / 100); // LTV blended across all users
-    const grossMargin = arpu > 0 ? ((arpu - costPerActiveUser) / arpu) * 100 : 0;
-    const ltvCacRatio = cac > 0 ? ltv / cac : 0;
-
-    return {
-      costPerDeck,
-      costPerDeckWithEdits,
-      costPerSlide,
-      costPerEdit,
-      costPerActiveUser,
-      revenuePerUser: arpu,
-      ltv,
-      ltvPerUser,
-      cac,
-      ltvCacRatio,
-      grossMargin,
-      monthlyCost,
-      estimatedMRR,
-      // Detailed breakdown for a single deck
-      costBreakdown: {
-        theme: costPerTheme,
-        slides: costPerSlide * slidesPerDeck,
-        customComponents: costPerCustomComponent * slidesPerDeck * customComponentsPerSlide,
-        research: costPerResearch * researchCallsPerDeck,
-        routing: costPerSimpleTask * routingCalls,
-        chat: costPerChat * chatTurns,
-        edits: costPerEdit * avgEditsPerDeck,
-      }
-    };
-  }, [overview, totalUsers, economicsSettings]);
-
-  // API cost breakdown by model (monthly costs)
-  const apiCostBreakdown = useMemo(() => {
-    const decksPerMonth = Math.max(1, (overview?.metrics?.decks?.created?.current || 1) * (30 / Math.max(1, overview?.period?.days || 30)));
-
-    // Gemini 3 Pro: theme + slides + custom components + edits
-    const geminiCost = decksPerMonth * (
-      unitEconomics.costBreakdown.theme +
-      unitEconomics.costBreakdown.slides +
-      unitEconomics.costBreakdown.customComponents +
-      unitEconomics.costBreakdown.edits
-    );
-
-    // Perplexity: research/outline calls
-    const perplexityCost = decksPerMonth * unitEconomics.costBreakdown.research;
-
-    // Claude Haiku: routing, validation, chat
-    const haikuCost = decksPerMonth * (
-      unitEconomics.costBreakdown.routing +
-      unitEconomics.costBreakdown.chat
-    );
-
-    const total = geminiCost + perplexityCost + haikuCost;
-
-    return [
-      { name: 'Gemini 3 Pro', cost: geminiCost, percentage: total > 0 ? (geminiCost / total) * 100 : 0, color: '#8b5cf6' },
-      { name: 'Perplexity Sonar Pro', cost: perplexityCost, percentage: total > 0 ? (perplexityCost / total) * 100 : 0, color: '#10b981' },
-      { name: 'Claude 4.5 Haiku', cost: haikuCost, percentage: total > 0 ? (haikuCost / total) * 100 : 0, color: '#f59e0b' },
-    ];
-  }, [overview, unitEconomics]);
 
   // Handle refresh - invalidates all queries and refetches
   const handleRefresh = useCallback(() => {
@@ -593,7 +360,7 @@ const AdminAnalytics: React.FC = () => {
             <SystemHealthBanner health={serviceHealth} isLoading={healthLoading} />
 
             {/* Milestone tracker */}
-            <MilestoneTracker milestones={MILESTONES} currentUsers={totalUsers} currentMRR={unitEconomics.estimatedMRR} />
+            <MilestoneTracker milestones={MILESTONES} currentUsers={totalUsers} currentMRR={0} />
 
             {/* Key Metrics Grid - 6 columns */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
@@ -606,7 +373,7 @@ const AdminAnalytics: React.FC = () => {
             </div>
 
             {/* Charts Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
               {/* User Signups Chart */}
               <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
                 <div className="flex items-center justify-between mb-2">
@@ -646,37 +413,6 @@ const AdminAnalytics: React.FC = () => {
                   </ResponsiveContainer>
                 </div>
               </div>
-
-              {/* User Segments Pie */}
-              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
-                <div className="text-xs font-medium mb-2">User Segments</div>
-                <div className="flex items-center gap-2">
-                  <div className="w-24 h-24">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RechartsPie>
-                        <Pie data={userSegments?.segments || []} dataKey="count" nameKey="segment" cx="50%" cy="50%" innerRadius={20} outerRadius={40}>
-                          {(userSegments?.segments || []).map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                        </Pie>
-                        <Tooltip />
-                      </RechartsPie>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    {(userSegments?.segments || []).slice(0, 4).map((seg: any, i: number) => (
-                      <div key={seg.segment} className="flex items-center justify-between text-[10px]">
-                        <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i] }} />{seg.segment}</span>
-                        <span className="font-medium">{seg.count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom row - Economics summary */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-              <UnitEconomicsCard {...unitEconomics} />
-              <CostBreakdownChart breakdown={apiCostBreakdown} />
             </div>
 
             {/* Quick Access Cards */}

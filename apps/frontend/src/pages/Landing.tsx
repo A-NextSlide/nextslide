@@ -25,7 +25,8 @@ const Landing: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isSignedIn = !!user;
-  const [scrollY, setScrollY] = useState(0);
+  const [fontsLoaded, setFontsLoaded] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
@@ -39,12 +40,11 @@ const Landing: React.FC = () => {
   const [showcaseFocused, setShowcaseFocused] = useState(false);
   const [showcaseInView, setShowcaseInView] = useState(false);
   const [heroInView, setHeroInView] = useState(true);
+  const [scribbleAnimated, setScribbleAnimated] = useState(false);
   const autoScrollRef = useRef<NodeJS.Timeout | null>(null);
   const showcaseRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
 
-  // Sticky CTA text
-  const [ctaText, setCtaText] = useState('Get Started Free');
 
   // Community bottom sheet
   const [showCommunity, setShowCommunity] = useState(false);
@@ -68,25 +68,45 @@ const Landing: React.FC = () => {
     }))
   );
 
-  // Helper to generate unique random slides (no duplicates)
+  // Wait for fonts to load before animating scribble
+  useEffect(() => {
+    // Use document.fonts.ready to wait for all fonts
+    document.fonts.ready.then(() => {
+      setFontsLoaded(true);
+    });
+    // Fallback timeout
+    const timeout = setTimeout(() => setFontsLoaded(true), 1000);
+    return () => clearTimeout(timeout);
+  }, []);
+
+  // Trigger scribble underline animation after fonts are loaded
+  useEffect(() => {
+    if (!fontsLoaded) return;
+    const timer = setTimeout(() => {
+      setScribbleAnimated(true);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [fontsLoaded]);
+
+  // Helper to generate unique random slides from community (first slide) + showcase (random slides)
   const generateUniqueSlides = (count: number) => {
     const slides: Array<{ source: 'showcase' | 'community'; deckIdx: number; slideIdx: number }> = [];
     const usedKeys = new Set<string>();
 
-    // Build pool of all available slides
+    // Build pool from community first slides + showcase random slides
     const pool: Array<{ source: 'showcase' | 'community'; deckIdx: number; slideIdx: number }> = [];
 
-    // Add showcase slides (random slides from each deck, not just covers)
+    // Add community first slides
+    communityDecks.forEach((_, deckIdx) => {
+      pool.push({ source: 'community', deckIdx, slideIdx: 0 });
+    });
+
+    // Add showcase slides (random slides from each deck for variety)
     showcaseDecks.forEach((deck, deckIdx) => {
       const slideCount = deck.slides?.length || 0;
       for (let slideIdx = 0; slideIdx < slideCount; slideIdx++) {
         pool.push({ source: 'showcase', deckIdx, slideIdx });
       }
-    });
-
-    // Add community slides (first slide of each)
-    communityDecks.forEach((_, deckIdx) => {
-      pool.push({ source: 'community', deckIdx, slideIdx: 0 });
     });
 
     // Shuffle the pool
@@ -105,9 +125,17 @@ const Landing: React.FC = () => {
       }
     }
 
-    // Fill remaining with random if needed
+    // Fill remaining by cycling through available decks
     while (slides.length < count) {
-      slides.push({ source: 'showcase', deckIdx: 0, slideIdx: slides.length % 5 });
+      if (communityDecks.length > 0) {
+        const deckIdx = slides.length % communityDecks.length;
+        slides.push({ source: 'community', deckIdx, slideIdx: 0 });
+      } else if (showcaseDecks.length > 0) {
+        const deckIdx = slides.length % showcaseDecks.length;
+        slides.push({ source: 'showcase', deckIdx, slideIdx: 0 });
+      } else {
+        break;
+      }
     }
 
     return slides;
@@ -115,14 +143,15 @@ const Landing: React.FC = () => {
 
   // Initialize hero slides with unique random positions once decks load
   useEffect(() => {
-    if (showcaseDecks.length === 0 && communityDecks.length === 0) return;
+    if (communityDecks.length === 0 && showcaseDecks.length === 0) return;
 
     setHeroSlides(generateUniqueSlides(15));
-  }, [showcaseDecks.length > 0, communityDecks.length > 0]);
+  }, [communityDecks.length > 0, showcaseDecks.length > 0]);
 
-  // Randomly swap hero slides every few seconds (avoiding duplicates)
+  // Randomly swap hero slides every few seconds (avoiding duplicates) - only when hero is visible
   useEffect(() => {
-    if (showcaseDecks.length === 0 && communityDecks.length === 0) return;
+    if (communityDecks.length === 0 && showcaseDecks.length === 0) return;
+    if (!heroInView) return; // Don't run when hero is scrolled past
 
     const swapInterval = setInterval(() => {
       setHeroSlides(prev => {
@@ -134,11 +163,12 @@ const Landing: React.FC = () => {
         for (let i = 0; i < numToSwap; i++) {
           const posIdx = Math.floor(Math.random() * 15);
 
-          // Try to find a unique slide
+          // Try to find a unique slide from community or showcase
           let attempts = 0;
           while (attempts < 20) {
-            const useCommunity = communityDecks.length > 0 && Math.random() > 0.6;
             let newSlide;
+            // 50/50 chance between community (first slide) and showcase (random slide)
+            const useCommunity = communityDecks.length > 0 && (showcaseDecks.length === 0 || Math.random() > 0.5);
 
             if (useCommunity) {
               const deckIdx = Math.floor(Math.random() * communityDecks.length);
@@ -167,13 +197,13 @@ const Landing: React.FC = () => {
     }, 4000);
 
     return () => clearInterval(swapInterval);
-  }, [showcaseDecks.length, communityDecks.length]);
+  }, [communityDecks.length, showcaseDecks.length, heroInView]);
 
-  // Typewriter effect for hero input placeholder
+  // Typewriter effect for hero input placeholder - paused when hero not visible
   const typewriterText = useTypewriter({
     phrases: [
-      'course material on the French Revolution for grade 11',
       'a quarterly business review',
+      'course material on the French Revolution for grade 11',
       'a lecture on quantum computing',
       'a team onboarding guide',
       'a product launch presentation',
@@ -181,6 +211,7 @@ const Landing: React.FC = () => {
     typingSpeed: 50,
     deletingSpeed: 30,
     pauseDuration: 2500,
+    paused: !heroInView,
   });
 
   // Load showcase decks and community decks
@@ -204,7 +235,7 @@ const Landing: React.FC = () => {
     loadDecks();
   }, []);
 
-  // Handle scroll events - throttled for performance
+  // Handle scroll events - only update state when crossing threshold for nav styling
   useEffect(() => {
     // On mount - ensure scrolling works on landing page
     document.documentElement.style.position = '';
@@ -212,14 +243,13 @@ const Landing: React.FC = () => {
     document.body.style.position = '';
     document.body.style.overflow = '';
 
-    let ticking = false;
+    let lastScrolled = false;
     const handleScroll = () => {
-      if (!ticking) {
-        requestAnimationFrame(() => {
-          setScrollY(window.scrollY);
-          ticking = false;
-        });
-        ticking = true;
+      const scrolled = window.scrollY > 20;
+      // Only update state when crossing the threshold
+      if (scrolled !== lastScrolled) {
+        lastScrolled = scrolled;
+        setIsScrolled(scrolled);
       }
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -229,13 +259,15 @@ const Landing: React.FC = () => {
     };
   }, []);
 
-  // Intersection observer for animations
+  // Intersection observer for animations - unobserve after animation triggered
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             entry.target.classList.add('in-view');
+            // Unobserve after animation triggered - no need to keep watching
+            observer.unobserve(entry.target);
           }
         });
       },
@@ -246,24 +278,22 @@ const Landing: React.FC = () => {
     return () => observer.disconnect();
   }, []);
 
-  // Detect when showcase section comes into view
+  // Detect when showcase section comes into/out of view
   useEffect(() => {
     if (!showcaseRef.current) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting && !showcaseInView) {
-            setShowcaseInView(true);
-          }
+          setShowcaseInView(entry.isIntersecting);
         });
       },
-      { threshold: 0.3 }
+      { threshold: 0.1 }
     );
 
     observer.observe(showcaseRef.current);
     return () => observer.disconnect();
-  }, [showcaseInView]);
+  }, []);
 
   // Track hero section visibility - unmount slides when scrolled past
   useEffect(() => {
@@ -349,26 +379,6 @@ const Landing: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showcaseFocused, isLoadingShowcase, showcaseDecks, activeShowcaseIndex]);
 
-  // Scroll-based CTA text updates
-  useEffect(() => {
-    const updateCTA = () => {
-      const scroll = window.scrollY;
-      const windowHeight = window.innerHeight;
-
-      if (scroll < windowHeight * 0.5) {
-        setCtaText('Get Started Free');
-      } else if (scroll < windowHeight * 1.5) {
-        setCtaText('Stop Wasting Time - Try Free');
-      } else if (scroll < windowHeight * 2.5) {
-        setCtaText('See the Difference - Start Free');
-      } else {
-        setCtaText('Join 10K+ Teams');
-      }
-    };
-
-    window.addEventListener('scroll', updateCTA);
-    return () => window.removeEventListener('scroll', updateCTA);
-  }, []);
 
   const problems = [
     {
@@ -520,7 +530,7 @@ const Landing: React.FC = () => {
       <nav
         className={cn(
           "fixed top-0 w-full z-50 transition-all duration-300",
-          scrollY > 20
+          isScrolled
             ? "bg-[#FCFBF8]/90 dark:bg-[#0a0a0a]/90 backdrop-blur-xl border-b border-black/10 dark:border-white/10"
             : "bg-transparent"
         )}
@@ -601,7 +611,46 @@ const Landing: React.FC = () => {
               textTransform: 'uppercase'
             }}
           >
-            <span>The presentation platform</span>
+            <span className="relative inline-block">
+              The
+              {/* Animated calligraphy scribble underline */}
+              <svg
+                className="absolute left-0 -bottom-1 w-full overflow-visible"
+                viewBox="0 0 100 12"
+                preserveAspectRatio="none"
+                style={{ height: 'clamp(8px, 1.2vw, 14px)' }}
+              >
+                <path
+                  d="M2 6 Q 15 2, 25 7 Q 35 12, 50 5 Q 65 -2, 75 6 Q 85 12, 98 5"
+                  fill="none"
+                  stroke="#FF4301"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{
+                    strokeDasharray: 150,
+                    strokeDashoffset: scribbleAnimated ? 0 : 150,
+                    transition: 'stroke-dashoffset 0.8s cubic-bezier(0.65, 0, 0.35, 1)',
+                  }}
+                />
+                {/* Second subtle stroke for thickness variation */}
+                <path
+                  d="M5 7 Q 20 3, 30 8 Q 45 11, 55 4 Q 70 -1, 80 7 Q 90 11, 95 6"
+                  fill="none"
+                  stroke="#FF4301"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity="0.5"
+                  style={{
+                    strokeDasharray: 150,
+                    strokeDashoffset: scribbleAnimated ? 0 : 150,
+                    transition: 'stroke-dashoffset 1s cubic-bezier(0.65, 0, 0.35, 1) 0.15s',
+                  }}
+                />
+              </svg>
+            </span>{' '}
+            presentation platform
           </h1>
           <p className="mt-3 text-base sm:text-xl text-black/50 dark:text-white/50 max-w-2xl mx-auto px-4">
             Beautiful decks for every idea. Sales. Teaching. Internal.
@@ -667,12 +716,11 @@ const Landing: React.FC = () => {
                     }}
                   >
                     <div
-                      key={`hs0-${heroSlides[0]?.source}-${heroSlides[0]?.deckIdx}-${heroSlides[0]?.slideIdx}`}
                       className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5"
                       style={{ '--rotation': '-8deg', '--wobble-amount': '1.5deg' } as React.CSSProperties}
                     >
                       {getHeroSlide(heroSlides[0]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs0-${heroSlides[0]?.source}-${heroSlides[0]?.deckIdx}-${heroSlides[0]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[0])!} />
                         </Suspense>
                       )}
@@ -689,9 +737,9 @@ const Landing: React.FC = () => {
                       animationDelay: '0.2s'
                     }}
                   >
-                    <div key={`hs1-${heroSlides[1]?.source}-${heroSlides[1]?.deckIdx}-${heroSlides[1]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '4deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                    <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '4deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[1]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs1-${heroSlides[1]?.source}-${heroSlides[1]?.deckIdx}-${heroSlides[1]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[1])!} />
                         </Suspense>
                       )}
@@ -708,9 +756,9 @@ const Landing: React.FC = () => {
                       animationDelay: '0.3s'
                     }}
                   >
-                    <div key={`hs2-${heroSlides[2]?.source}-${heroSlides[2]?.deckIdx}-${heroSlides[2]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-2xl ring-1 ring-black/10" style={{ '--rotation': '5deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                    <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-2xl ring-1 ring-black/10" style={{ '--rotation': '5deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[2]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs2-${heroSlides[2]?.source}-${heroSlides[2]?.deckIdx}-${heroSlides[2]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[2])!} />
                         </Suspense>
                       )}
@@ -729,9 +777,9 @@ const Landing: React.FC = () => {
                       animationDelay: '0.5s'
                     }}
                   >
-                    <div key={`hs4-${heroSlides[4]?.source}-${heroSlides[4]?.deckIdx}-${heroSlides[4]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-6deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                    <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-6deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[4]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs4-${heroSlides[4]?.source}-${heroSlides[4]?.deckIdx}-${heroSlides[4]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[4])!} />
                         </Suspense>
                       )}
@@ -749,9 +797,9 @@ const Landing: React.FC = () => {
                       animationDelay: '0.6s'
                     }}
                   >
-                    <div key={`hs5-${heroSlides[5]?.source}-${heroSlides[5]?.deckIdx}-${heroSlides[5]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '2deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                    <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '2deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[5]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs5-${heroSlides[5]?.source}-${heroSlides[5]?.deckIdx}-${heroSlides[5]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[5])!} />
                         </Suspense>
                       )}
@@ -768,9 +816,9 @@ const Landing: React.FC = () => {
                       animationDelay: '0.55s'
                     }}
                   >
-                    <div key={`hs6-${heroSlides[6]?.source}-${heroSlides[6]?.deckIdx}-${heroSlides[6]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '6deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                    <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '6deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[6]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs6-${heroSlides[6]?.source}-${heroSlides[6]?.deckIdx}-${heroSlides[6]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[6])!} />
                         </Suspense>
                       )}
@@ -789,9 +837,9 @@ const Landing: React.FC = () => {
                       animationDelay: '0.15s'
                     }}
                   >
-                    <div key={`hs7-${heroSlides[7]?.source}-${heroSlides[7]?.deckIdx}-${heroSlides[7]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '8deg', '--wobble-amount': '1.5deg' } as React.CSSProperties}>
+                    <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '8deg', '--wobble-amount': '1.5deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[7]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs7-${heroSlides[7]?.source}-${heroSlides[7]?.deckIdx}-${heroSlides[7]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[7])!} />
                         </Suspense>
                       )}
@@ -808,9 +856,9 @@ const Landing: React.FC = () => {
                       animationDelay: '0.25s'
                     }}
                   >
-                    <div key={`hs8-${heroSlides[8]?.source}-${heroSlides[8]?.deckIdx}-${heroSlides[8]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-4deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                    <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-4deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[8]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs8-${heroSlides[8]?.source}-${heroSlides[8]?.deckIdx}-${heroSlides[8]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[8])!} />
                         </Suspense>
                       )}
@@ -827,9 +875,9 @@ const Landing: React.FC = () => {
                       animationDelay: '0.35s'
                     }}
                   >
-                    <div key={`hs9-${heroSlides[9]?.source}-${heroSlides[9]?.deckIdx}-${heroSlides[9]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-2xl ring-1 ring-black/10" style={{ '--rotation': '-5deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                    <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-2xl ring-1 ring-black/10" style={{ '--rotation': '-5deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[9]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs9-${heroSlides[9]?.source}-${heroSlides[9]?.deckIdx}-${heroSlides[9]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[9])!} />
                         </Suspense>
                       )}
@@ -848,9 +896,9 @@ const Landing: React.FC = () => {
                       animationDelay: '0.2s'
                     }}
                   >
-                    <div key={`hs11-${heroSlides[11]?.source}-${heroSlides[11]?.deckIdx}-${heroSlides[11]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-14deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                    <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-14deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[11]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs11-${heroSlides[11]?.source}-${heroSlides[11]?.deckIdx}-${heroSlides[11]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[11])!} />
                         </Suspense>
                       )}
@@ -867,9 +915,9 @@ const Landing: React.FC = () => {
                       animationDelay: '0.22s'
                     }}
                   >
-                    <div key={`hs12-${heroSlides[12]?.source}-${heroSlides[12]?.deckIdx}-${heroSlides[12]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '14deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                    <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '14deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[12]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs12-${heroSlides[12]?.source}-${heroSlides[12]?.deckIdx}-${heroSlides[12]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[12])!} />
                         </Suspense>
                       )}
@@ -886,9 +934,9 @@ const Landing: React.FC = () => {
                       animationDelay: '0.38s'
                     }}
                   >
-                    <div key={`hs13-${heroSlides[13]?.source}-${heroSlides[13]?.deckIdx}-${heroSlides[13]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-12deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                    <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-12deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[13]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs13-${heroSlides[13]?.source}-${heroSlides[13]?.deckIdx}-${heroSlides[13]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[13])!} />
                         </Suspense>
                       )}
@@ -905,9 +953,9 @@ const Landing: React.FC = () => {
                       animationDelay: '0.4s'
                     }}
                   >
-                    <div key={`hs14-${heroSlides[14]?.source}-${heroSlides[14]?.deckIdx}-${heroSlides[14]?.slideIdx}`} className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '12deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
+                    <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '12deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[14]) && (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
+                        <Suspense key={`hs14-${heroSlides[14]?.source}-${heroSlides[14]?.deckIdx}-${heroSlides[14]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
                           <MiniSlide slide={getHeroSlide(heroSlides[14])!} />
                         </Suspense>
                       )}
@@ -1117,9 +1165,11 @@ const Landing: React.FC = () => {
                           <div className="text-white/40 text-xl font-medium mb-2">Loading...</div>
                         </div>
                       ) : activeSlide ? (
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-900 animate-pulse" />}>
-                          <MiniSlide slide={activeSlide} />
-                        </Suspense>
+                        <div className="relative z-10 w-full h-full">
+                          <Suspense fallback={<div className="w-full h-full bg-zinc-900 animate-pulse" />}>
+                            <MiniSlide slide={activeSlide} interactive />
+                          </Suspense>
+                        </div>
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
                           <div className="text-white/40 text-xl font-medium mb-2">No slides available</div>
@@ -1192,10 +1242,10 @@ const Landing: React.FC = () => {
                                 : "opacity-50 hover:opacity-100 hover:ring-1 hover:ring-white/30"
                             )}
                           >
-                            <div className="absolute inset-0 z-10" /> {/* Click capture layer */}
                             <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
                               <MiniSlide slide={slide} />
                             </Suspense>
+                            <div className="absolute inset-0 z-20" /> {/* Click capture layer - on top */}
                           </div>
                         ))
                       )}
@@ -1228,7 +1278,6 @@ const Landing: React.FC = () => {
                             : "ring-1 ring-white/5 hover:ring-white/20"
                         )}
                       >
-                        <div className="absolute inset-0 z-10 cursor-pointer" /> {/* Click capture layer */}
                         <div className="aspect-[16/9] relative">
                           {deck.slides?.[0] && (
                             <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
@@ -1250,8 +1299,9 @@ const Landing: React.FC = () => {
                           </div>
                         </div>
                         {index === activeShowcaseIndex && (
-                          <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#FF4301]" />
+                          <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#FF4301] z-10" />
                         )}
+                        <div className="absolute inset-0 z-20" /> {/* Click capture layer - on top */}
                       </div>
                     ))
                   )}
@@ -1945,13 +1995,16 @@ const Landing: React.FC = () => {
           transform: rotate(var(--rotation, 0deg));
         }
 
-        /* Content swap fade */
+        /* Content swap fade - smooth crossfade using child animation */
         .hero-slide-swap {
-          animation: heroSlideSwapFade 0.3s ease-out;
+          position: relative;
+        }
+        .hero-slide-swap > * {
+          animation: heroSlideSwapFade 0.6s ease-out;
         }
         @keyframes heroSlideSwapFade {
-          from { opacity: 0.5; }
-          to { opacity: 1; }
+          0% { opacity: 0; transform: scale(0.97); }
+          100% { opacity: 1; transform: scale(1); }
         }
 
         /* Hero input box animation */

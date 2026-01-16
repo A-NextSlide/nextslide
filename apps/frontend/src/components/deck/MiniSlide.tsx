@@ -24,6 +24,11 @@ interface MiniSlideProps {
    * - background: render only extracted background (safe for mobile deck lists)
    */
   renderMode?: 'full' | 'background';
+  /**
+   * Allow interaction with slide content (buttons, links, etc.)
+   * Default: false (pointer-events: none for thumbnails)
+   */
+  interactive?: boolean;
 }
 
 /**
@@ -94,19 +99,22 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   onClick,
   responsive = true,
   slideSize,
-  renderMode = 'full'
+  renderMode = 'full',
+  interactive = false
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerDims, setContainerDims] = useState<{ width: number; height: number } | null>(null);
   const slideId = slide?.id || 'unknown';
 
-  // iOS LAZY LOADING: Only render visible thumbnails with debounce to prevent crashes
-  const [isVisible, setIsVisible] = useState(false);
-  const [shouldRender, setShouldRender] = useState(!BROWSER.isIOS); // Desktop renders immediately
+  // LAZY LOADING: Only render when first visible, then stay rendered
+  const [shouldRender, setShouldRender] = useState(false);
 
   useEffect(() => {
+    // If already rendered, no need to observe
+    if (shouldRender) return;
+
     const el = containerRef.current;
-    if (!el || !BROWSER.isIOS) return;
+    if (!el) return;
 
     let renderTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -114,25 +122,24 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       (entries) => {
         const entry = entries[0];
         if (entry.isIntersecting) {
-          setIsVisible(true);
-          // Debounce: wait 300ms before rendering to avoid loading during fast scroll
+          // Debounce: short delay before rendering to avoid loading during fast scroll
           if (renderTimeout) clearTimeout(renderTimeout);
+          const delay = BROWSER.isIOS ? 300 : 50; // Shorter delay on desktop
           renderTimeout = setTimeout(() => {
             setShouldRender(true);
-          }, 300);
+            // Once rendered, stop observing - we won't unmount
+            observer.disconnect();
+          }, delay);
         } else {
-          setIsVisible(false);
-          // Cancel pending render
+          // Cancel pending render if scrolled away before delay
           if (renderTimeout) {
             clearTimeout(renderTimeout);
             renderTimeout = null;
           }
-          // Unload immediately when not visible to free memory
-          setShouldRender(false);
         }
       },
       {
-        rootMargin: '50px',
+        rootMargin: '100px', // Start loading a bit before visible
         threshold: 0.1
       }
     );
@@ -142,7 +149,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       observer.disconnect();
       if (renderTimeout) clearTimeout(renderTimeout);
     };
-  }, []);
+  }, [shouldRender]);
 
   // Normalize slide data
   const normalizedResult = useMemo(() => {
@@ -311,7 +318,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
         ...backgroundStyle,
         position: 'relative',
       }}
-      data-mini-slide-debug={`scale:${scale.toFixed(3)},visible:${isVisible},render:${shouldRender}`}
+      data-mini-slide-debug={`scale:${scale.toFixed(3)},render:${shouldRender}`}
     >
       {shouldRenderContent && (
         <div
@@ -326,7 +333,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
             transform: `scale(${scale})`,
             WebkitTransformOrigin: 'top left',
             transformOrigin: 'top left',
-            pointerEvents: 'none',
+            pointerEvents: interactive ? 'auto' : 'none',
             willChange: 'transform',
           } as React.CSSProperties}
         >
@@ -341,7 +348,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
                       slide={safeSlide}
                       isActive={true}
                       isEditing={false}
-                      isThumbnail={true}
+                      isThumbnail={!interactive}
                     />
                   </ThumbnailRenderProvider>
                 </StaticActiveSlideProvider>

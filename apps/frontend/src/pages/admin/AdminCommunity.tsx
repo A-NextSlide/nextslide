@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,19 +24,11 @@ import {
   FileStack,
   TrendingUp,
   Clock,
-  ChevronLeft,
-  ChevronRight,
   Trash2,
   RefreshCw,
   Pencil,
+  Loader2,
 } from 'lucide-react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { format, formatDistanceToNow } from 'date-fns';
 import { adminApi, CommunitySubmission, CommunityStats } from '@/services/adminApi';
@@ -48,16 +40,22 @@ import { useIsMobile } from '@/hooks/use-mobile';
 
 type TabStatus = 'pending' | 'approved' | 'rejected';
 
+const ITEMS_PER_PAGE = 12;
+
 const AdminCommunity: React.FC = () => {
   const isMobile = useIsMobile();
   const [submissions, setSubmissions] = useState<CommunitySubmission[]>([]);
   const [stats, setStats] = useState<CommunityStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [activeTab, setActiveTab] = useState<TabStatus>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [total, setTotal] = useState(0);
+
+  // Sentinel ref for infinite scroll
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   // Dialog states
   const [previewSubmission, setPreviewSubmission] = useState<CommunitySubmission | null>(null);
@@ -73,22 +71,39 @@ const AdminCommunity: React.FC = () => {
   const [editCategory, setEditCategory] = useState('');
   const [editTags, setEditTags] = useState('');
 
+  // Fetch initial submissions when tab changes
   useEffect(() => {
-    fetchSubmissions();
+    setSubmissions([]);
+    setCurrentPage(1);
+    setHasMore(true);
+    fetchSubmissions(1, true);
     fetchStats();
-  }, [activeTab, currentPage]);
+  }, [activeTab]);
 
-  const fetchSubmissions = async () => {
+  const fetchSubmissions = async (page: number, isInitial: boolean = false) => {
     try {
-      setIsLoading(true);
+      if (isInitial) {
+        setIsLoading(true);
+      } else {
+        setIsLoadingMore(true);
+      }
       const response = await adminApi.getCommunityQueue({
         status: activeTab,
-        page: currentPage,
-        limit: 12,
+        page: page,
+        limit: ITEMS_PER_PAGE,
       });
-      setSubmissions(response.submissions || []);
+      const newSubmissions = response.submissions || [];
       setTotal(response.total || 0);
-      setTotalPages(Math.ceil((response.total || 0) / 12));
+
+      if (isInitial) {
+        setSubmissions(newSubmissions);
+      } else {
+        setSubmissions(prev => [...prev, ...newSubmissions]);
+      }
+
+      // Check if there are more items to load
+      const totalLoaded = isInitial ? newSubmissions.length : submissions.length + newSubmissions.length;
+      setHasMore(totalLoaded < (response.total || 0));
     } catch (error) {
       console.error('Error fetching submissions:', error);
       toast({
@@ -98,8 +113,35 @@ const AdminCommunity: React.FC = () => {
       });
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
   };
+
+  // Load more when scrolling to bottom
+  const loadMore = useCallback(() => {
+    if (isLoadingMore || !hasMore) return;
+    const nextPage = currentPage + 1;
+    setCurrentPage(nextPage);
+    fetchSubmissions(nextPage, false);
+  }, [currentPage, isLoadingMore, hasMore, activeTab]);
+
+  // Intersection observer for infinite scroll
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !isLoading) {
+          loadMore();
+        }
+      },
+      { rootMargin: '100px', threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMore, hasMore, isLoadingMore, isLoading]);
 
   const fetchStats = async () => {
     try {
@@ -110,6 +152,14 @@ const AdminCommunity: React.FC = () => {
     }
   };
 
+  const refreshList = () => {
+    setSubmissions([]);
+    setCurrentPage(1);
+    setHasMore(true);
+    fetchSubmissions(1, true);
+    fetchStats();
+  };
+
   const handleApprove = async (submission: CommunitySubmission) => {
     try {
       setActionInProgress(submission.id);
@@ -118,7 +168,9 @@ const AdminCommunity: React.FC = () => {
         title: 'Approved',
         description: `"${submission.title}" has been approved and is now live in the community.`,
       });
-      fetchSubmissions();
+      // Remove from current list instead of full refresh for better UX
+      setSubmissions(prev => prev.filter(s => s.id !== submission.id));
+      setTotal(prev => prev - 1);
       fetchStats();
     } catch (error) {
       toast({
@@ -141,10 +193,12 @@ const AdminCommunity: React.FC = () => {
         title: 'Rejected',
         description: `"${previewSubmission.title}" has been rejected.`,
       });
+      // Remove from current list
+      setSubmissions(prev => prev.filter(s => s.id !== previewSubmission.id));
+      setTotal(prev => prev - 1);
       setRejectDialogOpen(false);
       setRejectReason('');
       setPreviewSubmission(null);
-      fetchSubmissions();
       fetchStats();
     } catch (error) {
       toast({
@@ -165,7 +219,9 @@ const AdminCommunity: React.FC = () => {
         title: 'Removed',
         description: `"${submission.title}" has been removed from the community.`,
       });
-      fetchSubmissions();
+      // Remove from current list
+      setSubmissions(prev => prev.filter(s => s.id !== submission.id));
+      setTotal(prev => prev - 1);
       fetchStats();
     } catch (error) {
       toast({
@@ -198,19 +254,25 @@ const AdminCommunity: React.FC = () => {
 
     try {
       setActionInProgress(editingSubmission.id);
-      await adminApi.updateCommunityDeck(editingSubmission.id, {
+      const updates = {
         title: editTitle.trim(),
         description: editDescription.trim() || undefined,
         category: editCategory,
         tags: editTags.split(',').map(t => t.trim()).filter(Boolean),
-      });
+      };
+      await adminApi.updateCommunityDeck(editingSubmission.id, updates);
       toast({
         title: 'Updated',
         description: 'Community deck has been updated.',
       });
+      // Update inline instead of full refresh
+      setSubmissions(prev => prev.map(s =>
+        s.id === editingSubmission.id
+          ? { ...s, ...updates }
+          : s
+      ));
       setEditDialogOpen(false);
       setEditingSubmission(null);
-      fetchSubmissions();
     } catch (error) {
       toast({
         variant: 'destructive',
@@ -262,7 +324,7 @@ const AdminCommunity: React.FC = () => {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => { fetchSubmissions(); fetchStats(); }}
+            onClick={refreshList}
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
@@ -326,7 +388,7 @@ const AdminCommunity: React.FC = () => {
         </div>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as TabStatus); setCurrentPage(1); }}>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabStatus)}>
           <div className="flex items-center justify-between">
             <TabsList>
               <TabsTrigger value="pending" className="gap-2">
@@ -491,30 +553,24 @@ const AdminCommunity: React.FC = () => {
               </div>
             )}
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6">
-                <p className="text-sm text-gray-500">
-                  Showing {(currentPage - 1) * 12 + 1} to {Math.min(currentPage * 12, total)} of {total}
+            {/* Infinite scroll sentinel and loading indicator */}
+            {!isLoading && submissions.length > 0 && (
+              <div className="mt-6">
+                <p className="text-sm text-gray-500 text-center mb-4">
+                  Showing {submissions.length} of {total}
                 </p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
+                {/* Sentinel element for intersection observer */}
+                <div ref={sentinelRef} className="h-4" />
+                {isLoadingMore && (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                  </div>
+                )}
+                {!hasMore && submissions.length > 0 && (
+                  <p className="text-sm text-gray-400 text-center py-2">
+                    No more submissions
+                  </p>
+                )}
               </div>
             )}
           </TabsContent>
@@ -581,25 +637,28 @@ const AdminCommunity: React.FC = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-category">Category</Label>
-              <Select value={editCategory} onValueChange={setEditCategory}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-                <SelectContent position="popper" className="z-[9999]">
-                  {Object.entries(COMMUNITY_CATEGORIES).map(([key, cat]) => (
-                    <SelectItem key={key} value={key}>
-                      <span className="flex items-center gap-2">
-                        <span
-                          className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: cat.color }}
-                        />
-                        {cat.name}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Category</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(COMMUNITY_CATEGORIES).map(([key, cat]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setEditCategory(key)}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-2 rounded-md border text-sm text-left transition-colors",
+                      editCategory === key
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-input hover:bg-accent hover:text-accent-foreground"
+                    )}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: cat.color }}
+                    />
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-tags">Tags (comma-separated)</Label>

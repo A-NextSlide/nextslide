@@ -35,6 +35,14 @@ const DeveloperAPI: React.FC = () => {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [isPro, setIsPro] = useState(false);
 
+  // Enable scrolling on this page (reset any overflow:hidden from other pages)
+  useEffect(() => {
+    document.documentElement.style.position = '';
+    document.documentElement.style.overflow = '';
+    document.body.style.position = '';
+    document.body.style.overflow = '';
+  }, []);
+
   useEffect(() => {
     if (!authLoading && !user) {
       navigate('/login?redirect=/developers');

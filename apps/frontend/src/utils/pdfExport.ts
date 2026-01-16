@@ -244,7 +244,31 @@ function removeBackdropFilter(element: HTMLElement): void {
 }
 
 /**
- * Capture slide using html2canvas with 2x scale for better font rendering
+ * Fix problematic CSS gradients that cause html2canvas errors
+ */
+function fixGradients(element: HTMLElement): void {
+  const fixEl = (el: HTMLElement) => {
+    const computed = window.getComputedStyle(el);
+    const bg = computed.backgroundImage;
+
+    // Check for gradients with potential issues
+    if (bg && bg.includes('gradient')) {
+      // If gradient contains calc() or variables that might be NaN, replace with solid color
+      if (bg.includes('NaN') || bg.includes('undefined') || bg.includes('calc(')) {
+        const bgColor = computed.backgroundColor;
+        if (bgColor && bgColor !== 'rgba(0, 0, 0, 0)') {
+          el.style.backgroundImage = 'none';
+        }
+      }
+    }
+  };
+
+  element.querySelectorAll('*').forEach(el => fixEl(el as HTMLElement));
+  fixEl(element);
+}
+
+/**
+ * Capture slide using html2canvas
  */
 async function captureSlide(
   slideContainer: HTMLElement,
@@ -274,24 +298,23 @@ async function captureSlide(
     // Force animations to end state
     const restore = forceAnimationsToEndState(iframeBody as HTMLElement);
 
-    // Brief wait for styles to apply
     await new Promise(r => setTimeout(r, 150));
 
     try {
-      // Capture at 2x scale for crisp fonts, then resize down
       const canvas = await html2canvas(iframeBody, {
         width: targetWidth,
         height: targetHeight,
-        scale: 2,
+        scale: 3,
         useCORS: true,
         allowTaint: true,
         logging: false,
         onclone: (clonedDoc) => {
           removeBackdropFilter(clonedDoc.body);
+          fixGradients(clonedDoc.body);
         }
       });
 
-      // Resize to target dimensions for smaller file size
+      // Resize to target dimensions with high quality
       const resizedCanvas = document.createElement('canvas');
       resizedCanvas.width = targetWidth;
       resizedCanvas.height = targetHeight;
@@ -302,32 +325,31 @@ async function captureSlide(
         ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
       }
 
-      return resizedCanvas.toDataURL('image/jpeg', 0.92);
+      return resizedCanvas.toDataURL('image/jpeg', 0.95);
     } finally {
       restore();
     }
   }
 
-  // Non-iframe slide - capture the slide container directly
+  // Non-iframe slide
   const restore = forceAnimationsToEndState(slideContainer);
   await document.fonts.ready;
   await new Promise(r => setTimeout(r, 100));
 
   try {
-    // Capture at 2x scale for crisp fonts
     const canvas = await html2canvas(slideContainer, {
       width: targetWidth,
       height: targetHeight,
-      scale: 2,
+      scale: 3,
       useCORS: true,
       allowTaint: true,
       logging: false,
       onclone: (clonedDoc, clonedEl) => {
         removeBackdropFilter(clonedEl);
+        fixGradients(clonedEl);
       }
     });
 
-    // Resize to target dimensions
     const resizedCanvas = document.createElement('canvas');
     resizedCanvas.width = targetWidth;
     resizedCanvas.height = targetHeight;
@@ -338,7 +360,7 @@ async function captureSlide(
       ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
     }
 
-    return resizedCanvas.toDataURL('image/jpeg', 0.92);
+    return resizedCanvas.toDataURL('image/jpeg', 0.95);
   } finally {
     restore();
   }

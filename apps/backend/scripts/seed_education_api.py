@@ -26,8 +26,8 @@ load_dotenv()
 from services.supabase import get_supabase_client
 
 # Configuration
-API_KEY = "ns_live_md37SyDxLTuSsMzaw0VHHptBbxCkYxLg"
-API_BASE = "http://localhost:9090"  # Local backend API
+API_KEY = "ns_live_J4jcuVdm-HE0zyEFLSm-A4pC6mBJFKZR"
+API_BASE = "http://localhost:9090"  # Local backend (production API has Cloudflare protection)
 USER_ID = "942ccba7-5346-4f99-8189-82284dafb255"
 
 # Educational lessons - specific classes for each age group
@@ -117,9 +117,11 @@ async def create_deck(client: httpx.AsyncClient, topic: str, slides: int = 8) ->
     return response.json()
 
 
-async def poll_status(client: httpx.AsyncClient, deck_id: str, max_wait: int = 600) -> dict:
-    """Poll for deck completion."""
+async def poll_status(client: httpx.AsyncClient, deck_id: str, max_wait: int = 300) -> dict:
+    """Poll for deck completion - checks both API status and actual slides in DB."""
     start = asyncio.get_event_loop().time()
+    supabase = get_supabase_client()
+
     while asyncio.get_event_loop().time() - start < max_wait:
         response = await client.get(
             f"{API_BASE}/v1/decks/{deck_id}/status",
@@ -134,7 +136,20 @@ async def poll_status(client: httpx.AsyncClient, deck_id: str, max_wait: int = 6
         elif status["status"] == "failed":
             raise Exception(f"Generation failed: {status.get('error_message', 'Unknown')}")
 
-        await asyncio.sleep(5)
+        # Also check if slides are actually complete in DB (workaround for status bug)
+        deck = supabase.table('decks').select('slides').eq('uuid', deck_id).single().execute()
+        if deck.data:
+            slides = deck.data.get('slides', [])
+            if slides:
+                completed_slides = sum(1 for s in slides if s.get('components') and len(s.get('components', [])) > 0)
+                if completed_slides == len(slides) and completed_slides > 0:
+                    # All slides have content - manually mark as complete
+                    supabase.table('decks').update({
+                        'status': {'state': 'completed'}
+                    }).eq('uuid', deck_id).execute()
+                    return {'status': 'completed', 'slides_count': len(slides), 'deck_id': deck_id}
+
+        await asyncio.sleep(8)
 
     raise Exception(f"Timeout waiting for deck {deck_id}")
 
@@ -229,7 +244,7 @@ async def main():
     random.shuffle(lessons)
     lessons = lessons[:60]
 
-    print(f"Creating {len(lessons)} lessons (20 parallel)")
+    print(f"Creating {len(lessons)} lessons (3 parallel - API limit)")
     print("-" * 70)
 
     success = 0
@@ -245,7 +260,7 @@ async def main():
             else:
                 errors += 1
 
-    BATCH_SIZE = 20
+    BATCH_SIZE = 3  # API concurrent limit is 3
 
     async with httpx.AsyncClient() as client:
         for batch_start in range(0, len(lessons), BATCH_SIZE):
