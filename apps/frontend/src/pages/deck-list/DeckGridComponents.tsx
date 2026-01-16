@@ -167,8 +167,8 @@ export const VirtualizedDeckGrid = React.memo(({
   }, [safeDecks.length]);
 
   // Mobile browsers crash with too many iframes
-  // Set to 0 = no full thumbnails on mobile, just background + title (safest)
-  const MAX_UPGRADED_ON_MOBILE = 0;
+  // Limit to 2 upgraded thumbnails at a time
+  const MAX_UPGRADED_ON_MOBILE = 2;
 
   useEffect(() => {
     // Progressive upgrade needed on iOS and mobile
