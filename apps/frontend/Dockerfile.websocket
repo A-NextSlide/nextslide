@@ -6,7 +6,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production
+# --legacy-peer-deps needed due to highcharts/jspdf peer dependency mismatch
+RUN npm ci --legacy-peer-deps
 
 # Copy the WebSocket server file
 COPY src/server/WebSocketServer.ts ./server/WebSocketServer.ts

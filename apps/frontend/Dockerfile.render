@@ -7,7 +7,8 @@ COPY package.json ./
 COPY package-lock.json* ./
 
 # Install production dependencies (use npm install if no lock file)
-RUN if [ -f package-lock.json ]; then npm ci --only=production; else npm install --only=production; fi
+# --legacy-peer-deps needed due to highcharts/jspdf peer dependency mismatch
+RUN if [ -f package-lock.json ]; then npm ci --legacy-peer-deps; else npm install --legacy-peer-deps; fi
 
 # Copy the server code
 # Copy agent server (ESM JS)

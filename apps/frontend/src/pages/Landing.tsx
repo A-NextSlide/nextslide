@@ -17,6 +17,7 @@ import CommunityGallery from '@/components/community/CommunityGallery';
 import CommunityBottomSheet from '@/components/community/CommunityBottomSheet';
 import { useTypewriter } from '@/hooks/useTypewriter';
 import LegalModal from '@/components/legal/LegalModal';
+import { BROWSER } from '@/utils/browser';
 
 // Lazy load MiniSlide
 const MiniSlide = lazy(() => import('@/components/deck/MiniSlide'));
@@ -1243,7 +1244,7 @@ const Landing: React.FC = () => {
                             )}
                           >
                             <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
-                              <MiniSlide slide={slide} />
+                              <MiniSlide slide={slide} renderMode={BROWSER.isMobile ? 'background' : 'full'} />
                             </Suspense>
                             <div className="absolute inset-0 z-20" /> {/* Click capture layer - on top */}
                           </div>
@@ -1281,7 +1282,7 @@ const Landing: React.FC = () => {
                         <div className="aspect-[16/9] relative">
                           {deck.slides?.[0] && (
                             <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
-                              <MiniSlide slide={deck.slides[0]} />
+                              <MiniSlide slide={deck.slides[0]} renderMode={BROWSER.isMobile ? 'background' : 'full'} />
                             </Suspense>
                           )}
                           {/* Gradient overlay with text */}
