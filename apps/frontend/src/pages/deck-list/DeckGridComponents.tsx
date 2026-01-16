@@ -166,9 +166,9 @@ export const VirtualizedDeckGrid = React.memo(({
     }
   }, [safeDecks.length]);
 
-  // iOS Safari has a limit on concurrent iframes before crashing
-  // Be very conservative - only 2 upgraded at a time
-  const MAX_UPGRADED_ON_MOBILE = 2;
+  // Mobile browsers crash with too many iframes
+  // Set to 0 = no full thumbnails on mobile, just background + title (safest)
+  const MAX_UPGRADED_ON_MOBILE = 0;
 
   useEffect(() => {
     // Progressive upgrade needed on iOS and mobile
