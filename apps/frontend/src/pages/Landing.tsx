@@ -18,6 +18,13 @@ import CommunityBottomSheet from '@/components/community/CommunityBottomSheet';
 import { useTypewriter } from '@/hooks/useTypewriter';
 import LegalModal from '@/components/legal/LegalModal';
 import { BROWSER } from '@/utils/browser';
+import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
+import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
+import { StaticEditorStateProvider } from '@/context/EditorStateContext';
+import { StaticNavigationProvider } from '@/context/NavigationContext';
+
+// Lazy load Slide component for the main viewer
+const Slide = lazy(() => import('@/components/Slide'));
 
 // Lazy load MiniSlide
 const MiniSlide = lazy(() => import('@/components/deck/MiniSlide'));
@@ -38,13 +45,14 @@ const Landing: React.FC = () => {
   const [activeShowcaseIndex, setActiveShowcaseIndex] = useState(0);
   const [activeDeckSlideIndex, setActiveDeckSlideIndex] = useState(0);
   const [userInteracted, setUserInteracted] = useState(false);
-  const [showcaseFocused, setShowcaseFocused] = useState(false);
   const [showcaseInView, setShowcaseInView] = useState(false);
   const [heroInView, setHeroInView] = useState(true);
   const [scribbleAnimated, setScribbleAnimated] = useState(false);
   const autoScrollRef = useRef<NodeJS.Timeout | null>(null);
   const showcaseRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
+  const mainSlideContainerRef = useRef<HTMLDivElement>(null);
+  const [mainSlideScale, setMainSlideScale] = useState(0.3);
 
 
   // Community bottom sheet
@@ -313,6 +321,49 @@ const Landing: React.FC = () => {
     return () => observer.disconnect();
   }, []);
 
+  // Calculate scale for main slide viewer
+  useEffect(() => {
+    const calculateScale = () => {
+      const container = mainSlideContainerRef.current;
+      if (!container) return;
+
+      const rect = container.getBoundingClientRect();
+      // Account for padding (p-3 = 12px, md:p-6 = 24px on each side)
+      const padding = window.innerWidth >= 768 ? 48 : 24;
+      const availableWidth = rect.width - padding;
+      const availableHeight = rect.height - padding;
+
+      if (availableWidth <= 0 || availableHeight <= 0) return;
+
+      const scaleX = availableWidth / DEFAULT_SLIDE_WIDTH;
+      const scaleY = availableHeight / DEFAULT_SLIDE_HEIGHT;
+      const scale = Math.min(scaleX, scaleY, 1);
+
+      if (Number.isFinite(scale) && scale > 0) {
+        setMainSlideScale(scale);
+      }
+    };
+
+    // Calculate after a brief delay to ensure container is sized
+    const timeoutId = setTimeout(calculateScale, 100);
+    calculateScale();
+
+    let resizeObserver: ResizeObserver | null = null;
+    const container = mainSlideContainerRef.current;
+    if (container && 'ResizeObserver' in window) {
+      resizeObserver = new ResizeObserver(calculateScale);
+      resizeObserver.observe(container);
+    }
+
+    window.addEventListener('resize', calculateScale);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (resizeObserver) resizeObserver.disconnect();
+      window.removeEventListener('resize', calculateScale);
+    };
+  }, [showcaseInView]);
+
   // Auto-rotate showcase (only after section is in view and user hasn't interacted)
   useEffect(() => {
     if (showcaseDecks.length === 0 || userInteracted || !showcaseInView) return;
@@ -335,51 +386,6 @@ const Landing: React.FC = () => {
       autoScrollRef.current = null;
     }
   };
-
-  // Keyboard navigation for showcase section
-  useEffect(() => {
-    if (!showcaseFocused || isLoadingShowcase || showcaseDecks.length === 0) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const currentDeck = showcaseDecks[activeShowcaseIndex];
-      if (!currentDeck) return;
-
-      switch (e.key) {
-        case 'ArrowLeft':
-          e.preventDefault();
-          handleUserInteraction();
-          setActiveDeckSlideIndex(prev => Math.max(0, prev - 1));
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          handleUserInteraction();
-          setActiveDeckSlideIndex(prev => Math.min(currentDeck.slideCount - 1, prev + 1));
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          handleUserInteraction();
-          setActiveShowcaseIndex(prev => {
-            const newIndex = Math.max(0, prev - 1);
-            if (newIndex !== prev) setActiveDeckSlideIndex(0);
-            return newIndex;
-          });
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          handleUserInteraction();
-          setActiveShowcaseIndex(prev => {
-            const newIndex = Math.min(showcaseDecks.length - 1, prev + 1);
-            if (newIndex !== prev) setActiveDeckSlideIndex(0);
-            return newIndex;
-          });
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showcaseFocused, isLoadingShowcase, showcaseDecks, activeShowcaseIndex]);
-
 
   const problems = [
     {
@@ -1096,10 +1102,7 @@ const Landing: React.FC = () => {
       <section id="showcase" className="py-12 px-4 sm:px-8 bg-gradient-to-b from-zinc-900 to-black">
         <div
           ref={showcaseRef}
-          tabIndex={0}
           className="max-w-[1400px] mx-auto outline-none"
-          onFocus={() => setShowcaseFocused(true)}
-          onBlur={() => setShowcaseFocused(false)}
         >
           <div className="text-center mb-6 sm:mb-10 animate-on-scroll opacity-0">
             <h2
@@ -1135,15 +1138,6 @@ const Landing: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
-                    {/* Keyboard hints */}
-                    <div className={cn(
-                      "hidden sm:flex items-center gap-2 text-[10px] text-white/30 transition-opacity duration-200",
-                      showcaseFocused ? "opacity-100" : "opacity-0"
-                    )}>
-                      <kbd className="px-1 py-0.5 bg-white/10 rounded">←</kbd>
-                      <kbd className="px-1 py-0.5 bg-white/10 rounded">→</kbd>
-                      <span>slides</span>
-                    </div>
                     <span className="text-[11px] text-white/40">
                       {activeDeck ? `${activeDeckSlideIndex + 1}/${activeDeck.slideCount}` : ''}
                     </span>
@@ -1153,29 +1147,58 @@ const Landing: React.FC = () => {
                 {/* Content with slide thumbnails underneath - fixed height container */}
                 <div className="flex flex-col h-[420px] sm:h-[520px] lg:h-[560px]">
                   {/* Main slide */}
-                  <div className="flex-1 p-3 md:p-6 flex items-center justify-center min-h-0">
+                  <div
+                    ref={mainSlideContainerRef}
+                    className="flex-1 p-3 md:p-6 flex items-center justify-center min-h-0"
+                  >
                     <div
-                      className="aspect-video w-full max-h-full relative rounded-lg overflow-hidden bg-black group"
-                      onClick={() => {
-                        handleUserInteraction();
-                        showcaseRef.current?.focus();
+                      className="relative rounded-lg overflow-hidden bg-black shadow-2xl group"
+                      style={{
+                        width: `${Math.round(DEFAULT_SLIDE_WIDTH * mainSlideScale)}px`,
+                        height: `${Math.round(DEFAULT_SLIDE_HEIGHT * mainSlideScale)}px`,
                       }}
+                      onClick={() => handleUserInteraction()}
                     >
                       {isLoadingShowcase ? (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
                           <div className="text-white/40 text-xl font-medium mb-2">Loading...</div>
                         </div>
                       ) : activeSlide ? (
-                        <div className="relative z-10 w-full h-full">
+                        BROWSER.isMobile ? (
+                          // Mobile: use lightweight MiniSlide with background-only mode to prevent crashes
                           <Suspense fallback={<div className="w-full h-full bg-zinc-900 animate-pulse" />}>
                             <MiniSlide
                               slide={activeSlide}
-                              interactive
+                              renderMode="background"
                               responsive={true}
                               className="w-full h-full"
                             />
                           </Suspense>
-                        </div>
+                        ) : (
+                          // Desktop: use full Slide component with proper scaling
+                          <div
+                            className="absolute top-0 left-0 origin-top-left"
+                            style={{
+                              width: `${DEFAULT_SLIDE_WIDTH}px`,
+                              height: `${DEFAULT_SLIDE_HEIGHT}px`,
+                              transform: `scale(${mainSlideScale})`,
+                            }}
+                          >
+                            <Suspense fallback={<div className="w-full h-full bg-zinc-900 animate-pulse" />}>
+                              <StaticNavigationProvider>
+                                <StaticEditorStateProvider slideSize={{ width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT }}>
+                                  <StaticActiveSlideProvider slide={activeSlide}>
+                                    <Slide
+                                      slide={activeSlide}
+                                      isActive={true}
+                                      isEditing={false}
+                                    />
+                                  </StaticActiveSlideProvider>
+                                </StaticEditorStateProvider>
+                              </StaticNavigationProvider>
+                            </Suspense>
+                          </div>
+                        )
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
                           <div className="text-white/40 text-xl font-medium mb-2">No slides available</div>
@@ -1190,7 +1213,6 @@ const Landing: React.FC = () => {
                               e.stopPropagation();
                               handleUserInteraction();
                               setActiveDeckSlideIndex(prev => Math.max(0, prev - 1));
-                              showcaseRef.current?.focus();
                             }}
                             disabled={activeDeckSlideIndex === 0}
                             className={cn(
@@ -1207,7 +1229,6 @@ const Landing: React.FC = () => {
                               e.stopPropagation();
                               handleUserInteraction();
                               setActiveDeckSlideIndex(prev => Math.min(activeDeck.slideCount - 1, prev + 1));
-                              showcaseRef.current?.focus();
                             }}
                             disabled={activeDeckSlideIndex === activeDeck.slideCount - 1}
                             className={cn(
@@ -1239,7 +1260,6 @@ const Landing: React.FC = () => {
                               e.stopPropagation();
                               handleUserInteraction();
                               setActiveDeckSlideIndex(idx);
-                              showcaseRef.current?.focus();
                             }}
                             className={cn(
                               "w-[100px] sm:w-[120px] aspect-video rounded overflow-hidden relative cursor-pointer transition-all flex-shrink-0",
@@ -1281,7 +1301,7 @@ const Landing: React.FC = () => {
                     showcaseDecks.map((deck, index) => (
                       <div
                         key={deck.uuid}
-                        onClick={() => { handleUserInteraction(); setActiveShowcaseIndex(index); setActiveDeckSlideIndex(0); showcaseRef.current?.focus(); }}
+                        onClick={() => { handleUserInteraction(); setActiveShowcaseIndex(index); setActiveDeckSlideIndex(0); }}
                         className={cn(
                           "rounded-lg relative cursor-pointer transition-all min-w-[160px] lg:min-w-0 flex-shrink-0 overflow-hidden",
                           index === activeShowcaseIndex

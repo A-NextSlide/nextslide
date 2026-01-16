@@ -15,7 +15,7 @@ RUN if [ -f package-lock.json ]; then npm ci --legacy-peer-deps; else npm instal
 COPY ssr/agent-server.mjs ./agent-server.mjs
 
 # Install TypeScript and ts-node for running TypeScript files
-RUN npm install typescript ts-node @types/node @types/ws yjs ws
+RUN npm install --legacy-peer-deps typescript ts-node @types/node @types/ws yjs ws
 
 # Copy tsconfig
 COPY tsconfig.json ./

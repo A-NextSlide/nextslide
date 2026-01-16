@@ -13,7 +13,7 @@ RUN npm ci --legacy-peer-deps
 COPY src/server/WebSocketServer.ts ./server/WebSocketServer.ts
 
 # Install TypeScript and ts-node for running TypeScript files
-RUN npm install typescript ts-node @types/node @types/ws
+RUN npm install --legacy-peer-deps typescript ts-node @types/node @types/ws
 
 # Copy tsconfig
 COPY tsconfig.json ./
