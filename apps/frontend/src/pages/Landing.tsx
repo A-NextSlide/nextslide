@@ -42,10 +42,6 @@ const Landing: React.FC = () => {
   // Community bottom sheet
   const [showCommunity, setShowCommunity] = useState(false);
 
-  // Hero carousel state
-  const [heroCarouselIndex, setHeroCarouselIndex] = useState(0);
-  const heroCarouselRef = useRef<NodeJS.Timeout | null>(null);
-
   // Typewriter effect for hero input placeholder
   const typewriterText = useTypewriter({
     phrases: [
@@ -75,19 +71,6 @@ const Landing: React.FC = () => {
     };
     loadShowcase();
   }, []);
-
-  // Hero carousel auto-rotation
-  useEffect(() => {
-    if (showcaseDecks.length === 0) return;
-
-    heroCarouselRef.current = setInterval(() => {
-      setHeroCarouselIndex((prev) => (prev + 1) % Math.min(showcaseDecks.length, 6));
-    }, 4000);
-
-    return () => {
-      if (heroCarouselRef.current) clearInterval(heroCarouselRef.current);
-    };
-  }, [showcaseDecks.length]);
 
   // Handle scroll events
   useEffect(() => {
@@ -442,23 +425,22 @@ const Landing: React.FC = () => {
       {/* Hero - Figma-style with slide carousel */}
       <section className="relative min-h-screen overflow-hidden bg-[#FCFBF8] dark:bg-[#0a0a0a]">
         {/* Top headline - bigger, 2 lines */}
-        <div className="relative z-20 pt-24 sm:pt-28 pb-6 text-center animate-on-scroll opacity-0">
+        <div className="relative z-20 pt-28 sm:pt-36 pb-4 text-center animate-on-scroll opacity-0">
           <h1
             className="text-black dark:text-white"
             style={{
               fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
               fontWeight: 900,
-              fontSize: 'clamp(32px, 5vw, 56px)',
-              lineHeight: '1.1',
+              fontSize: 'clamp(28px, 4.5vw, 52px)',
+              lineHeight: '1.15',
               letterSpacing: '-0.02em',
               textTransform: 'uppercase'
             }}
           >
-            <span>Pitch ready</span>
-            <span className="text-[#FF4301]"> & </span>
-            <span>pitch perfect</span>
+            <span>From idea to </span>
+            <span className="text-[#FF4301]">wow</span>
             <br />
-            <span className="text-black/60 dark:text-white/60">in 90 seconds</span>
+            <span className="text-black/50 dark:text-white/50">in 90 seconds</span>
           </h1>
         </div>
 
@@ -490,178 +472,170 @@ const Landing: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                /* Slide positions - creating a Figma-like scattered effect with bigger slides */
+                /* Slide positions - staggered entrance animations, using varied slides */
                 <>
                   {/* Far left - top */}
-                  {showcaseDecks[0]?.slides?.[0] && (
+                  {showcaseDecks[0]?.slides?.[2] && (
                     <div
-                      className={cn(
-                        "absolute hidden xl:block transition-all duration-1000 ease-out",
-                        heroCarouselIndex === 0 ? "opacity-100 scale-100" : "opacity-70 scale-95"
-                      )}
+                      className="absolute hidden xl:block animate-in fade-in slide-in-from-left-8 duration-700"
                       style={{
-                        left: '-8%',
-                        top: '5%',
-                        width: 'clamp(220px, 22vw, 340px)',
-                        transform: 'rotate(-8deg)',
+                        left: '-6%',
+                        top: '8%',
+                        width: 'clamp(240px, 24vw, 380px)',
+                        transform: 'rotate(-6deg)',
+                        animationDelay: '100ms',
+                        animationFillMode: 'backwards',
                       }}
                     >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10">
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
                         <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[0].slides[0]} />
+                          <MiniSlide slide={showcaseDecks[0].slides[2]} />
                         </Suspense>
                       </div>
                     </div>
                   )}
 
                   {/* Left side - middle */}
-                  {showcaseDecks[1]?.slides?.[0] && (
+                  {showcaseDecks[1]?.slides?.[1] && (
                     <div
-                      className={cn(
-                        "absolute hidden lg:block transition-all duration-1000 ease-out",
-                        heroCarouselIndex === 1 ? "opacity-100 scale-100" : "opacity-80 scale-95"
-                      )}
+                      className="absolute hidden lg:block animate-in fade-in slide-in-from-left-8 duration-700"
                       style={{
-                        left: '0%',
-                        top: '28%',
-                        width: 'clamp(260px, 26vw, 400px)',
-                        transform: 'rotate(-4deg)',
+                        left: '2%',
+                        top: '32%',
+                        width: 'clamp(280px, 28vw, 420px)',
+                        transform: 'rotate(-3deg)',
+                        animationDelay: '250ms',
+                        animationFillMode: 'backwards',
                       }}
                     >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10">
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
                         <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[1].slides[0]} />
+                          <MiniSlide slide={showcaseDecks[1].slides[1]} />
                         </Suspense>
                       </div>
                     </div>
                   )}
 
                   {/* Left bottom */}
-                  {showcaseDecks[2]?.slides?.[0] && (
+                  {showcaseDecks[2]?.slides?.[3] && (
                     <div
-                      className={cn(
-                        "absolute hidden md:block transition-all duration-1000 ease-out",
-                        heroCarouselIndex === 2 ? "opacity-100 scale-100" : "opacity-60 scale-95"
-                      )}
+                      className="absolute hidden md:block animate-in fade-in slide-in-from-bottom-8 duration-700"
                       style={{
-                        left: '-2%',
-                        bottom: '2%',
-                        width: 'clamp(200px, 20vw, 300px)',
-                        transform: 'rotate(5deg)',
+                        left: '-4%',
+                        bottom: '0%',
+                        width: 'clamp(220px, 22vw, 340px)',
+                        transform: 'rotate(4deg)',
+                        animationDelay: '400ms',
+                        animationFillMode: 'backwards',
                       }}
                     >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/25 ring-1 ring-black/10">
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/25 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
                         <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[2].slides[0]} />
+                          <MiniSlide slide={showcaseDecks[2].slides[3]} />
                         </Suspense>
                       </div>
                     </div>
                   )}
 
                   {/* Far right - top */}
-                  {showcaseDecks[3]?.slides?.[0] && (
+                  {showcaseDecks[3]?.slides?.[2] && (
                     <div
-                      className={cn(
-                        "absolute hidden xl:block transition-all duration-1000 ease-out",
-                        heroCarouselIndex === 3 ? "opacity-100 scale-100" : "opacity-70 scale-95"
-                      )}
+                      className="absolute hidden xl:block animate-in fade-in slide-in-from-right-8 duration-700"
                       style={{
-                        right: '-8%',
-                        top: '3%',
-                        width: 'clamp(220px, 22vw, 340px)',
-                        transform: 'rotate(7deg)',
+                        right: '-6%',
+                        top: '5%',
+                        width: 'clamp(240px, 24vw, 380px)',
+                        transform: 'rotate(5deg)',
+                        animationDelay: '150ms',
+                        animationFillMode: 'backwards',
                       }}
                     >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10">
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
                         <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[3].slides[0]} />
+                          <MiniSlide slide={showcaseDecks[3].slides[2]} />
                         </Suspense>
                       </div>
                     </div>
                   )}
 
                   {/* Right side - middle */}
-                  {showcaseDecks[4]?.slides?.[0] && (
+                  {showcaseDecks[4]?.slides?.[1] && (
                     <div
-                      className={cn(
-                        "absolute hidden lg:block transition-all duration-1000 ease-out",
-                        heroCarouselIndex === 4 ? "opacity-100 scale-100" : "opacity-80 scale-95"
-                      )}
+                      className="absolute hidden lg:block animate-in fade-in slide-in-from-right-8 duration-700"
                       style={{
-                        right: '0%',
-                        top: '25%',
-                        width: 'clamp(260px, 26vw, 400px)',
-                        transform: 'rotate(5deg)',
+                        right: '2%',
+                        top: '28%',
+                        width: 'clamp(280px, 28vw, 420px)',
+                        transform: 'rotate(4deg)',
+                        animationDelay: '300ms',
+                        animationFillMode: 'backwards',
                       }}
                     >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10">
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
                         <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[4].slides[0]} />
+                          <MiniSlide slide={showcaseDecks[4].slides[1]} />
                         </Suspense>
                       </div>
                     </div>
                   )}
 
                   {/* Right bottom */}
-                  {showcaseDecks[5]?.slides?.[0] && (
+                  {showcaseDecks[5]?.slides?.[2] && (
                     <div
-                      className={cn(
-                        "absolute hidden md:block transition-all duration-1000 ease-out",
-                        heroCarouselIndex === 5 ? "opacity-100 scale-100" : "opacity-60 scale-95"
-                      )}
+                      className="absolute hidden md:block animate-in fade-in slide-in-from-bottom-8 duration-700"
                       style={{
-                        right: '-2%',
-                        bottom: '5%',
+                        right: '-4%',
+                        bottom: '3%',
+                        width: 'clamp(220px, 22vw, 340px)',
+                        transform: 'rotate(-5deg)',
+                        animationDelay: '450ms',
+                        animationFillMode: 'backwards',
+                      }}
+                    >
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/25 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
+                          <MiniSlide slide={showcaseDecks[5].slides[2]} />
+                        </Suspense>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Additional inner slides */}
+                  {showcaseDecks[0]?.slides?.[4] && (
+                    <div
+                      className="absolute hidden lg:block animate-in fade-in slide-in-from-bottom-4 duration-700"
+                      style={{
+                        left: '20%',
+                        bottom: '6%',
                         width: 'clamp(200px, 20vw, 300px)',
-                        transform: 'rotate(-6deg)',
+                        transform: 'rotate(-1deg)',
+                        animationDelay: '550ms',
+                        animationFillMode: 'backwards',
                       }}
                     >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/25 ring-1 ring-black/10">
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/20 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
                         <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[5].slides[0]} />
+                          <MiniSlide slide={showcaseDecks[0].slides[4]} />
                         </Suspense>
                       </div>
                     </div>
                   )}
 
-                  {/* Additional slides for more variety - using different slides from same decks */}
-                  {showcaseDecks[0]?.slides?.[1] && (
+                  {showcaseDecks[3]?.slides?.[4] && (
                     <div
-                      className={cn(
-                        "absolute hidden lg:block transition-all duration-1000 ease-out",
-                        heroCarouselIndex === 0 ? "opacity-90 scale-100" : "opacity-50 scale-95"
-                      )}
+                      className="absolute hidden lg:block animate-in fade-in slide-in-from-bottom-4 duration-700"
                       style={{
-                        left: '18%',
+                        right: '22%',
                         bottom: '8%',
-                        width: 'clamp(180px, 18vw, 280px)',
-                        transform: 'rotate(-2deg)',
+                        width: 'clamp(200px, 20vw, 300px)',
+                        transform: 'rotate(2deg)',
+                        animationDelay: '600ms',
+                        animationFillMode: 'backwards',
                       }}
                     >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/20 ring-1 ring-black/10">
+                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/20 ring-1 ring-black/10 hover:scale-105 transition-transform duration-500">
                         <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[0].slides[1]} />
-                        </Suspense>
-                      </div>
-                    </div>
-                  )}
-
-                  {showcaseDecks[3]?.slides?.[1] && (
-                    <div
-                      className={cn(
-                        "absolute hidden lg:block transition-all duration-1000 ease-out",
-                        heroCarouselIndex === 3 ? "opacity-90 scale-100" : "opacity-50 scale-95"
-                      )}
-                      style={{
-                        right: '20%',
-                        bottom: '10%',
-                        width: 'clamp(180px, 18vw, 280px)',
-                        transform: 'rotate(3deg)',
-                      }}
-                    >
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl shadow-black/20 ring-1 ring-black/10">
-                        <Suspense fallback={<div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={showcaseDecks[3].slides[1]} />
+                          <MiniSlide slide={showcaseDecks[3].slides[4]} />
                         </Suspense>
                       </div>
                     </div>
@@ -671,9 +645,9 @@ const Landing: React.FC = () => {
             </div>
           </div>
 
-          {/* Centered floating input box - overlaid on slides */}
-          <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
-            <div className="pointer-events-auto w-full max-w-2xl px-4 sm:px-8 animate-on-scroll opacity-0" style={{ transitionDelay: '200ms' }}>
+          {/* Centered floating input box - overlaid on slides, positioned higher */}
+          <div className="absolute inset-0 flex items-start justify-center z-20 pointer-events-none pt-[12%] sm:pt-[10%]">
+            <div className="pointer-events-auto w-full max-w-2xl px-4 sm:px-8 animate-in fade-in slide-in-from-bottom-6 duration-700" style={{ animationDelay: '400ms', animationFillMode: 'backwards' }}>
               {/* The prompt card */}
               <div className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-2xl shadow-black/20 dark:shadow-black/50 border border-black/5 dark:border-white/10 p-6 sm:p-8">
                 {/* Input with typewriter effect */}
@@ -687,10 +661,12 @@ const Landing: React.FC = () => {
 
                 {/* Action button */}
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 text-sm text-black/40 dark:text-white/40">
-                    <span className="hidden sm:inline">Type anything</span>
+                  <div className="flex items-center gap-3 text-xs sm:text-sm text-black/40 dark:text-white/40">
+                    <span className="hidden sm:inline">Teach a class</span>
                     <span className="hidden sm:inline">•</span>
-                    <span>AI-powered</span>
+                    <span className="hidden sm:inline">Nail your pitch</span>
+                    <span className="hidden sm:inline">•</span>
+                    <span>Ship faster</span>
                   </div>
                   <Button
                     size="lg"
@@ -759,7 +735,7 @@ const Landing: React.FC = () => {
           <div className="animate-on-scroll opacity-0">
             <div className="flex flex-col lg:flex-row gap-4 items-start justify-center">
               {/* Main slide viewer */}
-              <div className="rounded-2xl overflow-hidden bg-zinc-900/80 border border-white/10 w-full lg:w-auto lg:max-w-[900px]">
+              <div className="rounded-2xl overflow-hidden bg-zinc-900/80 border border-white/10 w-full lg:w-[750px] lg:flex-shrink-0">
                 {/* Top bar */}
                 <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-white/5">
                   <div className="flex items-center gap-2">
