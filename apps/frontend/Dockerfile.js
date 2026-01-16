@@ -7,7 +7,7 @@ COPY package.json ./
 COPY package-lock.json* ./
 
 # Install only ws package which is needed for the server
-RUN npm install ws@8.18.1
+RUN npm install --legacy-peer-deps ws@8.18.1
 
 # Copy the server code
 COPY server.js ./server.js

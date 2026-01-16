@@ -708,7 +708,8 @@ const Landing: React.FC = () => {
                   ))}
                 </>
               )}
-              {!isLoadingShowcase && (showcaseDecks.length > 0 || communityDecks.length > 0) && (
+              {/* Only render hero slides when in view - unmount when scrolled past to save memory */}
+              {!isLoadingShowcase && heroInView && (showcaseDecks.length > 0 || communityDecks.length > 0) && (
                 <>
                   {/* ====== LEFT SIDE ====== */}
 
@@ -1159,10 +1160,14 @@ const Landing: React.FC = () => {
                       }}
                       onClick={() => handleUserInteraction()}
                     >
+                      {/* Only render slide content when showcase is in view - unmount when scrolled past */}
                       {isLoadingShowcase ? (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
                           <div className="text-white/40 text-xl font-medium mb-2">Loading...</div>
                         </div>
+                      ) : !showcaseInView ? (
+                        // Placeholder when scrolled out of view
+                        <div className="w-full h-full bg-zinc-900" />
                       ) : activeSlide ? (
                         BROWSER.isMobile ? (
                           // Mobile: use lightweight MiniSlide with background-only mode to prevent crashes
@@ -1252,6 +1257,11 @@ const Landing: React.FC = () => {
                         [...Array(5)].map((_, idx) => (
                           <div key={idx} className="w-[100px] sm:w-[120px] aspect-video rounded overflow-hidden relative bg-white/5 animate-pulse flex-shrink-0" />
                         ))
+                      ) : !showcaseInView ? (
+                        // Placeholder thumbnails when scrolled out of view
+                        [...Array(Math.min(5, activeDeck?.slideCount || 5))].map((_, idx) => (
+                          <div key={idx} className="w-[100px] sm:w-[120px] aspect-video rounded overflow-hidden relative bg-white/5 flex-shrink-0" />
+                        ))
                       ) : (
                         activeDeck?.slides?.map((slide, idx) => (
                           <div
@@ -1295,6 +1305,13 @@ const Landing: React.FC = () => {
                     [...Array(6)].map((_, index) => (
                       <div key={index} className="rounded-lg relative ring-1 ring-white/5 min-w-[160px] lg:min-w-0 flex-shrink-0">
                         <div className="aspect-[16/9] relative bg-white/5 animate-pulse rounded-lg" />
+                      </div>
+                    ))
+                  ) : !showcaseInView ? (
+                    // Placeholder gallery items when scrolled out of view
+                    [...Array(showcaseDecks.length || 6)].map((_, index) => (
+                      <div key={index} className="rounded-lg relative ring-1 ring-white/5 min-w-[160px] lg:min-w-0 flex-shrink-0">
+                        <div className="aspect-[16/9] relative bg-white/5 rounded-lg" />
                       </div>
                     ))
                   ) : (
