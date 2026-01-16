@@ -170,6 +170,13 @@ export const VirtualizedDeckGrid = React.memo(({
   // Limit to 2 upgraded thumbnails at a time
   const MAX_UPGRADED_ON_MOBILE = 2;
 
+  // Debug: Log mobile detection once
+  const hasLoggedRef = useRef(false);
+  if (!hasLoggedRef.current) {
+    hasLoggedRef.current = true;
+    console.log(`[DeckGrid] BROWSER.isMobile=${BROWSER.isMobile} isIOS=${BROWSER.isIOS} isChrome=${BROWSER.isChrome} isAndroid=${BROWSER.isAndroid}`);
+  }
+
   useEffect(() => {
     // Progressive upgrade needed on iOS and mobile
     if (!BROWSER.isMobile && !isMobile) return;
