@@ -1716,7 +1716,7 @@ const SlideEditorContent: React.FC = () => {
           >
             {/* Slide area takes full height - chat overlays on top */}
             <div className="absolute inset-0 flex flex-col">
-              <div className="flex-1 min-h-0 p-2">
+              <div className="flex-1 min-h-0 p-2 pb-8">
                 <DeckPanel
                   deckStatus={deckStatus}
                   isNewDeck={isNewDeck}
@@ -1729,7 +1729,7 @@ const SlideEditorContent: React.FC = () => {
 
             {/* Chat panel overlays on top of slides */}
             <div
-              className={`absolute inset-x-0 bottom-0 z-20 flex flex-col border-t border-border bg-background/98 backdrop-blur-md shadow-2xl ${isChatDragging ? 'cursor-row-resize' : ''}`}
+              className={`absolute inset-x-0 bottom-0 z-20 flex flex-col border-t border-border bg-white dark:bg-zinc-900 shadow-2xl ${isChatDragging ? 'cursor-row-resize' : ''}`}
               style={{ height: `${mobileChatHeight || minMobileChatHeight}px` }}
             >
               <div className="relative flex items-center justify-center h-8">
@@ -1747,9 +1747,9 @@ const SlideEditorContent: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleMobileChatHintDismiss}
-                    className="absolute -top-14 left-1/2 -translate-x-1/2 px-3 py-2 rounded-lg bg-black/80 text-white text-[11px] leading-tight shadow-lg backdrop-blur-sm"
+                    className="absolute top-1/2 -translate-y-1/2 left-[calc(50%+40px)] px-2.5 py-1.5 rounded-full bg-[#FF4301] text-white text-[10px] font-medium shadow-lg whitespace-nowrap"
                   >
-                    Drag the knob to resize chat. Swipe down to reveal slides.
+                    drag up or down ↕
                   </button>
                 )}
               </div>
