@@ -343,12 +343,41 @@ def search_images(
         logger.error(f"[IMAGES] Search error: {e}")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
+    # If no CustomComponent, check for standalone Image component
+    image_component_id = None
+    if not component_id and current_slide:
+        for c in current_slide.get("components", []):
+            if isinstance(c, dict):
+                comp_type = c.get("type", "")
+                # Case-insensitive match for Image component
+                if comp_type.lower() == "image":
+                    image_component_id = c.get("id")
+                    logger.info(f"[IMAGES] Found standalone Image component: {image_component_id}")
+                    break
+
+    # Handle standalone Image component - just update props.src directly
+    if image_component_id and not component_id:
+        logger.info(f"[IMAGES] Updating standalone Image component {image_component_id} with new URL")
+        return DeckDiff(DeckDiffBase(
+            slides_to_update=[
+                SlideDiffBase(
+                    slide_id=slide_id,
+                    components_to_update=[
+                        ComponentDiffBase(
+                            id=image_component_id,
+                            props={"src": new_url}
+                        )
+                    ]
+                )
+            ]
+        ))
+
     # Find and replace in component
     if not component_id:
         # Provide helpful error with what components ARE available
         if current_slide:
             available = [f"{c.get('type')}:{c.get('id')}" for c in current_slide.get("components", []) if isinstance(c, dict)]
-            logger.warning(f"[IMAGES] No CustomComponent found. Available components: {available}")
+            logger.warning(f"[IMAGES] No CustomComponent or Image component found. Available components: {available}")
         else:
             logger.warning("[IMAGES] No component to update - current_slide is empty")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
@@ -528,12 +557,47 @@ def replace_image_from_search(
                 logger.info(f"[REPLACE_IMAGE] Auto-detected CustomComponent: {component_id}")
                 break
 
+    # If no CustomComponent, check for standalone Image component
+    image_component_id = None
+    if not component_id and current_slide:
+        for c in current_slide.get("components", []):
+            if isinstance(c, dict) and c.get("type", "").lower() == "image":
+                image_component_id = c.get("id")
+                logger.info(f"[REPLACE_IMAGE] Found standalone Image component: {image_component_id}")
+                break
+
+    # Upload to Supabase first (needed for both paths)
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    image_url, _ = loop.run_until_complete(_upload_to_supabase(image_url))
+
+    # Handle standalone Image component - just update props.src directly
+    if image_component_id and not component_id:
+        logger.info(f"[REPLACE_IMAGE] Updating standalone Image component {image_component_id}")
+        return DeckDiff(DeckDiffBase(
+            slides_to_update=[
+                SlideDiffBase(
+                    slide_id=slide_id,
+                    components_to_update=[
+                        ComponentDiffBase(
+                            id=image_component_id,
+                            props={"src": image_url}
+                        )
+                    ]
+                )
+            ]
+        ))
+
     if not component_id:
         if current_slide:
             available = [f"{c.get('type')}:{c.get('id')}" for c in current_slide.get("components", []) if isinstance(c, dict)]
-            logger.warning(f"[REPLACE_IMAGE] No CustomComponent found. Available: {available}")
+            logger.warning(f"[REPLACE_IMAGE] No CustomComponent or Image component found. Available: {available}")
         else:
-            logger.warning("[REPLACE_IMAGE] No CustomComponent found - current_slide is empty")
+            logger.warning("[REPLACE_IMAGE] No component found - current_slide is empty")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
     # Find target component
@@ -558,15 +622,6 @@ def replace_image_from_search(
     if not html:
         logger.warning("[REPLACE_IMAGE] No HTML in CustomComponent")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-    # Upload to Supabase if needed
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    image_url, _ = loop.run_until_complete(_upload_to_supabase(image_url))
 
     # Find URL to replace
     if not old_url:
@@ -654,14 +709,96 @@ def edit_image_with_ai(
                 logger.info(f"[EDIT_IMAGE] Auto-detected CustomComponent: {component_id}")
                 break
 
-    if not component_id:
+    # If no CustomComponent, check for standalone Image component
+    image_component_id = None
+    if not component_id and current_slide:
+        for c in current_slide.get("components", []):
+            if isinstance(c, dict) and c.get("type", "").lower() == "image":
+                image_component_id = c.get("id")
+                logger.info(f"[EDIT_IMAGE] Found standalone Image component: {image_component_id}")
+                break
+
+    if not component_id and not image_component_id:
         if current_slide:
             available = [f"{c.get('type')}:{c.get('id')}" for c in current_slide.get("components", []) if isinstance(c, dict)]
-            logger.warning(f"[EDIT_IMAGE] No CustomComponent found. Available: {available}")
+            logger.warning(f"[EDIT_IMAGE] No CustomComponent or Image component found. Available: {available}")
         else:
-            logger.warning("[EDIT_IMAGE] No CustomComponent found - current_slide is empty")
+            logger.warning("[EDIT_IMAGE] No component found - current_slide is empty")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    # Handle standalone Image component
+    if image_component_id and not component_id:
+        # Find the Image component
+        image_component = None
+        for c in current_slide.get("components", []):
+            if isinstance(c, dict) and c.get("id") == image_component_id:
+                image_component = c
+                break
+
+        if not image_component:
+            logger.warning(f"[EDIT_IMAGE] Image component {image_component_id} not found")
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+        old_url = image_component.get("props", {}).get("src", "")
+        if not old_url:
+            logger.warning("[EDIT_IMAGE] Image component has no src")
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+        # Download, edit, upload
+        async def process_image():
+            from services.gemini_image_service import GeminiImageService
+            from services.image_storage_service import ImageStorageService
+
+            gemini = GeminiImageService()
+            if not gemini.is_available:
+                logger.error("[EDIT_IMAGE] Gemini not available")
+                return None
+
+            img_bytes = await _download_image(old_url)
+            if not img_bytes:
+                return None
+
+            result = await gemini.edit_image(instruction, img_bytes)
+            if "error" in result:
+                logger.error(f"[EDIT_IMAGE] Gemini error: {result['error']}")
+                return None
+
+            b64_data = result.get("b64_json")
+            if not b64_data:
+                return None
+
+            async with ImageStorageService() as storage:
+                import uuid
+                filename = f"ai-edit-{uuid.uuid4().hex[:8]}.png"
+                upload = await storage.upload_image_from_base64(b64_data, filename, "image/png")
+                if "error" in upload:
+                    return None
+                return upload.get("url")
+
+        new_url = loop.run_until_complete(process_image())
+        if not new_url:
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+        logger.info(f"[EDIT_IMAGE] Image component success: {old_url[:40]}... -> {new_url[:40]}...")
+
+        return DeckDiff(DeckDiffBase(
+            slides_to_update=[
+                SlideDiffBase(
+                    slide_id=slide_id,
+                    components_to_update=[
+                        ComponentDiffBase(id=image_component_id, props={"src": new_url})
+                    ]
+                )
+            ]
+        ))
+
+    # Handle CustomComponent
     target_component = None
     for c in current_slide.get("components", []):
         if isinstance(c, dict) and c.get("id") == component_id:
@@ -671,12 +808,6 @@ def edit_image_with_ai(
     if not target_component:
         logger.warning(f"[EDIT_IMAGE] Component {component_id} not found in slide")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
 
     comp_type = target_component.get("type", "")
     props = target_component.get("props", {})

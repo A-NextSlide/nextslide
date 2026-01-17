@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Search,
   X,
@@ -281,16 +280,14 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
 
       {/* Loading State */}
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {[...Array(maxItems || 8)].map((_, i) => (
-            <div key={i} className="rounded-lg overflow-hidden">
-              <Skeleton className="aspect-video w-full" />
-              <div className="p-3 space-y-2">
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-3 w-1/2" />
-              </div>
-            </div>
-          ))}
+        <div className="flex flex-col items-center justify-center py-20">
+          <div className="relative">
+            <div className="absolute inset-0 bg-orange-500/20 rounded-full blur-xl animate-pulse" />
+            <Loader2 className="relative h-8 w-8 text-orange-500 animate-spin" />
+          </div>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-6">
+            Loading community slides...
+          </p>
         </div>
       ) : decks.length === 0 ? (
         <div className="py-16 text-center">

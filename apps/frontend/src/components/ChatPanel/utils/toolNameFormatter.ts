@@ -1,11 +1,5 @@
 const FUN_TOOL_NAMES: Record<string, string[]> = {
-  // Progress/status events
-  'agent.analyzing': [
-    'Understanding your request',
-    'Analyzing what you need',
-    'Looking at the details',
-    'Figuring out the best approach',
-  ],
+  // Progress/status events (agent.analyzing removed - was too noisy)
   'agent.verifying': [
     'Verifying the code',
     'Checking everything works',

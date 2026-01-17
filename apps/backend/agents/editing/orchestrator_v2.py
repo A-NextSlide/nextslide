@@ -339,8 +339,18 @@ IMAGE REPLACEMENT (search_images):
 - For "replace images", "fix images", "new images", "find a different image" → call search_images
 - DON'T call view_component first - you can see the slide from the screenshot (if included)
 - Call search_images ONCE per image you need to replace
-- Use target_image to describe WHICH image to replace (e.g., "logo", "hero", "ingest section")
-- Only use image_index if user explicitly says "1st image", "2nd image", etc.
+
+🎯 HOW TO IDENTIFY WHICH IMAGE (use screenshot!):
+- LOOK at the screenshot to COUNT images left-to-right, top-to-bottom (0-indexed)
+- If user describes image VISUALLY ("the older woman", "guy in blue shirt", "the smiling one"):
+  → USE THE SCREENSHOT to identify which image they mean
+  → Count its position: first=0, second=1, third=2, etc.
+  → Pass image_index=N to target that specific image
+- If user says ordinal ("1st image", "third photo"): → Use image_index directly
+- If user describes by CONTENT ("the logo", "hero image"): → Use target_image
+- Example: User sees 6 headshots and says "replace the older woman's photo"
+  → Look at screenshot, identify she's the FIRST image (position 0)
+  → Use: {"query": "professional headshot", "image_index": 0}
 
 AI IMAGE EDITING (edit_image_with_ai) - VERY SPECIFIC USE CASE:
 ⚠️ ONLY use edit_image_with_ai when user explicitly asks to MODIFY/EDIT an EXISTING IMAGE with AI:
@@ -945,19 +955,23 @@ SCOPE:
    - ⚠️ CRITICAL: This tool replaces ONE image per call.
    - Args: { "query": str, "image_index": optional int, "target_image": optional str }
 
-   🎯 HOW TO TARGET THE RIGHT IMAGE:
+   🎯 HOW TO TARGET THE RIGHT IMAGE (use screenshot!):
 
-   METHOD 1 - User describes image by CONTENT (PREFERRED):
-   - User says: "replace the ingest image with a cat"
-   - Use: {"query": "cat", "target_image": "ingest"}
-   - The tool's AI will match "ingest" to the correct image based on alt text and context
+   METHOD 1 - User describes image VISUALLY (by appearance):
+   - User says: "replace the older woman's photo" or "the guy in blue shirt"
+   - LOOK at the screenshot, COUNT images left-to-right (0-indexed)
+   - Use: {"query": "professional headshot", "image_index": 0}  // She's first in row
 
    METHOD 2 - User says ORDINAL position (first, second, 3rd, etc.):
    - User says: "replace the 2nd image with a dog"
    - Use: {"query": "dog", "image_index": 1}  // 0-indexed, so 2nd = index 1
 
-   ⚠️ DO NOT GUESS image_index! If user describes the image by content ("logo", "hero image",
-   "the product photo", "ingest section"), use target_image instead.
+   METHOD 3 - User describes image by CONTENT/ROLE:
+   - User says: "replace the ingest image with a cat" or "change the logo"
+   - Use: {"query": "cat", "target_image": "ingest"}
+   - The tool's AI will match "ingest" to the correct image based on alt text
+
+   ⚠️ For VISUAL descriptions, use the screenshot to determine image_index!
 
    🎯 KEEP QUERIES SHORT (2-4 words):
    - For companies: "Tesla car", "Microsoft logo", "Amazon warehouse"
@@ -1112,13 +1126,6 @@ def orchestrate(
         {"has_marker": "[USER_SELECTIONS]" in (user_message or ""), "selection_count": len(selections), "msg_len": len(user_message or ""), "clean_len": len(clean_message or "")},
         runId="pre-fix",
     )
-
-    # Emit analyzing event so frontend shows "Analyzing your request..."
-    if event_cb:
-        try:
-            event_cb("agent.analyzing", {"step": "understanding_request", "message": clean_message[:100]})
-        except Exception:
-            pass
 
     # Build context (include selection info)
     context = build_context(deck_data, current_slide, attachments, chat_history, selections=selections)
@@ -1535,6 +1542,34 @@ Respond with the tool_calls to execute."""
                     if isinstance(tool_diff, dict):
                         logger.warning(f"[ORCHESTRATOR] Tool {tool_name} returned dict instead of DeckDiff, skipping merge")
                     else:
+                        # CRITICAL: Check if editing tool returned empty diff (no actual changes made)
+                        # This prevents the model from claiming success when nothing was modified
+                        editing_tools = {
+                            "search_images", "replace_image", "edit_image_with_ai",
+                            "edit_slide", "custom_component_rewrite", "custom_component_str_replace",
+                            "create_slide", "delete_slide", "duplicate_slide",
+                            "component_prop_update", "edit_component", "create_component", "delete_component"
+                        }
+                        if tool_name in editing_tools and _is_empty_deckdiff(tool_diff):
+                            logger.warning(f"[ORCHESTRATOR] ⚠️ Tool {tool_name} returned EMPTY diff - no changes made!")
+                            # Add feedback observation so model knows the operation failed
+                            observations.append({
+                                "tool": tool_name,
+                                "data": {
+                                    "status": "no_changes",
+                                    "message": f"Tool {tool_name} completed but made NO changes. The slide was not modified.",
+                                    "reason": "The tool could not find a suitable component to edit, or the edit operation failed."
+                                }
+                            })
+                            # Don't count this as a successful edit summary
+                            summaries.append(f"⚠️ {tool_name}: No changes made - operation did not modify the slide")
+                            if event_cb:
+                                try:
+                                    event_cb("agent.tool.finish", {"tool": tool_name, "summary": f"No changes made", "warning": True})
+                                except Exception:
+                                    pass
+                            continue  # Skip the rest of the processing for this tool
+
                         # Log before merge for debugging
                         try:
                             inner = getattr(tool_diff, 'deck_diff', None)

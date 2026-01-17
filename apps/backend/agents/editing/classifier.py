@@ -86,7 +86,11 @@ CATEGORIES:
 CONTEXT REQUIREMENTS:
 
 - needs_deck: Does this need current slide/component data? (false for pure chat)
-- needs_screenshot: Does this need to SEE the slide? (visual issues, layout, design feedback)
+- needs_screenshot: Does this need to SEE the slide? Set TRUE for:
+  * Visual issues, layout, design feedback
+  * Image replacement when user describes the image visually ("the older woman", "guy in blue")
+  * ANY image-related edit ("replace the image", "change the photo", "fix the picture")
+  * Multiple similar images where position matters ("3rd image", "first photo")
 - needs_history: Does this need prior messages? (references like "make it bigger", "do that again", "the previous one")
 
 RESPOND WITH JSON:
@@ -112,6 +116,10 @@ EXAMPLES:
 "redesign this with our brand colors" → {"type": "complex_edit", "needs_deck": true, "needs_screenshot": true, "needs_history": false, "confidence": 0.95, "reasoning": "full redesign requires visual context"}
 
 "something looks off" → {"type": "complex_edit", "needs_deck": true, "needs_screenshot": true, "needs_history": false, "confidence": 0.9, "reasoning": "vague visual issue needs screenshot"}
+
+"replace the older woman's photo" → {"type": "simple_edit", "needs_deck": true, "needs_screenshot": true, "needs_history": false, "confidence": 0.95, "reasoning": "visual image reference needs screenshot to identify which image"}
+
+"replace all the images" → {"type": "complex_edit", "needs_deck": true, "needs_screenshot": true, "needs_history": false, "confidence": 0.9, "reasoning": "multiple images need visual context"}
 
 BE FAST. Default to the simpler category when uncertain."""
 

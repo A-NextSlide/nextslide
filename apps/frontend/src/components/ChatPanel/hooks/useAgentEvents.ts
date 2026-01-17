@@ -411,8 +411,9 @@ export function useAgentEvents({
   }, [appendToolRow, isStyleTool]);
 
   const handleAgentStatusEvent = useCallback((evt: any, source: 'primary' | 'secondary'): boolean => {
-    // Handle new granular status events: analyzing, verifying, verification_warning
-    const statusEvents = ['agent.analyzing', 'agent.verifying', 'agent.verification_warning'];
+    // Handle granular status events: verifying, verification_warning
+    // NOTE: agent.analyzing removed - was too noisy
+    const statusEvents = ['agent.verifying', 'agent.verification_warning'];
     if (!evt?.type || !statusEvents.includes(evt.type)) return false;
 
     const logLabel = source === 'secondary' ? '[ChatPanel] Status event (secondary):' : '[ChatPanel] Status event:';

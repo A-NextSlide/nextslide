@@ -354,17 +354,18 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       }
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
+    // Use capture: true to catch mouse movements before slide content can intercept them
+    window.addEventListener('mousemove', handleMouseMove, { capture: true });
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
     window.addEventListener('touchend', handleTouchEnd, { passive: true });
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
 
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mousemove', handleMouseMove, { capture: true });
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchstart', handleTouchStart, { capture: true } as EventListenerOptions);
       window.removeEventListener('touchend', handleTouchEnd);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
@@ -458,6 +459,26 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Invisible edge trigger zones - these sit above slide content to reliably detect mouse near edges */}
+      {!showThumbnails && (
+        <>
+          {/* Left edge trigger zone - 20% of screen width */}
+          <div
+            className="absolute top-0 left-0 h-full z-[19999]"
+            style={{ width: '20%' }}
+            onMouseEnter={() => setShowControls(true)}
+            onMouseMove={() => setShowControls(true)}
+          />
+          {/* Right edge trigger zone - 20% of screen width */}
+          <div
+            className="absolute top-0 right-0 h-full z-[19999]"
+            style={{ width: '20%' }}
+            onMouseEnter={() => setShowControls(true)}
+            onMouseMove={() => setShowControls(true)}
+          />
+        </>
+      )}
 
       {/* Floating controls overlay */}
       <AnimatePresence>

@@ -436,9 +436,9 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
       <DialogContent
         hideCloseButton
         className="p-0 border-0 bg-transparent shadow-none outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
-        style={{ width: '720px', maxWidth: '95vw' }}
+        style={{ width: '1000px', maxWidth: '95vw' }}
       >
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden shadow-2xl relative" style={{ width: '720px', maxWidth: '100%' }}>
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden shadow-2xl relative" style={{ width: '1000px', maxWidth: '100%' }}>
           {/* Close button */}
           <button
             onClick={() => onOpenChange(false)}
@@ -468,7 +468,7 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
           </DialogHeader>
 
           {/* Content */}
-          <div className="px-6 py-4" style={{ height: '500px' }}>
+          <div className="px-6 py-4" style={{ height: '600px' }}>
             {authLoading ? (
               <div className="flex items-center justify-center h-full">
                 <div className="flex items-center gap-2 text-sm text-zinc-500">
@@ -544,19 +544,15 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
 
                 {/* Grid */}
                 <div className="flex-1 overflow-y-auto">
-                  <div className="grid grid-cols-3 gap-3">
-                    {isFirstLoad && Array.from({ length: 6 }).map((_, i) => (
-                      <div key={i} className="rounded-xl overflow-hidden border border-zinc-200 animate-pulse bg-zinc-50">
-                        <div style={{ aspectRatio: '16 / 9' }} className="bg-zinc-200" />
-                        <div className="p-3 space-y-2">
-                          <div className="h-3 bg-zinc-200 rounded w-3/4" />
-                          <div className="h-2 bg-zinc-100 rounded w-1/2" />
-                        </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {isFirstLoad && Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="rounded-xl overflow-hidden animate-pulse bg-zinc-100 dark:bg-zinc-800">
+                        <div style={{ aspectRatio: '16 / 9' }} className="bg-zinc-200 dark:bg-zinc-700" />
                       </div>
                     ))}
 
                     {!isFirstLoad && files.length === 0 && !isListing && (
-                      <div className="col-span-3 flex flex-col items-center justify-center py-12 text-zinc-400">
+                      <div className="col-span-2 flex flex-col items-center justify-center py-12 text-zinc-400">
                         <Layers className="h-12 w-12 mb-3 opacity-30" />
                         <p className="text-sm">No presentations found</p>
                       </div>
@@ -569,13 +565,14 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
                       return (
                         <div
                           key={f.id}
-                          className={`group rounded-xl overflow-hidden border transition-all ${
+                          className={`group relative rounded-xl overflow-hidden ring-1 transition-all cursor-pointer ${
                             exceedsLimit
-                              ? 'border-red-200 bg-red-50/50 opacity-70'
-                              : 'border-zinc-200 bg-white hover:border-[#FF6B00]/50 hover:shadow-md'
+                              ? 'ring-red-300 opacity-70'
+                              : 'ring-zinc-200 dark:ring-zinc-700 hover:ring-[#FF6B00]/50 hover:shadow-lg'
                           }`}
+                          onClick={() => !exceedsLimit && !isImportingId && handleImport(f)}
                         >
-                          {/* Thumbnail */}
+                          {/* Thumbnail - full card */}
                           <div className="relative" style={{ aspectRatio: '16 / 9' }}>
                             {thumbMeta[f.id]?.url || f.thumbnailLink ? (
                               <img
@@ -587,73 +584,63 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
                                 onError={() => handleImgError(f)}
                               />
                             ) : (
-                              <div className="w-full h-full bg-zinc-100 flex items-center justify-center">
-                                <Loader2 className="h-5 w-5 animate-spin text-zinc-300" />
+                              <div className="w-full h-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                                <Loader2 className="h-6 w-6 animate-spin text-zinc-300" />
                               </div>
                             )}
 
-                            {/* Slide count badge */}
-                            {slideCount !== undefined && (
-                              <div className={`absolute bottom-2 right-2 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 ${
-                                exceedsLimit ? 'bg-red-500 text-white' : 'bg-black/60 text-white'
-                              }`}>
-                                <Layers className="h-3 w-3" />
-                                {slideCount}
+                            {/* Bottom gradient overlay with info */}
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent pt-12 pb-3 px-4">
+                              <h3 className="text-sm font-bold text-white truncate" title={f.name}>
+                                {f.name}
+                              </h3>
+                              <div className="flex items-center gap-3 mt-1">
+                                {f.modifiedTime && (
+                                  <span className="text-xs text-white/70 flex items-center gap-1">
+                                    <Clock className="h-3 w-3" />
+                                    {new Date(f.modifiedTime).toLocaleDateString()}
+                                  </span>
+                                )}
+                                {slideCount !== undefined && (
+                                  <span className={`text-xs flex items-center gap-1 ${exceedsLimit ? 'text-red-300' : 'text-white/70'}`}>
+                                    <Layers className="h-3 w-3" />
+                                    {slideCount} slides
+                                  </span>
+                                )}
                               </div>
-                            )}
+                            </div>
 
-                            {/* Exceeds limit warning */}
+                            {/* Exceeds limit warning badge */}
                             {exceedsLimit && (
-                              <div className="absolute top-2 left-2 right-2">
-                                <div className="bg-red-500 text-white text-[10px] font-medium px-2 py-1 rounded flex items-center gap-1">
-                                  <AlertCircle className="h-3 w-3" />
+                              <div className="absolute top-3 left-3 right-3">
+                                <div className="bg-red-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-lg">
+                                  <AlertCircle className="h-3.5 w-3.5" />
                                   Exceeds {MAX_SLIDES_LIMIT} slide limit
                                 </div>
                               </div>
                             )}
-                          </div>
 
-                          {/* Info */}
-                          <div className="p-3">
-                            <div className="text-sm font-medium text-zinc-900 truncate mb-1" title={f.name}>
-                              {f.name}
-                            </div>
-                            <div className="text-[10px] text-zinc-400 flex items-center gap-2 mb-3">
-                              {f.modifiedTime && (
-                                <span className="flex items-center gap-1">
-                                  <Clock className="h-3 w-3" />
-                                  {new Date(f.modifiedTime).toLocaleDateString()}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Import button */}
-                            {isImportingId === f.id && importProgress ? (
-                              <div className="space-y-1.5">
-                                <Progress value={importProgress.progress} className="h-1.5" />
-                                <div className="text-[10px] text-zinc-500 text-center">
-                                  Slide {importProgress.currentSlide} of {importProgress.totalSlides}
-                                </div>
-                              </div>
-                            ) : (
-                              <Button
-                                size="sm"
-                                className={`w-full h-8 text-xs font-semibold ${
-                                  exceedsLimit
-                                    ? 'bg-zinc-200 text-zinc-500 cursor-not-allowed'
-                                    : 'bg-gradient-to-r from-[#FF6B00] to-[#FF8533] hover:from-[#E65D00] hover:to-[#E67420] text-white shadow-sm'
-                                }`}
-                                onClick={() => handleImport(f)}
-                                disabled={isImportingId === f.id || exceedsLimit}
-                              >
+                            {/* Hover overlay with Import button */}
+                            {!exceedsLimit && (
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                 {isImportingId === f.id ? (
-                                  <><Loader2 className="h-3 w-3 animate-spin mr-1" />Checking…</>
-                                ) : exceedsLimit ? (
-                                  'Too Many Slides'
+                                  <div className="flex items-center gap-2 text-white">
+                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                    <span className="text-sm font-medium">Starting import…</span>
+                                  </div>
                                 ) : (
-                                  'Import'
+                                  <Button
+                                    size="lg"
+                                    className="bg-gradient-to-r from-[#FF6B00] to-[#FF8533] hover:from-[#E65D00] hover:to-[#E67420] text-white font-semibold shadow-xl px-8"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleImport(f);
+                                    }}
+                                  >
+                                    Import
+                                  </Button>
                                 )}
-                              </Button>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -661,7 +648,7 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
                     })}
 
                     {/* Sentinel for infinite scroll */}
-                    <div ref={sentinelRef} className="col-span-3 h-8 flex items-center justify-center">
+                    <div ref={sentinelRef} className="col-span-2 h-8 flex items-center justify-center">
                       {hasMore && isListing && files.length > 0 && (
                         <div className="flex items-center gap-2 text-xs text-zinc-400">
                           <Loader2 className="h-4 w-4 animate-spin" />

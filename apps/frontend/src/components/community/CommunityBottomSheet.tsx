@@ -66,14 +66,16 @@ const CommunityBottomSheet: React.FC<CommunityBottomSheetProps> = ({
           </SheetHeader>
         </div>
 
-        {/* Scrollable Content */}
+        {/* Scrollable Content - only render gallery when open */}
         <div className="flex-1 overflow-y-auto px-6 pt-2 pb-6">
-          <CommunityGallery
-            variant="app"
-            showSearch
-            showFilters
-            onDeckClick={onDeckClick}
-          />
+          {isOpen && (
+            <CommunityGallery
+              variant="app"
+              showSearch
+              showFilters
+              onDeckClick={onDeckClick}
+            />
+          )}
         </div>
       </SheetContent>
     </Sheet>
