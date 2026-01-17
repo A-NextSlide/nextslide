@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Code, Zap, Type, Image, ChevronDown, ChevronRight, Maximize2, Square } from 'lucide-react';
+import { Code, Zap, Type, Image, ChevronDown, ChevronRight, Maximize2, Square, AlignLeft, AlignCenter, AlignRight, AlignJustify } from 'lucide-react';
 import { parseCustomComponentCode, ParsedVariable, convertToPropsBasedCode } from '@/utils/customComponentParser';
 import AdvancedCodeEditor from '@/components/ui/AdvancedCodeEditor';
 import { Textarea } from '@/components/ui/textarea';
@@ -159,6 +159,32 @@ const DynamicTextEditor: React.FC<{
     return 72;
   }, [element.tagName]);
 
+  // Text alignment state
+  const textAlign = useMemo(() => {
+    return element.computedStyle?.textAlign || 'left';
+  }, [element.computedStyle?.textAlign]);
+
+  // Line height state
+  const lineHeight = useMemo(() => {
+    const lh = element.computedStyle?.lineHeight;
+    if (!lh || lh === 'normal') return 1.5;
+    // If it's a pixel value, convert to unitless
+    if (lh.endsWith('px')) {
+      const pxVal = parseFloat(lh);
+      return pxVal / fontSize;
+    }
+    const parsed = parseFloat(lh);
+    return isNaN(parsed) ? 1.5 : parsed;
+  }, [element.computedStyle?.lineHeight, fontSize]);
+
+  // Letter spacing state
+  const letterSpacing = useMemo(() => {
+    const ls = element.computedStyle?.letterSpacing;
+    if (!ls || ls === 'normal') return 0;
+    const parsed = parseFloat(ls);
+    return isNaN(parsed) ? 0 : parsed;
+  }, [element.computedStyle?.letterSpacing]);
+
   // Load the current font on mount to ensure it's available
   useEffect(() => {
     if (currentFont && currentFont.length > 0) {
@@ -266,6 +292,70 @@ const DynamicTextEditor: React.FC<{
                weight === '600' ? 'Sb' : 'Bd'}
             </Button>
           ))}
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-[11px] text-muted-foreground">Alignment</Label>
+        <div className="flex gap-0.5">
+          {[
+            { value: 'left', Icon: AlignLeft },
+            { value: 'center', Icon: AlignCenter },
+            { value: 'right', Icon: AlignRight },
+            { value: 'justify', Icon: AlignJustify },
+          ].map(({ value, Icon }) => (
+            <Button
+              key={value}
+              variant={textAlign === value ? 'default' : 'outline'}
+              size="sm"
+              className="h-5 px-1.5 flex-1"
+              onClick={() => {
+                onStyleUpdate(element.selector, 'textAlign', value);
+                onRequestHtmlUpdate?.();
+                onSave('Changed text alignment');
+              }}
+            >
+              <Icon className="w-3 h-3" />
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-[11px] text-muted-foreground">Line Height</Label>
+        <div className="flex items-center gap-2">
+          <Slider
+            min={0.8}
+            max={3}
+            step={0.1}
+            value={[lineHeight]}
+            onValueChange={(values) => onStyleUpdate(element.selector, 'lineHeight', String(values[0]))}
+            onPointerUp={() => {
+              onRequestHtmlUpdate?.();
+              onSave('Changed line height');
+            }}
+            className="flex-grow"
+          />
+          <span className="text-[11px] w-8 text-right">{lineHeight.toFixed(1)}</span>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-[11px] text-muted-foreground">Letter Spacing</Label>
+        <div className="flex items-center gap-2">
+          <Slider
+            min={-2}
+            max={10}
+            step={0.5}
+            value={[letterSpacing]}
+            onValueChange={(values) => onStyleUpdate(element.selector, 'letterSpacing', `${values[0]}px`)}
+            onPointerUp={() => {
+              onRequestHtmlUpdate?.();
+              onSave('Changed letter spacing');
+            }}
+            className="flex-grow"
+          />
+          <span className="text-[11px] w-10 text-right">{letterSpacing}px</span>
         </div>
       </div>
 

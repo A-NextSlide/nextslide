@@ -304,6 +304,318 @@ def _check_html_structure(html: str) -> List[str]:
     return issues
 
 
+def _check_hover_and_scale_issues(html: str) -> Tuple[List[str], List[str]]:
+    """
+    Check for hover/scale issues that cause elements to bounce or avoid mouse.
+
+    Common problems:
+    - scale() on hover without overflow:visible on parent
+    - transform on hover without pointer-events handling
+    - Elements that scale larger but clip or cause layout shift
+    """
+    issues = []
+    warnings = []
+
+    # Extract all CSS (inline styles and style blocks)
+    style_blocks = re.findall(r'<style[^>]*>(.*?)</style>', html, re.DOTALL | re.IGNORECASE)
+    all_css = '\n'.join(style_blocks)
+
+    # Check for hover:scale without proper containment
+    has_hover_scale = bool(re.search(r'hover:scale-|:hover[^{]*{[^}]*scale\(', html, re.IGNORECASE))
+    has_hover_transform = bool(re.search(r'hover:transform|:hover[^{]*{[^}]*transform:', html, re.IGNORECASE))
+
+    if has_hover_scale or has_hover_transform:
+        # Check if there's a group/parent with overflow handling
+        has_overflow_visible = 'overflow-visible' in html or 'overflow:visible' in all_css or 'overflow: visible' in all_css
+        has_group_hover = 'group-hover' in html or 'group ' in html
+
+        if not has_overflow_visible and not has_group_hover:
+            warnings.append(
+                "Hover scale/transform detected without overflow-visible on parent. "
+                "This can cause elements to 'bounce' or clip. Add overflow-visible to parent container."
+            )
+
+        # Check for pointer-events issues with overlapping transforms
+        if 'pointer-events-none' not in html and has_hover_scale:
+            # Check if scale is large enough to cause overlap issues
+            large_scale = re.search(r'scale-1[1-9]|scale-[2-9]|scale\(1\.[2-9]|scale\([2-9]', html)
+            if large_scale:
+                warnings.append(
+                    "Large hover scale detected (>1.1x). Ensure parent has enough padding/margin "
+                    "to prevent hover flickering when elements overlap."
+                )
+
+    # Check for transition on transform that might cause jank
+    if re.search(r'transition.*?all|transition-all', html, re.IGNORECASE):
+        if has_hover_scale or has_hover_transform:
+            warnings.append(
+                "Using 'transition-all' with hover transforms can cause jank. "
+                "Prefer 'transition-transform' for smoother animations."
+            )
+
+    return issues, warnings
+
+
+def _check_chart_rendering(html: str) -> Tuple[List[str], List[str]]:
+    """
+    Check for chart rendering issues (Chart.js, D3, etc.).
+
+    Common problems:
+    - Chart.js without proper canvas element
+    - D3 without proper SVG container
+    - Charts initialized before DOM ready
+    - Missing chart library imports
+    """
+    issues = []
+    warnings = []
+
+    # Check for Chart.js usage
+    has_chartjs = 'Chart(' in html or 'new Chart' in html or 'chart.js' in html.lower()
+    if has_chartjs:
+        # Must have a canvas element
+        has_canvas = '<canvas' in html.lower()
+        if not has_canvas:
+            issues.append("Chart.js used but no <canvas> element found. Charts won't render.")
+
+        # Check for proper initialization timing
+        has_dom_ready = (
+            'DOMContentLoaded' in html or
+            'window.onload' in html or
+            '</body>' in html and re.search(r'<script[^>]*>[^<]*new Chart', html)  # Script at end of body
+        )
+        if not has_dom_ready:
+            warnings.append(
+                "Chart.js initialization may run before canvas exists. "
+                "Wrap in DOMContentLoaded or place script after canvas element."
+            )
+
+        # Check for Chart.js CDN
+        has_chartjs_import = 'cdn' in html.lower() and 'chart' in html.lower()
+        if not has_chartjs_import:
+            issues.append("Chart.js used but CDN import not found. Add: <script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>")
+
+    # Check for D3.js usage
+    has_d3 = 'd3.' in html or 'd3js' in html.lower()
+    if has_d3:
+        # Check for D3 CDN
+        has_d3_import = re.search(r'cdn[^"]*d3|d3js\.org', html, re.IGNORECASE)
+        if not has_d3_import:
+            issues.append("D3.js used but CDN import not found. Add: <script src=\"https://cdn.jsdelivr.net/npm/d3@7\"></script>")
+
+        # Check for SVG container for D3 charts
+        if 'd3.select' in html and 'svg' not in html.lower():
+            warnings.append("D3.js selection used but no SVG element found. Most D3 charts need an SVG container.")
+
+    # Check for ApexCharts
+    has_apex = 'ApexCharts' in html
+    if has_apex:
+        has_apex_import = 'apexcharts' in html.lower() and 'cdn' in html.lower()
+        if not has_apex_import:
+            issues.append("ApexCharts used but CDN import not found.")
+
+    return issues, warnings
+
+
+def _check_animation_bounds(html: str) -> Tuple[List[str], List[str]]:
+    """
+    Check for animations that might exceed slide bounds.
+
+    Common problems:
+    - Keyframe animations that move elements off-screen
+    - Transform translateY that pushes content below slide
+    - Accordion/expand animations without max-height constraints
+    - Scale animations that overflow container
+    """
+    issues = []
+    warnings = []
+
+    # Extract all CSS
+    style_blocks = re.findall(r'<style[^>]*>(.*?)</style>', html, re.DOTALL | re.IGNORECASE)
+    all_css = '\n'.join(style_blocks)
+
+    # Check for animations that translate downward
+    translate_down = re.findall(r'translateY\s*\(\s*(\d+)', all_css + html)
+    for val in translate_down:
+        if int(val) > 100:  # More than 100px down
+            warnings.append(
+                f"Animation translates element {val}px downward. "
+                "Ensure this doesn't push content below the 1080px slide height."
+            )
+
+    # Check for accordion/expand patterns without max-height
+    has_expand_animation = (
+        'max-height' in all_css and
+        ('transition' in all_css or 'animation' in all_css)
+    )
+    if has_expand_animation:
+        # Check if max-height uses very large values
+        large_max_height = re.search(r'max-height:\s*(\d{4,})', all_css)
+        if large_max_height:
+            warnings.append(
+                f"Large max-height ({large_max_height.group(1)}px) in animation. "
+                "For slide content, cap max-height to prevent overflow below slide bounds."
+            )
+
+    # Check for overflow:hidden on body/html (good practice for slides)
+    has_body_overflow_hidden = re.search(
+        r'(html|body)\s*{[^}]*overflow\s*:\s*hidden',
+        all_css,
+        re.IGNORECASE
+    )
+    if not has_body_overflow_hidden:
+        # Check inline or Tailwind
+        if 'overflow-hidden' not in html or not re.search(r'<(html|body)[^>]*overflow-hidden', html):
+            warnings.append(
+                "Consider adding overflow:hidden to html/body to prevent animated content "
+                "from extending beyond the slide bounds."
+            )
+
+    # Check for keyframe animations with large movements
+    keyframes = re.findall(r'@keyframes\s+\w+\s*{([^}]+(?:{[^}]*}[^}]*)*)}', all_css)
+    for kf in keyframes:
+        if re.search(r'translate[YX]?\s*\(\s*-?\d{3,}', kf):
+            warnings.append(
+                "Keyframe animation has large translate values. "
+                "Ensure animated elements stay within 1920x1080 slide bounds."
+            )
+
+    return issues, warnings
+
+
+def _check_button_functionality(html: str) -> Tuple[List[str], List[str]]:
+    """
+    Enhanced check for button functionality.
+
+    Verifies buttons and interactive elements actually do something.
+    """
+    issues = []
+    warnings = []
+
+    # Find all buttons
+    buttons = re.findall(r'<button[^>]*>(.*?)</button>', html, re.DOTALL | re.IGNORECASE)
+    button_count = len(buttons)
+
+    if button_count == 0:
+        return issues, warnings
+
+    # Check for event handlers
+    has_onclick_attr = bool(re.search(r'onclick\s*=', html, re.IGNORECASE))
+    has_addEventListener = 'addEventListener' in html
+    has_jquery_click = bool(re.search(r'\$\([^)]+\)\.click|\$\([^)]+\)\.on\s*\(\s*[\'"]click', html))
+
+    has_any_click_handler = has_onclick_attr or has_addEventListener or has_jquery_click
+
+    if not has_any_click_handler:
+        issues.append(
+            f"Found {button_count} button(s) but no click handlers (onclick, addEventListener, or jQuery). "
+            "Buttons won't do anything when clicked."
+        )
+        return issues, warnings
+
+    # If we have handlers, check they're properly connected to buttons
+    if has_addEventListener:
+        # Check that addEventListener targets buttons or their containers
+        button_targeting = re.search(
+            r'(querySelector|getElementById|getElementsBy)[^;]*button|'
+            r'button[^;]*addEventListener|'
+            r'addEventListener\s*\(\s*[\'"]click[\'"]',
+            html,
+            re.IGNORECASE
+        )
+        if not button_targeting:
+            warnings.append(
+                "addEventListener found but may not be targeting buttons. "
+                "Verify event listeners are attached to button elements."
+            )
+
+    # Check for buttons with cursor-pointer but no actual handler
+    pointer_buttons = re.findall(r'<button[^>]*cursor-pointer[^>]*>', html, re.IGNORECASE)
+    onclick_buttons = re.findall(r'<button[^>]*onclick[^>]*>', html, re.IGNORECASE)
+
+    if len(pointer_buttons) > len(onclick_buttons) and not has_addEventListener:
+        warnings.append(
+            "Some buttons have cursor-pointer styling but no onclick handler. "
+            "Add click handlers or use addEventListener."
+        )
+
+    return issues, warnings
+
+
+def verify_slide_code(html: str, user_request: str = "") -> VerificationResult:
+    """
+    Comprehensive verification for slide generation.
+
+    Includes all checks from verify_interactive_code plus slide-specific checks:
+    - Hover/scale bounce issues
+    - Chart rendering problems
+    - Animation bounds
+    - Button functionality
+
+    Args:
+        html: The HTML/JS code to verify
+        user_request: The original user request for context
+
+    Returns:
+        VerificationResult with issues, warnings, and suggestions
+    """
+    issues = []
+    warnings = []
+    suggestions = []
+    interactive_elements = []
+
+    if not html or len(html.strip()) < 50:
+        return VerificationResult(
+            is_valid=False,
+            issues=["HTML content is empty or too short"],
+            warnings=[],
+            interactive_elements=[],
+            suggestions=["Generate complete HTML content"]
+        )
+
+    # Run all standard checks
+    js_issues, js_warnings = _analyze_javascript(html)
+    issues.extend(js_issues)
+    warnings.extend(js_warnings)
+
+    interactive_elements = _find_interactive_elements(html)
+
+    interactivity_issues, interactivity_suggestions = _check_interactivity(
+        html, interactive_elements, user_request
+    )
+    issues.extend(interactivity_issues)
+    suggestions.extend(interactivity_suggestions)
+
+    html_issues = _check_html_structure(html)
+    issues.extend(html_issues)
+
+    # Run slide-specific checks
+    hover_issues, hover_warnings = _check_hover_and_scale_issues(html)
+    issues.extend(hover_issues)
+    warnings.extend(hover_warnings)
+
+    chart_issues, chart_warnings = _check_chart_rendering(html)
+    issues.extend(chart_issues)
+    warnings.extend(chart_warnings)
+
+    anim_issues, anim_warnings = _check_animation_bounds(html)
+    issues.extend(anim_issues)
+    warnings.extend(anim_warnings)
+
+    button_issues, button_warnings = _check_button_functionality(html)
+    issues.extend(button_issues)
+    warnings.extend(button_warnings)
+
+    is_valid = len(issues) == 0
+
+    return VerificationResult(
+        is_valid=is_valid,
+        issues=issues,
+        warnings=warnings,
+        interactive_elements=interactive_elements,
+        suggestions=suggestions
+    )
+
+
 def create_verification_context(result: VerificationResult, user_request: str = "") -> str:
     """Create context for the LLM to fix issues."""
     if result.is_valid and not result.warnings:

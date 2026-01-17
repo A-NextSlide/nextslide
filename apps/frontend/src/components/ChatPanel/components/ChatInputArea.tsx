@@ -1,9 +1,10 @@
 import type { RefObject } from 'react';
-import { ChevronDown, ChevronRight, ChevronUp, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Plus, Edit2, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { useEditorState } from '@/context/EditorStateContext';
 import {
   DropdownMenu,
   DropdownMenuContent,

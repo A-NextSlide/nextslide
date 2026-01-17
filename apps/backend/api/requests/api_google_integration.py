@@ -2280,6 +2280,7 @@ Output ONLY a complete HTML document starting with <!DOCTYPE html>. No markdown 
             if response and response.text:
                 html_code = _extract_html_from_vision_response(response.text)
                 if html_code:
+                    logger.info(f"[GoogleSlidesVisionImport] ✓ Slide {slide_idx + 1}: AI generated HTML ({len(html_code)} chars)")
                     return {
                         "id": str(uuid.uuid4()),
                         "title": f"Slide {slide_idx + 1}",
@@ -2296,7 +2297,6 @@ Output ONLY a complete HTML document starting with <!DOCTYPE html>. No markdown 
                                 "opacity": 1,
                                 "rotation": 0,
                                 "render": html_code,
-                                # Note: originalImageUrl removed to avoid large base64 payloads in API response
                                 "props": {
                                     "slideIndex": slide_idx,
                                     "sourceType": "google_slides_vision"
@@ -2304,10 +2304,15 @@ Output ONLY a complete HTML document starting with <!DOCTYPE html>. No markdown 
                             }
                         }]
                     }
+                else:
+                    logger.warning(f"[GoogleSlidesVisionImport] ✗ Slide {slide_idx + 1}: Failed to extract HTML from response")
+            else:
+                logger.warning(f"[GoogleSlidesVisionImport] ✗ Slide {slide_idx + 1}: Empty AI response")
         except Exception as e:
-            logger.error(f"[GoogleSlidesVisionImport] Vision AI error for slide {slide_idx + 1}: {e}")
+            logger.error(f"[GoogleSlidesVisionImport] ✗ Slide {slide_idx + 1}: AI error: {e}")
 
-        # Fallback: use the image directly
+        # Fallback: use the image directly (AI failed)
+        logger.warning(f"[GoogleSlidesVisionImport] ⚠️ Slide {slide_idx + 1}: FALLBACK to thumbnail image")
         return _create_image_slide_fallback(image_data_url, slide_idx)
 
     # Process all slides in parallel - no need for small batches with async calls
@@ -2377,6 +2382,9 @@ def _extract_html_from_vision_response(response: str) -> Optional[str]:
     """Extract HTML code from Gemini Vision response."""
     import re
 
+    if not response:
+        return None
+
     response = response.strip()
 
     # Try to find HTML code block first
@@ -2385,6 +2393,9 @@ def _extract_html_from_vision_response(response: str) -> Optional[str]:
         code = html_block.group(1).strip()
         if code.lower().startswith('<!doctype') or code.lower().startswith('<html'):
             return code
+        # Even if it doesn't start with doctype, wrap it
+        if '<' in code:
+            return f"<!DOCTYPE html>\n<html>\n<head><script src=\"https://cdn.tailwindcss.com\"></script></head>\n<body style=\"margin:0;width:1920px;height:1080px;overflow:hidden\">\n{code}\n</body>\n</html>"
 
     # Try generic code block
     generic_block = re.search(r"```\s*([\s\S]*?)```", response, re.IGNORECASE)
@@ -2392,6 +2403,8 @@ def _extract_html_from_vision_response(response: str) -> Optional[str]:
         code = generic_block.group(1).strip()
         if code.lower().startswith('<!doctype') or code.lower().startswith('<html'):
             return code
+        if '<' in code:
+            return f"<!DOCTYPE html>\n<html>\n<head><script src=\"https://cdn.tailwindcss.com\"></script></head>\n<body style=\"margin:0;width:1920px;height:1080px;overflow:hidden\">\n{code}\n</body>\n</html>"
 
     # Try to find complete HTML document directly
     html_doc = re.search(r"(<!DOCTYPE html[\s\S]*?</html>)", response, re.IGNORECASE)
@@ -2407,6 +2420,12 @@ def _extract_html_from_vision_response(response: str) -> Optional[str]:
     if response.lower().startswith('<!doctype') or response.lower().startswith('<html'):
         return response
 
+    # Last resort: if response contains HTML-like content, wrap it
+    if '<div' in response.lower() or '<body' in response.lower() or '<style' in response.lower():
+        logger.info(f"[HTMLExtract] Wrapping partial HTML response ({len(response)} chars)")
+        return f"<!DOCTYPE html>\n<html>\n<head><script src=\"https://cdn.tailwindcss.com\"></script></head>\n<body style=\"margin:0;width:1920px;height:1080px;overflow:hidden\">\n{response}\n</body>\n</html>"
+
+    logger.warning(f"[HTMLExtract] Could not extract HTML. Response preview: {response[:200]}...")
     return None
 
 

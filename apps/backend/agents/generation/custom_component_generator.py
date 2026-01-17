@@ -41,6 +41,7 @@ from agents.generation.custom_component_prompts import (
     build_user_prompt,
 )
 from agents.generation.custom_component_html import CustomComponentHtmlProcessor
+from agents.editing.tools.code_verifier import verify_slide_code
 
 logger = get_logger(__name__)
 
@@ -284,6 +285,27 @@ class CustomComponentGenerator:
             )
 
             html_content = await upload_external_urls_to_bucket(html_content)
+
+            # Verify the generated code for common issues
+            try:
+                verification = verify_slide_code(html_content, user_request=content)
+                if verification.issues:
+                    logger.warning(
+                        "[CUSTOM_COMPONENT] Code verification found issues: %s",
+                        verification.issues
+                    )
+                if verification.warnings:
+                    logger.info(
+                        "[CUSTOM_COMPONENT] Code verification warnings: %s",
+                        verification.warnings[:3]  # Limit logged warnings
+                    )
+                if verification.is_valid:
+                    logger.info(
+                        "[CUSTOM_COMPONENT] Code verification passed: %d interactive elements",
+                        len(verification.interactive_elements)
+                    )
+            except Exception as verify_err:
+                logger.debug("[CUSTOM_COMPONENT] Code verification skipped: %s", verify_err)
 
             elapsed = (datetime.now() - start_time).total_seconds()
             logger.info(

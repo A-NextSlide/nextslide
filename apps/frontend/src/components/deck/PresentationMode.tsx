@@ -421,6 +421,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       <div
         ref={slideContainerRef}
         className="relative w-full h-full flex items-center justify-center"
+        onDoubleClick={toggleFullscreen}
       >
         {/* Outer wrapper sized to the scaled dimensions for proper centering */}
         <div
@@ -551,6 +552,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.1 }}
                 onClick={goToPrevSlide}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  goToPrevSlide();
+                }}
                 disabled={validIndex === 0}
                 className={cn(
                   'bg-black/60 rounded-full w-12 h-12 flex items-center justify-center text-white/90 transition-all border border-white/20',
@@ -567,6 +572,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.1 }}
                 onClick={goToNextSlide}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  goToNextSlide();
+                }}
                 disabled={validIndex === slides.length - 1}
                 className={cn(
                   'bg-black/60 rounded-full w-12 h-12 flex items-center justify-center text-white/90 transition-all border border-white/20',
