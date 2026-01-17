@@ -1798,15 +1798,7 @@ const DeckList: React.FC = () => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuItem onClick={handleCreateWithAI} className="cursor-pointer">
-                    <span className="mr-2 inline-flex items-center justify-center h-4 w-4">
-                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M12 20v-6" />
-                        <path d="M6 20v-4" />
-                        <path d="M18 20v-8" />
-                        <path d="M3 3h18" />
-                        <path d="M3 7h18" />
-                      </svg>
-                    </span>
+                    <Sparkles className="mr-2 h-4 w-4" />
                     <span>Create with AI</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleCreateDeck} className="cursor-pointer">
