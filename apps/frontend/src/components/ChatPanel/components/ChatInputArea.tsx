@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import { ChevronDown, ChevronRight, ChevronUp, Plus, Edit2, Check } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import { Button } from '@/components/ui/button';
@@ -111,31 +111,27 @@ export function ChatInputArea({
 
   return (
     <div className="px-2.5 pt-4 pb-[calc(env(safe-area-inset-bottom)+10px)] sm:pt-6 sm:pb-2.5 min-w-0">
-      {/* Edit Mode Button - prominent orange button */}
+      {/* Edit Toggle - right-aligned above chat panel, aligned with border radius */}
       {!outlineMode && (
-        <button
-          type="button"
-          onClick={() => setIsEditing(!isEditing)}
-          className={cn(
-            "w-full mb-3 py-2.5 px-4 rounded-lg font-medium text-sm transition-all duration-200 flex items-center justify-center gap-2",
-            isEditing
-              ? "bg-[#FF4301] text-white hover:bg-[#e63d01] shadow-md"
-              : "bg-[#FF4301] text-white hover:bg-[#e63d01] shadow-md"
-          )}
-          style={{ fontFamily: 'HK Grotesque, sans-serif' }}
-        >
-          {isEditing ? (
-            <>
-              <Check size={18} strokeWidth={2.5} />
-              <span>Done Editing</span>
-            </>
-          ) : (
-            <>
-              <Edit2 size={16} />
-              <span>Edit Mode</span>
-            </>
-          )}
-        </button>
+        <div className="flex justify-end mb-1.5 pr-1">
+          <button
+            type="button"
+            onClick={() => setIsEditing(!isEditing)}
+            className={cn(
+              "px-3 py-1 text-xs rounded-md border transition-all",
+              isEditing
+                ? "bg-[#FF4301] text-white border-[#FF4301] hover:bg-[#e63d01]"
+                : "bg-white/90 text-[#FF4301] border-[#FF4301]/60 hover:border-[#FF4301] hover:bg-[#FF4301]/5"
+            )}
+            style={{
+              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+              fontWeight: 600,
+              letterSpacing: '0.3px'
+            }}
+          >
+            {isEditing ? 'DONE' : 'EDIT SLIDE'}
+          </button>
+        </div>
       )}
       <div
         className={

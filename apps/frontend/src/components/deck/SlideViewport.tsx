@@ -943,27 +943,8 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
                   />
                 )}
 
-                {/* Spacer when not editing */}
-                {!isEditing && <div className="flex-1" />}
-
-                {/* Edit/Done button on right - always rendered for tour visibility */}
-                {currentSlide && !isMobileView && (
-                  <button
-                    className="px-3 py-1.5 text-xs font-semibold rounded-md border border-[#FF4301]/40 bg-white/80 dark:bg-zinc-900/80 hover:bg-[#FF4301]/10 hover:border-[#FF4301] text-[#FF4301] shadow-sm transition-all duration-200 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm ml-auto"
-                    style={{
-                      fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-                      fontWeight: 600,
-                      letterSpacing: '0.3px'
-                    }}
-                    data-tour="edit-button"
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('editor:toggle-edit-mode'));
-                    }}
-                    disabled={!isCurrentSlideCompleted}
-                  >
-                    {isEditing ? 'Done' : 'Edit'}
-                  </button>
-                )}
+                {/* Spacer */}
+                <div className="flex-1" />
               </div>
             )}
 
