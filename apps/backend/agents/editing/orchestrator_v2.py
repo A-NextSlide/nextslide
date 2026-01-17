@@ -24,6 +24,7 @@ from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_
 from agents.config import get_model, MODEL_FALLBACK, GEMINI_3_FLASH, GEMINI_3_PRO
 from services.context_cache import get_deck_context_snapshot
 from utils.summaries import summarize_chat_history
+from agents.editing.tools.code_verifier import verify_interactive_code, create_verification_context
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +299,23 @@ CONVERSATION CONTINUITY (RECENT CHAT):
 - If the user's message is vague but chat history provides context, USE that context
 - If still unclear after checking history, ask a clarifying question instead of guessing wrong
 - Continue the conversation naturally - you're having an ongoing dialogue, not isolated requests
+
+⚠️ HANDLING FOLLOW-UP COMPLAINTS ("it doesn't work", "they don't work"):
+When user says something "doesn't work" or "isn't working":
+1. CHECK RECENT CHAT to understand what "it" or "they" refers to
+2. LOOK AT THE SCREENSHOT to see the current state
+3. For interactive elements (buttons, accordions, toggles):
+   - Make sure JavaScript event handlers are ACTUALLY attached (not just styled)
+   - Use addEventListener('click', ...) NOT inline onclick if possible
+   - Ensure the DOM elements exist when the script runs (use DOMContentLoaded)
+   - Test that the handler actually DOES something visible (toggles class, changes content)
+4. COMMON FIXES for "buttons don't work":
+   - Add event listeners that toggle visibility: element.classList.toggle('hidden')
+   - Use CSS classes to show/hide content: .hidden { display: none; }
+   - Make sure button IDs match what the JavaScript is selecting
+   - Wrap code in DOMContentLoaded to ensure DOM is ready
+5. When fixing, be SPECIFIC about what you're changing - don't just say "fixed it"
+   - Say: "I added click handlers to the Temperance and Generosity sections that now reveal their descriptions when clicked"
 
 VISUAL CONTEXT (screenshot):
 - For complex/visual requests, a screenshot of the current slide is included as an image
@@ -1095,6 +1113,13 @@ def orchestrate(
         runId="pre-fix",
     )
 
+    # Emit analyzing event so frontend shows "Analyzing your request..."
+    if event_cb:
+        try:
+            event_cb("agent.analyzing", {"step": "understanding_request", "message": clean_message[:100]})
+        except Exception:
+            pass
+
     # Build context (include selection info)
     context = build_context(deck_data, current_slide, attachments, chat_history, selections=selections)
     video_hint = ""
@@ -1553,6 +1578,69 @@ Respond with the tool_calls to execute."""
                             logger.warning(f"[ORCHESTRATOR] Failed to accumulate props: {e}")
 
                 summaries.append(tool_call.summary)
+
+                # VERIFICATION STEP: For HTML-generating tools, verify the code is valid
+                # This catches issues like missing event handlers, syntax errors, etc.
+                if tool_name in ("edit_slide", "custom_component_rewrite", "custom_component_str_replace"):
+                    try:
+                        # Emit verification event so frontend shows "Verifying code..."
+                        if event_cb:
+                            event_cb("agent.verifying", {"tool": tool_name, "step": "checking_code"})
+
+                        # Extract the generated HTML from the diff
+                        generated_html = None
+                        try:
+                            deck_diff_inner = getattr(tool_diff, 'deck_diff', None)
+                            if deck_diff_inner and hasattr(deck_diff_inner, 'slides_to_update'):
+                                for slide_diff in (deck_diff_inner.slides_to_update or []):
+                                    for comp_diff in (getattr(slide_diff, 'components_to_update', None) or []):
+                                        comp_props = getattr(comp_diff, 'props', None)
+                                        if comp_props:
+                                            render = comp_props.render if hasattr(comp_props, 'render') else (comp_props.get('render') if isinstance(comp_props, dict) else None)
+                                            if render:
+                                                generated_html = render
+                                                break
+                                    if generated_html:
+                                        break
+                        except Exception:
+                            pass
+
+                        if generated_html:
+                            # Verify the code
+                            verification = verify_interactive_code(
+                                generated_html,
+                                user_request=clean_message
+                            )
+
+                            if not verification.is_valid or verification.issues:
+                                logger.warning(f"[ORCHESTRATOR] ⚠️ Code verification found issues: {verification.issues}")
+                                # Add verification feedback to observations so the model can see what went wrong
+                                verification_feedback = create_verification_context(verification, clean_message)
+                                if verification_feedback:
+                                    observations.append({
+                                        "tool": "code_verification",
+                                        "data": {
+                                            "issues": verification.issues,
+                                            "warnings": verification.warnings,
+                                            "suggestions": verification.suggestions,
+                                            "interactive_elements": len(verification.interactive_elements),
+                                            "feedback": verification_feedback
+                                        }
+                                    })
+                                    logger.info(f"[ORCHESTRATOR] 📋 Added verification feedback: {len(verification.issues)} issues, {len(verification.warnings)} warnings")
+
+                                    # Emit verification warning event
+                                    if event_cb:
+                                        event_cb("agent.verification_warning", {
+                                            "tool": tool_name,
+                                            "issues_count": len(verification.issues),
+                                            "warnings_count": len(verification.warnings)
+                                        })
+                            else:
+                                logger.info(f"[ORCHESTRATOR] ✅ Code verification passed: {len(verification.interactive_elements)} interactive elements found")
+
+                    except Exception as verify_error:
+                        logger.warning(f"[ORCHESTRATOR] Code verification failed (non-fatal): {verify_error}")
 
                 if event_cb:
                     try:

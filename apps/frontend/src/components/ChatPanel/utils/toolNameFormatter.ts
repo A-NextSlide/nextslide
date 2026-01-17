@@ -1,4 +1,23 @@
 const FUN_TOOL_NAMES: Record<string, string[]> = {
+  // Progress/status events
+  'agent.analyzing': [
+    'Understanding your request',
+    'Analyzing what you need',
+    'Looking at the details',
+    'Figuring out the best approach',
+  ],
+  'agent.verifying': [
+    'Verifying the code',
+    'Checking everything works',
+    'Making sure it\'s right',
+    'Double-checking the result',
+  ],
+  'agent.verification_warning': [
+    'Found something to fix',
+    'Spotted an issue',
+    'Needs a quick adjustment',
+  ],
+  // Tool names
   'custom_component_str_replace': [
     'Making a quick tweak',
     'Sprucing up the content',

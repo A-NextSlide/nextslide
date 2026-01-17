@@ -410,6 +410,34 @@ export function useAgentEvents({
     return true;
   }, [appendToolRow, isStyleTool]);
 
+  const handleAgentStatusEvent = useCallback((evt: any, source: 'primary' | 'secondary'): boolean => {
+    // Handle new granular status events: analyzing, verifying, verification_warning
+    const statusEvents = ['agent.analyzing', 'agent.verifying', 'agent.verification_warning'];
+    if (!evt?.type || !statusEvents.includes(evt.type)) return false;
+
+    const logLabel = source === 'secondary' ? '[ChatPanel] Status event (secondary):' : '[ChatPanel] Status event:';
+    console.log(logLabel, { type: evt.type, data: evt.data });
+
+    // Show these as compact tool rows using the fun names from toolNameFormatter
+    const now = Date.now();
+    const key = evt.type;
+    const last = toolDedupRef.current.get(key) || 0;
+    if (now - last < TOOL_DEDUP_WINDOW_MS) return true; // Deduplicate
+    toolDedupRef.current.set(key, now);
+
+    const funName = getFunToolName(evt.type);
+    setMessages(prev => [...prev, {
+      id: `status-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      type: 'system',
+      message: funName,
+      timestamp: new Date(),
+      feedback: null,
+      metadata: { type: 'agent_status', eventType: evt.type, compactRow: true }
+    }]);
+
+    return true;
+  }, [setMessages]);
+
   const handleCommonAgentEvent = useCallback((
     evt: any,
     source: 'primary' | 'secondary',
@@ -430,13 +458,14 @@ export function useAgentEvents({
       return true;
     }
     if (handleToolEvent(evt, source)) return true;
+    if (handleAgentStatusEvent(evt, source)) return true; // Handle analyzing, verifying, etc.
     if (evt.type === 'progress.update') {
       const { phase, percent } = (evt as any).data || {};
       upsertAgentProgressRow(phase, percent, options?.respectProgressLockout === true);
       return true;
     }
     return false;
-  }, [appendSelectionRow, animatePlanMessage, handleAssistantMessageComplete, handleAssistantMessageDelta, handleLinkedInProfiles, handleToolEvent, upsertAgentProgressRow]);
+  }, [appendSelectionRow, animatePlanMessage, handleAssistantMessageComplete, handleAssistantMessageDelta, handleLinkedInProfiles, handleToolEvent, handleAgentStatusEvent, upsertAgentProgressRow]);
 
   const normalizeSlidesPayload = useCallback((payloadSlides: any[]): any[] => {
     if (!Array.isArray(payloadSlides) || payloadSlides.length === 0) return [];

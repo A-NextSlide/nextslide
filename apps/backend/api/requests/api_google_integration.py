@@ -2065,21 +2065,24 @@ async def _convert_google_slides_via_vision(
     presentation: Dict[str, Any],
     user_id: str,
     api: "GoogleApiClient",
-    job_id: Optional[str] = None
+    job_id: Optional[str] = None,
+    access_token: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Convert Google Slides presentation using vision AI.
 
     Strategy:
     1. Fetch high-resolution thumbnails for each slide
-    2. Pass each thumbnail through Gemini Vision to recreate as HTML
-    3. Return deck with CustomComponents
+    2. Download embedded images and upload to our storage
+    3. Pass thumbnail + our storage URLs through Gemini Vision to recreate as HTML
+    4. Return deck with CustomComponents
 
     This provides better visual fidelity than data parsing for complex slides.
     """
     from google import genai
     from google.genai import types
     from agents.config import GEMINI_3_FLASH
+    from services.image_storage_service import ImageStorageService
 
     # Get presentation metadata
     title = presentation.get("title", "Imported Presentation")
@@ -2104,6 +2107,55 @@ async def _convert_google_slides_via_vision(
         raise HTTPException(status_code=500, detail="Gemini API key not configured")
 
     gemini_client = genai.Client(api_key=api_key)
+
+    # Initialize image storage for uploading Google images
+    image_storage = ImageStorageService()
+
+    # Cache for uploaded image URLs: google_url -> our_storage_url
+    uploaded_image_cache: Dict[str, str] = {}
+
+    async def download_and_upload_image(google_url: str) -> Optional[str]:
+        """Download image from Google and upload to our storage. Returns our storage URL."""
+        # Check cache first
+        if google_url in uploaded_image_cache:
+            return uploaded_image_cache[google_url]
+
+        try:
+            # Download from Google with authentication
+            headers = {}
+            if access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(google_url, headers=headers, follow_redirects=True)
+                if response.status_code != 200:
+                    logger.warning(f"[GoogleSlidesVisionImport] Failed to download image: {response.status_code} for {google_url[:80]}")
+                    return None
+
+                image_bytes = response.content
+                content_type = response.headers.get("content-type", "image/png")
+
+            # Upload to our storage
+            image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+            import hashlib
+            file_hash = hashlib.md5(image_bytes[:500]).hexdigest()[:12]
+            ext = "png" if "png" in content_type else "jpg"
+            filename = f"gslides_{file_hash}.{ext}"
+
+            # upload_image_from_base64 doesn't need the aiohttp session
+            result = await image_storage.upload_image_from_base64(
+                image_b64, filename, content_type, folder="gslides-import"
+            )
+
+            if result.get("url") and not result.get("error"):
+                uploaded_image_cache[google_url] = result["url"]
+                logger.info(f"[GoogleSlidesVisionImport] Uploaded image: {result['url'][:60]}...")
+                return result["url"]
+
+        except Exception as e:
+            logger.warning(f"[GoogleSlidesVisionImport] Error uploading image: {e}")
+
+        return None
 
     async def fetch_thumbnail_image(slide_idx: int, page_id: str) -> Optional[bytes]:
         """Fetch thumbnail image data for a slide."""
@@ -2163,23 +2215,31 @@ TEXT CONTENT (copy exactly):
                         bold = 'bold' if run.get('bold') else ''
                         data_context += f'  - "{text}" (size:{font_size}pt, color:{color} {bold})\n'
 
-        # Extract image URLs for the model to use
+        # Extract images, download from Google, and upload to our storage
+        # This ensures the AI uses our permanent URLs, not Google's authenticated URLs
         image_urls = []
         for el in extracted.get('elements', []):
             if el.get('type') == 'image' and el.get('contentUrl'):
+                google_url = el['contentUrl']
                 pos = el.get('position', {})
                 size = el.get('size', {})
-                image_urls.append({
-                    'url': el['contentUrl'],
-                    'left': pos.get('left', 0),
-                    'top': pos.get('top', 0),
-                    'width': size.get('width', 10),
-                    'height': size.get('height', 10)
-                })
 
-        # Add image info to context
+                # Download from Google and upload to our storage
+                our_url = await download_and_upload_image(google_url)
+
+                if our_url:
+                    image_urls.append({
+                        'url': our_url,  # Use OUR storage URL, not Google's
+                        'left': pos.get('left', 0),
+                        'top': pos.get('top', 0),
+                        'width': size.get('width', 10),
+                        'height': size.get('height', 10)
+                    })
+                    logger.info(f"[GoogleSlidesVisionImport] Slide {slide_idx + 1}: Image uploaded to {our_url[:50]}...")
+
+        # Add image info to context with OUR storage URLs
         if image_urls:
-            data_context += f"\nIMAGES (use these exact URLs in <img> tags):\n"
+            data_context += f"\nIMAGES (use these exact URLs in <img> tags - these are permanent storage URLs):\n"
             for i, img in enumerate(image_urls):
                 data_context += f'  - Image {i+1}: url="{img["url"]}" position=({img["left"]:.1f}%, {img["top"]:.1f}%) size=({img["width"]:.1f}% x {img["height"]:.1f}%)\n'
 
@@ -2432,12 +2492,14 @@ async def _run_import_slides_job(user_id: str, job_id: str, presentation_id: str
             )
 
         # Convert using vision-based approach (screenshot → AI recreation)
+        # Pass access token so images can be downloaded from Google and uploaded to our storage
         logger.info(f"[GoogleSlidesImport] Converting to CustomComponents using VISION AI...")
         deck = await _convert_google_slides_via_vision(
             presentation=presentation,
             user_id=user_id,
             api=api,
-            job_id=job_id
+            job_id=job_id,
+            access_token=access_token
         )
 
         # Upload any embedded images to storage (pass access token for Google image URLs)
@@ -2555,8 +2617,8 @@ async def _upload_deck_images_to_storage(deck: Dict[str, Any], google_access_tok
                 if orig_url and orig_url.startswith("data:"):
                     image_refs.append((slide_idx, comp_idx, "originalImageUrl", orig_url))
 
-                # Also scan HTML content for Google image URLs
-                html_content = props.get("html", "")
+                # Also scan HTML content for Google image URLs (check both "render" and "html" props)
+                html_content = props.get("render", "") or props.get("html", "")
                 if html_content:
                     google_urls = google_url_pattern.findall(html_content)
                     for url in google_urls:
@@ -2648,15 +2710,18 @@ async def _upload_deck_images_to_storage(deck: Dict[str, Any], google_access_tok
                             # Keep original URL as fallback (it may still work temporarily)
                             url_mapping[url] = url
 
-                # Apply URL replacements to CustomComponent HTML
+                # Apply URL replacements to CustomComponent HTML (check both "render" and "html" props)
                 google_images_replaced = 0
                 for slide_idx, comp_idx, orig_url in google_image_refs:
                     new_url = url_mapping.get(orig_url)
                     if new_url and new_url != orig_url:
-                        html = deck["slides"][slide_idx]["components"][comp_idx]["props"].get("html", "")
-                        if orig_url in html:
-                            deck["slides"][slide_idx]["components"][comp_idx]["props"]["html"] = html.replace(orig_url, new_url)
-                            google_images_replaced += 1
+                        props = deck["slides"][slide_idx]["components"][comp_idx]["props"]
+                        # Check both render and html props
+                        for prop_name in ["render", "html"]:
+                            html = props.get(prop_name, "")
+                            if html and orig_url in html:
+                                props[prop_name] = html.replace(orig_url, new_url)
+                                google_images_replaced += 1
 
                 logger.info(f"[ImageUpload] Replaced {google_images_replaced} Google image URLs with permanent storage URLs")
 

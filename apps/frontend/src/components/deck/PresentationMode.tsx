@@ -273,22 +273,21 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     if (!isPresenting) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const now = Date.now();
-      if (now - lastMouseMove.current < 100) return;
-      lastMouseMove.current = now;
+      if (showThumbnails) return;
 
-      if (!showThumbnails) {
-        // Show controls when cursor is within 10% of any edge
-        const edgeThreshold = 0.1;
-        const x = e.clientX / window.innerWidth;
-        const y = e.clientY / window.innerHeight;
+      const x = e.clientX / window.innerWidth;
+      const y = e.clientY / window.innerHeight;
 
-        const nearEdge = x < edgeThreshold || x > (1 - edgeThreshold) ||
-                         y < edgeThreshold || y > (1 - edgeThreshold);
+      // Use 20% threshold for left/right edges (navigation buttons)
+      // Use 10% threshold for top/bottom edges (other controls)
+      const sideThreshold = 0.2;
+      const verticalThreshold = 0.1;
 
-        if (nearEdge) {
-          setShowControls(true);
-        }
+      const nearLeftOrRight = x < sideThreshold || x > (1 - sideThreshold);
+      const nearTopOrBottom = y < verticalThreshold || y > (1 - verticalThreshold);
+
+      if (nearLeftOrRight || nearTopOrBottom) {
+        setShowControls(true);
       }
     };
 
