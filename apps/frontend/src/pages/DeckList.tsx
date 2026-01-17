@@ -2622,11 +2622,11 @@ const DeckList: React.FC = () => {
                         </div>
 
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                          <TabsList className={cn("w-full bg-zinc-100/50 dark:bg-zinc-800/50 p-1 rounded-lg grid", hasApiKeys ? "grid-cols-3" : "grid-cols-2")}>
-                            <TabsTrigger value="by-me" className="rounded-md text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100">My Decks</TabsTrigger>
-                            <TabsTrigger value="shared" className="rounded-md text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100">Shared</TabsTrigger>
+                          <TabsList className={cn("w-full bg-zinc-100/50 dark:bg-zinc-800/50 p-1 rounded-lg grid overflow-hidden", hasApiKeys ? "grid-cols-3" : "grid-cols-2")}>
+                            <TabsTrigger value="by-me" className="rounded-md text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100 data-[state=active]:shadow-none truncate">My Decks</TabsTrigger>
+                            <TabsTrigger value="shared" className="rounded-md text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100 data-[state=active]:shadow-none truncate">Shared</TabsTrigger>
                             {hasApiKeys && (
-                              <TabsTrigger value="api" className="rounded-md text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100">API</TabsTrigger>
+                              <TabsTrigger value="api" className="rounded-md text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100 data-[state=active]:shadow-none truncate">API</TabsTrigger>
                             )}
                           </TabsList>
                         </Tabs>
