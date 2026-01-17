@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useEditorState } from '@/context/EditorStateContext';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface SlideEditControlsProps {
   isEditing: boolean;
@@ -9,9 +10,10 @@ interface SlideEditControlsProps {
 
 const SlideEditControls: React.FC<SlideEditControlsProps> = ({ isEditing }) => {
   const { setIsEditing } = useEditorState();
+  const isMobile = useIsMobile();
 
-  // Only show Done button when in edit mode
-  if (!isEditing) {
+  // Only show Done button when in edit mode, hide on mobile
+  if (!isEditing || isMobile) {
     return null;
   }
 
