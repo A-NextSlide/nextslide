@@ -88,7 +88,7 @@ const PptxImporter = forwardRef<HTMLInputElement, PptxImporterProps>(({ onImport
 
       // 6) Persist deck locally and to backend without navigating immediately
       updateDeckData(finalDeck, { skipBackend: true });
-      await deckSyncService.saveDeck(finalDeck);
+      await deckSyncService.saveDeck(finalDeck, { isImport: true });
 
       // 7) Do not auto-navigate to avoid heavy renderer mount during import flow
       toast.success(`Imported slides into '${finalDeck.name}'!`);

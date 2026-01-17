@@ -290,7 +290,6 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
   const handleImport = useCallback(async (file: GooglePresentationFile) => {
     setIsImportingId(file.id);
     setImportProgress(null);
-    let createdDeckId: string | null = null;
 
     try {
       // Fetch metadata to check slide count
@@ -316,16 +315,12 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
         return;
       }
 
-      // Create placeholder deck for import (with empty slides - will be replaced by imported content)
+      // Create placeholder deck for import
       const baseDeck = await createDefaultDeck();
       if (!baseDeck || !baseDeck.uuid) throw new Error('Failed to create base deck');
-      createdDeckId = baseDeck.uuid;
 
       const importingName = `${file.name}`;
-      // Clear the default slide - it will be replaced by imported slides
-      const emptyBaseDeck = { ...baseDeck, name: importingName, slides: [], lastModified: new Date().toISOString() };
-      updateDeckData(emptyBaseDeck, { skipBackend: true });
-      try { await deckSyncService.saveDeck(emptyBaseDeck as any); } catch {}
+      updateDeckData({ ...baseDeck, name: importingName }, { skipBackend: true });
 
       try {
         window.dispatchEvent(new CustomEvent('deck_created', {
@@ -333,99 +328,104 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
         }));
       } catch {}
 
+      // Close modal and show toast IMMEDIATELY - don't wait for import
       onOpenChange(false);
-      toast({ title: 'Import started', description: `Importing "${file.name}" (${slideCount} slides)…` });
+      setIsImportingId(null);
+      toast({ title: 'Import started', description: `Importing "${file.name}" (${slideCount} slides). This takes about 1-2 minutes.` });
 
+      // Start the job
       const jobId = await googleIntegrationApi.startImportSlides(file.id);
 
-      const job = await googleIntegrationApi.pollJob<{ deck: any }>(jobId, {
-        intervalMs: 1500,
-        timeoutMs: 300000,
-        onProgress: (progress) => {
-          setImportProgress(progress);
-          try {
-            window.dispatchEvent(new CustomEvent('deck_progress', {
-              detail: {
-                deckId: baseDeck.uuid,
-                progress: progress.progress,
-                currentSlide: progress.currentSlide,
-                totalSlides: progress.totalSlides
-              }
-            }));
-          } catch {}
-        }
-      });
-
-      const deckJson = (job.result as any)?.deck || job.result;
-      if (!deckJson) throw new Error('No deck result returned');
-
-      const sanitizeImportedDeck = (deck: any) => {
-        const clone = JSON.parse(JSON.stringify(deck));
-        for (const slide of clone.slides || []) {
-          if (!Array.isArray(slide.components)) continue;
-          slide.components = slide.components.map((comp: any) => {
-            if (comp?.type === 'Shape' && comp.props) {
-              const fill = comp.props.fill as string | undefined;
-              const hasGradient = !!comp.props.gradient;
-              if (!hasGradient && typeof fill === 'string') {
-                const lower = fill.toLowerCase();
-                if (lower === '#000000ff' || lower === '#000000' || lower === 'black' || /rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*1(\.0+)?\s*\)/i.test(lower) || /rgb\(\s*0\s*,\s*0\s*,\s*0\s*\)/i.test(lower)) {
-                  comp.props.fill = '#00000000';
-                }
-                if (lower === 'transparent') {
-                  comp.props.fill = '#00000000';
-                }
-              }
-            }
-            return comp;
-          });
-        }
-        return clone;
-      };
-
-      const cleanedDeckJson = sanitizeImportedDeck(deckJson);
-      // Build final deck - explicitly set slides to imported content only (no default slide)
-      const finalDeck = {
-        uuid: baseDeck.uuid,
-        name: cleanedDeckJson.name || importingName,
-        slides: cleanedDeckJson.slides || [],
-        size: cleanedDeckJson.size || { width: 1920, height: 1080 },
-        lastModified: new Date().toISOString(),
-        createdAt: baseDeck.createdAt,
-        version: baseDeck.version,
-      } as any;
-
-      // Update store and save to backend with imported slides only
-      updateDeckData(finalDeck, { skipBackend: false });
-      await deckSyncService.saveDeck(finalDeck);
-
-      try {
-        window.dispatchEvent(new CustomEvent('deck_progress', {
-          detail: { deckId: baseDeck.uuid, progress: 100, currentSlide: 1, totalSlides: 1 }
-        }));
-        window.dispatchEvent(new CustomEvent('deck_created', {
-          detail: { deckId: baseDeck.uuid, isGenerating: false }
-        }));
-        window.dispatchEvent(new CustomEvent('deck_import_complete', {
-          detail: { deckId: baseDeck.uuid, name: cleanedDeckJson.name || importingName }
-        }));
-        (window as any).__pendingImportMessage = {
-          deckId: baseDeck.uuid,
-          name: cleanedDeckJson.name || importingName,
-          timestamp: Date.now()
-        };
-      } catch {}
-
-      toast({ title: 'Import complete', description: `Imported "${file.name}"` });
-    } catch (e: any) {
-      if (createdDeckId) {
+      // Fire-and-forget: Run polling and processing in background without blocking UI
+      (async () => {
         try {
-          window.dispatchEvent(new CustomEvent('deck_error', { detail: { deckId: createdDeckId, message: e?.message } }));
-        } catch {}
-      }
-      toast({ variant: 'destructive', title: 'Import failed', description: e?.message || 'Please try again.' });
-    } finally {
+          const job = await googleIntegrationApi.pollJob<{ deck: any }>(jobId, {
+            intervalMs: 2000,  // Slower polling to reduce load
+            timeoutMs: 300000,
+            onProgress: (progress) => {
+              try {
+                window.dispatchEvent(new CustomEvent('deck_progress', {
+                  detail: {
+                    deckId: baseDeck.uuid,
+                    progress: progress.progress,
+                    currentSlide: progress.currentSlide,
+                    totalSlides: progress.totalSlides
+                  }
+                }));
+              } catch {}
+            }
+          });
+
+          const deckJson = (job.result as any)?.deck || job.result;
+          if (!deckJson) throw new Error('No deck result returned');
+
+          // Sanitize deck in a non-blocking way using setTimeout
+          const sanitizeImportedDeck = (deck: any) => {
+            const clone = JSON.parse(JSON.stringify(deck));
+            for (const slide of clone.slides || []) {
+              if (!Array.isArray(slide.components)) continue;
+              slide.components = slide.components.map((comp: any) => {
+                if (comp?.type === 'Shape' && comp.props) {
+                  const fill = comp.props.fill as string | undefined;
+                  const hasGradient = !!comp.props.gradient;
+                  if (!hasGradient && typeof fill === 'string') {
+                    const lower = fill.toLowerCase();
+                    if (lower === '#000000ff' || lower === '#000000' || lower === 'black' || /rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*1(\.0+)?\s*\)/i.test(lower) || /rgb\(\s*0\s*,\s*0\s*,\s*0\s*\)/i.test(lower)) {
+                      comp.props.fill = '#00000000';
+                    }
+                    if (lower === 'transparent') {
+                      comp.props.fill = '#00000000';
+                    }
+                  }
+                }
+                return comp;
+              });
+            }
+            return clone;
+          };
+
+          const cleanedDeckJson = sanitizeImportedDeck(deckJson);
+          const finalDeck = {
+            uuid: baseDeck.uuid,
+            name: cleanedDeckJson.name || importingName,
+            slides: cleanedDeckJson.slides || [],
+            size: cleanedDeckJson.size || { width: 1920, height: 1080 },
+            lastModified: new Date().toISOString(),
+            createdAt: baseDeck.createdAt,
+            version: baseDeck.version,
+          } as any;
+
+          // Save to backend
+          updateDeckData(finalDeck, { skipBackend: true });
+          await deckSyncService.saveDeck(finalDeck, { isImport: true });
+
+          // Notify completion
+          window.dispatchEvent(new CustomEvent('deck_progress', {
+            detail: { deckId: baseDeck.uuid, progress: 100, currentSlide: 1, totalSlides: 1 }
+          }));
+          window.dispatchEvent(new CustomEvent('deck_created', {
+            detail: { deckId: baseDeck.uuid, isGenerating: false }
+          }));
+          window.dispatchEvent(new CustomEvent('deck_import_complete', {
+            detail: { deckId: baseDeck.uuid, name: cleanedDeckJson.name || importingName }
+          }));
+          (window as any).__pendingImportMessage = {
+            deckId: baseDeck.uuid,
+            name: cleanedDeckJson.name || importingName,
+            timestamp: Date.now()
+          };
+
+          toast({ title: 'Import complete', description: `Imported "${file.name}"` });
+        } catch (e: any) {
+          console.error('[GoogleSlidesImport] Background import failed:', e);
+          window.dispatchEvent(new CustomEvent('deck_error', { detail: { deckId: baseDeck.uuid, message: e?.message } }));
+          toast({ variant: 'destructive', title: 'Import failed', description: e?.message || 'Please try again.' });
+        }
+      })();  // Immediately invoked, not awaited
+
+    } catch (e: any) {
       setIsImportingId(null);
+      toast({ variant: 'destructive', title: 'Import failed', description: e?.message || 'Please try again.' });
     }
   }, [createDefaultDeck, updateDeckData, toast, onOpenChange, slideCountMeta]);
 

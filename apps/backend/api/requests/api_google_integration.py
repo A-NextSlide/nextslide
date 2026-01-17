@@ -2135,27 +2135,71 @@ async def _convert_google_slides_via_vision(
             logger.warning(f"[GoogleSlidesVisionImport] Error fetching thumbnail for slide {slide_idx + 1}: {e}")
             return None
 
-    async def recreate_slide_with_vision(slide_idx: int, image_bytes: bytes) -> Dict[str, Any]:
-        """Use Gemini Vision to recreate a slide from its thumbnail."""
+    async def recreate_slide_with_vision(slide_idx: int, image_bytes: bytes, slide_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Use Gemini Vision to recreate a slide from its thumbnail + extracted data."""
 
         # Convert to base64 for storage
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
         image_data_url = f"data:image/png;base64,{image_b64}"
 
-        # Prompt for slide recreation
-        prompt = """Recreate this presentation slide as HTML. Match the visual design EXACTLY.
+        # Extract structured data from slide for accuracy
+        extracted = _preprocess_slide_for_ai(slide_data)
 
-RULES:
-- Canvas size: 1920x1080px, overflow:hidden
-- Use Tailwind CSS: <script src="https://cdn.tailwindcss.com"></script>
-- Load fonts from Google Fonts as needed
-- Match exact colors (use hex values like #RRGGBB)
-- Match exact spacing, font sizes, and positions
-- Recreate any charts/graphs using CSS or SVG
-- For images, use a solid color placeholder div with similar dimensions
-- Preserve all text content exactly as shown
+        # Build context from extracted data
+        data_context = f"""
+EXTRACTED SLIDE DATA (use for accuracy):
+- Background: {extracted.get('background', {}).get('color', '#FFFFFF')}
+- Elements: {len(extracted.get('elements', []))} items
 
-Output a complete HTML document starting with <!DOCTYPE html>. No markdown, just HTML."""
+TEXT CONTENT (copy exactly):
+"""
+        for el in extracted.get('elements', []):
+            if el.get('type') == 'text' and el.get('text'):
+                for run in el['text']:
+                    text = run.get('text', '').strip()
+                    if text:
+                        font_size = run.get('fontSize', 14)
+                        color = run.get('color', '#000000')
+                        bold = 'bold' if run.get('bold') else ''
+                        data_context += f'  - "{text}" (size:{font_size}pt, color:{color} {bold})\n'
+
+        # Extract image URLs for the model to use
+        image_urls = []
+        for el in extracted.get('elements', []):
+            if el.get('type') == 'image' and el.get('contentUrl'):
+                pos = el.get('position', {})
+                size = el.get('size', {})
+                image_urls.append({
+                    'url': el['contentUrl'],
+                    'left': pos.get('left', 0),
+                    'top': pos.get('top', 0),
+                    'width': size.get('width', 10),
+                    'height': size.get('height', 10)
+                })
+
+        # Add image info to context
+        if image_urls:
+            data_context += f"\nIMAGES (use these exact URLs in <img> tags):\n"
+            for i, img in enumerate(image_urls):
+                data_context += f'  - Image {i+1}: url="{img["url"]}" position=({img["left"]:.1f}%, {img["top"]:.1f}%) size=({img["width"]:.1f}% x {img["height"]:.1f}%)\n'
+
+        # Prompt for slide recreation with extracted data
+        prompt = f"""Recreate this presentation slide as HTML. Match the visual design with PIXEL-PERFECT accuracy.
+
+{data_context}
+
+CRITICAL RULES:
+- Canvas: exactly 1920x1080px with overflow:hidden
+- Include: <script src="https://cdn.tailwindcss.com"></script>
+- FONTS: Match exact font family, weight, and size. Load from Google Fonts.
+- COLORS: Use exact hex values from the image (background, text, shapes)
+- POSITIONS: Match exact x,y positions and element sizes
+- TEXT: Copy all text EXACTLY as shown - spelling, capitalization, punctuation
+- SHAPES: Recreate all shapes, lines, and decorative elements
+- CHARTS/GRAPHS: Recreate using SVG or CSS (match colors, proportions)
+- IMAGES: Use the provided image URLs in <img> tags with exact positions/sizes. Add crossorigin="anonymous" attribute.
+
+Output ONLY a complete HTML document starting with <!DOCTYPE html>. No markdown or explanation."""
 
         try:
             # Build contents with image and prompt
@@ -2164,11 +2208,11 @@ Output a complete HTML document starting with <!DOCTYPE html>. No markdown, just
                 prompt
             ]
 
-            response = gemini_client.models.generate_content(
+            response = await gemini_client.aio.models.generate_content(
                 model=GEMINI_3_FLASH,
                 contents=contents,
                 config=types.GenerateContentConfig(
-                    temperature=0.1,  # Low temp for precise recreation
+                    temperature=0.0,  # Zero temp for maximum precision
                     max_output_tokens=16384,
                 )
             )
@@ -2206,9 +2250,9 @@ Output a complete HTML document starting with <!DOCTYPE html>. No markdown, just
         # Fallback: use the image directly
         return _create_image_slide_fallback(image_data_url, slide_idx)
 
-    # Process slides in batches to avoid rate limits
+    # Process all slides in parallel - no need for small batches with async calls
     slides_out = []
-    batch_size = 5
+    batch_size = 30  # All slides in one batch (30 = max allowed slides)
 
     for batch_start in range(0, total_slides, batch_size):
         batch_end = min(batch_start + batch_size, total_slides)
@@ -2233,12 +2277,12 @@ Output a complete HTML document starting with <!DOCTYPE html>. No markdown, just
                 "components": [_create_error_slide_component("Failed to fetch slide thumbnail")]
             }
 
-        # Recreate slides with vision
+        # Recreate slides with vision + extracted data for accuracy
         recreation_tasks = []
         for i, (slide, thumbnail_bytes) in enumerate(zip(batch_slides, thumbnails)):
             slide_idx = batch_start + i
             if thumbnail_bytes:
-                recreation_tasks.append(recreate_slide_with_vision(slide_idx, thumbnail_bytes))
+                recreation_tasks.append(recreate_slide_with_vision(slide_idx, thumbnail_bytes, slide))
             else:
                 # No thumbnail available - create error slide
                 recreation_tasks.append(create_error_slide(slide_idx))
@@ -2396,9 +2440,9 @@ async def _run_import_slides_job(user_id: str, job_id: str, presentation_id: str
             job_id=job_id
         )
 
-        # Upload any embedded images to storage
+        # Upload any embedded images to storage (pass access token for Google image URLs)
         logger.info("[GoogleSlidesImport] Uploading images to storage...")
-        deck = await _upload_deck_images_to_storage(deck)
+        deck = await _upload_deck_images_to_storage(deck, google_access_token=access_token)
 
         # Add import metadata
         result_data = {
@@ -2458,17 +2502,37 @@ async def _run_import_pptx_job(user_id: str, job_id: str, uploaded_file_path: st
             pass  # File already deleted or doesn't exist
 
 
-async def _upload_deck_images_to_storage(deck: Dict[str, Any]) -> Dict[str, Any]:
-    """Upload all base64 embedded images in a deck to Supabase storage.
+async def _upload_deck_images_to_storage(deck: Dict[str, Any], google_access_token: Optional[str] = None) -> Dict[str, Any]:
+    """Upload all base64 embedded images AND Google image URLs in a deck to Supabase storage.
+
+    Handles:
+    - Base64 data: URLs in Image/Background components
+    - Google image URLs (lh*.googleusercontent.com) in CustomComponent HTML
+
+    Args:
+        deck: The deck data with slides and components
+        google_access_token: Optional OAuth token for downloading Google image URLs
 
     If upload fails, strips base64 data to prevent timeout (images won't display but deck will save).
     """
     import hashlib
     import asyncio
+    import re
 
-    # First, collect all images that need uploading
+    # First, collect all base64 images that need uploading
     upload_tasks = []
-    image_refs = []  # Track (slide_idx, comp_idx, prop_key) for each task
+    image_refs = []  # Track (slide_idx, comp_idx, prop_key, url) for each task
+
+    # Also track Google image URLs in CustomComponent HTML
+    # Format: (slide_idx, comp_idx, original_url)
+    google_image_refs = []
+
+    # Regex to find Google image URLs in HTML
+    # Matches lh3.googleusercontent.com, lh4-us.googleusercontent.com, etc.
+    google_url_pattern = re.compile(
+        r'(https?://lh[0-9a-z\-]*\.googleusercontent\.com/[^\s"\'<>]+)',
+        re.IGNORECASE
+    )
 
     for slide_idx, slide in enumerate(deck.get("slides", [])):
         for comp_idx, component in enumerate(slide.get("components", [])):
@@ -2491,18 +2555,24 @@ async def _upload_deck_images_to_storage(deck: Dict[str, Any]) -> Dict[str, Any]
                 if orig_url and orig_url.startswith("data:"):
                     image_refs.append((slide_idx, comp_idx, "originalImageUrl", orig_url))
 
-    logger.info(f"[ImageUpload] Found {len(image_refs)} embedded images to process")
+                # Also scan HTML content for Google image URLs
+                html_content = props.get("html", "")
+                if html_content:
+                    google_urls = google_url_pattern.findall(html_content)
+                    for url in google_urls:
+                        # Avoid duplicates
+                        if (slide_idx, comp_idx, url) not in google_image_refs:
+                            google_image_refs.append((slide_idx, comp_idx, url))
 
-    if not image_refs:
-        return deck
+    logger.info(f"[ImageUpload] Found {len(image_refs)} embedded base64 images and {len(google_image_refs)} Google image URLs")
 
     # Try to upload images to storage
     try:
         from services.image_storage_service import ImageStorageService
         storage = ImageStorageService()
 
-        async def upload_single_image(data_url: str, idx: int) -> Optional[str]:
-            """Upload a single image and return the URL or None."""
+        async def upload_single_base64(data_url: str, idx: int) -> Optional[str]:
+            """Upload a single base64 image and return the URL or None."""
             try:
                 header, b64_data = data_url.split(",", 1)
                 content_type = header.split(":")[1].split(";")[0] if ":" in header else "image/png"
@@ -2514,37 +2584,85 @@ async def _upload_deck_images_to_storage(deck: Dict[str, Any]) -> Dict[str, Any]
                 if result.get("url") and not result.get("error"):
                     return result["url"]
             except Exception as e:
-                logger.debug(f"[ImageUpload] Image {idx} upload failed: {e}")
+                logger.debug(f"[ImageUpload] Base64 image {idx} upload failed: {e}")
+            return None
+
+        async def upload_single_url(image_url: str, idx: int) -> Optional[str]:
+            """Upload a single image from URL and return the new URL or None."""
+            try:
+                # Pass Authorization header for Google image URLs
+                headers = None
+                if google_access_token and 'googleusercontent.com' in image_url:
+                    headers = {'Authorization': f'Bearer {google_access_token}'}
+                result = await storage.upload_image_from_url(image_url, headers_override=headers)
+                if result.get("url") and not result.get("error"):
+                    return result["url"]
+            except Exception as e:
+                logger.debug(f"[ImageUpload] Google URL {idx} upload failed: {e}")
             return None
 
         async with storage:
-            # Upload in parallel batches of 5 to avoid overwhelming the server
+            # Upload base64 images in parallel batches of 5
             batch_size = 5
             uploaded_urls = []
 
-            for i in range(0, len(image_refs), batch_size):
-                batch = image_refs[i:i + batch_size]
-                tasks = [upload_single_image(ref[3], i + j) for j, ref in enumerate(batch)]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                uploaded_urls.extend(results)
+            if image_refs:
+                for i in range(0, len(image_refs), batch_size):
+                    batch = image_refs[i:i + batch_size]
+                    tasks = [upload_single_base64(ref[3], i + j) for j, ref in enumerate(batch)]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    uploaded_urls.extend(results)
 
-            # Apply uploaded URLs back to deck
-            images_uploaded = 0
-            for idx, (slide_idx, comp_idx, prop_key, _) in enumerate(image_refs):
-                url = uploaded_urls[idx] if idx < len(uploaded_urls) else None
-                if isinstance(url, str) and url.startswith("http"):
-                    deck["slides"][slide_idx]["components"][comp_idx]["props"][prop_key] = url
-                    images_uploaded += 1
-                else:
-                    # Upload failed - remove base64 to prevent timeout, use placeholder
-                    deck["slides"][slide_idx]["components"][comp_idx]["props"][prop_key] = ""
-                    logger.debug(f"[ImageUpload] Image {idx} cleared (upload failed)")
+                # Apply uploaded URLs back to deck
+                images_uploaded = 0
+                for idx, (slide_idx, comp_idx, prop_key, _) in enumerate(image_refs):
+                    url = uploaded_urls[idx] if idx < len(uploaded_urls) else None
+                    if isinstance(url, str) and url.startswith("http"):
+                        deck["slides"][slide_idx]["components"][comp_idx]["props"][prop_key] = url
+                        images_uploaded += 1
+                    else:
+                        # Upload failed - remove base64 to prevent timeout, use placeholder
+                        deck["slides"][slide_idx]["components"][comp_idx]["props"][prop_key] = ""
+                        logger.debug(f"[ImageUpload] Base64 image {idx} cleared (upload failed)")
 
-            logger.info(f"[ImageUpload] Uploaded {images_uploaded}/{len(image_refs)} images to storage")
+                logger.info(f"[ImageUpload] Uploaded {images_uploaded}/{len(image_refs)} base64 images to storage")
+
+            # Now handle Google image URLs in CustomComponent HTML
+            if google_image_refs:
+                # Create a mapping of original URL -> new URL
+                url_mapping = {}
+                unique_urls = list(set(ref[2] for ref in google_image_refs))
+
+                logger.info(f"[ImageUpload] Uploading {len(unique_urls)} unique Google image URLs...")
+
+                # Upload in parallel batches
+                for i in range(0, len(unique_urls), batch_size):
+                    batch = unique_urls[i:i + batch_size]
+                    tasks = [upload_single_url(url, i + j) for j, url in enumerate(batch)]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    for url, result in zip(batch, results):
+                        if isinstance(result, str) and result.startswith("http"):
+                            url_mapping[url] = result
+                        else:
+                            # Keep original URL as fallback (it may still work temporarily)
+                            url_mapping[url] = url
+
+                # Apply URL replacements to CustomComponent HTML
+                google_images_replaced = 0
+                for slide_idx, comp_idx, orig_url in google_image_refs:
+                    new_url = url_mapping.get(orig_url)
+                    if new_url and new_url != orig_url:
+                        html = deck["slides"][slide_idx]["components"][comp_idx]["props"].get("html", "")
+                        if orig_url in html:
+                            deck["slides"][slide_idx]["components"][comp_idx]["props"]["html"] = html.replace(orig_url, new_url)
+                            google_images_replaced += 1
+
+                logger.info(f"[ImageUpload] Replaced {google_images_replaced} Google image URLs with permanent storage URLs")
 
     except Exception as e:
         logger.warning(f"[ImageUpload] Storage upload failed: {e}, clearing embedded images")
-        # Clear all embedded images to prevent timeout
+        # Clear all embedded base64 images to prevent timeout
         for slide_idx, comp_idx, prop_key, _ in image_refs:
             try:
                 deck["slides"][slide_idx]["components"][comp_idx]["props"][prop_key] = ""

@@ -344,6 +344,14 @@ def load_registry_on_startup():
 # Try to load registry on startup
 load_registry_on_startup()
 
+# Warmup Gemini context caches for fast-path routing
+try:
+    from agents.editing.fast_path import warmup_fast_path
+    warmup_fast_path()
+    print("✅ Fast-path caches warmed up")
+except Exception as e:
+    print(f"⚠️  Failed to warmup fast-path caches: {e}")
+
 # In-memory storage for frontend debug logs (last 100 entries)
 _frontend_debug_logs: List[Dict[str, Any]] = []
 _MAX_DEBUG_LOGS = 100

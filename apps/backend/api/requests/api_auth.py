@@ -634,6 +634,7 @@ class UpdateDeckRequest(BaseModel):
     outline: Optional[Dict[str, Any]] = None
     version: Optional[Union[str, int]] = None  # Accept both string UUID and integer
     last_modified: Optional[str] = None
+    is_import: Optional[bool] = False  # Skip destructive update check for imports
 
 @router.post("/decks") 
 async def create_deck(
@@ -826,44 +827,48 @@ async def update_deck(
             
             # SAFEGUARD: Prevent overwriting recently generated content (within 30s)
             # This handles the race condition where generation finishes but frontend hasn't refreshed yet
-            try:
-                last_mod_str = deck.get('last_modified')
-                if last_mod_str:
-                    from datetime import datetime, timezone
-                    # Handle Z suffix for UTC
-                    if last_mod_str.endswith('Z'):
-                        last_mod_str = last_mod_str[:-1]
-                    
-                    last_mod = datetime.fromisoformat(last_mod_str)
-                    # Ensure timezone awareness
-                    if last_mod.tzinfo is None:
-                        last_mod = last_mod.replace(tzinfo=timezone.utc)
-                        
-                    now = datetime.now(timezone.utc)
-                    time_diff = (now - last_mod).total_seconds()
-                    
-                    # If modified in last 30 seconds
-                    if time_diff < 30:
-                        # Check if this update is destructive (wiping components)
-                        current_slides = deck.get('slides') or []
-                        new_slides = request.slides or []
-                        
-                        current_comp_count = sum(len(s.get('components', [])) for s in current_slides)
-                        new_comp_count = sum(len(s.get('components', [])) for s in new_slides)
-                        
-                        # If we are losing more than 50% of components or going to 0 from non-zero
-                        if (current_comp_count > 0 and new_comp_count == 0) or \
-                           (current_comp_count > 10 and new_comp_count < current_comp_count * 0.5):
-                            logger.warning(f"⚠️ REJECTING destructive update for deck {deck_uuid} - Recently updated ({time_diff:.1f}s ago)")
-                            logger.warning(f"   Current components: {current_comp_count} -> New components: {new_comp_count}")
-                            raise HTTPException(
-                                status_code=409,
-                                detail="Deck was recently updated by AI. Please refresh the page to see changes."
-                            )
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.error(f"Error checking for destructive update: {e}")
+            # Skip this check for import operations which legitimately replace all slides
+            if not request.is_import:
+                try:
+                    last_mod_str = deck.get('last_modified')
+                    if last_mod_str:
+                        from datetime import datetime, timezone
+                        # Handle Z suffix for UTC
+                        if last_mod_str.endswith('Z'):
+                            last_mod_str = last_mod_str[:-1]
+
+                        last_mod = datetime.fromisoformat(last_mod_str)
+                        # Ensure timezone awareness
+                        if last_mod.tzinfo is None:
+                            last_mod = last_mod.replace(tzinfo=timezone.utc)
+
+                        now = datetime.now(timezone.utc)
+                        time_diff = (now - last_mod).total_seconds()
+
+                        # If modified in last 30 seconds
+                        if time_diff < 30:
+                            # Check if this update is destructive (wiping components)
+                            current_slides = deck.get('slides') or []
+                            new_slides = request.slides or []
+
+                            current_comp_count = sum(len(s.get('components', [])) for s in current_slides)
+                            new_comp_count = sum(len(s.get('components', [])) for s in new_slides)
+
+                            # If we are losing more than 50% of components or going to 0 from non-zero
+                            if (current_comp_count > 0 and new_comp_count == 0) or \
+                               (current_comp_count > 10 and new_comp_count < current_comp_count * 0.5):
+                                logger.warning(f"⚠️ REJECTING destructive update for deck {deck_uuid} - Recently updated ({time_diff:.1f}s ago)")
+                                logger.warning(f"   Current components: {current_comp_count} -> New components: {new_comp_count}")
+                                raise HTTPException(
+                                    status_code=409,
+                                    detail="Deck was recently updated by AI. Please refresh the page to see changes."
+                                )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.error(f"Error checking for destructive update: {e}")
+            else:
+                logger.info(f"[Import] Bypassing destructive update check for deck {deck_uuid}")
 
         
         # Always update last_modified

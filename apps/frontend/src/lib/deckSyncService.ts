@@ -299,7 +299,7 @@ export class DeckSyncService {
    * @param deck The CompleteDeckData to save
    * @returns The saved deck data or null if the operation failed
    */
-  async saveDeck(deck: CompleteDeckData): Promise<CompleteDeckData | null> {
+  async saveDeck(deck: CompleteDeckData, options?: { isImport?: boolean }): Promise<CompleteDeckData | null> {
     try {
       // Basic validation - reject null decks
       if (!deck) {
@@ -377,7 +377,10 @@ export class DeckSyncService {
             'Content-Type': 'application/json',
             ...(bearer ? { 'Authorization': `Bearer ${bearer}` } : {})
           },
-          body: JSON.stringify(formattedDeck)
+          body: JSON.stringify({
+            ...formattedDeck,
+            ...(options?.isImport ? { is_import: true } : {})
+          })
         });
         let response = await doFetch(token || undefined);
         if (response.status === 401) {

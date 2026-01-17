@@ -21,7 +21,7 @@ from models.deck import DeckDiff, DeckDiffBase
 from models.registry import ComponentRegistry
 from agents.ai.clients import get_client, invoke
 from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_rate_limited
-from agents.config import get_model, MODEL_FALLBACK
+from agents.config import get_model, MODEL_FALLBACK, GEMINI_3_FLASH, GEMINI_3_PRO
 from services.context_cache import get_deck_context_snapshot
 from utils.summaries import summarize_chat_history
 
@@ -957,6 +957,7 @@ def orchestrate(
     chat_history: List = None,
     event_cb: callable = None,
     slide_screenshot: Dict = None,
+    classification = None,  # MessageClassification from fast_path
 ) -> Dict:
     """
     Single-pass orchestration.
@@ -975,6 +976,7 @@ def orchestrate(
         chat_history: Previous messages
         event_cb: Callback for streaming events
         slide_screenshot: Optional dict with 'data' (base64) and 'media_type' for vision
+        classification: Optional MessageClassification for model selection
 
     Returns:
         {"deck_diff": DeckDiff, "edit_summary": str}
@@ -1028,8 +1030,20 @@ USER REQUEST: {clean_message}
 
 Respond with the tool_calls to execute."""
 
-    # Get client (use Haiku for orchestration - fast and smart enough)
-    model = get_model("orchestrator")
+    # Get client based on classification (if available) or default
+    if classification:
+        # Use classification-based model selection
+        classification_type = getattr(classification, 'type', 'complex_edit')
+        if classification_type == "simple_edit":
+            model = GEMINI_3_FLASH  # Fast for simple edits
+            logger.info(f"[ORCHESTRATOR] Using Flash for simple_edit classification")
+        elif classification_type == "complex_edit":
+            model = GEMINI_3_PRO  # Pro for complex edits
+            logger.info(f"[ORCHESTRATOR] Using Pro for complex_edit classification")
+        else:
+            model = get_model("orchestrator")  # Default
+    else:
+        model = get_model("orchestrator")
 
     # Check for rate limits
     if "gemini" in model and is_provider_in_cooldown("gemini"):
@@ -1680,6 +1694,7 @@ def edit_deck(
     event_cb: callable = None,
     attachments: List[Dict] = None,
     slide_screenshot: Dict = None,
+    classification = None,  # MessageClassification from fast_path
 ) -> Dict:
     """
     Main entry point for deck editing.
@@ -1687,6 +1702,7 @@ def edit_deck(
 
     Args:
         slide_screenshot: Optional dict with 'data' (base64) and 'media_type' for vision
+        classification: Optional MessageClassification for model selection
     """
 
     # Convert to dict if needed (handle both old .dict() and new .model_dump())
@@ -1709,6 +1725,7 @@ def edit_deck(
         chat_history=chat_history,
         event_cb=event_cb,
         slide_screenshot=slide_screenshot,
+        classification=classification,
     )
 
     # Extract deck_diff_data for API compatibility

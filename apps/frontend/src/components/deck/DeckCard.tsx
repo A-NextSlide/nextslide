@@ -52,11 +52,16 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
         <div className="absolute inset-0 w-full h-full flex items-center justify-center">
           {deck.data?.isGenerating ? (
             <div className="flex flex-col items-center justify-center gap-4 p-4">
-              <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+              <Loader2 className="h-8 w-8 animate-spin text-zinc-400 mt-4" />
               {deck.data?.isImporting ? (
-                <p className="text-sm text-zinc-700 dark:text-zinc-200 text-center">
-                  Importing…
-                </p>
+                <div className="text-center">
+                  <p className="text-sm text-zinc-700 dark:text-zinc-200">
+                    Importing…
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                    About 1-2 min
+                  </p>
+                </div>
               ) : (
                 <>
                   <div className="w-full max-w-[200px]">

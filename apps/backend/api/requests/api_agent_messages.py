@@ -15,8 +15,19 @@ from services.agent_stream_bus import agent_stream_bus
 from utils.supabase import get_supabase_client
 from utils.json_safe import ensure_json_serializable
 
+# Fast-path classification and routing
+from agents.editing.fast_path import (
+    classify_and_route,
+    get_model_for_classification,
+    should_include_screenshot,
+    should_include_full_context,
+)
+
 router = APIRouter(prefix="/v1/agent", tags=["Agent Messages"])
 logger = logging.getLogger(__name__)
+
+# Feature flag for fast-path routing (enable to use classifier)
+ENABLE_FAST_PATH = os.getenv("ENABLE_FAST_PATH", "true").lower() == "true"
 
 
 # NOTE: LinkedIn lookup is now handled by the orchestrator via the linkedin_lookup tool.
@@ -477,12 +488,75 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
 
         return True
 
-    # Only include screenshot if request needs visual context
-    include_screenshot = slide_screenshot_data and _needs_visual_context(text)
-    if slide_screenshot_data and not include_screenshot:
-        logger.info(f"[AgentChat] Skipping screenshot - simple request detected")
-    elif include_screenshot:
-        logger.info(f"[AgentChat] Including screenshot - complex/visual request detected")
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # FAST-PATH: Agent-driven classification and routing
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    classification = None
+    if ENABLE_FAST_PATH:
+        try:
+            # Classify the message to determine routing and context needs
+            classification, fast_path_result = await classify_and_route(
+                message=text or "",
+                deck_data=deck_data_for_agent,
+                current_slide=current_slide_for_agent,
+                chat_history=chat_history,
+            )
+
+            # If fast path handled it (chat messages), return early
+            if fast_path_result is not None:
+                logger.info(f"[AgentChat] Fast path handled message: type={classification.type}")
+
+                # Stream the response
+                response_message = fast_path_result.get("message", "")
+                if response_message:
+                    await agent_stream_bus.publish(session_id, {
+                        "type": "assistant.message.delta",
+                        "sessionId": session_id,
+                        "messageId": message_id,
+                        "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                        "data": {"delta": response_message}
+                    })
+
+                # Send completion
+                await agent_stream_bus.publish(session_id, {
+                    "type": "assistant.message.complete",
+                    "sessionId": session_id,
+                    "messageId": message_id,
+                    "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                    "data": {"messageId": message_id}
+                })
+
+                # Save assistant message
+                sb.table("agent_messages").insert({
+                    "session_id": session_id,
+                    "user_id": user["id"],
+                    "role": "assistant",
+                    "text": response_message,
+                    "attachments": [],
+                    "selections": []
+                }).execute()
+
+                return {"messageId": message_id}
+
+        except Exception as classify_error:
+            logger.warning(f"[AgentChat] Classification failed, falling back to full path: {classify_error}")
+            classification = None
+
+    # Determine screenshot inclusion based on classification (or fallback to keyword-based)
+    if classification:
+        include_screenshot = slide_screenshot_data and should_include_screenshot(classification)
+        if slide_screenshot_data and not include_screenshot:
+            logger.info(f"[AgentChat] Skipping screenshot - classification: {classification.type}")
+        elif include_screenshot:
+            logger.info(f"[AgentChat] Including screenshot - classification needs visual: {classification.needs_screenshot}")
+    else:
+        # Fallback to keyword-based detection if classification failed
+        include_screenshot = slide_screenshot_data and _needs_visual_context(text)
+        if slide_screenshot_data and not include_screenshot:
+            logger.info(f"[AgentChat] Skipping screenshot - simple request detected (fallback)")
+        elif include_screenshot:
+            logger.info(f"[AgentChat] Including screenshot - complex/visual request detected (fallback)")
 
     # LinkedIn lookup is now handled by the orchestrator via the linkedin_lookup tool
     # The LLM decides when to use it based on @linkedin mentions in the message
@@ -499,7 +573,8 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
             run_uuid=str(uuid.uuid4()),
             event_cb=_event_cb,
             attachments=normalized_attachments,
-            slide_screenshot=slide_screenshot_data if include_screenshot else None
+            slide_screenshot=slide_screenshot_data if include_screenshot else None,
+            classification=classification,  # Pass classification for model selection
         )
     except Exception as edit_error:
         logger.error(f"[AgentChat] edit_deck failed: {edit_error}")
