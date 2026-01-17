@@ -15,13 +15,8 @@ from services.agent_stream_bus import agent_stream_bus
 from utils.supabase import get_supabase_client
 from utils.json_safe import ensure_json_serializable
 
-# Fast-path classification and routing
-from agents.editing.fast_path import (
-    classify_and_route,
-    get_model_for_classification,
-    should_include_screenshot,
-    should_include_full_context,
-)
+# Classification for model selection (all messages go through orchestrator)
+from agents.editing.fast_path import should_include_screenshot
 
 router = APIRouter(prefix="/v1/agent", tags=["Agent Messages"])
 logger = logging.getLogger(__name__)
@@ -489,58 +484,30 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
         return True
 
     # ═══════════════════════════════════════════════════════════════════════════════
-    # FAST-PATH: Agent-driven classification and routing
+    # CLASSIFICATION: For model selection only (all messages go through orchestrator)
     # ═══════════════════════════════════════════════════════════════════════════════
+    # NOTE: We NO LONGER bypass the orchestrator for "chat" messages.
+    # The orchestrator handles BOTH chat and edits with full context and tool access.
+    # Classification is only used to select the appropriate model (Flash vs Pro).
 
     classification = None
     if ENABLE_FAST_PATH:
         try:
-            # Classify the message to determine routing and context needs
-            classification, fast_path_result = await classify_and_route(
-                message=text or "",
-                deck_data=deck_data_for_agent,
-                current_slide=current_slide_for_agent,
-                chat_history=chat_history,
-            )
+            from agents.editing.classifier import classify_message
+            # Get recent message texts for classifier context
+            recent_texts = []
+            if chat_history:
+                for msg in chat_history[-3:]:
+                    msg_text = msg.get("text") or msg.get("content") or ""
+                    if msg_text:
+                        recent_texts.append(msg_text[:200])
 
-            # If fast path handled it (chat messages), return early
-            if fast_path_result is not None:
-                logger.info(f"[AgentChat] Fast path handled message: type={classification.type}")
-
-                # Stream the response
-                response_message = fast_path_result.get("message", "")
-                if response_message:
-                    await agent_stream_bus.publish(session_id, {
-                        "type": "assistant.message.delta",
-                        "sessionId": session_id,
-                        "messageId": message_id,
-                        "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                        "data": {"delta": response_message}
-                    })
-
-                # Send completion
-                await agent_stream_bus.publish(session_id, {
-                    "type": "assistant.message.complete",
-                    "sessionId": session_id,
-                    "messageId": message_id,
-                    "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                    "data": {"messageId": message_id}
-                })
-
-                # Save assistant message
-                sb.table("agent_messages").insert({
-                    "session_id": session_id,
-                    "user_id": user["id"],
-                    "role": "assistant",
-                    "text": response_message,
-                    "attachments": [],
-                    "selections": []
-                }).execute()
-
-                return {"messageId": message_id}
+            # Classify for model selection only - no early return!
+            classification = await classify_message(text or "", recent_texts)
+            logger.info(f"[AgentChat] Classified: type={classification.type}, model selection only (no bypass)")
 
         except Exception as classify_error:
-            logger.warning(f"[AgentChat] Classification failed, falling back to full path: {classify_error}")
+            logger.warning(f"[AgentChat] Classification failed, using default model: {classify_error}")
             classification = None
 
     # Determine screenshot inclusion based on classification (or fallback to keyword-based)

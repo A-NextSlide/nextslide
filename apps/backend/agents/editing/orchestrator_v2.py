@@ -321,7 +321,8 @@ IMAGE REPLACEMENT (search_images):
 - For "replace images", "fix images", "new images", "find a different image" → call search_images
 - DON'T call view_component first - you can see the slide from the screenshot (if included)
 - Call search_images ONCE per image you need to replace
-- Use image_index (0, 1, 2, ...) to target each image separately
+- Use target_image to describe WHICH image to replace (e.g., "logo", "hero", "ingest section")
+- Only use image_index if user explicitly says "1st image", "2nd image", etc.
 
 AI IMAGE EDITING (edit_image_with_ai) - VERY SPECIFIC USE CASE:
 ⚠️ ONLY use edit_image_with_ai when user explicitly asks to MODIFY/EDIT an EXISTING IMAGE with AI:
@@ -369,10 +370,10 @@ GENERATING SEARCH QUERIES (KEEP IT SIMPLE):
 
 EXAMPLE - "Replace all 4 company images":
 Return 4 tool_calls in your response:
-  {"tool_name": "search_images", "tool_args": {"query": "Google logo", "image_index": 0}, "summary": "Replace Google image"}
-  {"tool_name": "search_images", "tool_args": {"query": "YouTube player", "image_index": 1}, "summary": "Replace YouTube image"}
-  {"tool_name": "search_images", "tool_args": {"query": "PayPal app", "image_index": 2}, "summary": "Replace PayPal image"}
-  {"tool_name": "search_images", "tool_args": {"query": "LinkedIn profile", "image_index": 3}, "summary": "Replace LinkedIn image"}
+  {"tool_name": "search_images", "tool_args": {"query": "Google logo", "target_image": "Google"}, "summary": "Replace Google image"}
+  {"tool_name": "search_images", "tool_args": {"query": "YouTube player", "target_image": "YouTube"}, "summary": "Replace YouTube image"}
+  {"tool_name": "search_images", "tool_args": {"query": "PayPal app", "target_image": "PayPal"}, "summary": "Replace PayPal image"}
+  {"tool_name": "search_images", "tool_args": {"query": "LinkedIn profile", "target_image": "LinkedIn"}, "summary": "Replace LinkedIn image"}
 
 CANVAS: 1920x1080 pixels. Origin (0,0) top-left.
 
@@ -599,11 +600,80 @@ def build_context(
     chat_history: List = None,
     selections: List[Dict[str, Any]] = None,
 ) -> str:
-    """Build concise context for LLM."""
+    """Build comprehensive context for LLM - includes deck overview, outline, and full presentation understanding."""
 
     # Current slide info
     slide_id = _get_attr(current_slide, 'id', 'unknown')
     components = _get_attr(current_slide, 'components', []) or []
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PRESENTATION OVERVIEW (gives assistant full understanding like Claude Code)
+    # ══════════════════════════════════════════════════════════════════════
+    deck_name = _get_attr(deck_data, 'name', 'Untitled Presentation')
+    all_slides = _get_attr(deck_data, 'slides', []) or []
+    outline = _get_attr(deck_data, 'outline', {}) or {}
+
+    # Build presentation overview
+    overview_lines = [f"📊 PRESENTATION: {deck_name}"]
+    overview_lines.append(f"   Total slides: {len(all_slides)}")
+
+    # Find current slide position
+    current_slide_idx = -1
+    for i, s in enumerate(all_slides):
+        if _get_attr(s, 'id') == slide_id:
+            current_slide_idx = i
+            break
+    if current_slide_idx >= 0:
+        overview_lines.append(f"   Viewing: Slide {current_slide_idx + 1} of {len(all_slides)}")
+
+    # Add outline if available (gives the assistant understanding of presentation flow)
+    if outline:
+        outline_title = outline.get('title', '')
+        outline_slides = outline.get('slides', [])
+        if outline_title or outline_slides:
+            overview_lines.append(f"\n📝 OUTLINE (presentation structure):")
+            if outline_title:
+                overview_lines.append(f"   Topic: {outline_title}")
+            if outline_slides:
+                for i, slide_outline in enumerate(outline_slides[:15]):  # Max 15 for context window
+                    slide_title = slide_outline.get('title', f'Slide {i+1}')
+                    slide_points = slide_outline.get('talking_points', []) or slide_outline.get('points', [])
+                    marker = "→ " if i == current_slide_idx else "  "
+                    overview_lines.append(f"   {marker}{i+1}. {slide_title[:60]}")
+                    # Show first 2 talking points for current slide
+                    if i == current_slide_idx and slide_points:
+                        for pt in slide_points[:2]:
+                            pt_text = pt if isinstance(pt, str) else pt.get('point', str(pt))
+                            overview_lines.append(f"        • {str(pt_text)[:80]}")
+                if len(outline_slides) > 15:
+                    overview_lines.append(f"   ... and {len(outline_slides) - 15} more slides")
+
+    # Build slide overview (quick reference for all slides)
+    overview_lines.append(f"\n📑 ALL SLIDES (quick reference):")
+    for i, s in enumerate(all_slides[:20]):  # Max 20 for context
+        s_id = _get_attr(s, 'id', f'slide-{i}')
+        s_comps = _get_attr(s, 'components', []) or []
+        # Try to extract title from first text component
+        s_title = ""
+        for c in s_comps:
+            if _get_attr(c, 'type') in ['TiptapTextBlock', 'Text', 'CustomComponent']:
+                props = _get_attr(c, 'props', {}) or {}
+                text = props.get('text', '') or props.get('content', '') if isinstance(props, dict) else getattr(props, 'text', '')
+                if text and len(str(text)) > 3:
+                    # Strip HTML tags for display
+                    import re
+                    clean_text = re.sub(r'<[^>]+>', '', str(text))[:50]
+                    if clean_text.strip():
+                        s_title = clean_text.strip()
+                        break
+        marker = "→ " if s_id == slide_id else "  "
+        s_title_display = f": {s_title}" if s_title else ""
+        overview_lines.append(f"   {marker}{i+1}. [{s_id[:20]}]{s_title_display}")
+
+    if len(all_slides) > 20:
+        overview_lines.append(f"   ... and {len(all_slides) - 20} more slides")
+
+    presentation_overview = "\n".join(overview_lines) + "\n\n"
 
     # Extract theme for context
     theme = _get_attr(deck_data, 'theme', {}) or {}
@@ -743,8 +813,11 @@ def build_context(
         history_lines = [f"  {m.get('role', 'user')}: {str(m.get('content', ''))[:250]}" for m in recent]
         history_str = f"\n\nRECENT CHAT:\n" + "\n".join(history_lines)
 
-    context = f"""{theme_str}{current_date_line}
-CURRENT SLIDE: {slide_id}
+    context = f"""{presentation_overview}{theme_str}{current_date_line}
+
+═══════════════════════════════════════════════════════════════════════
+CURRENT SLIDE DETAILS (slide_id: {slide_id})
+═══════════════════════════════════════════════════════════════════════
 STATUS: {slide_status}
 
 COMPONENTS:
@@ -846,36 +919,48 @@ SCOPE:
    - WHEN: Before a surgical edit so you can reference exact strings/classes
    - Args: { "slide_id": str, "component_id": str }
 
-14. search_images ⭐ FOR IMAGE REPLACEMENT
-   - Search Google Images and replace ONE image at a time
+14. search_images ⭐ FOR IMAGE REPLACEMENT IN CUSTOMCOMPONENT HTML
+   - Search Google Images and replace ONE <img> tag in the CustomComponent HTML
    - ✅ USE FOR: "replace the image", "find a better image", "fix the images"
-   - Works with BOTH Image components AND CustomComponents (replaces <img> tags in HTML)
-   - SMART MATCHING: Scores each image by alt text and surrounding context to find best match
-   - ⚠️ CRITICAL: This tool replaces ONE image per call. For "replace ALL images":
-     - Call search_images MULTIPLE TIMES with different queries
-     - Use image_index to target specific images (0=first, 1=second, etc.)
-   - Args: { "query": str, "image_index": optional int, "old_url": optional str, "orientation": "landscape"|"portrait"|"square" }
+   - Edits the CustomComponent HTML to replace image URLs - does NOT create Image components
+   - SMART MATCHING: The tool has AI that matches your query to the correct image!
+   - ⚠️ CRITICAL: This tool replaces ONE image per call.
+   - Args: { "query": str, "image_index": optional int, "target_image": optional str }
+
+   🎯 HOW TO TARGET THE RIGHT IMAGE:
+
+   METHOD 1 - User describes image by CONTENT (PREFERRED):
+   - User says: "replace the ingest image with a cat"
+   - Use: {"query": "cat", "target_image": "ingest"}
+   - The tool's AI will match "ingest" to the correct image based on alt text and context
+
+   METHOD 2 - User says ORDINAL position (first, second, 3rd, etc.):
+   - User says: "replace the 2nd image with a dog"
+   - Use: {"query": "dog", "image_index": 1}  // 0-indexed, so 2nd = index 1
+
+   ⚠️ DO NOT GUESS image_index! If user describes the image by content ("logo", "hero image",
+   "the product photo", "ingest section"), use target_image instead.
 
    🎯 KEEP QUERIES SHORT (2-4 words):
    - For companies: "Tesla car", "Microsoft logo", "Amazon warehouse"
    - For concepts: "team meeting", "solar panels", "office workspace"
-   - AVOID long queries - they return worse results!
 
-   - Example: {"query": "Apple logo", "image_index": 0}
-   - Example: {"query": "Oracle database", "image_index": 1}
+   - Example: {"query": "cat photo", "target_image": "ingest"}  ← User said "ingest image"
+   - Example: {"query": "Apple logo", "target_image": "logo"}   ← User said "the logo"
+   - Example: {"query": "dog", "image_index": 2}                ← User said "3rd image"
 
 15. replace_image
-   - Replace an Image component with a specific URL
-   - WHEN: After search_images, or when user provides a URL
-   - Args: { "component_id": str, "image_url": str, "alt": optional str }
+   - Replace an image URL in the CustomComponent HTML with a specific URL
+   - WHEN: User provides a specific image URL to use
+   - Edits the HTML to replace an existing image URL - does NOT create Image components
+   - Args: { "image_url": str, "image_index": optional int, "old_url": optional str }
 
 16. edit_image_with_ai ⚠️ SPECIFIC USE CASE - AI IMAGE MODIFICATION
    - ONLY use when user explicitly wants to MODIFY/EDIT an EXISTING IMAGE using AI
    - ✅ USE FOR: "make this image green/blue/red", "remove the background", "add effects"
    - ✅ USE FOR: "make the image look more X", "change image colors", "edit the photo"
    - ❌ DO NOT USE FOR: replacing images (use search_images), changing text colors, general edits
-   - Works with BOTH Image components AND images inside CustomComponents
-   - Downloads image → AI edits it → uploads new version → replaces URL in HTML
+   - Edits an <img> in the CustomComponent HTML - downloads, AI edits, uploads, replaces URL in HTML
    - Args: { "instruction": str, "image_index": optional int }
    - instruction: What to do to the image (e.g., "change colors to green", "remove background")
    - image_index: REQUIRED if multiple images - which image to edit (0=first, 1=second, etc.)

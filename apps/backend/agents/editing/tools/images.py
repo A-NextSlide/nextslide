@@ -247,34 +247,62 @@ def search_images(
     attachments: List[Dict] = None,
 ) -> DeckDiff:
     """
-    Search for an image and replace it in the slide.
+    Search for an image and replace an <img> tag in the CustomComponent HTML.
 
-    The LLM decides which image to replace based on the user's query.
+    This tool ONLY works with CustomComponents - it edits the HTML to replace image URLs.
+    It does NOT create or modify Image components.
 
     Args:
-        query: str - What to search for AND/OR which image to replace
-        component_id: Optional[str] - Component to update
+        query: str - What to search for
+        image_index: Optional[int] - Which image to replace (0-based). If provided, skips LLM selection.
+        component_id: Optional[str] - CustomComponent to update (auto-detected if not provided)
         slide_id: Optional[str] - Target slide
     """
     query = args.get("query", "")
     component_id = args.get("component_id")
     slide_id = args.get("slide_id") or (current_slide.get("id") if current_slide else None)
+    # image_index: Explicit index when user says "1st image", "2nd image", etc.
+    image_index = args.get("image_index")
+    # target_image: Description when user describes image by content ("the logo", "ingest image")
+    # When provided, we use LLM to match this against image descriptions
+    target_image = args.get("target_image")
+
+    # CRITICAL DEBUG: Log full current_slide structure to diagnose issues
+    logger.info(f"[IMAGES] === SEARCH_IMAGES START ===")
+    logger.info(f"[IMAGES] Args: query='{query}', target_image='{target_image}', image_index={image_index}")
+
+    if current_slide:
+        logger.info(f"[IMAGES] current_slide keys: {list(current_slide.keys())}")
+        logger.info(f"[IMAGES] current_slide.id: {current_slide.get('id')}")
+        components = current_slide.get("components", [])
+        logger.info(f"[IMAGES] current_slide has {len(components)} components:")
+        for i, c in enumerate(components):
+            comp_type = c.get("type") if isinstance(c, dict) else type(c).__name__
+            comp_id = c.get("id") if isinstance(c, dict) else "N/A"
+            has_render = "render" in (c.get("props", {}) if isinstance(c, dict) else {})
+            logger.info(f"[IMAGES]   [{i}] type='{comp_type}', id='{comp_id}', has_render={has_render}")
+    else:
+        logger.warning("[IMAGES] current_slide is None or empty!")
+        logger.warning(f"[IMAGES] current_slide value: {current_slide}")
 
     if not query:
         logger.warning("[IMAGES] No query")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-    # Auto-detect component
+    # Auto-detect CustomComponent - this is the ONLY component type we work with
+    # All slides use CustomComponents with HTML containing <img> tags
+    # Use case-insensitive matching to handle any casing variations
     if not component_id and current_slide:
         for c in current_slide.get("components", []):
-            if c.get("type") == "CustomComponent":
-                component_id = c.get("id")
-                break
-            elif c.get("type") == "Image":
-                component_id = c.get("id")
-                break
+            if isinstance(c, dict):
+                comp_type = c.get("type", "")
+                # Case-insensitive match for CustomComponent
+                if comp_type.lower() == "customcomponent":
+                    component_id = c.get("id")
+                    logger.info(f"[IMAGES] Auto-detected CustomComponent: {component_id} (type='{comp_type}')")
+                    break
 
-    logger.info(f"[IMAGES] Query: '{query}', component: {component_id}")
+    logger.info(f"[IMAGES] Final: query='{query}', component={component_id}, image_index={image_index}")
 
     # Get event loop
     try:
@@ -317,7 +345,12 @@ def search_images(
 
     # Find and replace in component
     if not component_id:
-        logger.warning("[IMAGES] No component to update")
+        # Provide helpful error with what components ARE available
+        if current_slide:
+            available = [f"{c.get('type')}:{c.get('id')}" for c in current_slide.get("components", []) if isinstance(c, dict)]
+            logger.warning(f"[IMAGES] No CustomComponent found. Available components: {available}")
+        else:
+            logger.warning("[IMAGES] No component to update - current_slide is empty")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
     # Find target slide
@@ -343,80 +376,115 @@ def search_images(
         logger.warning("[IMAGES] Component not found")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-    comp_type = target_component.get("type")
+    comp_type = target_component.get("type", "")
+    logger.info(f"[IMAGES] Target component type: '{comp_type}'")
 
-    # Handle Image component
-    if comp_type == "Image":
-        return DeckDiff(DeckDiffBase(
-            slides_to_update=[
-                SlideDiffBase(
-                    slide_id=slide_id,
-                    components_to_update=[
-                        ComponentDiffBase(
-                            id=component_id,
-                            props={"src": new_url, "alt": new_alt or query}
-                        )
-                    ]
-                )
-            ]
-        ))
+    # ONLY handle CustomComponent - we edit <img> tags in HTML
+    # We do NOT support Image components - all slides use CustomComponents
+    # Use case-insensitive matching for robustness
+    if comp_type.lower() != "customcomponent":
+        logger.warning(f"[IMAGES] Component {component_id} is type '{comp_type}', not CustomComponent. Skipping.")
+        logger.warning(f"[IMAGES] This tool only works with CustomComponents that contain HTML with <img> tags.")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-    # Handle CustomComponent
-    if comp_type == "CustomComponent":
-        props = target_component.get("props", {})
-        html = props.get("render", "")
+    # Handle CustomComponent - edit HTML to replace image URL
+    # (We already validated this is a CustomComponent above via case-insensitive check)
+    props = target_component.get("props", {})
+    html = props.get("render", "")
 
-        if not html:
-            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+    if not html:
+        logger.warning("[IMAGES] CustomComponent has no 'render' HTML content")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-        # Strip frontend scripts
-        from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
-        html = strip_frontend_editing_scripts(html)
+    # Strip frontend scripts
+    from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
+    html = strip_frontend_editing_scripts(html)
 
-        # Extract all images
-        images = _extract_all_images(props, html)
+    # Extract all images
+    images = _extract_all_images(props, html)
 
-        if not images:
-            logger.warning("[IMAGES] No images found in component")
-            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+    if not images:
+        logger.warning("[IMAGES] No images found in component HTML")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-        logger.info(f"[IMAGES] Found {len(images)} images:")
-        for img in images:
-            logger.info(f"  [{img.index}] {img.description[:60]}")
+    logger.info(f"[IMAGES] Found {len(images)} images:")
+    for img in images:
+        logger.info(f"  [{img.index}] {img.description[:60]}")
+        logger.info(f"       URL: {img.url[:80]}...")
 
-        # LLM selects which image to replace
+    # Select which image to replace
+    # PRIORITY ORDER:
+    # 1. image_index (user said "1st image", "2nd image", etc.)
+    # 2. target_image (user described image by content like "ingest image", "the logo")
+    # 3. Fall back to LLM selection based on search query
+
+    if image_index is not None:
+        # Orchestrator specified exact index (e.g., user said "3rd image" -> index=2)
+        selected_idx = image_index
+        if selected_idx < 0 or selected_idx >= len(images):
+            logger.warning(f"[IMAGES] image_index {selected_idx} out of range (0-{len(images)-1}), clamping")
+            selected_idx = max(0, min(selected_idx, len(images) - 1))
+        logger.info(f"[IMAGES] Using explicit image_index={selected_idx}")
+    elif target_image:
+        # User described which image by content - use LLM to match target_image to image descriptions
+        logger.info(f"[IMAGES] Using target_image='{target_image}' to find matching image")
+        try:
+            # Use target_image as the selection query - it describes WHICH image to replace
+            selected_idx = loop.run_until_complete(_select_image_with_llm(target_image, images))
+            logger.info(f"[IMAGES] LLM matched target_image '{target_image}' to index={selected_idx}")
+        except Exception as e:
+            logger.warning(f"[IMAGES] LLM selection failed: {e}, defaulting to first image")
+            selected_idx = 0
+    else:
+        # No explicit index or target - use LLM to select based on search query
         try:
             selected_idx = loop.run_until_complete(_select_image_with_llm(query, images))
+            logger.info(f"[IMAGES] LLM selected index={selected_idx} based on query")
         except Exception as e:
             # SLIDE-BACKEND-28A: Handle LLM selection failures gracefully
             logger.warning(f"[IMAGES] LLM selection failed: {e}, defaulting to first image")
             selected_idx = 0
-        old_url = images[selected_idx].url
 
-        # Replace in HTML
-        new_html = html.replace(old_url, new_url, 1)
+    old_url = images[selected_idx].url
+    logger.info(f"[IMAGES] Replacing old_url: {old_url}")
+    logger.info(f"[IMAGES] With new_url: {new_url}")
 
-        if new_html == html:
-            logger.warning("[IMAGES] Replacement failed - URL not found in HTML")
-            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+    # Verify old_url exists in HTML before attempting replace
+    if old_url not in html:
+        logger.error(f"[IMAGES] CRITICAL: old_url NOT found in HTML!")
+        logger.error(f"[IMAGES] old_url length: {len(old_url)}")
+        logger.error(f"[IMAGES] HTML length: {len(html)}")
+        # Try to find similar URLs
+        import difflib
+        for img in images:
+            if img.url in html:
+                logger.info(f"[IMAGES] URL at index {img.index} IS in HTML: {img.url[:60]}...")
+            else:
+                logger.warning(f"[IMAGES] URL at index {img.index} NOT in HTML: {img.url[:60]}...")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-        logger.info(f"[IMAGES] Replaced image [{selected_idx}]: {old_url[:40]}... -> {new_url[:40]}...")
+    # Replace in HTML
+    new_html = html.replace(old_url, new_url, 1)
 
-        return DeckDiff(DeckDiffBase(
-            slides_to_update=[
-                SlideDiffBase(
-                    slide_id=slide_id,
-                    components_to_update=[
-                        ComponentDiffBase(
-                            id=component_id,
-                            props={"render": new_html}
-                        )
-                    ]
-                )
-            ]
-        ))
+    if new_html == html:
+        logger.warning("[IMAGES] Replacement failed - URL not found in HTML (unexpected)")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-    return DeckDiff(DeckDiffBase(slides_to_update=[]))
+    logger.info(f"[IMAGES] Replaced image [{selected_idx}]: {old_url[:40]}... -> {new_url[:40]}...")
+
+    return DeckDiff(DeckDiffBase(
+        slides_to_update=[
+            SlideDiffBase(
+                slide_id=slide_id,
+                components_to_update=[
+                    ComponentDiffBase(
+                        id=component_id,
+                        props={"render": new_html}
+                    )
+                ]
+            )
+        ]
+    ))
 
 
 # =============================================================================
@@ -431,18 +499,67 @@ def replace_image_from_search(
     attachments: List[Dict] = None,
 ) -> DeckDiff:
     """
-    Replace an Image component with a specific URL.
+    Replace an image URL in a CustomComponent with a specific new URL.
+
+    This tool ONLY works with CustomComponents - it finds an image in the HTML
+    and replaces its URL with the new one.
+
+    Args:
+        component_id: CustomComponent ID (required)
+        image_url: New image URL to use
+        old_url: URL to replace (optional - if not provided, uses image_index)
+        image_index: Which image to replace (0-based, optional)
     """
     component_id = args.get("component_id")
     image_url = args.get("image_url")
-    alt = args.get("alt", "")
+    old_url = args.get("old_url")
+    image_index = args.get("image_index", 0)
     slide_id = args.get("slide_id") or (current_slide.get("id") if current_slide else None)
 
-    if not component_id or not image_url:
-        logger.warning("[REPLACE_IMAGE] Missing args")
+    if not image_url:
+        logger.warning("[REPLACE_IMAGE] Missing image_url")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
-    # Upload to Supabase
+    # Find CustomComponent - case-insensitive matching
+    if not component_id and current_slide:
+        for c in current_slide.get("components", []):
+            if isinstance(c, dict) and c.get("type", "").lower() == "customcomponent":
+                component_id = c.get("id")
+                logger.info(f"[REPLACE_IMAGE] Auto-detected CustomComponent: {component_id}")
+                break
+
+    if not component_id:
+        if current_slide:
+            available = [f"{c.get('type')}:{c.get('id')}" for c in current_slide.get("components", []) if isinstance(c, dict)]
+            logger.warning(f"[REPLACE_IMAGE] No CustomComponent found. Available: {available}")
+        else:
+            logger.warning("[REPLACE_IMAGE] No CustomComponent found - current_slide is empty")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    # Find target component
+    target_component = None
+    for c in current_slide.get("components", []):
+        if isinstance(c, dict) and c.get("id") == component_id:
+            target_component = c
+            break
+
+    if not target_component:
+        logger.warning(f"[REPLACE_IMAGE] Component {component_id} not found")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    comp_type = target_component.get("type", "")
+    if comp_type.lower() != "customcomponent":
+        logger.warning(f"[REPLACE_IMAGE] Component is type '{comp_type}', not CustomComponent. Skipping.")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    props = target_component.get("props", {})
+    html = props.get("render", "")
+
+    if not html:
+        logger.warning("[REPLACE_IMAGE] No HTML in CustomComponent")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    # Upload to Supabase if needed
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
@@ -451,6 +568,25 @@ def replace_image_from_search(
 
     image_url, _ = loop.run_until_complete(_upload_to_supabase(image_url))
 
+    # Find URL to replace
+    if not old_url:
+        # Extract images and use image_index
+        images = _extract_all_images(props, html)
+        if not images:
+            logger.warning("[REPLACE_IMAGE] No images found in HTML")
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+        idx = min(image_index, len(images) - 1)
+        old_url = images[idx].url
+
+    # Replace in HTML
+    new_html = html.replace(old_url, image_url, 1)
+
+    if new_html == html:
+        logger.warning("[REPLACE_IMAGE] URL replacement failed - old_url not found in HTML")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    logger.info(f"[REPLACE_IMAGE] Replaced {old_url[:40]}... -> {image_url[:40]}...")
+
     return DeckDiff(DeckDiffBase(
         slides_to_update=[
             SlideDiffBase(
@@ -458,7 +594,7 @@ def replace_image_from_search(
                 components_to_update=[
                     ComponentDiffBase(
                         id=component_id,
-                        props={"src": image_url, "alt": alt}
+                        props={"render": new_html}
                     )
                 ]
             )
@@ -508,23 +644,32 @@ def edit_image_with_ai(
 
     logger.info(f"[EDIT_IMAGE] Instruction: '{instruction}', index: {image_index}")
 
-    # Find component
+    # Find CustomComponent - case-insensitive matching
+    # All slides use CustomComponents with HTML containing <img> tags
     component_id = None
-    for c in current_slide.get("components", []):
-        if c.get("type") in ["CustomComponent", "Image"]:
-            component_id = c.get("id")
-            break
+    if current_slide:
+        for c in current_slide.get("components", []):
+            if isinstance(c, dict) and c.get("type", "").lower() == "customcomponent":
+                component_id = c.get("id")
+                logger.info(f"[EDIT_IMAGE] Auto-detected CustomComponent: {component_id}")
+                break
 
     if not component_id:
+        if current_slide:
+            available = [f"{c.get('type')}:{c.get('id')}" for c in current_slide.get("components", []) if isinstance(c, dict)]
+            logger.warning(f"[EDIT_IMAGE] No CustomComponent found. Available: {available}")
+        else:
+            logger.warning("[EDIT_IMAGE] No CustomComponent found - current_slide is empty")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
     target_component = None
     for c in current_slide.get("components", []):
-        if c.get("id") == component_id:
+        if isinstance(c, dict) and c.get("id") == component_id:
             target_component = c
             break
 
     if not target_component:
+        logger.warning(f"[EDIT_IMAGE] Component {component_id} not found in slide")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
     try:
@@ -533,21 +678,25 @@ def edit_image_with_ai(
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    comp_type = target_component.get("type")
+    comp_type = target_component.get("type", "")
     props = target_component.get("props", {})
 
-    # Get image URL
-    if comp_type == "Image":
-        old_url = props.get("src", "")
-    else:
-        html = props.get("render", "")
-        images = _extract_all_images(props, html)
-        if not images:
-            return DeckDiff(DeckDiffBase(slides_to_update=[]))
-        idx = min(image_index, len(images) - 1)
-        old_url = images[idx].url
+    # Verify this is a CustomComponent - case-insensitive
+    if comp_type.lower() != "customcomponent":
+        logger.warning(f"[EDIT_IMAGE] Component is type '{comp_type}', not CustomComponent. Skipping.")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    # Get image URL from CustomComponent HTML
+    html = props.get("render", "")
+    images = _extract_all_images(props, html)
+    if not images:
+        logger.warning("[EDIT_IMAGE] No images found in CustomComponent HTML")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+    idx = min(image_index, len(images) - 1)
+    old_url = images[idx].url
 
     if not old_url:
+        logger.warning("[EDIT_IMAGE] No URL found for selected image")
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
     # Download, edit, upload
@@ -587,30 +736,18 @@ def edit_image_with_ai(
 
     logger.info(f"[EDIT_IMAGE] Success: {old_url[:40]}... -> {new_url[:40]}...")
 
-    if comp_type == "Image":
-        return DeckDiff(DeckDiffBase(
-            slides_to_update=[
-                SlideDiffBase(
-                    slide_id=slide_id,
-                    components_to_update=[
-                        ComponentDiffBase(id=component_id, props={"src": new_url})
-                    ]
-                )
-            ]
-        ))
-    else:
-        html = props.get("render", "")
-        new_html = html.replace(old_url, new_url, 1)
-        return DeckDiff(DeckDiffBase(
-            slides_to_update=[
-                SlideDiffBase(
-                    slide_id=slide_id,
-                    components_to_update=[
-                        ComponentDiffBase(id=component_id, props={"render": new_html})
-                    ]
-                )
-            ]
-        ))
+    # Replace image URL in CustomComponent HTML
+    new_html = html.replace(old_url, new_url, 1)
+    return DeckDiff(DeckDiffBase(
+        slides_to_update=[
+            SlideDiffBase(
+                slide_id=slide_id,
+                components_to_update=[
+                    ComponentDiffBase(id=component_id, props={"render": new_html})
+                ]
+            )
+        ]
+    ))
 
 
 # =============================================================================

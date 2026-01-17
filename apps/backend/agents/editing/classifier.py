@@ -1,12 +1,13 @@
 """
-Fast message classifier using Gemini context caching.
+Fast message classifier using Gemini Flash.
 
 Routes messages to appropriate handlers:
 - chat: Conversational messages (greetings, questions, feedback)
 - simple_edit: Single, obvious operations
 - complex_edit: Multi-step, creative, or ambiguous requests
 
-The classifier itself uses a cached system prompt for <200ms response times.
+Note: Doesn't use Gemini context caching because the system prompt is only ~900 tokens,
+below Gemini's 4096 token minimum. Direct Gemini Flash calls are fast enough (~300-500ms).
 """
 
 import os
@@ -14,8 +15,6 @@ import json
 import logging
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
-from datetime import datetime, timezone
-import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -118,98 +117,21 @@ BE FAST. Default to the simpler category when uncertain."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# GEMINI CONTEXT CACHE MANAGEMENT
-# ═══════════════════════════════════════════════════════════════════════════════
-
-_classifier_cache = None
-_classifier_cache_name = None
-_cache_created_at = None
-
-# Cache TTL in seconds (24 hours - prompt doesn't change)
-CLASSIFIER_CACHE_TTL = 86400
-
-
-def _get_cache_key() -> str:
-    """Generate a cache key based on the system prompt content."""
-    return hashlib.md5(CLASSIFIER_SYSTEM_PROMPT.encode()).hexdigest()[:12]
-
-
-def get_or_create_classifier_cache() -> Optional[str]:
-    """
-    Get or create a Gemini context cache for the classifier.
-
-    Returns the cache name if successful, None otherwise.
-    The cache contains the system prompt, enabling fast classification.
-    """
-    global _classifier_cache, _classifier_cache_name, _cache_created_at
-
-    # Return existing cache if valid
-    if _classifier_cache_name:
-        # Check if cache is still valid (within TTL)
-        if _cache_created_at:
-            age = (datetime.now(timezone.utc) - _cache_created_at).total_seconds()
-            if age < CLASSIFIER_CACHE_TTL - 300:  # 5 min buffer
-                return _classifier_cache_name
-
-    try:
-        from google.genai import Client as Gemini
-        from google.genai import types as genai_types
-
-        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            logger.warning("[Classifier] No Gemini API key found, caching disabled")
-            return None
-
-        client = Gemini(api_key=api_key)
-        cache_key = _get_cache_key()
-        display_name = f"nextslide_classifier_{cache_key}"
-
-        # Check for existing cache with same name
-        try:
-            for existing_cache in client.caches.list():
-                if existing_cache.display_name == display_name:
-                    _classifier_cache_name = existing_cache.name
-                    _cache_created_at = datetime.now(timezone.utc)
-                    logger.info(f"[Classifier] Reusing existing cache: {_classifier_cache_name}")
-                    return _classifier_cache_name
-        except Exception as e:
-            logger.debug(f"[Classifier] Error listing caches: {e}")
-
-        # Create new cache
-        cache = client.caches.create(
-            model="models/gemini-2.0-flash",  # Fast model for classification
-            config=genai_types.CreateCachedContentConfig(
-                display_name=display_name,
-                system_instruction=CLASSIFIER_SYSTEM_PROMPT,
-                ttl=f"{CLASSIFIER_CACHE_TTL}s",
-            )
-        )
-
-        _classifier_cache = cache
-        _classifier_cache_name = cache.name
-        _cache_created_at = datetime.now(timezone.utc)
-
-        logger.info(f"[Classifier] Created new cache: {_classifier_cache_name}")
-        return _classifier_cache_name
-
-    except Exception as e:
-        logger.error(f"[Classifier] Failed to create cache: {e}")
-        return None
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # CLASSIFIER AGENT
 # ═══════════════════════════════════════════════════════════════════════════════
+# Note: Classifier doesn't use Gemini context caching because the system prompt
+# is only ~900 tokens, below Gemini's 4096 token minimum for caching.
+# Instead, we use direct Gemini Flash calls which are fast enough (~300-500ms).
 
 async def classify_message(
     message: str,
     recent_messages: Optional[List[str]] = None,
 ) -> MessageClassification:
     """
-    Classify a user message using a fast LLM call with cached context.
+    Classify a user message using a fast LLM call.
 
     This is the first step in the two-stage architecture:
-    1. Classify (fast, <200ms) → determines what context is needed
+    1. Classify (fast, <300ms) → determines what context is needed
     2. Process (with appropriate context) → handles the actual request
 
     Args:
@@ -235,50 +157,51 @@ async def classify_message(
     prompt_parts.append(f"Classify this message: \"{message}\"")
     prompt = "\n".join(prompt_parts)
 
-    # Try cached Gemini call first
+    # Use fast Gemini Flash call (no caching - prompt too small for 4096 token minimum)
     try:
-        result = await _classify_with_gemini_cache(prompt)
+        result = await _classify_with_gemini_flash(prompt)
         if result:
             return result
     except Exception as e:
-        logger.warning(f"[Classifier] Gemini cache call failed: {e}")
+        logger.warning(f"[Classifier] Gemini Flash call failed: {e}")
 
-    # Fallback to direct call (no cache)
+    # Fallback to Haiku
     try:
         result = await _classify_direct(prompt)
         if result:
             return result
     except Exception as e:
-        logger.warning(f"[Classifier] Direct call failed: {e}")
+        logger.warning(f"[Classifier] Haiku fallback failed: {e}")
 
     # Last resort: rule-based fallback
     return _classify_fallback(message)
 
 
-async def _classify_with_gemini_cache(prompt: str) -> Optional[MessageClassification]:
-    """Classify using Gemini with cached system prompt."""
+async def _classify_with_gemini_flash(prompt: str) -> Optional[MessageClassification]:
+    """Classify using Gemini Flash (fast, no caching needed for small prompt)."""
     import asyncio
-
-    cache_name = get_or_create_classifier_cache()
-    if not cache_name:
-        return None
 
     try:
         from google.genai import Client as Gemini
         from google.genai import types as genai_types
 
         api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return None
+
         client = Gemini(api_key=api_key)
+
+        # Combine system prompt and user prompt for single call
+        full_prompt = f"{CLASSIFIER_SYSTEM_PROMPT}\n\n{prompt}"
 
         # Run in thread pool since genai is sync
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
             lambda: client.models.generate_content(
-                model="models/gemini-2.0-flash",
-                contents=prompt,
+                model="models/gemini-2.0-flash",  # Fast model
+                contents=full_prompt,
                 config=genai_types.GenerateContentConfig(
-                    cached_content=cache_name,
                     response_mime_type="application/json",
                     temperature=0.1,  # Low temp for consistent classification
                     max_output_tokens=256,
@@ -287,17 +210,10 @@ async def _classify_with_gemini_cache(prompt: str) -> Optional[MessageClassifica
         )
 
         text = response.text.strip()
-
-        # Log cache usage
-        if hasattr(response, 'usage_metadata'):
-            cached_tokens = getattr(response.usage_metadata, 'cached_content_token_count', 0)
-            if cached_tokens > 0:
-                logger.debug(f"[Classifier] Used {cached_tokens} cached tokens")
-
         return _parse_classification(text)
 
     except Exception as e:
-        logger.error(f"[Classifier] Gemini cache error: {e}")
+        logger.error(f"[Classifier] Gemini Flash error: {e}")
         return None
 
 
@@ -413,19 +329,19 @@ def _classify_fallback(message: str) -> MessageClassification:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CACHE WARMUP
+# WARMUP (no caching needed - prompt is too small for Gemini's 4096 token minimum)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def warmup_classifier_cache():
     """
-    Pre-create the classifier cache on startup.
-    Call this during server initialization for faster first requests.
+    Classifier warmup - verifies API connectivity.
+    Note: Classifier doesn't use caching (prompt too small for 4096 token minimum).
     """
     try:
-        cache_name = get_or_create_classifier_cache()
-        if cache_name:
-            logger.info(f"[Classifier] Cache warmed up: {cache_name}")
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if api_key:
+            logger.info("[Classifier] API key found, classifier ready (no caching - prompt too small)")
         else:
-            logger.warning("[Classifier] Cache warmup failed")
+            logger.warning("[Classifier] No Gemini API key found")
     except Exception as e:
-        logger.error(f"[Classifier] Cache warmup error: {e}")
+        logger.error(f"[Classifier] Warmup error: {e}")
