@@ -13,12 +13,16 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     // Function to auto-resize the textarea
     const adjustHeight = () => {
       const textarea = ref ? (ref as React.RefObject<HTMLTextAreaElement>).current : textareaRef.current;
-      
+
       if (textarea) {
         // Reset height to auto to get the correct scrollHeight
         textarea.style.height = 'auto';
-        // Set the height to match content (scrollHeight)
-        textarea.style.height = `${textarea.scrollHeight}px`;
+        // Set the height to match content (scrollHeight), capped at max-height if set
+        const maxHeight = parseInt(window.getComputedStyle(textarea).maxHeight) || Infinity;
+        const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+        textarea.style.height = `${newHeight}px`;
+        // Enable scrolling if content exceeds max-height
+        textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
       }
     };
     
@@ -63,7 +67,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           adjustHeight();
         }}
         rows={1}
-        style={{ minHeight: 'auto', overflow: 'hidden' }}
+        style={{ minHeight: 'auto' }}
         {...props}
       />
     )

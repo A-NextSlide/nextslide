@@ -348,6 +348,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     selectedProfileForContinuationRef,
     originalLinkedInRequestRef,
     applyDeckDiffRespectingEditMode,
+    deckId,
   });
 
   const handleSend = useCallback((overrideMessage?: string) => {

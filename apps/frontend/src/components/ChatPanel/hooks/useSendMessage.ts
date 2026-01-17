@@ -50,6 +50,7 @@ interface UseSendMessageOptions {
   selectedProfileForContinuationRef: React.MutableRefObject<any>;
   originalLinkedInRequestRef: React.MutableRefObject<string | null>;
   applyDeckDiffRespectingEditMode: (diff: DeckDiff, isEditDiff?: boolean) => void;
+  deckId?: string;
 }
 
 export function useSendMessage({
@@ -85,6 +86,7 @@ export function useSendMessage({
   selectedProfileForContinuationRef,
   originalLinkedInRequestRef,
   applyDeckDiffRespectingEditMode,
+  deckId,
 }: UseSendMessageOptions) {
   const userMessageCount = useMemo(() => messages.filter(m => m.type === 'user').length, [messages]);
   const hasOutlineSlides = useMemo(() => Boolean(outline?.slides && outline.slides.length > 0 && outline.slides.some((s: any) => s.content || s.title)), [outline]);
@@ -1105,6 +1107,7 @@ export function useSendMessage({
     clearMentions,
     clearSelections,
     currentSlideIndex,
+    deckId,
     ensureAgentSession,
     input,
     isDeckWideRequest,

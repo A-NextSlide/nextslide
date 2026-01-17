@@ -176,7 +176,7 @@ export function ChatInputArea({
                 : selectedMentions.length > 0
                   ? `Ask about ${selectedMentions.map(m => m.name).join(', ')}...`
                   : 'Design, edit, or enhance your deck...'}
-              className="bg-transparent border-none flex-grow text-foreground text-sm placeholder:text-muted-foreground placeholder:text-sm focus-visible:ring-0 focus-visible:ring-offset-0 pl-0 resize-none overflow-hidden"
+              className="bg-transparent border-none flex-grow text-foreground text-sm placeholder:text-muted-foreground placeholder:text-sm focus-visible:ring-0 focus-visible:ring-offset-0 pl-0 resize-none max-h-[200px]"
               data-tour="chat-input"
             />
           </div>
