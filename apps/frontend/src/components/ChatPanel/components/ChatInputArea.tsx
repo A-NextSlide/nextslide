@@ -5,6 +5,7 @@ import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useEditorState } from '@/context/EditorStateContext';
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -108,11 +109,12 @@ export function ChatInputArea({
 }: ChatInputAreaProps) {
   // Get editor state for edit mode button
   const { isEditing, setIsEditing } = useEditorState();
+  const isMobile = useIsMobile();
 
   return (
     <div className="px-2.5 pt-4 pb-[calc(env(safe-area-inset-bottom)+10px)] sm:pt-6 sm:pb-2.5 min-w-0">
-      {/* Edit Toggle - right-aligned above chat panel, aligned with border radius */}
-      {!outlineMode && (
+      {/* Edit Toggle - right-aligned above chat panel, hidden on mobile */}
+      {!outlineMode && !isMobile && (
         <div className="flex justify-end mb-1.5 pr-1">
           <button
             type="button"
