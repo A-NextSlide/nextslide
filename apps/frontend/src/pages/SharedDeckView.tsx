@@ -556,13 +556,15 @@ const SharedDeckView: React.FC = () => {
 
   // Memoized renderSlide function to prevent re-creation on each render
   // This is critical for mobile performance and preventing crashes
+  // IMPORTANT: Use deckSlideSize directly (not from normalizeSlideForRender) to ensure
+  // dimensions match what PresentationMode uses for scale calculation
   const renderSlide = React.useCallback((slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
     const normalized = normalizeSlideForRender(slide, deckSlideSize, { preferFallbackSize: true });
     const normalizedSlide = normalized?.slide || slide;
-    const renderSlideSize = normalized?.slideSize || deckSlideSize;
     const fallbackBackground = getSlideBackground(normalizedSlide);
-    const baseSlideWidth = renderSlideSize.width;
-    const baseSlideHeight = renderSlideSize.height;
+    // Use deckSlideSize directly for consistency with PresentationMode scale calculation
+    const baseSlideWidth = deckSlideSize.width;
+    const baseSlideHeight = deckSlideSize.height;
 
     // For thumbnails, use a much simpler rendering approach to avoid crashes on mobile
     if (isThumbnail) {
@@ -617,6 +619,7 @@ const SharedDeckView: React.FC = () => {
                 onSave={() => {}}
                 selectedComponentId={undefined}
                 onComponentSelect={() => {}}
+                forceSimpleContainer={true}
               />
             </StaticActiveSlideProvider>
           </div>
