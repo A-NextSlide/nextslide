@@ -613,7 +613,6 @@ const SlideEditorContent: React.FC = () => {
   const isTextEditing = useEditorSettingsStore(state => state.isTextEditing);
   const isPresenting = usePresentationStore(state => state.isPresenting);
   const enterPresentation = usePresentationStore(state => state.enterPresentation);
-  const exitPresentation = usePresentationStore(state => state.exitPresentation);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -654,48 +653,7 @@ const SlideEditorContent: React.FC = () => {
     };
   }, [undo, redo, canUndo, canRedo, isTextEditing, isEditing, enterPresentation]);
 
-  // Mobile orientation-based presentation mode
-  // Only trigger when ROTATING to landscape, not on initial load
-  const wasLandscapeRef = useRef<boolean | null>(null);
-
-  useEffect(() => {
-    if (!isMobile) return;
-
-    const checkOrientation = () => {
-      const isLandscape = window.innerWidth > window.innerHeight;
-      const wasLandscape = wasLandscapeRef.current;
-
-      // Skip first check (initial load) - just record the state
-      if (wasLandscape === null) {
-        wasLandscapeRef.current = isLandscape;
-        return;
-      }
-
-      // Only trigger on actual orientation CHANGE
-      if (isLandscape && !wasLandscape && !isPresenting) {
-        // Just rotated TO landscape - enter presentation
-        enterPresentation();
-      } else if (!isLandscape && wasLandscape && isPresenting) {
-        // Just rotated TO portrait - exit presentation
-        exitPresentation();
-      }
-
-      wasLandscapeRef.current = isLandscape;
-    };
-
-    // Small delay before listening to avoid triggering on load
-    const timeoutId = setTimeout(() => {
-      wasLandscapeRef.current = window.innerWidth > window.innerHeight;
-      window.addEventListener('resize', checkOrientation);
-      window.addEventListener('orientationchange', checkOrientation);
-    }, 500);
-
-    return () => {
-      clearTimeout(timeoutId);
-      window.removeEventListener('resize', checkOrientation);
-      window.removeEventListener('orientationchange', checkOrientation);
-    };
-  }, [isMobile, isPresenting, enterPresentation, exitPresentation]);
+  // Note: Removed auto-orientation presentation trigger - user must manually enter presentation mode
 
   const handleDeckNameChange = (newName: string) => {
     setDeckName(newName);
