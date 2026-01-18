@@ -492,7 +492,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
             className="absolute inset-0 pointer-events-none z-[20000]"
           >
             {/* Top bar */}
-            <div className="absolute top-0 left-0 right-0 p-6 pointer-events-auto">
+            <div className={cn(
+              "absolute top-0 left-0 right-0 pointer-events-auto",
+              isMobile ? "p-3 pt-[max(12px,env(safe-area-inset-top))]" : "p-6"
+            )}>
               <div className="flex items-center justify-between">
                 {/* Current slide indicator */}
                 <motion.div
@@ -546,7 +549,13 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
             </div>
 
             {/* Navigation arrows */}
-            <div className="absolute top-1/2 -translate-y-1/2 left-6 right-6 flex justify-between pointer-events-auto">
+            <div
+              className="absolute top-1/2 -translate-y-1/2 flex justify-between pointer-events-auto"
+              style={{
+                left: isMobile ? 'max(8px, env(safe-area-inset-left))' : '24px',
+                right: isMobile ? 'max(8px, env(safe-area-inset-right))' : '24px'
+              }}
+            >
               <motion.button
                 initial={{ x: -20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
@@ -558,13 +567,14 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 }}
                 disabled={validIndex === 0}
                 className={cn(
-                  'bg-black/60 rounded-full w-12 h-12 flex items-center justify-center text-white/90 transition-all border border-white/20',
+                  'bg-black/60 rounded-full flex items-center justify-center text-white/90 transition-all border border-white/20',
+                  isMobile ? 'w-10 h-10' : 'w-12 h-12',
                   validIndex === 0
                     ? 'opacity-30 cursor-not-allowed'
                     : 'hover:bg-black/80 hover:scale-110'
                 )}
               >
-                <ChevronLeft size={24} />
+                <ChevronLeft size={isMobile ? 20 : 24} />
               </motion.button>
 
               <motion.button
@@ -578,13 +588,14 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 }}
                 disabled={validIndex === slides.length - 1}
                 className={cn(
-                  'bg-black/60 rounded-full w-12 h-12 flex items-center justify-center text-white/90 transition-all border border-white/20',
+                  'bg-black/60 rounded-full flex items-center justify-center text-white/90 transition-all border border-white/20',
+                  isMobile ? 'w-10 h-10' : 'w-12 h-12',
                   validIndex === slides.length - 1
                     ? 'opacity-30 cursor-not-allowed'
                     : 'hover:bg-black/80 hover:scale-110'
                 )}
               >
-                <ChevronRight size={24} />
+                <ChevronRight size={isMobile ? 20 : 24} />
               </motion.button>
             </div>
 
@@ -594,7 +605,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="absolute bottom-6 left-6 right-6 pointer-events-auto"
+              className={cn(
+                "absolute left-6 right-6 pointer-events-auto",
+                isMobile ? "bottom-[max(12px,env(safe-area-inset-bottom))]" : "bottom-6"
+              )}
             >
               <div className="bg-black/40 rounded-full h-1 overflow-hidden">
                 <motion.div

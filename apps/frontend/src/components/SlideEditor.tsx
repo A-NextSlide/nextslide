@@ -613,6 +613,7 @@ const SlideEditorContent: React.FC = () => {
   const isTextEditing = useEditorSettingsStore(state => state.isTextEditing);
   const isPresenting = usePresentationStore(state => state.isPresenting);
   const enterPresentation = usePresentationStore(state => state.enterPresentation);
+  const exitPresentation = usePresentationStore(state => state.exitPresentation);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -652,6 +653,33 @@ const SlideEditorContent: React.FC = () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [undo, redo, canUndo, canRedo, isTextEditing, isEditing, enterPresentation]);
+
+  // Mobile orientation-based presentation mode
+  // Rotating to landscape enters presentation, rotating to portrait exits
+  useEffect(() => {
+    if (!isMobile) return;
+
+    const checkOrientation = () => {
+      const isLandscape = window.innerWidth > window.innerHeight;
+
+      if (isLandscape && !isPresenting) {
+        // Entering landscape - trigger presentation mode
+        enterPresentation();
+      } else if (!isLandscape && isPresenting) {
+        // Entering portrait - exit presentation mode
+        exitPresentation();
+      }
+    };
+
+    // Listen for orientation changes
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
+
+    return () => {
+      window.removeEventListener('resize', checkOrientation);
+      window.removeEventListener('orientationchange', checkOrientation);
+    };
+  }, [isMobile, isPresenting, enterPresentation, exitPresentation]);
 
   const handleDeckNameChange = (newName: string) => {
     setDeckName(newName);
@@ -1716,7 +1744,7 @@ const SlideEditorContent: React.FC = () => {
           >
             {/* Slide area takes full height - chat overlays on top */}
             <div className="absolute inset-0 flex flex-col">
-              <div className="flex-1 min-h-0 px-2 pt-0 pb-4">
+              <div className="flex-1 min-h-0 px-2 pt-0 pb-0 -mt-4">
                 <DeckPanel
                   deckStatus={deckStatus}
                   isNewDeck={isNewDeck}
