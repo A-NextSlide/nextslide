@@ -349,9 +349,10 @@ const SlideContent: React.FC<SlideProps> = ({
 
   // Removed font optimization overlay/events
 
-  // For thumbnails, use a simple div instead of AspectRatio to avoid sizing conflicts
-  const SlideContainer = isThumbnail ? 'div' : AspectRatio;
-  const containerProps = isThumbnail
+  // For thumbnails and presentation mode, use a simple div instead of AspectRatio to avoid sizing conflicts
+  // AspectRatio uses padding-based sizing which can conflict with transform scaling in presentation mode
+  const SlideContainer = (isThumbnail || isPresenting) ? 'div' : AspectRatio;
+  const containerProps = (isThumbnail || isPresenting)
     ? {}
     : { ratio: slideSize.width / slideSize.height };
 
