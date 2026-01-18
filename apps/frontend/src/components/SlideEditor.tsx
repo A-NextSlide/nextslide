@@ -1744,7 +1744,7 @@ const SlideEditorContent: React.FC = () => {
           >
             {/* Slide area takes full height - chat overlays on top */}
             <div className="absolute inset-0 flex flex-col">
-              <div className="flex-1 min-h-0 px-2 pt-0 pb-0 -mt-4">
+              <div className="flex-1 min-h-0 px-2 pt-0 pb-0 -mt-8">
                 <DeckPanel
                   deckStatus={deckStatus}
                   isNewDeck={isNewDeck}

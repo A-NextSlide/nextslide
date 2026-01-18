@@ -85,8 +85,9 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     };
   }, []);
 
-  // Force landscape rotation on mobile portrait mode
-  const forceLandscape = isMobile && isPortrait;
+  // Don't force landscape rotation - let the slide display naturally
+  // User can rotate device to landscape for full presentation experience
+  const forceLandscape = false;
 
   // Computed values - use deck size consistently for all slides
   const deckSlideSize = useMemo(
@@ -420,7 +421,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       {/* Main slide display - container for measuring available space */}
       <div
         ref={slideContainerRef}
-        className="relative w-full h-full flex items-center justify-center"
+        className={cn(
+          "relative w-full h-full flex justify-center",
+          isMobile ? "items-start pt-4" : "items-center"
+        )}
         onDoubleClick={toggleFullscreen}
       >
         {/* Outer wrapper sized to the scaled dimensions for proper centering */}
@@ -548,56 +552,84 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
               </div>
             </div>
 
-            {/* Navigation arrows */}
-            <div
-              className="absolute top-1/2 -translate-y-1/2 flex justify-between pointer-events-auto"
-              style={{
-                left: isMobile ? 'max(8px, env(safe-area-inset-left))' : '24px',
-                right: isMobile ? 'max(8px, env(safe-area-inset-right))' : '24px'
-              }}
-            >
-              <motion.button
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.1 }}
-                onClick={goToPrevSlide}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  goToPrevSlide();
-                }}
-                disabled={validIndex === 0}
-                className={cn(
-                  'bg-black/60 rounded-full flex items-center justify-center text-white/90 transition-all border border-white/20',
-                  isMobile ? 'w-10 h-10' : 'w-12 h-12',
-                  validIndex === 0
-                    ? 'opacity-30 cursor-not-allowed'
-                    : 'hover:bg-black/80 hover:scale-110'
-                )}
+            {/* Navigation arrows - positioned at bottom on mobile for easy thumb access */}
+            {isMobile ? (
+              <div
+                className="absolute bottom-20 left-0 right-0 flex justify-between px-4 pointer-events-auto"
               >
-                <ChevronLeft size={isMobile ? 20 : 24} />
-              </motion.button>
+                <motion.button
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.1 }}
+                  onClick={goToPrevSlide}
+                  disabled={validIndex === 0}
+                  className={cn(
+                    'bg-black/70 rounded-full w-14 h-14 flex items-center justify-center text-white transition-all border-2 border-white/30',
+                    validIndex === 0 ? 'opacity-30' : 'active:scale-95'
+                  )}
+                >
+                  <ChevronLeft size={28} />
+                </motion.button>
 
-              <motion.button
-                initial={{ x: 20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.1 }}
-                onClick={goToNextSlide}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  goToNextSlide();
-                }}
-                disabled={validIndex === slides.length - 1}
-                className={cn(
-                  'bg-black/60 rounded-full flex items-center justify-center text-white/90 transition-all border border-white/20',
-                  isMobile ? 'w-10 h-10' : 'w-12 h-12',
-                  validIndex === slides.length - 1
-                    ? 'opacity-30 cursor-not-allowed'
-                    : 'hover:bg-black/80 hover:scale-110'
-                )}
+                <motion.button
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.1 }}
+                  onClick={goToNextSlide}
+                  disabled={validIndex === slides.length - 1}
+                  className={cn(
+                    'bg-black/70 rounded-full w-14 h-14 flex items-center justify-center text-white transition-all border-2 border-white/30',
+                    validIndex === slides.length - 1 ? 'opacity-30' : 'active:scale-95'
+                  )}
+                >
+                  <ChevronRight size={28} />
+                </motion.button>
+              </div>
+            ) : (
+              <div
+                className="absolute top-1/2 -translate-y-1/2 left-6 right-6 flex justify-between pointer-events-auto"
               >
-                <ChevronRight size={isMobile ? 20 : 24} />
-              </motion.button>
-            </div>
+                <motion.button
+                  initial={{ x: -20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.1 }}
+                  onClick={goToPrevSlide}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    goToPrevSlide();
+                  }}
+                  disabled={validIndex === 0}
+                  className={cn(
+                    'bg-black/60 rounded-full w-12 h-12 flex items-center justify-center text-white/90 transition-all border border-white/20',
+                    validIndex === 0
+                      ? 'opacity-30 cursor-not-allowed'
+                      : 'hover:bg-black/80 hover:scale-110'
+                  )}
+                >
+                  <ChevronLeft size={24} />
+                </motion.button>
+
+                <motion.button
+                  initial={{ x: 20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.1 }}
+                  onClick={goToNextSlide}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    goToNextSlide();
+                  }}
+                  disabled={validIndex === slides.length - 1}
+                  className={cn(
+                    'bg-black/60 rounded-full w-12 h-12 flex items-center justify-center text-white/90 transition-all border border-white/20',
+                    validIndex === slides.length - 1
+                      ? 'opacity-30 cursor-not-allowed'
+                      : 'hover:bg-black/80 hover:scale-110'
+                  )}
+                >
+                  <ChevronRight size={24} />
+                </motion.button>
+              </div>
+            )}
 
             {/* Bottom progress bar */}
             <motion.div
