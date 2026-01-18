@@ -85,9 +85,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     };
   }, []);
 
-  // Don't force landscape rotation - let the slide display naturally
-  // User can rotate device to landscape for full presentation experience
-  const forceLandscape = false;
+  // Force landscape rotation on mobile portrait mode for better viewing
+  const forceLandscape = isMobile && isPortrait;
 
   // Computed values - use deck size consistently for all slides
   const deckSlideSize = useMemo(
@@ -132,21 +131,20 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
         // Skip if container has no dimensions yet
         if (!containerWidth || !containerHeight) return;
 
-        // When forcing landscape on portrait mobile, swap container dimensions
-        // because we'll rotate the content 90 degrees
+        // When forcing landscape on portrait mobile, use viewport dimensions directly
+        // because the container is rotated and getBoundingClientRect may give wrong values
         if (forceLandscape) {
-          [containerWidth, containerHeight] = [containerHeight, containerWidth];
+          // In portrait mode rotated to landscape: width becomes height, height becomes width
+          containerWidth = window.innerHeight;
+          containerHeight = window.innerWidth;
         }
 
-        // Add padding for controls
-        // On mobile: top bar (~50px), bottom nav buttons (~80px), side margins (16px each)
-        // On desktop: 48px all around
-        const horizontalPadding = isMobile ? 32 : 96;
-        const topPadding = isMobile ? 60 : 80;
-        const bottomPadding = isMobile ? 100 : 80;
+        // Add padding for controls - keep it simple
+        // Just need small margins to ensure slide doesn't touch edges
+        const padding = isMobile ? 40 : 80;
 
-        const availableWidth = containerWidth - horizontalPadding;
-        const availableHeight = containerHeight - topPadding - bottomPadding;
+        const availableWidth = containerWidth - padding;
+        const availableHeight = containerHeight - padding;
 
         // Calculate scale to fit the slide within available space
         const scaleX = availableWidth / baseSlideWidth;
@@ -432,12 +430,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       <div
         ref={slideContainerRef}
         className="relative w-full h-full flex items-center justify-center"
-        style={isMobile ? {
-          paddingTop: '50px',
-          paddingBottom: '80px',
-          paddingLeft: '16px',
-          paddingRight: '16px'
-        } : undefined}
         onDoubleClick={toggleFullscreen}
       >
         {/* Outer wrapper sized to the scaled dimensions for proper centering */}
@@ -565,44 +557,14 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
               </div>
             </div>
 
-            {/* Navigation arrows - positioned at bottom on mobile for easy thumb access */}
-            {isMobile ? (
-              <div
-                className="absolute left-0 right-0 flex justify-between px-4 pointer-events-auto"
-                style={{ bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}
-              >
-                <motion.button
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.1 }}
-                  onClick={goToPrevSlide}
-                  disabled={validIndex === 0}
-                  className={cn(
-                    'bg-black/70 rounded-full w-14 h-14 flex items-center justify-center text-white transition-all border-2 border-white/30',
-                    validIndex === 0 ? 'opacity-30' : 'active:scale-95'
-                  )}
-                >
-                  <ChevronLeft size={28} />
-                </motion.button>
-
-                <motion.button
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.1 }}
-                  onClick={goToNextSlide}
-                  disabled={validIndex === slides.length - 1}
-                  className={cn(
-                    'bg-black/70 rounded-full w-14 h-14 flex items-center justify-center text-white transition-all border-2 border-white/30',
-                    validIndex === slides.length - 1 ? 'opacity-30' : 'active:scale-95'
-                  )}
-                >
-                  <ChevronRight size={28} />
-                </motion.button>
-              </div>
-            ) : (
-              <div
-                className="absolute top-1/2 -translate-y-1/2 left-6 right-6 flex justify-between pointer-events-auto"
-              >
+            {/* Navigation arrows - always at sides for consistent experience */}
+            <div
+              className="absolute top-1/2 -translate-y-1/2 flex justify-between pointer-events-auto"
+              style={{
+                left: isMobile ? '8px' : '24px',
+                right: isMobile ? '8px' : '24px'
+              }}
+            >
                 <motion.button
                   initial={{ x: -20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
@@ -642,8 +604,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 >
                   <ChevronRight size={24} />
                 </motion.button>
-              </div>
-            )}
+            </div>
 
             {/* Bottom progress bar */}
             <motion.div
