@@ -722,13 +722,16 @@ const SlideEditorContent: React.FC = () => {
 
   // Function to render slides for presentation mode
   // Renders at full resolution - PresentationMode handles scaling via CSS transform
+  // IMPORTANT: Use deckSlideSize directly (not from normalizeSlideForRender) to ensure
+  // the dimensions match what PresentationMode uses for scale calculation
   const renderSlide = (slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
     const deckSlideSize = deckData.size || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
     const normalized = normalizeSlideForRender(slide, deckSlideSize, { preferFallbackSize: true });
     const normalizedSlide = normalized?.slide || slide;
-    const renderSlideSize = normalized?.slideSize || deckSlideSize;
-    const baseSlideWidth = renderSlideSize.width;
-    const baseSlideHeight = renderSlideSize.height;
+    // Use deckSlideSize directly instead of normalized.slideSize to ensure consistency
+    // with PresentationMode's scale calculation which also uses deckData.size
+    const baseSlideWidth = deckSlideSize.width;
+    const baseSlideHeight = deckSlideSize.height;
 
     // Compute a defensive fallback background so presentation mode shows slide backgrounds
     const fallbackBackground = (() => {
@@ -823,7 +826,7 @@ const SlideEditorContent: React.FC = () => {
         }}
       >
         <NavigationProvider initialSlideIndex={index} onSlideChange={() => { }}>
-          <EditorStateProvider initialEditingState={false} slideSizeOverride={renderSlideSize}>
+          <EditorStateProvider initialEditingState={false} slideSizeOverride={deckSlideSize}>
             <StaticActiveSlideProvider slide={normalizedSlide}>
               <Slide
                 key={normalizedSlide.id}
