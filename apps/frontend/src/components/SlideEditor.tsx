@@ -1716,7 +1716,7 @@ const SlideEditorContent: React.FC = () => {
           >
             {/* Slide area takes full height - chat overlays on top */}
             <div className="absolute inset-0 flex flex-col">
-              <div className="flex-1 min-h-0 p-2 pb-8">
+              <div className="flex-1 min-h-0 px-2 pt-0 pb-4">
                 <DeckPanel
                   deckStatus={deckStatus}
                   isNewDeck={isNewDeck}
@@ -1732,7 +1732,7 @@ const SlideEditorContent: React.FC = () => {
               className={`absolute inset-x-0 bottom-0 z-20 flex flex-col border-t border-border bg-white dark:bg-zinc-900 shadow-2xl ${isChatDragging ? 'cursor-row-resize' : ''}`}
               style={{ height: `${mobileChatHeight || minMobileChatHeight}px` }}
             >
-              <div className="relative flex items-center justify-center h-8">
+              <div className="relative flex items-center justify-center h-6">
                 <div className="absolute inset-x-0 top-0 h-px bg-border/70" />
                 <button
                   type="button"
@@ -1740,16 +1740,16 @@ const SlideEditorContent: React.FC = () => {
                   className="group relative flex items-center justify-center w-full h-full touch-none"
                   aria-label="Resize chat"
                 >
-                  <span className="h-1.5 w-12 rounded-full bg-zinc-400/70 dark:bg-zinc-600/70 group-active:bg-zinc-500 dark:group-active:bg-zinc-500 transition-colors" />
+                  <span className="h-1 w-10 rounded-full bg-zinc-400/70 dark:bg-zinc-600/70 group-active:bg-zinc-500 dark:group-active:bg-zinc-500 transition-colors" />
                 </button>
 
                 {showChatDragHint && (
                   <button
                     type="button"
                     onClick={handleMobileChatHintDismiss}
-                    className="absolute top-1/2 -translate-y-1/2 left-[calc(50%+40px)] px-2.5 py-1.5 rounded-full bg-[#FF4301] text-white text-[10px] font-medium shadow-lg whitespace-nowrap"
+                    className="absolute top-1/2 -translate-y-1/2 left-[calc(50%+36px)] px-2 py-1 rounded-full bg-[#FF4301] text-white text-[9px] font-medium shadow-lg whitespace-nowrap"
                   >
-                    drag up or down ↕
+                    drag ↕
                   </button>
                 )}
               </div>
