@@ -65,6 +65,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   // State
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [slideScale, setSlideScale] = useState<number | null>(null);
+  const [forceLandscape, setForceLandscape] = useState(false);
 
   // Get slide dimensions - use deck size for consistency
   const deckSlideSize = useMemo(
@@ -91,20 +92,33 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     [slides, validIndex]
   );
 
-  // Calculate scale ONCE when presentation opens, and on resize
+  // Calculate scale and determine if we need forced landscape rotation
   useLayoutEffect(() => {
     if (!isPresenting) {
       setSlideScale(null);
+      setForceLandscape(false);
       return;
     }
 
     const calculateScale = () => {
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
+      let viewportWidth = window.innerWidth;
+      let viewportHeight = window.innerHeight;
 
-      // Reserve space for controls
-      const horizontalPadding = isMobile ? 100 : 150; // Space for side nav buttons
-      const verticalPadding = isMobile ? 120 : 150;   // Space for top bar and bottom
+      // On mobile, if viewport is portrait (taller than wide), force landscape mode
+      // by swapping dimensions and applying CSS rotation
+      const isPortrait = viewportHeight > viewportWidth;
+      const needsForceLandscape = isMobile && isPortrait;
+
+      setForceLandscape(needsForceLandscape);
+
+      // If forcing landscape, swap the viewport dimensions for calculation
+      if (needsForceLandscape) {
+        [viewportWidth, viewportHeight] = [viewportHeight, viewportWidth];
+      }
+
+      // Minimal padding - just enough for buttons
+      const horizontalPadding = isMobile ? 80 : 150;
+      const verticalPadding = isMobile ? 80 : 150;
 
       const availableWidth = viewportWidth - horizontalPadding;
       const availableHeight = viewportHeight - verticalPadding;
@@ -121,7 +135,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     // Calculate immediately
     calculateScale();
 
-    // Recalculate on resize
+    // Recalculate on resize/orientation change
     window.addEventListener('resize', calculateScale);
     return () => window.removeEventListener('resize', calculateScale);
   }, [isPresenting, baseSlideWidth, baseSlideHeight, isMobile]);
@@ -260,14 +274,30 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const scaledHeight = baseSlideHeight * slideScale;
   const progressTotal = Math.max(1, slides.length);
 
+  // When forcing landscape, we rotate the entire view 90 degrees
+  const containerStyle = forceLandscape
+    ? {
+        width: window.innerHeight,
+        height: window.innerWidth,
+        transform: 'rotate(90deg)',
+        transformOrigin: 'top left',
+        position: 'fixed' as const,
+        top: 0,
+        left: window.innerWidth,
+        zIndex: 100,
+      }
+    : {
+        height: '100dvh',
+      };
+
   return (
     <motion.div
       ref={presentationRef}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] bg-black"
-      style={{ height: '100dvh' }}
+      className={cn("bg-black", forceLandscape ? "" : "fixed inset-0 z-[100]")}
+      style={containerStyle}
     >
       {/* Slide container */}
       <div className="relative w-full h-full flex items-center justify-center" onDoubleClick={toggleFullscreen}>
