@@ -138,9 +138,19 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
           [containerWidth, containerHeight] = [containerHeight, containerWidth];
         }
 
-        // Calculate scale to fit the slide within the container
-        const scaleX = containerWidth / baseSlideWidth;
-        const scaleY = containerHeight / baseSlideHeight;
+        // Add padding for controls
+        // On mobile: top bar (~50px), bottom nav buttons (~80px), side margins (16px each)
+        // On desktop: 48px all around
+        const horizontalPadding = isMobile ? 32 : 96;
+        const topPadding = isMobile ? 60 : 80;
+        const bottomPadding = isMobile ? 100 : 80;
+
+        const availableWidth = containerWidth - horizontalPadding;
+        const availableHeight = containerHeight - topPadding - bottomPadding;
+
+        // Calculate scale to fit the slide within available space
+        const scaleX = availableWidth / baseSlideWidth;
+        const scaleY = availableHeight / baseSlideHeight;
         const scale = Math.min(scaleX, scaleY);
 
         if (!Number.isFinite(scale) || scale <= 0) return;
@@ -175,7 +185,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       if (resizeObserver) resizeObserver.disconnect();
       window.removeEventListener('resize', calculateScale);
     };
-  }, [isPresenting, baseSlideWidth, baseSlideHeight, forceLandscape]);
+  }, [isPresenting, baseSlideWidth, baseSlideHeight, forceLandscape, isMobile]);
 
   // Scroll current slide into view when thumbnails open
   useEffect(() => {
@@ -421,10 +431,13 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       {/* Main slide display - container for measuring available space */}
       <div
         ref={slideContainerRef}
-        className={cn(
-          "relative w-full h-full flex justify-center",
-          isMobile ? "items-start pt-4" : "items-center"
-        )}
+        className="relative w-full h-full flex items-center justify-center"
+        style={isMobile ? {
+          paddingTop: '50px',
+          paddingBottom: '80px',
+          paddingLeft: '16px',
+          paddingRight: '16px'
+        } : undefined}
         onDoubleClick={toggleFullscreen}
       >
         {/* Outer wrapper sized to the scaled dimensions for proper centering */}
@@ -555,7 +568,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
             {/* Navigation arrows - positioned at bottom on mobile for easy thumb access */}
             {isMobile ? (
               <div
-                className="absolute bottom-20 left-0 right-0 flex justify-between px-4 pointer-events-auto"
+                className="absolute left-0 right-0 flex justify-between px-4 pointer-events-auto"
+                style={{ bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}
               >
                 <motion.button
                   initial={{ y: 20, opacity: 0 }}
