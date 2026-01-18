@@ -834,6 +834,7 @@ const SlideEditorContent: React.FC = () => {
                 onSave={() => { }}
                 selectedComponentId={undefined}
                 onComponentSelect={() => { }}
+                forceSimpleContainer={true}
               />
             </StaticActiveSlideProvider>
           </EditorStateProvider>

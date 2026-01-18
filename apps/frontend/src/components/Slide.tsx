@@ -31,11 +31,12 @@ interface SlideProps {
   isThumbnail?: boolean;
   showDebugOverlay?: boolean;
   showDebugLegend?: boolean;
+  forceSimpleContainer?: boolean; // Use simple div instead of AspectRatio (for presentation mode)
 }
 
 // The Slide component is responsible for displaying and editing slide content
-const SlideContent: React.FC<SlideProps> = ({ 
-  slide, 
+const SlideContent: React.FC<SlideProps> = ({
+  slide,
   isActive,
   direction = null,
   isEditing = false,
@@ -47,7 +48,8 @@ const SlideContent: React.FC<SlideProps> = ({
   style = {},
   isThumbnail = false,
   showDebugOverlay = false,
-  showDebugLegend = true
+  showDebugLegend = true,
+  forceSimpleContainer = false
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const isDraggingRef = useRef(false);
@@ -349,9 +351,11 @@ const SlideContent: React.FC<SlideProps> = ({
 
   // Removed font optimization overlay/events
 
-  // For thumbnails, use a simple div instead of AspectRatio to avoid sizing conflicts
-  const SlideContainer = isThumbnail ? 'div' : AspectRatio;
-  const containerProps = isThumbnail
+  // For thumbnails and presentation mode, use a simple div instead of AspectRatio
+  // AspectRatio's padding-based sizing can conflict with CSS transform scaling
+  const useSimpleContainer = isThumbnail || forceSimpleContainer;
+  const SlideContainer = useSimpleContainer ? 'div' : AspectRatio;
+  const containerProps = useSimpleContainer
     ? {}
     : { ratio: slideSize.width / slideSize.height };
 
