@@ -116,6 +116,11 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     : Math.round(rawThumbnailWidth);
 
   // Calculate slide scale to fit container
+  // Reset scale ref when key dependencies change to force recalculation
+  useEffect(() => {
+    lastScaleRef.current = null;
+  }, [forceLandscape, isPresenting]);
+
   useLayoutEffect(() => {
     if (!isPresenting) return;
 
@@ -124,25 +129,18 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       if (!container) return;
 
       try {
-        const rect = container.getBoundingClientRect();
-        let containerWidth = rect.width || window.innerWidth;
-        let containerHeight = rect.height || window.innerHeight;
+        // Always use viewport dimensions for consistency
+        let containerWidth = window.innerWidth;
+        let containerHeight = window.innerHeight;
 
-        // Skip if container has no dimensions yet
-        if (!containerWidth || !containerHeight) return;
-
-        // When forcing landscape on portrait mobile, use viewport dimensions directly
-        // because the container is rotated and getBoundingClientRect may give wrong values
+        // When forcing landscape on portrait mobile, swap dimensions
         if (forceLandscape) {
-          // In portrait mode rotated to landscape: width becomes height, height becomes width
           containerWidth = window.innerHeight;
           containerHeight = window.innerWidth;
         }
 
-        // Add padding for controls - keep it simple
-        // Just need small margins to ensure slide doesn't touch edges
-        const padding = isMobile ? 40 : 80;
-
+        // Add padding for controls
+        const padding = isMobile ? 60 : 100;
         const availableWidth = containerWidth - padding;
         const availableHeight = containerHeight - padding;
 
@@ -151,36 +149,44 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
         const scaleY = availableHeight / baseSlideHeight;
         const scale = Math.min(scaleX, scaleY);
 
-        if (!Number.isFinite(scale) || scale <= 0) return;
+        console.log('[PresentationMode] calculateScale:', {
+          forceLandscape,
+          containerWidth,
+          containerHeight,
+          availableWidth,
+          availableHeight,
+          baseSlideWidth,
+          baseSlideHeight,
+          scaleX,
+          scaleY,
+          scale
+        });
+
+        if (!Number.isFinite(scale) || scale <= 0) {
+          console.warn('[PresentationMode] Invalid scale:', scale);
+          return;
+        }
 
         const normalizedScale = Math.round(scale * 1000) / 1000;
-        if (lastScaleRef.current === normalizedScale) return;
-        lastScaleRef.current = normalizedScale;
 
+        // Always update scale - remove the skip logic that was causing issues
+        lastScaleRef.current = normalizedScale;
         setSlideScale(normalizedScale);
       } catch (error) {
         console.warn('[PresentationMode] Scale calculation failed:', error);
       }
     };
 
-    // Initial calculation
+    // Initial calculation with slight delay for DOM to settle
     const rafId = requestAnimationFrame(calculateScale);
-    const timeoutId = setTimeout(calculateScale, 100);
+    const timeoutId = setTimeout(calculateScale, 150);
 
-    // ResizeObserver for dynamic updates
-    let resizeObserver: ResizeObserver | null = null;
-    const container = slideContainerRef.current;
-    if (container && 'ResizeObserver' in window) {
-      resizeObserver = new ResizeObserver(calculateScale);
-      resizeObserver.observe(container);
-    }
-
+    // Also recalculate on resize
     window.addEventListener('resize', calculateScale);
 
     return () => {
       cancelAnimationFrame(rafId);
       clearTimeout(timeoutId);
-      if (resizeObserver) resizeObserver.disconnect();
       window.removeEventListener('resize', calculateScale);
     };
   }, [isPresenting, baseSlideWidth, baseSlideHeight, forceLandscape, isMobile]);
@@ -405,13 +411,28 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const scaledWidth = baseSlideWidth * slideScale;
   const scaledHeight = baseSlideHeight * slideScale;
 
+  // Debug: log scale info
+  console.log('[PresentationMode] Render:', {
+    forceLandscape,
+    isMobile,
+    isPortrait,
+    slideScale,
+    baseSlideWidth,
+    baseSlideHeight,
+    scaledWidth: baseSlideWidth * slideScale,
+    scaledHeight: baseSlideHeight * slideScale
+  });
+
   return (
     <motion.div
       ref={presentationRef}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] bg-black"
+      className={cn(
+        "fixed z-[100] bg-black",
+        !forceLandscape && "inset-0"
+      )}
       style={forceLandscape ? {
         // Rotate container 90deg for landscape view on portrait mobile
         position: 'fixed',
