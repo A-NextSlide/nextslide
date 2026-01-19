@@ -36,9 +36,9 @@ const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || (
 
 // Derive other URLs from base URL if not explicitly set
 const CHAT_URL = import.meta.env.VITE_CHAT_API_URL || `${API_BASE_URL}/chat`;
-// Agent backend: in dev use localhost; in prod use Render backend
+// Agent backend: in dev use relative URL (proxy handles it); in prod use Render backend
 const AGENT_BASE_URL = import.meta.env.VITE_AGENT_API_URL || (
-  isDevelopment ? 'http://localhost:9090' : 'https://nextslide-backend.onrender.com'
+  isDevelopment ? '' : 'https://nextslide-backend.onrender.com'
 );
 
 // OpenAI configuration

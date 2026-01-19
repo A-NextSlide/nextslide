@@ -771,8 +771,8 @@ const SlideTagging: React.FC = () => {
       const allScreenshots: SlideScreenshot[] = [];
       let totalSlideCount = 0;
       
-      // Use the Python backend server running on port 9090
-      const serverUrl = 'http://localhost:9090/api/pptx-convert';
+      // Use the Python backend server via proxy
+      const serverUrl = '/api/pptx-convert';
       
       for (let fileIndex = 0; fileIndex < selectedFiles.length; fileIndex++) {
         const file = selectedFiles[fileIndex];

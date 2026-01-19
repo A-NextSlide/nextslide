@@ -566,6 +566,16 @@ const SharedDeckView: React.FC = () => {
     const baseSlideWidth = deckSlideSize.width;
     const baseSlideHeight = deckSlideSize.height;
 
+    // DEBUG: Log renderSlide dimensions
+    if (!isThumbnail) {
+      console.log('[SharedDeckView.renderSlide] Dimensions:', {
+        deckSlideSize,
+        baseSlide: { width: baseSlideWidth, height: baseSlideHeight },
+        scale,
+        normalized: normalized?.slideSize
+      });
+    }
+
     // For thumbnails, use a much simpler rendering approach to avoid crashes on mobile
     if (isThumbnail) {
       const isImageBackground = typeof fallbackBackground === 'string' && fallbackBackground.includes('url(');
@@ -599,8 +609,8 @@ const SharedDeckView: React.FC = () => {
       >
         <div className="w-full h-full relative overflow-hidden" style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
           <div
-            className="absolute top-0 left-0 origin-top-left"
             style={{
+              position: 'relative',
               width: `${baseSlideWidth}px`,
               height: `${baseSlideHeight}px`,
               transform: `scale(${scale})`,

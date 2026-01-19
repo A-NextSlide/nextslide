@@ -3,10 +3,10 @@
  */
 export const API_ENDPOINTS = {
   // Base URL - can be configured via environment variable
-  // In development, default to the full localhost URL instead of just /api
+  // In development, use relative /api URL so it works from any device via proxy
   BASE_URL: import.meta.env.VITE_API_URL || (
     import.meta.env.DEV
-      ? 'http://localhost:9090/api'  // Full URL in development
+      ? '/api'  // Relative URL works with vite proxy from any device
       : 'https://nextslide-backend.onrender.com/api'  // Production default
   ),
   

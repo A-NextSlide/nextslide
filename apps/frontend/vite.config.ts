@@ -28,7 +28,7 @@ export default defineConfig(({ mode }) => ({
     allowedHosts: true,
     proxy: {
       '/api/auth': {
-        target: 'http://localhost:9090',
+        target: process.env.API_TARGET || 'http://127.0.0.1:9090',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''), // Remove /api prefix for auth routes
         configure: (proxy, options) => {
@@ -41,7 +41,7 @@ export default defineConfig(({ mode }) => ({
         }
       },
       '/api': {
-        target: 'http://localhost:9090',
+        target: process.env.API_TARGET || 'http://127.0.0.1:9090',
         changeOrigin: true,
         // Extend proxy/socket timeouts for long-running SSE requests
         // http-proxy options: timeout is for incoming request, proxyTimeout is for outgoing to target

@@ -30,7 +30,7 @@ export class PPTXScreenshotService {
 
     if (method === 'server') {
       // Use the main chat server with PPTX conversion integrated
-      const url = serverUrl || 'http://localhost:9090/api/pptx-convert';
+      const url = serverUrl || '/api/pptx-convert';
       
       const formData = new FormData();
       formData.append('file', file);

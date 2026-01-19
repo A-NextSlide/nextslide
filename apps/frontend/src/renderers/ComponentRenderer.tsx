@@ -56,7 +56,6 @@ export const ComponentRenderer: React.FC<Props> = memo(({
   allComponents = [],
   isThumbnail = false // Destructure isThumbnail
 }) => {
-
   // --- Context and Store Access ---
   const { isEditing } = useEditorState(); // Get editing mode from context
   const { updateComponent, slideId: activeSlideId } = useActiveSlide(); // Get update function from context and slideId
@@ -108,6 +107,23 @@ export const ComponentRenderer: React.FC<Props> = memo(({
   // Also check component-level position
   if (!position || position.x === undefined) {
     position = (component as any).position ?? { x: 50, y: 50 };
+  }
+
+  // PRESENTATION MODE FIX: Detect percentage-like values that weren't converted
+  // If width/height are small numbers (1-100) while slideSize is large (>500),
+  // they're likely percentages that should be converted to absolute pixels
+  const isLikelyPercentage = (value: any, axisSize: number): boolean => {
+    if (typeof value !== 'number') return false;
+    // Values between 1 and 100 with a large axis size are likely percentages
+    return value > 0 && value <= 100 && axisSize > 500;
+  };
+
+  // Convert percentage-like values to absolute pixels for proper rendering
+  if (typeof width === 'number' && isLikelyPercentage(width, slideSize.width)) {
+    width = (width / 100) * slideSize.width;
+  }
+  if (typeof height === 'number' && isLikelyPercentage(height, slideSize.height)) {
+    height = (height / 100) * slideSize.height;
   }
 
   // For Lines components, calculate position/width/height from endpoints

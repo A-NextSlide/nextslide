@@ -359,11 +359,20 @@ const SlideContent: React.FC<SlideProps> = ({
     ? {}
     : { ratio: slideSize.width / slideSize.height };
 
+  // For presentation mode with forceSimpleContainer, we need explicit dimensions
+  // to ensure percentage-based component positioning works correctly
+  const simpleContainerStyle: React.CSSProperties = useSimpleContainer
+    ? { width: slideSize.width, height: slideSize.height }
+    : {};
+
   return (
     <div
-      className={`absolute top-0 left-0 w-full h-full ${className}`}
+      className={`absolute top-0 left-0 ${useSimpleContainer ? '' : 'w-full h-full'} ${className}`}
       style={{
         ...style,
+        // For presentation mode with forceSimpleContainer, use explicit dimensions
+        // to ensure child percentage calculations work correctly
+        ...(useSimpleContainer ? { width: slideSize.width, height: slideSize.height } : {}),
         zIndex: isVisible ? 10 : 0,
         pointerEvents: isVisible ? 'auto' : 'none',
         cursor: 'inherit' // Inherit cursor from parent
@@ -381,7 +390,8 @@ const SlideContent: React.FC<SlideProps> = ({
         {...containerProps}
         className={`w-full h-full p-0 m-0 relative slide-container ${isDraggingRef.current ? 'dragging' : ''}`}
         style={{
-          cursor: showCrosshairCursor ? 'crosshair' : 'default'
+          cursor: showCrosshairCursor ? 'crosshair' : 'default',
+          ...simpleContainerStyle
         }}
         data-slide-id={slideData.id}
         data-dragging={isDraggingRef.current ? 'true' : 'false'}
@@ -421,7 +431,7 @@ const SlideContent: React.FC<SlideProps> = ({
         
         {/* Slide Components (excluding background) */}
         {!shouldSkipRender && componentsToRender
-          .filter(component => 
+          .filter(component =>
             !(component.type === "Background" || (component.id && component.id.toLowerCase().includes('background')))
           )
           .map(component => (

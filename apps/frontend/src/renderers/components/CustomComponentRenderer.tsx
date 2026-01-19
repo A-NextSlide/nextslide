@@ -5,6 +5,8 @@ import { useNavigation } from '../../context/NavigationContext';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useActiveSlide } from '../../context/ActiveSlideContext';
 import { useEditorStore } from '@/stores/editorStore';
+import { useEditorState } from '@/context/EditorStateContext';
+import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { CustomComponentEditOverlay, DetectedElement, injectEditMode } from '@/components/custom-component-editor';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -88,6 +90,10 @@ export const CustomComponentRenderer: React.FC<{
 }> = memo(({ component, baseStyles, containerRef, isThumbnail = false, isSelected = false, isEditing = false }) => {
   const thumbnailMode = useThumbnailRenderMode();
 
+  // Get slide dimensions for proper percentage-to-pixel conversion
+  const editorState = useEditorState();
+  const slideSize = editorState.slideSize || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
+
   // Track if rendering has crashed - show fallback instead
   const [hasRenderError, setHasRenderError] = useState(false);
 
@@ -96,13 +102,6 @@ export const CustomComponentRenderer: React.FC<{
   // This is controlled by ThumbnailRenderContext from the parent (MiniSlide/DeckCard)
   const shouldUseLiteMode = isThumbnail && BROWSER.isIOS && thumbnailMode === 'lite';
   const shouldUseStaticHtml = isThumbnail && BROWSER.isIOS; // iOS thumbnails use static HTML
-
-  // DEBUG: Log rendering decision (throttled - only first render)
-  const renderCountRef = useRef(0);
-  renderCountRef.current++;
-  if (renderCountRef.current === 1) {
-    console.log(`[CustomComponent] id=${component.id} isThumbnail=${isThumbnail} isIOS=${BROWSER.isIOS} thumbnailMode=${thumbnailMode} liteMode=${shouldUseLiteMode}`);
-  }
 
   // Show simple placeholder for thumbnails OR if there was a render error
   if (shouldUseLiteMode || hasRenderError) {
@@ -434,8 +433,23 @@ export const CustomComponentRenderer: React.FC<{
   }, [component.id]);
 
   // Container dimensions for non-iframe rendering
-  const containerWidth = typeof componentProps.width === 'number' ? componentProps.width : 400;
-  const containerHeight = typeof componentProps.height === 'number' ? componentProps.height : 200;
+  // CRITICAL: Component dimensions may be stored as percentages (0-100) representing % of slide size
+  // If the value is small (<=100) and slide is large (>500px), convert from percentage to pixels
+  const rawWidth = typeof componentProps.width === 'number' ? componentProps.width : 400;
+  const rawHeight = typeof componentProps.height === 'number' ? componentProps.height : 200;
+
+  // Helper to detect if a value looks like a percentage vs absolute pixels
+  const convertToAbsolute = (value: number, slideAxis: number): number => {
+    // If value is small (<=100) and slide is large, treat as percentage
+    if (value > 0 && value <= 100 && slideAxis > 500) {
+      return (value / 100) * slideAxis;
+    }
+    // Otherwise treat as absolute pixels
+    return value;
+  };
+
+  const containerWidth = convertToAbsolute(rawWidth, slideSize.width);
+  const containerHeight = convertToAbsolute(rawHeight, slideSize.height);
 
   // Check if this is an iframe-based component (detected during compilation)
   const isIframeComponent = compiledRender && typeof compiledRender === 'object' && (compiledRender as any).__isIframe;
@@ -1306,9 +1320,15 @@ export const CustomComponentRenderer: React.FC<{
     // On iOS, just calculate scale once and skip ResizeObserver
     if (BROWSER.isIOS) {
       try {
-        const width = element.getBoundingClientRect().width;
+        // CRITICAL FIX: Use offsetWidth instead of getBoundingClientRect().width
+        // getBoundingClientRect returns the size AFTER CSS transforms are applied,
+        // which causes double-scaling when PresentationMode already applies transform: scale()
+        // offsetWidth returns the layout size BEFORE transforms
+        const width = element.offsetWidth;
         if (containerWidth > 0 && width > 0) {
-          setScale(width / containerWidth);
+          const newScale = width / containerWidth;
+          // Avoid tiny scales that could result from measurement issues
+          setScale(newScale < 0.1 ? 1 : newScale);
         }
       } catch (err) {
         // Ignore errors on iOS
@@ -1427,8 +1447,6 @@ export const CustomComponentRenderer: React.FC<{
   const handleImageSwap = useCallback((element: DetectedElement, newImageUrl: string) => {
     if (!stableIframeSrcDoc || !element.src) return;
 
-    console.log('[CustomComponent] Image swap:', { oldSrc: element.src?.slice(0, 50), newSrc: newImageUrl?.slice(0, 50) });
-
     // Replace the old image src with the new one
     let updatedHtml = stableIframeSrcDoc;
     const oldSrc = element.src;
@@ -1448,7 +1466,6 @@ export const CustomComponentRenderer: React.FC<{
           elementId: element.id,
           newSrc: newImageUrl
         }, '*');
-        console.log('[CustomComponent] Sent update-image to iframe');
       }
 
       // THEN: Update the component state
@@ -1458,13 +1475,11 @@ export const CustomComponentRenderer: React.FC<{
           render: updatedHtml
         }
       });
-      console.log('[CustomComponent] Updated HTML with new image');
 
       // CRITICAL: Immediately persist changes to backend
       setTimeout(() => {
         try {
           useEditorStore.getState().applyDraftChanges();
-          console.log('[CustomComponent] Persisted image changes to backend');
         } catch (e) {
           console.error('[CustomComponent] Failed to persist image changes:', e);
         }

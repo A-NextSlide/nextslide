@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronLeft, ChevronRight, Grid3X3, Maximize2, Minimize2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Grid3X3 } from 'lucide-react';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useNavigation } from '@/context/NavigationContext';
 import { SlideData } from '@/types/SlideTypes';
@@ -63,7 +63,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const thumbnailScrollRef = useRef<HTMLDivElement>(null);
 
   // State
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [slideScale, setSlideScale] = useState<number | null>(null);
   const [forceLandscape, setForceLandscape] = useState(false);
 
@@ -174,22 +173,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     });
   }, [currentSlideIndex, currentSlide?.id, isPresenting]);
 
-  // Fullscreen toggle
-  const toggleFullscreen = useCallback(async () => {
-    if (isFullscreen) {
-      try {
-        if (document.exitFullscreen) await document.exitFullscreen();
-        else if ((document as any).webkitExitFullscreen) (document as any).webkitExitFullscreen();
-      } catch { }
-      return;
-    }
-    try {
-      const elem = presentationRef.current || document.documentElement;
-      if (elem.requestFullscreen) await elem.requestFullscreen();
-      else if ((elem as any).webkitRequestFullscreen) (elem as any).webkitRequestFullscreen();
-    } catch { }
-  }, [isFullscreen]);
-
   const handleExitPresentation = useCallback(() => {
     exitPresentation();
   }, [exitPresentation]);
@@ -221,10 +204,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       }
     };
 
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!(document.fullscreenElement || (document as any).webkitFullscreenElement));
-    };
-
     // Touch/swipe support
     let touchStartX = 0;
     let touchStartY = 0;
@@ -250,15 +229,11 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('touchstart', handleTouchStart, { passive: true });
     window.addEventListener('touchend', handleTouchEnd, { passive: true });
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
     };
   }, [isPresenting, showThumbnails, goToNextSlide, goToPrevSlide, handleExitPresentation, setShowControls, setShowThumbnails]);
 
@@ -300,7 +275,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       style={containerStyle}
     >
       {/* Slide container */}
-      <div className="relative w-full h-full flex items-center justify-center" onDoubleClick={toggleFullscreen}>
+      <div className="relative w-full h-full flex items-center justify-center">
         <div
           className="relative overflow-hidden rounded-lg bg-white"
           style={{ width: scaledWidth, height: scaledHeight }}
@@ -349,12 +324,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                     className="bg-black/60 rounded-full w-10 h-10 flex items-center justify-center text-white/90 hover:bg-black/80 border border-white/20"
                   >
                     <Grid3X3 size={18} />
-                  </button>
-                  <button
-                    onClick={toggleFullscreen}
-                    className="bg-black/60 rounded-full w-10 h-10 flex items-center justify-center text-white/90 hover:bg-black/80 border border-white/20"
-                  >
-                    {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
                   </button>
                   <button
                     onClick={handleExitPresentation}

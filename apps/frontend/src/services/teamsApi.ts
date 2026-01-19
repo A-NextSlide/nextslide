@@ -10,7 +10,8 @@
 import { authService } from './authService';
 
 // Remove trailing /api if present since we add it in the endpoints
-const rawApiBase = import.meta.env.VITE_API_URL || 'http://localhost:9090';
+// Use empty string in dev so relative URLs work with the proxy from any device
+const rawApiBase = import.meta.env.VITE_API_URL || '';
 const API_BASE = rawApiBase.replace(/\/api\/?$/, '');
 
 // Types
