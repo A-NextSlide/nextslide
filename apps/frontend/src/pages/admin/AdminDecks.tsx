@@ -211,42 +211,8 @@ const AdminDecks: React.FC = () => {
         </div>
       </div>
 
-      {/* Hover overlay with actions */}
-      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-        <Button size="sm" variant="secondary" asChild>
-          <Link to={`/deck/${deck.uuid}`}>
-            <Eye className="h-3.5 w-3.5 mr-1" />
-            View
-          </Link>
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="secondary">
-              <MoreVertical className="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem asChild>
-              <Link to={`/deck/${deck.uuid}`}>
-                <ExternalLink className="mr-2 h-4 w-4" />
-                Open in Editor
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Download className="mr-2 h-4 w-4" />
-              Export
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive"
-              onClick={() => openDeleteDialog(deck)}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      {/* Hover overlay */}
+      <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity" />
     </div>
   );
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft,
@@ -22,7 +22,13 @@ import { format } from 'date-fns';
 import { DeckSummary, adminApi } from '@/services/adminApi';
 import { useNavigate } from 'react-router-dom';
 import MiniSlide from '@/components/deck/MiniSlide';
+import Slide from '@/components/Slide';
 import { cn } from '@/lib/utils';
+import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
+import { normalizeSlideForRender } from '@/utils/slideNormalization';
+import { StaticEditorStateProvider } from '@/context/EditorStateContext';
+import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
+import { StaticNavigationProvider } from '@/context/NavigationContext';
 
 interface DeckPreviewModalProps {
   isOpen: boolean;
@@ -41,6 +47,7 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
 }) => {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
+  const slideContainerRef = useRef<HTMLDivElement>(null);
   const thumbnailScrollRef = useRef<HTMLDivElement>(null);
 
   const [currentDeck, setCurrentDeck] = useState<DeckSummary | null>(null);
@@ -51,8 +58,79 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
   const [showControls, setShowControls] = useState(true);
   const [showInfo, setShowInfo] = useState(false);
   const [showThumbnails, setShowThumbnails] = useState(false);
+  const [slideScale, setSlideScale] = useState(1);
 
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastScaleRef = useRef<number | null>(null);
+
+  // Get deck slide size
+  const deckSlideSize = useMemo(() => {
+    if (currentDeck?.size) {
+      return { width: currentDeck.size.width, height: currentDeck.size.height };
+    }
+    return { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
+  }, [currentDeck?.size]);
+
+  const baseSlideWidth = deckSlideSize.width;
+  const baseSlideHeight = deckSlideSize.height;
+
+  // Calculate slide scale to fit container
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+
+    const calculateScale = () => {
+      const container = slideContainerRef.current;
+      if (!container) return;
+
+      try {
+        const rect = container.getBoundingClientRect();
+        const containerWidth = rect.width || window.innerWidth;
+        const containerHeight = rect.height || window.innerHeight;
+
+        if (!containerWidth || !containerHeight) return;
+
+        // Calculate scale to fit the slide within the container with padding
+        const padding = 64; // Account for padding
+        const availableWidth = containerWidth - padding * 2;
+        const availableHeight = containerHeight - padding * 2;
+
+        const scaleX = availableWidth / baseSlideWidth;
+        const scaleY = availableHeight / baseSlideHeight;
+        const scale = Math.min(scaleX, scaleY, 1); // Don't scale above 1
+
+        if (!Number.isFinite(scale) || scale <= 0) return;
+
+        const normalizedScale = Math.round(scale * 1000) / 1000;
+        if (lastScaleRef.current === normalizedScale) return;
+        lastScaleRef.current = normalizedScale;
+
+        setSlideScale(normalizedScale);
+      } catch (error) {
+        console.warn('[DeckPreviewModal] Scale calculation failed:', error);
+      }
+    };
+
+    // Initial calculation
+    const rafId = requestAnimationFrame(calculateScale);
+    const timeoutId = setTimeout(calculateScale, 100);
+
+    // ResizeObserver for dynamic updates
+    let resizeObserver: ResizeObserver | null = null;
+    const container = slideContainerRef.current;
+    if (container && 'ResizeObserver' in window) {
+      resizeObserver = new ResizeObserver(calculateScale);
+      resizeObserver.observe(container);
+    }
+
+    window.addEventListener('resize', calculateScale);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timeoutId);
+      if (resizeObserver) resizeObserver.disconnect();
+      window.removeEventListener('resize', calculateScale);
+    };
+  }, [isOpen, baseSlideWidth, baseSlideHeight]);
 
   // Auto-hide controls after inactivity
   const resetControlsTimeout = useCallback(() => {
@@ -284,6 +362,16 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
     resetControlsTimeout();
   }, [resetControlsTimeout]);
 
+  // Normalize current slide for rendering
+  const normalizedSlide = useMemo(() => {
+    const hasSlides = displayDeck?.slides && displayDeck.slides.length > 0;
+    const rawSlide = hasSlides ? displayDeck.slides[currentSlideIndex] : null;
+    if (!rawSlide || !rawSlide.id) return null;
+
+    const result = normalizeSlideForRender(rawSlide, deckSlideSize, { preferFallbackSize: true });
+    return result?.slide || rawSlide;
+  }, [displayDeck, currentSlideIndex, deckSlideSize]);
+
   if (!isOpen || !currentDeck) return null;
 
   const formatDateTime = (dateString: string) => {
@@ -292,14 +380,16 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
   };
 
   const hasSlides = displayDeck?.slides && displayDeck.slides.length > 0;
-  const rawSlide = hasSlides ? displayDeck.slides[currentSlideIndex] : null;
-  const currentSlide = rawSlide && rawSlide.id ? rawSlide : null;
   const slideCount = displayDeck?.slides?.length || currentDeck.slideCount || 0;
 
   // Thumbnail dimensions
   const thumbnailHeight = 100;
   const aspectRatio = currentDeck.size ? currentDeck.size.width / currentDeck.size.height : 16/9;
   const thumbnailWidth = Math.round(thumbnailHeight * aspectRatio);
+
+  // Calculate the scaled dimensions for the slide wrapper
+  const scaledWidth = baseSlideWidth * slideScale;
+  const scaledHeight = baseSlideHeight * slideScale;
 
   return (
     <AnimatePresence>
@@ -313,39 +403,60 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
         style={{ height: '100dvh' }}
       >
         {/* Main slide display */}
-        <div className="relative w-full h-full flex items-center justify-center">
-          {/* Slide Container */}
-          <div className="relative w-full h-full flex items-center justify-center p-8 md:p-16">
-            {isLoadingSlides ? (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center gap-4 text-white/60"
+        <div
+          ref={slideContainerRef}
+          className="relative w-full h-full flex items-center justify-center"
+        >
+          {isLoadingSlides ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col items-center gap-4 text-white/60"
+            >
+              <Loader2 className="h-10 w-10 animate-spin" />
+              <span className="text-sm font-medium">Loading slides...</span>
+            </motion.div>
+          ) : normalizedSlide ? (
+            <motion.div
+              key={`slide-${normalizedSlide.id}`}
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.2 }}
+              className="relative overflow-hidden rounded-lg shadow-2xl ring-1 ring-white/10"
+              style={{
+                width: `${scaledWidth}px`,
+                height: `${scaledHeight}px`
+              }}
+            >
+              {/* Inner content at full resolution, scaled via CSS transform */}
+              <div
+                className="absolute top-0 left-0 origin-top-left"
+                style={{
+                  width: `${baseSlideWidth}px`,
+                  height: `${baseSlideHeight}px`,
+                  transform: `scale(${slideScale})`,
+                }}
               >
-                <Loader2 className="h-10 w-10 animate-spin" />
-                <span className="text-sm font-medium">Loading slides...</span>
-              </motion.div>
-            ) : currentSlide ? (
-              <motion.div
-                key={`slide-${currentSlide.id}`}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.2 }}
-                className="max-w-full max-h-full"
-              >
-                <MiniSlide
-                  slide={currentSlide}
-                  responsive={true}
-                  className="rounded-lg shadow-2xl ring-1 ring-white/10"
-                />
-              </motion.div>
-            ) : (
-              <div className="flex flex-col items-center gap-4 text-white/40">
-                <Grid3X3 className="h-16 w-16" />
-                <span className="text-sm">No slides available</span>
+                <StaticNavigationProvider slideIndex={currentSlideIndex}>
+                  <StaticEditorStateProvider slideSize={deckSlideSize}>
+                    <StaticActiveSlideProvider slide={normalizedSlide}>
+                      <Slide
+                        slide={normalizedSlide}
+                        isActive={true}
+                        isEditing={false}
+                        isThumbnail={false}
+                      />
+                    </StaticActiveSlideProvider>
+                  </StaticEditorStateProvider>
+                </StaticNavigationProvider>
               </div>
-            )}
-          </div>
+            </motion.div>
+          ) : (
+            <div className="flex flex-col items-center gap-4 text-white/40">
+              <Grid3X3 className="h-16 w-16" />
+              <span className="text-sm">No slides available</span>
+            </div>
+          )}
 
           {/* Edge trigger zones for controls */}
           {!showThumbnails && !showInfo && (
@@ -742,6 +853,7 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
                                 responsive={false}
                                 className="pointer-events-none rounded-none"
                                 slideSize={currentDeck.size}
+                                forceRender={true}
                               />
                             </div>
 

@@ -1515,29 +1515,33 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
 
                     {/* Category */}
                     <div>
-                      <Label htmlFor="community-category" className="text-xs font-medium mb-1.5 block text-zinc-600">
+                      <Label className="text-xs font-medium mb-1.5 block text-zinc-600">
                         Category *
                       </Label>
-                      <Select value={communityCategory} onValueChange={(val) => setCommunityCategory(val)}>
-                        <SelectTrigger id="community-category" className="h-8 text-xs bg-white border-zinc-200 text-zinc-900">
-                          <SelectValue placeholder="Select a category">
-                            {COMMUNITY_CATEGORIES[communityCategory as keyof typeof COMMUNITY_CATEGORIES]?.name || 'Select a category'}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent position="popper" className="z-[9999]">
-                          {Object.entries(COMMUNITY_CATEGORIES).map(([key, cat]) => (
-                            <SelectItem key={key} value={key}>
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="w-2 h-2 rounded-full"
-                                  style={{ backgroundColor: cat.color }}
-                                />
-                                <span className="text-xs">{cat.name}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="grid grid-cols-2 gap-2">
+                        {Object.entries(COMMUNITY_CATEGORIES).map(([key, cat]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => setCommunityCategory(key)}
+                            className={cn(
+                              "flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-left transition-all",
+                              communityCategory === key
+                                ? `bg-gradient-to-r ${cat.gradient} text-white shadow-sm`
+                                : "bg-white border border-zinc-200 text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50"
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "w-2 h-2 rounded-full shrink-0",
+                                communityCategory === key && "bg-white/80"
+                              )}
+                              style={{ backgroundColor: communityCategory === key ? undefined : cat.color }}
+                            />
+                            {cat.name}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
                     {/* Tags */}

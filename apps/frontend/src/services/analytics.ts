@@ -46,12 +46,23 @@ export function initAnalytics(): void {
           password: true, // Only mask password fields
         },
       },
-      loaded: (posthog) => {
-        // Explicitly start session recording after PostHog loads
-        if (!posthog.sessionRecordingStarted()) {
-          posthog.startSessionRecording();
-        }
-        console.log('[Analytics] PostHog loaded, session recording:', posthog.sessionRecordingStarted());
+      loaded: (ph) => {
+        // Expose PostHog to window for debugging
+        (window as any).posthog = ph;
+
+        // Start session recording explicitly
+        ph.startSessionRecording();
+
+        console.log('[Analytics] PostHog loaded, starting session recording...');
+
+        // Check status after decide call completes (delayed check)
+        setTimeout(() => {
+          console.log('[Analytics] Session recording status:', ph.sessionRecordingStarted());
+          if (!ph.sessionRecordingStarted()) {
+            console.warn('[Analytics] Session recording failed to start - trying again');
+            ph.startSessionRecording();
+          }
+        }, 2000);
       },
     });
 
