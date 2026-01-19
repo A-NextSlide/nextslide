@@ -9,9 +9,8 @@ import posthog from 'posthog-js';
 
 // Environment configuration
 const POSTHOG_KEY = import.meta.env.VITE_POSTHOG_KEY;
-// Use backend proxy to bypass ad blockers - falls back to direct if not configured
-const API_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || '';
-const POSTHOG_HOST = API_URL ? `${API_URL}/ingest` : (import.meta.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.com');
+// Use PostHog directly - proxy can be configured via VITE_POSTHOG_HOST if needed
+const POSTHOG_HOST = import.meta.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.com';
 const IS_PRODUCTION = import.meta.env.PROD;
 
 // Track initialization state
@@ -34,16 +33,30 @@ export function initAnalytics(): void {
   try {
     posthog.init(POSTHOG_KEY, {
       api_host: POSTHOG_HOST,
-      person_profiles: 'identified_only',
+      person_profiles: 'always', // Create profiles for all users including anonymous
       capture_pageview: true,
       capture_pageleave: true,
       autocapture: false, // Disable autocapture to reduce noise
       persistence: 'localStorage',
-      disable_session_recording: !IS_PRODUCTION,
+      // Session recording configuration - always enabled
+      disable_session_recording: false,
+      session_recording: {
+        maskAllInputs: false,
+        maskInputOptions: {
+          password: true, // Only mask password fields
+        },
+      },
+      loaded: (posthog) => {
+        // Explicitly start session recording after PostHog loads
+        if (!posthog.sessionRecordingStarted()) {
+          posthog.startSessionRecording();
+        }
+        console.log('[Analytics] PostHog loaded, session recording:', posthog.sessionRecordingStarted());
+      },
     });
 
     isInitialized = true;
-    console.log('[Analytics] PostHog initialized');
+    console.log('[Analytics] PostHog initialized with key:', POSTHOG_KEY?.slice(0, 10) + '...');
   } catch (error) {
     console.error('[Analytics] Failed to initialize PostHog:', error);
   }
