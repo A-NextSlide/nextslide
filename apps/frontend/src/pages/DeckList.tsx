@@ -66,6 +66,7 @@ import ParticleAnimation from '@/components/visuals/ParticleAnimation';
 import { CreditWarningDialog } from '@/components/billing/CreditWarningDialog';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { RotatingWords, VirtualizedDeckGrid, VirtualizedPopupDeckGrid } from './deck-list/DeckGridComponents';
+import DeckListBottomSheet from '@/components/deck/DeckListBottomSheet';
 import { developerApiService } from '@/services/developerApiService';
 
 // Component instance counter for debugging
@@ -122,12 +123,13 @@ const DeckList: React.FC = () => {
   const outlineThemeRequestsRef = useRef<Set<string>>(new Set());
   const { isAuthenticated, refreshAdminStatus } = useAuth();
   const isMobileView = useIsMobile();
-  const heroTextareaBaseHeight = isMobileView ? 40 : 48;
+  const heroTextareaBaseHeight = isMobileView ? 72 : 48;
   const hasCalledAdminCheckRef = useRef(false);
 
   // Get deck management state and functions first, before using isLoading
   const {
     decks,
+    totalCount,
     isLoading,
     isLoadingMore,
     error,
@@ -2335,35 +2337,35 @@ const DeckList: React.FC = () => {
                   <div
                     className={cn(
                       "relative z-10 flex flex-col min-w-0",
-                      isMobileView ? "w-full flex-none" : "h-full overflow-y-auto flex-1"
+                      isMobileView ? "w-full h-full flex-1" : "h-full overflow-y-auto flex-1"
                     )}
                   >
-                    <div className={cn("flex flex-col", isMobileView ? "min-h-0" : "min-h-full")}>
+                    <div className={cn("flex flex-col", isMobileView ? "h-full" : "min-h-full")}>
                       {/* Header Removed (Duplicate) */}
 
                       {/* Hero Content - Centered Vertically */}
                       <div
                         className={cn(
                           isMobileView
-                            ? "flex flex-col items-center px-4 pt-3 pb-2 flex-none"
+                            ? "flex-1 flex flex-col items-center justify-center px-4 pt-3 pb-24"
                             : "flex-1 flex flex-col justify-center items-center px-5 pt-6 pb-10 sm:p-8 sm:pb-32"
                         )}
                       >
-                        <div className="max-w-md sm:max-w-3xl w-full text-center space-y-4 sm:space-y-8">
+                        <div className="max-w-md sm:max-w-3xl w-full text-center space-y-6 sm:space-y-8">
                           {/* Main Heading */}
-                          <div className="space-y-3 sm:space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                            <div className="flex flex-col items-center justify-center mb-2 sm:mb-10 space-y-2 sm:space-y-6 text-center z-10 relative">
+                          <div className="space-y-4 sm:space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                            <div className="flex flex-col items-center justify-center mb-4 sm:mb-10 space-y-3 sm:space-y-6 text-center z-10 relative">
                               <h1
-                                className="text-lg sm:text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
+                                className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
                                 style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
                               >
                                 TURN<RotatingWords compact={isMobileView} />INTO<br />PERFECT PRESENTATIONS
                               </h1>
                               <div className="space-y-2">
-                                <p className="text-xs sm:text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
+                                <p className="text-sm sm:text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
                                   Any topic. Visualized. Perfected. In 90 seconds.
                                 </p>
-                                <p className="text-[11px] sm:text-sm md:text-base text-zinc-500 dark:text-zinc-400">
+                                <p className="text-xs sm:text-sm md:text-base text-zinc-500 dark:text-zinc-400">
                                   Type, talk, or drop a file — we handle the rest.
                                 </p>
                               </div>
@@ -2376,7 +2378,8 @@ const DeckList: React.FC = () => {
                               <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                               <div
                                 className={cn(
-                                  "relative flex items-center bg-white dark:bg-zinc-900 rounded-xl md:rounded-2xl shadow-lg md:shadow-xl shadow-slate-200/50 dark:shadow-black/30 border p-1.5 md:p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
+                                  "relative bg-white dark:bg-zinc-900 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-black/30 border p-3 md:p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
+                                  isMobileView ? "flex flex-col" : "flex items-center",
                                   isHeroDraggingOver ? "border-orange-500 border-dashed border-2 bg-orange-50 dark:bg-orange-950/30" : "border-slate-200 dark:border-zinc-700"
                                 )}
                                 onDragEnter={handleHeroDragEnter}
@@ -2410,10 +2413,15 @@ const DeckList: React.FC = () => {
                                 )}
 
                                 {/* Input Field with Typewriter Placeholder */}
-                                <div className="flex-1 relative min-h-[40px] md:min-h-[48px]">
+                                <div className={cn("relative", isMobileView ? "w-full min-h-[72px]" : "flex-1 min-h-[48px]")}>
                                   <Textarea
                                     ref={heroTextareaRef}
-                                    className="w-full border-none shadow-none focus-visible:ring-0 min-h-[40px] md:min-h-[48px] max-h-[150px] bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-2 py-2.5 md:px-4 md:py-3 font-sans dark:text-zinc-100 resize-none overflow-y-auto text-sm md:text-base leading-normal"
+                                    className={cn(
+                                      "w-full border-none shadow-none focus-visible:ring-0 max-h-[150px] bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 font-sans dark:text-zinc-100 resize-none overflow-y-auto leading-normal",
+                                      isMobileView
+                                        ? "min-h-[72px] px-1 py-2 text-lg"
+                                        : "min-h-[48px] px-4 py-3 text-base"
+                                    )}
                                     value={heroInput}
                                     onChange={(e) => setHeroInput(e.target.value)}
                                     onKeyDown={(e) => {
@@ -2430,7 +2438,12 @@ const DeckList: React.FC = () => {
                                     }}
                                   />
                                   {!heroInput && (
-                                    <div className="absolute top-0 left-0 right-0 pointer-events-none flex items-center px-2 md:px-4 h-[40px] md:h-[48px] text-sm md:text-base leading-tight text-slate-400 dark:text-zinc-500 min-w-0 overflow-hidden">
+                                    <div className={cn(
+                                      "absolute top-0 left-0 right-0 pointer-events-none flex items-center leading-tight text-slate-400 dark:text-zinc-500 min-w-0 overflow-hidden",
+                                      isMobileView
+                                        ? "px-1 h-[72px] text-lg"
+                                        : "px-4 h-[48px] text-base"
+                                    )}>
                                       <span className="whitespace-nowrap">{heroPlaceholderPrefix}</span>
                                       <span className="min-w-0 truncate text-slate-300 dark:text-zinc-600">{typewriterText}</span>
                                       <span className="ml-0.5 animate-pulse text-orange-500">|</span>
@@ -2441,39 +2454,53 @@ const DeckList: React.FC = () => {
                                 {/* Actions Divider - hidden on mobile */}
                                 <div className="hidden md:block h-7 w-px bg-slate-200 dark:bg-zinc-700 mx-2 self-center"></div>
 
-                                {/* Action Buttons */}
-                                <div className="flex items-center gap-0 pr-0.5 md:pr-2 flex-shrink-0">
-                                  {/* Upload Button */}
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 md:h-8 md:w-8 text-slate-500 dark:text-zinc-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-transparent md:hover:bg-orange-50 dark:md:hover:bg-orange-950/50 rounded-lg md:rounded-xl transition-colors"
-                                    onClick={() => fileInputRef.current?.click()}
+                                {/* Action Buttons - row below on mobile, inline on desktop */}
+                                <div className={cn(
+                                  "flex items-center flex-shrink-0",
+                                  isMobileView
+                                    ? "justify-end gap-1 w-full pt-2"
+                                    : "gap-0 pr-2"
+                                )}>
+                                  {/* Upload Button - wraps file input for better mobile support */}
+                                  <label
+                                    className={cn(
+                                      "relative flex items-center justify-center cursor-pointer text-slate-500 dark:text-zinc-400 hover:text-orange-600 dark:hover:text-orange-400 transition-colors touch-manipulation overflow-hidden",
+                                      isMobileView
+                                        ? "h-10 w-10 rounded-xl hover:bg-orange-50 dark:hover:bg-orange-950/50"
+                                        : "h-8 w-8 rounded-xl hover:bg-orange-50 dark:hover:bg-orange-950/50"
+                                    )}
                                     title="Upload files"
                                   >
-                                    <Upload className="h-4 w-4 md:h-[18px] md:w-[18px]" />
-                                  </Button>
-                                  <input
-                                    type="file"
-                                    ref={fileInputRef}
-                                    className="hidden"
-                                    multiple
-                                    onChange={handleFileUpload}
-                                  />
+                                    <Upload className={cn("pointer-events-none", isMobileView ? "h-5 w-5" : "h-[18px] w-[18px]")} />
+                                    <input
+                                      type="file"
+                                      ref={fileInputRef}
+                                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                      multiple
+                                      accept="image/*,.pdf,.pptx,.xlsx,.xls,.doc,.docx,.txt,.csv"
+                                      onChange={handleFileUpload}
+                                    />
+                                  </label>
 
                                   {/* Link Button */}
                                   <Popover open={isLinkPopoverOpen} onOpenChange={setIsLinkPopoverOpen}>
                                     <PopoverTrigger asChild>
                                       <Button
+                                        type="button"
                                         variant="ghost"
                                         size="icon"
-                                        className="h-7 w-7 md:h-8 md:w-8 text-slate-500 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-transparent md:hover:bg-blue-50 dark:md:hover:bg-blue-950/50 rounded-lg md:rounded-xl transition-colors"
+                                        className={cn(
+                                          "text-slate-500 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors touch-manipulation",
+                                          isMobileView
+                                            ? "h-10 w-10 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                                            : "h-8 w-8 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                                        )}
                                         title="Add link"
                                       >
-                                        <LinkIcon className="h-4 w-4 md:h-[18px] md:w-[18px]" />
+                                        <LinkIcon className={isMobileView ? "h-5 w-5" : "h-[18px] w-[18px]"} />
                                       </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-80 p-4 dark:bg-zinc-900 dark:border-zinc-700" side="top" align="center">
+                                    <PopoverContent className="w-80 p-4 dark:bg-zinc-900 dark:border-zinc-700 z-[9999]" side="top" align="center">
                                       <div className="space-y-3">
                                         <div>
                                           <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Add a link</p>
@@ -2524,14 +2551,17 @@ const DeckList: React.FC = () => {
                                   {/* Submit Button */}
                                   <Button
                                     size="icon"
-                                    className="h-9 w-9 md:h-10 md:w-10 md:ml-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white shadow-md md:shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95"
+                                    className={cn(
+                                      "rounded-xl bg-orange-500 hover:bg-orange-600 text-white shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95",
+                                      isMobileView ? "h-10 w-10" : "h-10 w-10 ml-2"
+                                    )}
                                     onClick={() => {
                                       if (heroInput.trim() || uploadedFiles.length > 0) {
                                         openConversationalOnboarding(heroInput);
                                       }
                                     }}
                                   >
-                                    <ArrowRight size={18} />
+                                    <ArrowRight size={isMobileView ? 20 : 18} />
                                   </Button>
                                 </div>
                               </div>
@@ -2569,15 +2599,11 @@ const DeckList: React.FC = () => {
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-8 bg-zinc-300 dark:bg-zinc-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
 
-                  {/* Right Pane: Deck List */}
+                  {/* Right Pane: Deck List - Desktop only, mobile uses bottom sheet */}
+                  {!isMobileView && (
                   <div
-                    className={cn(
-                      "bg-white/60 dark:bg-zinc-900/90 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-black/30 relative z-10 flex flex-col flex-none",
-                      isMobileView
-                        ? "w-full flex-1 min-h-0 border-t border-white/50 dark:border-zinc-800/50 mt-2 overflow-hidden"
-                        : "h-full border-l border-white/50 dark:border-zinc-800/50"
-                    )}
-                    style={{ width: isMobileView ? '100%' : `${deckListWidth}%` }}
+                    className="bg-white/60 dark:bg-zinc-900/90 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-black/30 relative z-10 flex flex-col flex-none h-full border-l border-white/50 dark:border-zinc-800/50"
+                    style={{ width: `${deckListWidth}%` }}
                   >
                     <div
                       className={cn(
@@ -2950,6 +2976,7 @@ const DeckList: React.FC = () => {
                       </AlertDialogContent>
                     </AlertDialog>
                   </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2957,8 +2984,46 @@ const DeckList: React.FC = () => {
         </div>
       </div>
 
-      {/* Community Button - Fixed at bottom, hidden during conversational onboarding */}
-      {!showConversationalOnboarding && (
+      {/* Mobile Community Button - sits above the bottom sheet */}
+      {isMobileView && !showConversationalOnboarding && !currentOutline && (
+        <button
+          onClick={() => setShowCommunity(true)}
+          className="fixed bottom-[80px] left-4 z-40 px-4 py-2 rounded-full shadow-lg"
+          style={{
+            background: 'linear-gradient(135deg, #FF6B00 0%, #FF8533 100%)',
+            fontFamily: '"HK Grotesk", "Hanken Grotesk", sans-serif',
+            fontWeight: 800,
+            letterSpacing: '-0.02em',
+          }}
+        >
+          <span className="text-white text-sm">Explore Community</span>
+        </button>
+      )}
+
+      {/* Mobile Deck List Bottom Sheet */}
+      {isMobileView && !showConversationalOnboarding && !currentOutline && (
+        <DeckListBottomSheet
+          decks={activeTab === 'by-me' ? filteredDecks : activeTab === 'shared' ? sharedDecks : apiDecks}
+          totalCount={activeTab === 'by-me' ? totalCount : activeTab === 'shared' ? sharedDecks.length : apiDecks.length}
+          isLoading={activeTab === 'by-me' ? isLoading : activeTab === 'shared' ? isLoadingShared : isLoadingApiDecks}
+          isLoadingMore={isLoadingMore}
+          hasMore={activeTab === 'by-me' && !searchQuery ? hasMore : false}
+          onLoadMore={loadMoreDecks}
+          onEdit={handleEditDeck}
+          onShowDeleteDialog={handleShowDeleteDialog}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          isSearching={isSearching}
+          onClearSearch={clearSearch}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          hasApiKeys={hasApiKeys}
+          onCreateNew={handleCreateDeck}
+        />
+      )}
+
+      {/* Community Button - Fixed at bottom, hidden during conversational onboarding, desktop only */}
+      {!showConversationalOnboarding && !isMobileView && (
         <button
           onClick={() => setShowCommunity(true)}
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-medium rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center gap-2"

@@ -167,20 +167,22 @@ const SlideEditorContent: React.FC = () => {
   }, []);
 
   const minMobileChatHeight = useMemo(() => {
-    if (!mobileContainerHeight) return 180;
-    const scaled = Math.round(mobileContainerHeight * 0.22);
-    return Math.max(160, Math.min(220, scaled));
+    if (!mobileContainerHeight) return 200;
+    const scaled = Math.round(mobileContainerHeight * 0.26);
+    return Math.max(180, Math.min(240, scaled));
   }, [mobileContainerHeight]);
 
   const maxMobileChatHeight = useMemo(() => {
     if (!mobileContainerHeight) return 420;
-    const maxByHeight = Math.max(minMobileChatHeight + 120, mobileContainerHeight - 80);
-    return Math.min(maxByHeight, mobileContainerHeight);
+    // Allow chat to take up to 85% of screen height (leaving 15% for slide peek)
+    const maxByPercent = Math.round(mobileContainerHeight * 0.85);
+    return Math.max(minMobileChatHeight + 120, maxByPercent);
   }, [mobileContainerHeight, minMobileChatHeight]);
 
   useEffect(() => {
     if (!isMobile || !mobileContainerHeight) return;
-    const initialHeight = clampValue(Math.round(mobileContainerHeight * 0.38), minMobileChatHeight, maxMobileChatHeight);
+    // Initial chat height - show more chat at start (below the slide navigation arrows)
+    const initialHeight = clampValue(Math.round(mobileContainerHeight * 0.52), minMobileChatHeight, maxMobileChatHeight);
     setMobileChatHeight((prev) => {
       if (prev > 0) {
         return clampValue(prev, minMobileChatHeight, maxMobileChatHeight);
@@ -1733,9 +1735,9 @@ const SlideEditorContent: React.FC = () => {
               </div>
             </div>
 
-            {/* Chat panel overlays on top of slides */}
+            {/* Chat panel overlays on top of slides - z-50 ensures it's always above slide content */}
             <div
-              className={`absolute inset-x-0 bottom-0 z-20 flex flex-col border-t border-border bg-white dark:bg-zinc-900 shadow-2xl ${isChatDragging ? 'cursor-row-resize' : ''}`}
+              className={`absolute inset-x-0 bottom-0 z-50 flex flex-col border-t border-border bg-white dark:bg-zinc-900 shadow-2xl ${isChatDragging ? 'cursor-row-resize' : ''}`}
               style={{ height: `${mobileChatHeight || minMobileChatHeight}px` }}
             >
               <div className="relative flex items-center justify-center h-6">

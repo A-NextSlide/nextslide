@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import {
   Search,
@@ -32,6 +32,9 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/SupabaseAuthContext';
+import { useCommunityThumbnailCache } from '@/hooks/useCommunityThumbnailCache';
+import { BROWSER } from '@/utils/browser';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface CommunityGalleryProps {
   variant?: 'landing' | 'app';
@@ -52,6 +55,7 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
 }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
 
   const [decks, setDecks] = useState<CommunityDeck[]>([]);
   const [categories, setCategories] = useState<CategoryCount[]>([]);
@@ -67,6 +71,10 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
 
   // Remix state
   const [remixingId, setRemixingId] = useState<string | null>(null);
+
+  // Thumbnail caching for mobile performance
+  const { getCachedThumbnail, captureThumbnail, cacheVersion } = useCommunityThumbnailCache();
+  const thumbnailRefsMapRef = useRef<Map<string, HTMLDivElement>>(new Map());
 
   // Debounce search
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -223,7 +231,12 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
 
           {/* Category Filters */}
           {showFilters && (
-            <div className="flex flex-wrap gap-2">
+            <div className={cn(
+              "flex gap-2",
+              isMobile
+                ? "overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide"
+                : "flex-wrap"
+            )}>
               {Object.entries(COMMUNITY_CATEGORIES).map(([key, value]) => {
                 const cat = categories.find((c) => c.name === key);
                 const isSelected = selectedCategory === key;
@@ -234,7 +247,7 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
                     onClick={() => handleCategoryClick(key)}
                     className={cn(
                       'group relative px-4 py-2 rounded-full font-semibold text-sm transition-all duration-200',
-                      'hover:scale-105 active:scale-95',
+                      'hover:scale-105 active:scale-95 flex-shrink-0',
                       isSelected
                         ? `bg-gradient-to-r ${value.gradient} text-white shadow-lg`
                         : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
@@ -324,16 +337,36 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
                 : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
             )}
           >
-            {decks.map((deck) => (
-              <CommunityDeckCard
-                key={deck.id}
-                deck={deck}
-                onRemix={handleRemix}
-                onView={onDeckClick || handleView}
-                isRemixing={remixingId === deck.id}
-                showRemixButton={variant === 'app'}
-              />
-            ))}
+            {decks.map((deck) => {
+              // Get cached thumbnail for mobile performance
+              const cachedUrl = BROWSER.isMobile ? getCachedThumbnail(deck.id) : null;
+
+              return (
+                <CommunityDeckCard
+                  key={deck.id}
+                  deck={deck}
+                  onRemix={handleRemix}
+                  onView={onDeckClick || handleView}
+                  isRemixing={remixingId === deck.id}
+                  showRemixButton={variant === 'app'}
+                  cachedThumbnailUrl={cachedUrl}
+                  onThumbnailRef={(el) => {
+                    if (el && !cachedUrl) {
+                      thumbnailRefsMapRef.current.set(deck.id, el);
+                      // Capture thumbnail after render
+                      setTimeout(() => {
+                        const element = thumbnailRefsMapRef.current.get(deck.id);
+                        if (element) {
+                          captureThumbnail(deck.id, element);
+                        }
+                      }, 400);
+                    } else {
+                      thumbnailRefsMapRef.current.delete(deck.id);
+                    }
+                  }}
+                />
+              );
+            })}
           </div>
 
           {/* Load More */}

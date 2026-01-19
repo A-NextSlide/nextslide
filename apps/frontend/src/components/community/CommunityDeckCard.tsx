@@ -13,6 +13,10 @@ interface CommunityDeckCardProps {
   isRemixing?: boolean;
   showRemixButton?: boolean;
   className?: string;
+  /** Cached thumbnail URL - if provided, shows this instead of rendering live MiniSlide */
+  cachedThumbnailUrl?: string | null;
+  /** Callback when thumbnail element is ready for screenshot capture */
+  onThumbnailRef?: (element: HTMLDivElement | null) => void;
 }
 
 const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
@@ -22,6 +26,8 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
   isRemixing = false,
   showRemixButton = true,
   className,
+  cachedThumbnailUrl,
+  onThumbnailRef,
 }) => {
   const category = COMMUNITY_CATEGORIES[deck.category as keyof typeof COMMUNITY_CATEGORIES];
 
@@ -42,11 +48,22 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
       <div className="relative aspect-[16/9] w-full max-w-full overflow-hidden rounded-lg transition-all duration-300 ring-1 ring-zinc-200 dark:ring-zinc-700 hover:ring-zinc-300 dark:hover:ring-zinc-600 hover:shadow-lg">
         {/* Thumbnail */}
         <div className="absolute inset-0 w-full h-full">
-          {deck.firstSlide ? (
-            <MiniSlide
-              slide={deck.firstSlide}
-              className="w-full h-full"
+          {cachedThumbnailUrl ? (
+            /* Show cached screenshot if available */
+            <img
+              src={cachedThumbnailUrl}
+              alt={deck.title}
+              className="w-full h-full object-cover"
+              draggable={false}
             />
+          ) : deck.firstSlide ? (
+            /* Render live thumbnail */
+            <div ref={onThumbnailRef} className="w-full h-full">
+              <MiniSlide
+                slide={deck.firstSlide}
+                className="w-full h-full"
+              />
+            </div>
           ) : (
             <div className="flex items-center justify-center h-full bg-gray-100 dark:bg-gray-800">
               <FileStack className="h-8 w-8 text-gray-300" />

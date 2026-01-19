@@ -9,6 +9,7 @@ import { useAuth } from '@/context/SupabaseAuthContext';
 
 export interface UseDeckManagementReturn {
   decks: CompleteDeckData[];
+  totalCount: number; // Total number of decks from API (not just loaded)
   isLoading: boolean;
   isLoadingMore: boolean;
   error: string | null;
@@ -28,6 +29,7 @@ export interface UseDeckManagementReturn {
 
 export const useDeckManagement = (): UseDeckManagementReturn => {
   const [decks, setDecks] = useState<CompleteDeckData[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +94,7 @@ export const useDeckManagement = (): UseDeckManagementReturn => {
       }
 
       setDecks(nonApiDecks);
+      setTotalCount(result.count); // Store the total count from API
       setHasMore(result.has_more);
       setCurrentOffset(result.decks.length);
     } catch (err) {
@@ -428,6 +431,7 @@ export const useDeckManagement = (): UseDeckManagementReturn => {
 
   return {
     decks,
+    totalCount,
     isLoading,
     isLoadingMore,
     error,

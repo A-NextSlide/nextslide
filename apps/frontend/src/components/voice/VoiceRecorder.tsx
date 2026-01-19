@@ -32,11 +32,44 @@ const MicPermissionDialog: React.FC<{
   onAllow: () => void;
   onDeny: () => void;
 }> = ({ show, onAllow, onDeny }) => {
+  const [hasClicked, setHasClicked] = React.useState(false);
+
+  // Reset state when dialog opens
+  React.useEffect(() => {
+    if (show) {
+      setHasClicked(false);
+    }
+  }, [show]);
+
   if (!show) return null;
 
+  const handleAllow = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Prevent double-firing from both touch and click
+    if (hasClicked) return;
+    setHasClicked(true);
+    onAllow();
+  };
+
+  const handleDeny = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Prevent double-firing
+    if (hasClicked) return;
+    setHasClicked(true);
+    onDeny();
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={handleDeny}
+    >
+      <div
+        className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header with gradient */}
         <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-6 text-white">
           <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -53,14 +86,18 @@ const MicPermissionDialog: React.FC<{
 
           <div className="space-y-3">
             <button
-              onClick={onAllow}
-              className="w-full py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors"
+              type="button"
+              onClick={handleAllow}
+              onTouchEnd={handleAllow}
+              className="w-full py-3 px-4 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-medium rounded-xl transition-colors touch-manipulation"
             >
               Allow Microphone
             </button>
             <button
-              onClick={onDeny}
-              className="w-full py-2.5 px-4 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 font-medium transition-colors"
+              type="button"
+              onClick={handleDeny}
+              onTouchEnd={handleDeny}
+              className="w-full py-2.5 px-4 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 active:text-zinc-800 font-medium transition-colors touch-manipulation"
             >
               Not now
             </button>
@@ -199,14 +236,23 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   const isHoldingRef = useRef(false);
   const recordingDelayRef = useRef<NodeJS.Timeout | null>(null);
   const pendingStartRef = useRef<(() => void) | null>(null);
+  // Track if we've successfully gotten mic permission (persists across renders)
+  const hasGrantedPermissionRef = useRef(false);
 
   // Check if mic permission was previously granted
   const checkMicPermission = useCallback(async (): Promise<boolean> => {
+    // If we've already successfully used the mic, skip the check
+    if (hasGrantedPermissionRef.current) return true;
+
     try {
       const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-      return result.state === 'granted';
+      if (result.state === 'granted') {
+        hasGrantedPermissionRef.current = true;
+        return true;
+      }
+      return false;
     } catch {
-      // Permissions API not supported, assume not granted
+      // Permissions API not supported (iOS Safari), assume not granted yet
       return false;
     }
   }, []);
@@ -262,6 +308,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       });
 
       streamRef.current = stream;
+      hasGrantedPermissionRef.current = true; // Mark permission as granted
       setPermissionDenied(false);
       smoothedLevelRef.current = 0;
 

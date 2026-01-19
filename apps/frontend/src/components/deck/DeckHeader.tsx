@@ -27,6 +27,7 @@ import { trackDeckExported } from '@/services/analytics';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import { IntegrationsDialog } from '@/components/integrations';
 import { useIsMobile } from '@/hooks/use-mobile';
+import MobileShareSheet from './MobileShareSheet';
 
 interface DeckHeaderProps {
   isEditing: boolean;
@@ -466,8 +467,10 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
             </Button>
           )}
 
-          {/* Desktop: Secondary Share button (passed in) */}
-          {!isMobile && rightSideComponents}
+          {/* Desktop: Secondary Share button (passed in) - hidden on mobile but mounted for events */}
+          <div className={isMobile ? 'hidden' : ''}>
+            {rightSideComponents}
+          </div>
 
           {/* Actions menu */}
           <DropdownMenu>
@@ -612,6 +615,13 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
         open={integrationsOpen}
         onOpenChange={setIntegrationsOpen}
       />
+      {/* Mobile share sheet - only rendered on mobile */}
+      {isMobile && deckData?.uuid && (
+        <MobileShareSheet
+          deckUuid={deckData.uuid}
+          deckName={deckName}
+        />
+      )}
     </>
   );
 };

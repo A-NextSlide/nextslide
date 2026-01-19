@@ -891,8 +891,9 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
         }}
       >
         {/* Canvas wrapper - centers content and provides scroll area when zoomed */}
+        {/* On mobile, position slide slightly above center to reduce top blank space */}
         <div
-          className="relative flex items-center justify-center"
+          className={`relative flex justify-center ${isMobileView ? 'items-start pt-[18%]' : 'items-center'}`}
           style={{
             minWidth: '100%',
             minHeight: '100%',

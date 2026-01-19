@@ -73,6 +73,7 @@ import { Avatar, AvatarFallback } from '../ui/avatar';
 import { cn } from '@/lib/utils';
 import QRCode from 'qrcode';
 import { useAuth } from '@/context/SupabaseAuthContext';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { communityService, COMMUNITY_CATEGORIES, SubmissionStatus } from '@/services/communityService';
 import { Textarea } from '../ui/textarea';
 
@@ -106,6 +107,7 @@ interface ShareLinkExtended extends ShareLink {
 const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
   const { toast } = useToast();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'links' | 'collaborators' | 'analytics' | 'community'>('links');
@@ -180,10 +182,14 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
   // Allow opening this dialog via global event from header popover
   useEffect(() => {
     const handler = (e: CustomEvent) => {
+      // On mobile, don't respond to open-deck-sharing - MobileShareSheet handles it
+      // Only respond on desktop
+      if (isMobile) return;
+
       try {
         const tab = e.detail?.tab as 'links' | 'collaborators' | 'analytics' | undefined;
         const focusInvite = Boolean(e.detail?.focusInvite);
-        setActiveTab(tab || 'collaborators');
+        setActiveTab(tab || 'links');
         setIsOpen(true);
         // Focus invite input shortly after open
         if (focusInvite) {
@@ -191,9 +197,18 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
         }
       } catch {}
     };
+    // Handler for full dialog (from mobile advanced options) - always respond
+    const fullHandler = () => {
+      setActiveTab('links');
+      setIsOpen(true);
+    };
     window.addEventListener('open-deck-sharing', handler as EventListener);
-    return () => window.removeEventListener('open-deck-sharing', handler as EventListener);
-  }, []);
+    window.addEventListener('open-deck-sharing-full', fullHandler as EventListener);
+    return () => {
+      window.removeEventListener('open-deck-sharing', handler as EventListener);
+      window.removeEventListener('open-deck-sharing-full', fullHandler as EventListener);
+    };
+  }, [isMobile]);
 
   const loadShareData = async () => {
     setIsLoading(true);
@@ -780,12 +795,11 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
         </Button>
       </DialogTrigger>
       <DialogContent
-          className="p-0 border-0 bg-transparent shadow-2xl"
-          style={{ width: '480px', maxWidth: '95vw' }}
+          className="p-0 border-0 bg-transparent shadow-2xl w-full max-w-[95vw] sm:max-w-[480px]"
         >
-        <div className="bg-white rounded-2xl overflow-hidden border border-zinc-200 shadow-xl" style={{ width: '480px', maxWidth: '100%' }}>
+        <div className="bg-white rounded-2xl overflow-hidden border border-zinc-200 shadow-xl w-full">
           <div className="h-[3px] bg-gradient-to-r from-[#FF6B00] via-[#FF8533] to-[#FF6B00]" />
-          <DialogHeader className="px-6 pt-5 pb-4 border-b border-zinc-100">
+          <DialogHeader className="px-3 sm:px-6 pt-5 pb-4 border-b border-zinc-100">
             <DialogTitle
               className="text-lg text-zinc-900"
               style={{
@@ -800,40 +814,36 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
           </DialogHeader>
 
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-            <div className="px-6 pt-4">
-              <TabsList className="grid w-full grid-cols-4 h-9 p-0.5 bg-zinc-100 rounded-lg">
+            <div className="px-3 sm:px-6 pt-4">
+              <TabsList className="grid w-full grid-cols-4 h-8 p-0.5 bg-zinc-100 rounded-lg gap-0.5">
                 <TabsTrigger
                   value="links"
-                  className="rounded-md text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
+                  className="rounded-md text-[11px] font-medium px-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
                 >
-                  <Link size={12} className="mr-1.5" />
                   Links
                 </TabsTrigger>
                 <TabsTrigger
                   value="collaborators"
-                  className="rounded-md text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
+                  className="rounded-md text-[11px] font-medium px-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
                 >
-                  <Users size={12} className="mr-1.5" />
                   Team
                 </TabsTrigger>
                 <TabsTrigger
                   value="analytics"
-                  className="rounded-md text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
+                  className="rounded-md text-[11px] font-medium px-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
                 >
-                  <BarChart3 size={12} className="mr-1.5" />
                   Stats
                 </TabsTrigger>
                 <TabsTrigger
                   value="community"
-                  className="rounded-md text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
+                  className="rounded-md text-[11px] font-medium px-0 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
                 >
-                  <Globe size={12} className="mr-1.5" />
                   Community
                 </TabsTrigger>
               </TabsList>
             </div>
 
-            <div className="px-6 pb-6 overflow-y-auto" style={{ height: '380px' }}>
+            <div className="px-3 sm:px-6 pb-6 overflow-y-auto" style={{ maxHeight: '60vh', minHeight: '300px' }}>
               <TabsContent value="links" className="space-y-3 mt-4 h-full">
                 {/* Create new share link card */}
                 <div className="p-4 rounded-xl bg-zinc-50 border border-dashed border-[#FF6B00]/30 space-y-3">

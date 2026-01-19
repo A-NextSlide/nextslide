@@ -95,16 +95,22 @@ export const captureSlideScreenshot = async (
  * - Returns base64 data URL
  */
 export const captureTinySlideScreenshot = async (
-  slideContainer: HTMLElement
+  slideContainer: HTMLElement,
+  options?: { skipIframeCapture?: boolean }
 ): Promise<string | null> => {
   try {
     // Find iframes with srcDoc (CustomComponent content)
     const iframe = slideContainer.querySelector('iframe[srcdoc]') as HTMLIFrameElement;
 
     // Wait for any animations/rendering to complete
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
-    if (iframe && iframe.contentDocument?.body) {
+    // On mobile, skip iframe.contentDocument capture - html2canvas fails due to sandbox
+    // Use srcDoc extraction instead which renders a copy outside the sandbox
+    const isMobile = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent);
+    const skipIframe = options?.skipIframeCapture || isMobile;
+
+    if (iframe && iframe.contentDocument?.body && !skipIframe) {
       // CustomComponent: Capture directly from iframe's internal document
       // Since srcdoc iframes are same-origin, we can access contentDocument
       console.log(`[TinyScreenshot] Using iframe.contentDocument for capture`);
@@ -128,8 +134,8 @@ export const captureTinySlideScreenshot = async (
       return dataUrl;
 
     } else if (iframe) {
-      // Fallback: Try to extract and render srcDoc (less accurate)
-      console.log(`[TinyScreenshot] iframe.contentDocument not accessible, using srcDoc extraction`);
+      // Fallback: Extract and render srcDoc in a non-sandboxed container
+      console.log(`[TinyScreenshot] Using srcDoc extraction for capture`);
       const srcDoc = iframe.getAttribute('srcdoc') || '';
       return await captureFromSrcDoc(srcDoc);
 
@@ -143,6 +149,10 @@ export const captureTinySlideScreenshot = async (
         return null;
       }
 
+      // Extract background from the slide content or its children
+      const extractedBg = extractBackgroundFromElement(slideContent);
+      console.log(`[TinyScreenshot] Extracted element background: ${extractedBg}`);
+
       // Clone to avoid modifying the original
       const tempContainer = document.createElement('div');
       tempContainer.style.position = 'absolute';
@@ -150,7 +160,7 @@ export const captureTinySlideScreenshot = async (
       tempContainer.style.top = '0';
       tempContainer.style.width = '1920px';
       tempContainer.style.height = '1080px';
-      tempContainer.style.backgroundColor = '#ffffff';
+      tempContainer.style.background = extractedBg; // Use extracted background
       tempContainer.style.overflow = 'hidden';
 
       const clone = slideContent.cloneNode(true) as HTMLElement;
@@ -162,11 +172,11 @@ export const captureTinySlideScreenshot = async (
       document.body.appendChild(tempContainer);
 
       try {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 50));
 
         const canvas = await html2canvas(tempContainer, {
           scale: 0.4,
-          backgroundColor: '#ffffff',
+          backgroundColor: null, // Let the element's background show through
           width: 1920,
           height: 1080,
           logging: false,
@@ -189,16 +199,97 @@ export const captureTinySlideScreenshot = async (
 };
 
 /**
+ * Extract background color/gradient from a DOM element
+ * Checks the element and its immediate children for background styles
+ */
+function extractBackgroundFromElement(element: HTMLElement): string {
+  // First check the element's computed style
+  const computedStyle = window.getComputedStyle(element);
+  let bg = computedStyle.background || computedStyle.backgroundColor;
+
+  // If element has a non-transparent/non-initial background, use it
+  if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && bg !== 'initial' && bg !== 'none') {
+    return bg;
+  }
+
+  // Check inline style
+  if (element.style.background) {
+    return element.style.background;
+  }
+  if (element.style.backgroundColor) {
+    return element.style.backgroundColor;
+  }
+
+  // Check first child div (often where the actual slide background is)
+  const firstChild = element.querySelector(':scope > div') as HTMLElement;
+  if (firstChild) {
+    const childStyle = window.getComputedStyle(firstChild);
+    bg = childStyle.background || childStyle.backgroundColor;
+    if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && bg !== 'initial' && bg !== 'none') {
+      return bg;
+    }
+    if (firstChild.style.background) {
+      return firstChild.style.background;
+    }
+    if (firstChild.style.backgroundColor) {
+      return firstChild.style.backgroundColor;
+    }
+  }
+
+  // Check for any element with explicit background
+  const bgElement = element.querySelector('[style*="background"]') as HTMLElement;
+  if (bgElement) {
+    const bgStyle = window.getComputedStyle(bgElement);
+    bg = bgStyle.background || bgStyle.backgroundColor;
+    if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && bg !== 'initial' && bg !== 'none') {
+      return bg;
+    }
+  }
+
+  // Default to white
+  return '#ffffff';
+}
+
+/**
+ * Extract background color/gradient from srcDoc styles
+ */
+function extractBackgroundFromSrcDoc(srcDoc: string): string {
+  // Try to find background in inline styles or style tags
+  const bgPatterns = [
+    /background:\s*([^;}"]+)/i,
+    /background-color:\s*([^;}"]+)/i,
+    /backgroundColor:\s*["']?([^;}"']+)/i,
+  ];
+
+  for (const pattern of bgPatterns) {
+    const match = srcDoc.match(pattern);
+    if (match && match[1]) {
+      const bg = match[1].trim();
+      // Return if it looks like a valid color or gradient
+      if (bg && (bg.startsWith('#') || bg.startsWith('rgb') || bg.startsWith('linear') || bg.startsWith('radial') || /^[a-z]+$/i.test(bg))) {
+        return bg;
+      }
+    }
+  }
+
+  return '#ffffff';
+}
+
+/**
  * Helper to capture from srcDoc HTML (fallback when contentDocument isn't accessible)
  */
 async function captureFromSrcDoc(srcDoc: string): Promise<string | null> {
+  // Extract actual background from srcDoc
+  const extractedBg = extractBackgroundFromSrcDoc(srcDoc);
+  console.log(`[TinyScreenshot] Extracted background: ${extractedBg}`);
+
   const tempContainer = document.createElement('div');
   tempContainer.style.position = 'absolute';
   tempContainer.style.left = '-9999px';
   tempContainer.style.top = '0';
   tempContainer.style.width = '1920px';
   tempContainer.style.height = '1080px';
-  tempContainer.style.backgroundColor = '#ffffff';
+  tempContainer.style.background = extractedBg;
   tempContainer.style.overflow = 'hidden';
   document.body.appendChild(tempContainer);
 
@@ -227,12 +318,12 @@ async function captureFromSrcDoc(srcDoc: string): Promise<string | null> {
     wrapper.appendChild(contentDiv);
     tempContainer.appendChild(wrapper);
 
-    // Wait for render
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // Wait for render - reduced from 200ms
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     const canvas = await html2canvas(tempContainer, {
       scale: 0.4,
-      backgroundColor: '#ffffff',
+      backgroundColor: null, // Let the element's background show through
       width: 1920,
       height: 1080,
       logging: false,

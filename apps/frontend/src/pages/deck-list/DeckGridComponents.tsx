@@ -12,6 +12,7 @@ import DeckThumbnail from '@/components/deck/DeckThumbnail';
 import { formatDistanceToNow } from 'date-fns';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { BROWSER } from '@/utils/browser';
+import { useDeckThumbnailCache } from '@/hooks/useDeckThumbnailCache';
 
 // Rotating words animation for hero heading - vertical slot machine style
 const WORDS = ['PROPOSALS', 'STRATEGIES', 'REPORTS', 'DOCS', 'NOTES', 'IDEAS'];
@@ -110,6 +111,9 @@ export const VirtualizedDeckGrid = React.memo(({
 }: VirtualizedDeckGridProps) => {
   const isMobile = useIsMobile();
   const safeDecks: CompleteDeckData[] = Array.isArray(decks) ? decks : [];
+
+  // Screenshot caching for mobile thumbnails
+  const { getCachedThumbnail, hasCachedThumbnail, captureThumbnail, cacheVersion } = useDeckThumbnailCache();
   const [renderedDecks, setRenderedDecks] = useState<Set<number>>(() => {
     // On iOS, start empty and let throttled queue handle rendering one at a time
     // On desktop, render first few immediately to prevent flash
@@ -328,6 +332,17 @@ export const VirtualizedDeckGrid = React.memo(({
     };
   }, []);
 
+  // Refs for observer to access without stale closures
+  const safeDecksRef = useRef(safeDecks);
+  safeDecksRef.current = safeDecks;
+  const upgradedDecksRef = useRef(upgradedDecks);
+  upgradedDecksRef.current = upgradedDecks;
+  const thumbnailRefsMapRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const hasCachedThumbnailRef = useRef(hasCachedThumbnail);
+  hasCachedThumbnailRef.current = hasCachedThumbnail;
+  const captureThumbnailRef = useRef(captureThumbnail);
+  captureThumbnailRef.current = captureThumbnail;
+
   useEffect(() => {
     observerRef.current = new IntersectionObserver(
       (entries) => {
@@ -379,11 +394,21 @@ export const VirtualizedDeckGrid = React.memo(({
               return next;
             });
 
-            // On iOS: Delay unloading to prevent thrashing during scroll momentum
+            // On iOS: Capture screenshot BEFORE unloading for cache
             if (BROWSER.isMobile) {
               // Remove from queues immediately
               renderQueueRef.current = renderQueueRef.current.filter(i => i !== index);
               upgradeQueueRef.current = upgradeQueueRef.current.filter(i => i !== index);
+
+              // Capture screenshot before unload (if upgraded and not already cached)
+              const deck = safeDecksRef.current[index];
+              if (deck?.uuid && upgradedDecksRef.current.has(index)) {
+                const thumbnailEl = thumbnailRefsMapRef.current.get(deck.uuid);
+                if (thumbnailEl && !hasCachedThumbnailRef.current(deck.uuid)) {
+                  console.log(`[Mobile] 📸 CAPTURE before unload #${index} (${deck.uuid})`);
+                  captureThumbnailRef.current(deck.uuid, thumbnailEl);
+                }
+              }
 
               // Delay actual unload by 500ms - if item becomes visible again, cancel
               const timer = setTimeout(() => {
@@ -483,15 +508,74 @@ export const VirtualizedDeckGrid = React.memo(({
     };
   }, [hasMore, isLoadingMore, onLoadMore]);
 
+  // Track which items have been rendered at least once (for showing cached on return)
+  const hasBeenRenderedRef = useRef<Set<string>>(new Set());
+  // Track pending captures (items that left viewport and need capture)
+  const pendingCapturesRef = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // Capture screenshots when items leave the viewport (not when upgraded)
+  // This is triggered by the visibility observer when items become non-visible
+  const captureOnExit = useCallback((deckId: string) => {
+    if (!BROWSER.isMobile) return;
+    if (hasCachedThumbnail(deckId)) return; // Already cached
+
+    const thumbnailEl = thumbnailRefsMapRef.current.get(deckId);
+    if (thumbnailEl) {
+      // Capture immediately when leaving viewport
+      captureThumbnail(deckId, thumbnailEl);
+    }
+  }, [hasCachedThumbnail, captureThumbnail]);
+
+  // Store captureOnExit in ref for use in observer
+  const captureOnExitRef = useRef(captureOnExit);
+  captureOnExitRef.current = captureOnExit;
+
   return (
     <div ref={containerRef} className="grid grid-cols-1 gap-3 auto-rows-max">
       {safeDecks.map((deck, index) => {
         // Only animate if this card was initially visible
         const shouldAnimate = initiallyVisibleDecks.has(index);
         const shouldRender = renderedDecks.has(index);
-        // On iOS: use progressive upgrade (background -> full) with strict limits
+        const isVisible = visibleDecks.has(index);
+
+        // Track that this item has been rendered
+        if (shouldRender && deck.uuid) {
+          hasBeenRenderedRef.current.add(deck.uuid);
+        }
+
+        // On iOS: Check for cached thumbnail - only use it if item was previously rendered
+        // This ensures we show the full slide on first visit, cached on return
+        const hasBeenRendered = deck.uuid ? hasBeenRenderedRef.current.has(deck.uuid) : false;
+        const cachedUrl = BROWSER.isMobile && deck.uuid && hasBeenRendered && !isVisible
+          ? getCachedThumbnail(deck.uuid)
+          : null;
+
+        // On iOS: Always render full mode when visible (so we capture the actual slide)
+        // Use progressive upgrade for initial render, but don't downgrade to background for cached
+        const isUpgraded = upgradedDecks.has(index);
         const thumbnailRenderMode: 'full' | 'background' =
-          !BROWSER.isMobile ? 'full' : (upgradedDecks.has(index) ? 'full' : 'background');
+          !BROWSER.isMobile ? 'full' : (isUpgraded ? 'full' : 'background');
+
+        // Trigger capture when item leaves viewport (becomes non-visible but was rendered)
+        if (!isVisible && shouldRender && deck.uuid && !hasCachedThumbnail(deck.uuid)) {
+          // Schedule capture for items leaving viewport
+          if (!pendingCapturesRef.current.has(deck.uuid)) {
+            const el = thumbnailRefsMapRef.current.get(deck.uuid);
+            if (el) {
+              pendingCapturesRef.current.set(deck.uuid, el);
+              // Delay capture slightly to ensure we're not in rapid scroll
+              setTimeout(() => {
+                if (pendingCapturesRef.current.has(deck.uuid)) {
+                  captureOnExitRef.current(deck.uuid);
+                  pendingCapturesRef.current.delete(deck.uuid);
+                }
+              }, 300);
+            }
+          }
+        } else if (isVisible && deck.uuid) {
+          // Cancel pending capture if item becomes visible again
+          pendingCapturesRef.current.delete(deck.uuid);
+        }
 
         return (
           <div
@@ -509,6 +593,14 @@ export const VirtualizedDeckGrid = React.memo(({
                 index={index}
                 shouldAnimate={shouldAnimate}
                 thumbnailRenderMode={thumbnailRenderMode}
+                cachedThumbnailUrl={null} // Don't use cached while visible - show live render
+                onThumbnailRef={(el) => {
+                  if (el && deck.uuid) {
+                    thumbnailRefsMapRef.current.set(deck.uuid, el);
+                  } else if (deck.uuid) {
+                    thumbnailRefsMapRef.current.delete(deck.uuid);
+                  }
+                }}
               />
             ) : (
               /* Placeholder with deck info - clickable to navigate immediately */
@@ -516,6 +608,15 @@ export const VirtualizedDeckGrid = React.memo(({
                 className="relative aspect-[16/9] bg-zinc-200 dark:bg-zinc-800 rounded-lg cursor-pointer ring-1 ring-zinc-200 dark:ring-zinc-700 overflow-hidden"
                 onClick={() => onEdit(deck)}
               >
+                {/* Show cached thumbnail in placeholder if available (when scrolled away) */}
+                {cachedUrl && (
+                  <img
+                    src={cachedUrl}
+                    alt={deck.name || 'Deck thumbnail'}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    draggable={false}
+                  />
+                )}
                 {/* Title overlay at bottom - same style as DeckCard */}
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent pt-8 pb-2 px-3">
                   <h3 className="text-sm font-bold text-white truncate">

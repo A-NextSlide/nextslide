@@ -14,16 +14,25 @@ interface DeckCardProps {
   index: number;
   shouldAnimate?: boolean; // New prop to control animation
   thumbnailRenderMode?: 'full' | 'background';
+  /** Cached thumbnail URL - if provided, shows this instead of rendering live thumbnail */
+  cachedThumbnailUrl?: string | null;
+  /** Callback when thumbnail element is ready for screenshot capture */
+  onThumbnailRef?: (element: HTMLDivElement | null) => void;
 }
 
-const DeckCard: React.FC<DeckCardProps> = React.memo(({ 
-  deck, 
-  onEdit, 
-  onShowDeleteDialog, 
+const DeckCard: React.FC<DeckCardProps> = React.memo(({
+  deck,
+  onEdit,
+  onShowDeleteDialog,
   index,
   shouldAnimate = false,
-  thumbnailRenderMode = 'full'
+  thumbnailRenderMode = 'full',
+  cachedThumbnailUrl,
+  onThumbnailRef
 }) => {
+  const touchHandledRef = React.useRef(false);
+  const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
+
   const formatDate = (dateString: string) => {
     try {
       return formatDistanceToNow(new Date(dateString), { addSuffix: true });
@@ -38,10 +47,47 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
 
   return (
     <div
-      className={`group relative ${deck.data?.isGenerating ? 'cursor-not-allowed' : 'cursor-pointer'} ${shouldAnimate ? 'animate-opacity-in' : ''}`}
-      onClick={() => {
+      className={`group relative touch-manipulation ${deck.data?.isGenerating ? 'cursor-not-allowed' : 'cursor-pointer'} ${shouldAnimate ? 'animate-opacity-in' : ''}`}
+      onClick={(e) => {
+        e.stopPropagation();
         if (deck.data?.isGenerating) return;
+        // Skip if touch already handled this interaction
+        if (touchHandledRef.current) {
+          touchHandledRef.current = false;
+          return;
+        }
         onEdit(deck);
+      }}
+      onTouchStart={(e) => {
+        // Track touch start position to detect drags vs taps
+        if (e.touches.length === 1) {
+          touchStartRef.current = {
+            x: e.touches[0].clientX,
+            y: e.touches[0].clientY,
+          };
+        }
+      }}
+      onTouchEnd={(e) => {
+        // Handle touch end for better mobile responsiveness
+        if (deck.data?.isGenerating) return;
+
+        // Check if this was a tap (not a scroll/drag)
+        if (e.changedTouches.length === 1 && touchStartRef.current) {
+          const touch = e.changedTouches[0];
+          const deltaX = Math.abs(touch.clientX - touchStartRef.current.x);
+          const deltaY = Math.abs(touch.clientY - touchStartRef.current.y);
+          const TAP_THRESHOLD = 10; // pixels
+
+          // Only trigger if finger didn't move much (it's a tap, not a drag)
+          if (deltaX < TAP_THRESHOLD && deltaY < TAP_THRESHOLD) {
+            e.preventDefault();
+            touchHandledRef.current = true;
+            onEdit(deck);
+            // Reset after a short delay
+            setTimeout(() => { touchHandledRef.current = false; }, 100);
+          }
+        }
+        touchStartRef.current = null;
       }}
       style={shouldAnimate ? {
         animationDelay: `${index * 0.15}s`,
@@ -75,8 +121,19 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
                 </>
               )}
             </div>
+          ) : cachedThumbnailUrl ? (
+            /* Show cached screenshot if available */
+            <img
+              src={cachedThumbnailUrl}
+              alt={deck.name || 'Deck thumbnail'}
+              className="w-full h-full object-cover"
+              draggable={false}
+            />
           ) : (
-            <DeckThumbnail deck={deck} renderMode={thumbnailRenderMode} />
+            /* Render live thumbnail */
+            <div ref={onThumbnailRef} className="w-full h-full">
+              <DeckThumbnail deck={deck} renderMode={thumbnailRenderMode} />
+            </div>
           )}
         </div>
 
@@ -152,7 +209,8 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
     prevProps.deck.shared_by?.email === nextProps.deck.shared_by?.email &&
     prevProps.index === nextProps.index &&
     prevProps.shouldAnimate === nextProps.shouldAnimate &&
-    prevProps.thumbnailRenderMode === nextProps.thumbnailRenderMode
+    prevProps.thumbnailRenderMode === nextProps.thumbnailRenderMode &&
+    prevProps.cachedThumbnailUrl === nextProps.cachedThumbnailUrl
   );
 });
 

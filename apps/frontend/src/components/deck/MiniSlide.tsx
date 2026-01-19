@@ -29,6 +29,11 @@ interface MiniSlideProps {
    * Default: false (pointer-events: none for thumbnails)
    */
   interactive?: boolean;
+  /**
+   * Force immediate render, bypassing lazy loading.
+   * Use for offscreen capture scenarios.
+   */
+  forceRender?: boolean;
 }
 
 /**
@@ -100,18 +105,20 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   responsive = true,
   slideSize,
   renderMode = 'full',
-  interactive = false
+  interactive = false,
+  forceRender = false
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerDims, setContainerDims] = useState<{ width: number; height: number } | null>(null);
   const slideId = slide?.id || 'unknown';
 
   // LAZY LOADING: Only render when first visible, then stay rendered
-  const [shouldRender, setShouldRender] = useState(false);
+  // Skip if forceRender is true
+  const [shouldRender, setShouldRender] = useState(forceRender);
 
   useEffect(() => {
-    // If already rendered, no need to observe
-    if (shouldRender) return;
+    // If forceRender or already rendered, no need to observe
+    if (forceRender || shouldRender) return;
 
     const el = containerRef.current;
     if (!el) return;
@@ -149,7 +156,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       observer.disconnect();
       if (renderTimeout) clearTimeout(renderTimeout);
     };
-  }, [shouldRender]);
+  }, [shouldRender, forceRender]);
 
   // Normalize slide data
   const normalizedResult = useMemo(() => {
@@ -297,7 +304,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
 
   // Don't render full slide content until we have valid container dimensions
   // This prevents the tiny initial render from getting "stuck" due to memoization
-  const hasValidDimensions = containerDims && containerDims.width > 100 && containerDims.height > 50;
+  // Skip dimension check if forceRender is true (for offscreen capture)
+  const hasValidDimensions = forceRender || (containerDims && containerDims.width > 100 && containerDims.height > 50);
 
 
   // Calculate the scaled dimensions for the wrapper
