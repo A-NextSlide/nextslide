@@ -1,6 +1,7 @@
 """Custom component edit helpers for slide tools."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -8,7 +9,7 @@ from datetime import datetime, timezone
 from models.deck import DeckDiff, DeckDiffBase
 from models.component import ComponentDiffBase
 from models.registry import ComponentRegistry
-from agents.config import CUSTOM_COMPONENT_EDIT_MODEL
+from agents.config import CUSTOM_COMPONENT_EDIT_MODEL, IMAGE_SEARCH_MODEL
 from agents.editing.tools.async_utils import run_async
 from agents.editing.tools.llm_utils import get_model_and_client, invoke_with_fallback
 from agents.editing.tools.slide_tool_debug import _dbg
@@ -25,6 +26,135 @@ from agents.editing.tools.struct_utils import get_attr as _get_attr
 from agents.editing.tools.fuzzy_matcher import apply_replacement
 
 logger = logging.getLogger(__name__)
+
+# Logo.dev service for company logos
+try:
+    from agents.tools.theme.logodev_service import LogoDevService
+    LOGODEV_AVAILABLE = True
+except ImportError:
+    LOGODEV_AVAILABLE = False
+    logger.debug("[SLIDE_TOOLS] Logo.dev service not available")
+
+
+# =============================================================================
+# LOGO PRE-FETCHING FOR EDITING (AI-based)
+# =============================================================================
+
+async def _extract_company_names_with_ai(instruction: str) -> List[str]:
+    """
+    Use AI to extract company/brand names from a user instruction.
+    Returns a list of company names that should have logos fetched.
+    """
+    if not instruction or len(instruction.strip()) < 5:
+        return []
+
+    try:
+        from agents.ai.clients import get_client, invoke
+
+        client, model_name = get_client(IMAGE_SEARCH_MODEL)
+
+        prompt = f"""Extract company/brand names from this instruction that would need logos.
+
+INSTRUCTION: "{instruction}"
+
+If the user mentions companies, brands, or organizations that would typically have logos, list them.
+Examples:
+- "add a customer section with Apple, Google, and Microsoft" → Apple, Google, Microsoft
+- "show our partners: Stripe, Shopify, AWS" → Stripe, Shopify, AWS
+- "trusted by Netflix, Spotify, and Uber" → Netflix, Spotify, Uber
+- "make the background blue" → (none)
+- "add a chart showing revenue" → (none)
+
+Respond with ONLY a comma-separated list of company names, or "NONE" if no companies mentioned.
+Do not include generic terms like "company", "brand", "customer", "partner"."""
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            invoke,
+            client,
+            model_name,
+            [{"role": "user", "content": prompt}],
+            None,
+            100,
+            0.0
+        )
+
+        result = str(response).strip()
+
+        if result.upper() == "NONE" or not result:
+            return []
+
+        # Parse comma-separated list
+        companies = [c.strip() for c in result.split(",") if c.strip()]
+        # Filter out generic terms
+        generic = {"company", "brand", "customer", "partner", "client", "logo", "none"}
+        companies = [c for c in companies if c.lower() not in generic and len(c) > 1]
+
+        if companies:
+            logger.info(f"[SLIDE_TOOLS] AI extracted {len(companies)} companies: {companies}")
+
+        return companies[:10]  # Limit to 10 companies
+
+    except Exception as e:
+        logger.warning(f"[SLIDE_TOOLS] AI company extraction failed: {e}")
+        return []
+
+
+async def _prefetch_company_logos(company_names: List[str]) -> Dict[str, str]:
+    """
+    Pre-fetch logos for a list of company names from logo.dev.
+    Returns a dict of {propName: url} for use in HTML generation.
+    """
+    if not company_names or not LOGODEV_AVAILABLE:
+        return {}
+
+    prefetched: Dict[str, str] = {}
+
+    async def fetch_one(company: str) -> Optional[tuple]:
+        try:
+            from services.image_storage_service import ImageStorageService
+
+            async with LogoDevService() as logo_service:
+                result = await logo_service.get_logo_with_fallback(company)
+
+                if not result.get('available') or not result.get('logo_url'):
+                    logger.debug(f"[SLIDE_TOOLS] No logo found for: {company}")
+                    return None
+
+                logo_url = result['logo_url']
+
+                # Upload to our storage
+                async with ImageStorageService() as storage:
+                    upload_result = await storage.upload_image_from_url(
+                        logo_url,
+                        metadata={"source": "logodev", "company": company}
+                    )
+                    if upload_result and upload_result.get('url'):
+                        # Create a prop name from company name
+                        prop_name = company.lower().replace(" ", "").replace(".", "") + "Logo"
+                        return (prop_name, upload_result['url'], company)
+
+        except Exception as e:
+            logger.warning(f"[SLIDE_TOOLS] Logo fetch failed for {company}: {e}")
+        return None
+
+    # Fetch all logos in parallel
+    tasks = [fetch_one(company) for company in company_names]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for result in results:
+        if isinstance(result, tuple) and len(result) == 3:
+            prop_name, url, company = result
+            prefetched[prop_name] = url
+            prefetched[f"{prop_name}_query"] = f"{company} logo"
+            logger.info(f"[SLIDE_TOOLS] Pre-fetched logo for {company}")
+
+    if prefetched:
+        logo_count = len([k for k in prefetched if not k.endswith("_query")])
+        logger.info(f"[SLIDE_TOOLS] Pre-fetched {logo_count} company logos")
+
+    return prefetched
 
 
 def _current_date_note() -> str:
@@ -71,9 +201,30 @@ def _generate_full_bleed_custom_component(
     if use_attachments and attachments:
         uploads_note = "\n\nUPLOADS: Use the attached images as real assets in this redesign."
 
-        generated = run_async(
-            gen.generate(
-                content=f"""REDESIGN REQUEST: {instruction}{uploads_note}
+    # Pre-fetch company logos mentioned in the instruction (AI-based extraction)
+    prefetched_logos: Dict[str, str] = {}
+    if LOGODEV_AVAILABLE:
+        try:
+            company_names = run_async(_extract_company_names_with_ai(instruction))
+            if company_names:
+                prefetched_logos = run_async(_prefetch_company_logos(company_names))
+        except Exception as e:
+            logger.warning(f"[_generate_full_bleed] Logo pre-fetch failed: {e}")
+
+    # Build logo context for the prompt
+    logo_context = ""
+    if prefetched_logos:
+        logo_entries = []
+        for key, url in prefetched_logos.items():
+            if not key.endswith("_query"):
+                company = prefetched_logos.get(f"{key}_query", key).replace(" logo", "")
+                logo_entries.append(f"- {company}: {url}")
+        if logo_entries:
+            logo_context = "\n\nAVAILABLE COMPANY LOGOS (use these exact URLs):\n" + "\n".join(logo_entries)
+
+    generated = run_async(
+        gen.generate(
+            content=f"""REDESIGN REQUEST: {instruction}{uploads_note}{logo_context}
 
 EXISTING SLIDE CONTENT TO REDESIGN:
 {actual_content}
@@ -82,7 +233,8 @@ IMPORTANT:
 - Fill the entire 1920x1080 canvas.
 - If reference images are provided, match their layout/style and transcribe any visible text the user asks to use exactly.
 - DO NOT display the redesign request text in the slide. Use it only to guide your design approach.
-- Base the slide content on the EXISTING SLIDE CONTENT above, but DO honor explicit user requests to add/remove elements (e.g., add a video, remove cards).""",
+- Base the slide content on the EXISTING SLIDE CONTENT above, but DO honor explicit user requests to add/remove elements (e.g., add a video, remove cards).
+- If company logos are listed above, use the EXACT URLs provided - do not use placeholder URLs for those logos.""",
             theme=theme if isinstance(theme, dict) else {},
             slide_context=slide_context,
             component_purpose="visualize",
@@ -92,6 +244,7 @@ IMPORTANT:
             reference_images=reference_images or None,
             uploaded_media=uploaded_media,
             available_videos=available_videos,
+            prefetched_images=prefetched_logos if prefetched_logos else None,
         )
     )
     html = ((generated or {}).get("props") or {}).get("render") or ""
@@ -396,9 +549,33 @@ def custom_component_rewrite(
         if use_attachments and attachments:
             uploads_note = "\n\nUPLOADS: Use the attached images as real assets in this redesign."
 
+        # Pre-fetch company logos mentioned in the instruction (AI-based extraction)
+        prefetched_logos: Dict[str, str] = {}
+        if LOGODEV_AVAILABLE:
+            try:
+                company_names = run_async(_extract_company_names_with_ai(instruction))
+                if company_names:
+                    prefetched_logos = run_async(_prefetch_company_logos(company_names))
+                    if prefetched_logos:
+                        logo_count = len([k for k in prefetched_logos if not k.endswith("_query")])
+                        logger.info(f"[custom_component_rewrite] Pre-fetched {logo_count} company logos for rewrite")
+            except Exception as e:
+                logger.warning(f"[custom_component_rewrite] Logo pre-fetch failed: {e}")
+
+        # Build logo context for the prompt if we have pre-fetched logos
+        logo_context = ""
+        if prefetched_logos:
+            logo_entries = []
+            for key, url in prefetched_logos.items():
+                if not key.endswith("_query"):
+                    company = prefetched_logos.get(f"{key}_query", key).replace(" logo", "")
+                    logo_entries.append(f"- {company}: {url}")
+            if logo_entries:
+                logo_context = "\n\nAVAILABLE COMPANY LOGOS (use these exact URLs):\n" + "\n".join(logo_entries)
+
         generated = run_async(
             gen.generate(
-                content=f"""REDESIGN REQUEST: {instruction}{attachment_context}{chat_context}{uploads_note}
+                content=f"""REDESIGN REQUEST: {instruction}{attachment_context}{chat_context}{uploads_note}{logo_context}
 
 EXISTING SLIDE CONTENT TO REDESIGN:
 {actual_content}
@@ -408,7 +585,8 @@ IMPORTANT:
 - If reference images are provided, match their layout and style.
 - Use the conversation context above to understand what the user wants and any preferences they discussed.
 - DO NOT display the redesign request text in the slide. Use it only to guide your design approach.
-- Base the slide content on the EXISTING SLIDE CONTENT above, but DO honor explicit user requests to add/remove elements (e.g., add a video, remove cards).""",
+- Base the slide content on the EXISTING SLIDE CONTENT above, but DO honor explicit user requests to add/remove elements (e.g., add a video, remove cards).
+- If company logos are listed above, use the EXACT URLs provided - do not use placeholder URLs for those logos.""",
                 theme=theme_for_gen,
                 slide_context=slide_context,
                 component_purpose="visualize",
@@ -418,6 +596,7 @@ IMPORTANT:
                 reference_images=reference_images or None,
                 uploaded_media=uploaded_media,
                 available_videos=available_videos,
+                prefetched_images=prefetched_logos if prefetched_logos else None,
             )
         )
         new_html = ((generated or {}).get("props") or {}).get("render") or ""

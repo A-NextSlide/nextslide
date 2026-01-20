@@ -133,7 +133,7 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
   const [requirePassword, setRequirePassword] = useState(false);
   const [password, setPassword] = useState('');
   const [maxUses, setMaxUses] = useState<number | undefined>(undefined);
-  const [requireEmail, setRequireEmail] = useState(false);
+  const [requireEmail, setRequireEmail] = useState(true);
   
   // Edit mode states
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);

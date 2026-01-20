@@ -1,0 +1,22 @@
+name = "og-router"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# Environment variables
+[vars]
+BACKEND_URL = "https://api.nextslide.ai"
+FRONTEND_URL = "https://nextslide-frontend.onrender.com"
+
+# Routes - uncomment and configure after deploying
+# [[routes]]
+# pattern = "nextslide.ai/p/*"
+# zone_name = "nextslide.ai"
+
+# [[routes]]
+# pattern = "nextslide.ai/e/*"
+# zone_name = "nextslide.ai"
+
+# Development settings
+[dev]
+port = 8787
+local_protocol = "http"

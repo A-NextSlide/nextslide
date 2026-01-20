@@ -114,65 +114,44 @@ export const VirtualizedDeckGrid = React.memo(({
 
   // Screenshot caching for mobile thumbnails
   const { getCachedThumbnail, hasCachedThumbnail, captureThumbnail, cacheVersion } = useDeckThumbnailCache();
-  const [renderedDecks, setRenderedDecks] = useState<Set<number>>(() => {
-    // On iOS, start empty and let throttled queue handle rendering one at a time
-    // On desktop, render first few immediately to prevent flash
-    if (BROWSER.isMobile) return new Set();
-    return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
-  });
-  const [visibleDecks, setVisibleDecks] = useState<Set<number>>(() => new Set());
-  // Progressive upgrade: on mobile, render full thumbnails one at a time to avoid crashes.
-  const [upgradedDecks, setUpgradedDecks] = useState<Set<number>>(() => new Set());
-  const [upgradingIndex, setUpgradingIndex] = useState<number | null>(null);
-  const upgradeQueueRef = useRef<number[]>([]);
-  const [initiallyVisibleDecks, setInitiallyVisibleDecks] = useState<Set<number>>(() => {
-    // On iOS, don't pre-mark any as visible - let observer handle it
-    if (BROWSER.isMobile) return new Set();
-    return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
-  });
+
+  // Simplified mobile rendering: use refs to avoid dependency loops
+  // Only ONE item renders at a time on mobile
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+  const thumbnailRefsMapRef = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // Queue management - all refs to avoid dependency loops
+  const renderQueueRef = useRef<number[]>([]);
+  const activeRenderIndexRef = useRef<number | null>(null);
+  const visibleDecksRef = useRef<Set<number>>(new Set());
+  const isScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // State only for triggering re-renders
+  const [renderedDecks, setRenderedDecks] = useState<Set<number>>(() => {
+    // On mobile, start empty; on desktop, render first few
+    if (BROWSER.isMobile) return new Set();
+    return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
+  });
+  const [, forceUpdate] = useState(0);
+
+  // Track initial visibility for animations (desktop only)
+  const [initiallyVisibleDecks, setInitiallyVisibleDecks] = useState<Set<number>>(() => {
+    if (BROWSER.isMobile) return new Set();
+    return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
+  });
   const hasCheckedInitialVisibility = useRef(false);
 
-  // Check initial visibility once when decks are loaded
-  useEffect(() => {
-    if (!hasCheckedInitialVisibility.current && decks.length > 0 && itemRefs.current.size > 0) {
-      // Small delay to ensure DOM is ready
-      setTimeout(() => {
-        const visibleIndexes = new Set<number>();
-
-        // Find the scrollable container
-        let scrollContainer = containerRef.current?.parentElement;
-        while (scrollContainer && scrollContainer !== document.body) {
-          const style = window.getComputedStyle(scrollContainer);
-          if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
-            break;
-          }
-          scrollContainer = scrollContainer.parentElement;
-        }
-
-        const containerRect = scrollContainer?.getBoundingClientRect() || { top: 0, bottom: window.innerHeight };
-
-        // Check which cards are initially visible
-        itemRefs.current.forEach((element, index) => {
-          const rect = element.getBoundingClientRect();
-          // Check if element is in viewport
-          if (rect.top < containerRect.bottom && rect.bottom > containerRect.top) {
-            visibleIndexes.add(index);
-          }
-        });
-
-        setInitiallyVisibleDecks(visibleIndexes);
-        hasCheckedInitialVisibility.current = true;
-      }, 100); // Small delay to ensure layout is complete
-    }
-  }, [safeDecks.length]);
-
-  // Mobile browsers crash with too many iframes
-  // Limit to 2 upgraded thumbnails at a time
-  const MAX_UPGRADED_ON_MOBILE = 2;
+  // Refs for cache functions
+  const hasCachedThumbnailRef = useRef(hasCachedThumbnail);
+  hasCachedThumbnailRef.current = hasCachedThumbnail;
+  const captureThumbnailRef = useRef(captureThumbnail);
+  captureThumbnailRef.current = captureThumbnail;
+  const safeDecksRef = useRef(safeDecks);
+  safeDecksRef.current = safeDecks;
 
   // Debug: Log mobile detection once
   const hasLoggedRef = useRef(false);
@@ -181,262 +160,149 @@ export const VirtualizedDeckGrid = React.memo(({
     console.log(`[DeckGrid] BROWSER.isMobile=${BROWSER.isMobile} isIOS=${BROWSER.isIOS} isChrome=${BROWSER.isChrome} isAndroid=${BROWSER.isAndroid}`);
   }
 
-  useEffect(() => {
-    // Progressive upgrade needed on iOS and mobile
-    if (!BROWSER.isMobile && !isMobile) return;
-
-    // 1. Clean up upgradedDecks: downgrade items that are no longer visible to save memory
-    setUpgradedDecks(prev => {
-      let changed = false;
-      const next = new Set(prev);
-      const removed: number[] = [];
-      for (const idx of next) {
-        if (!visibleDecks.has(idx)) {
-          next.delete(idx);
-          removed.push(idx);
-          changed = true;
-        }
-      }
-      if (BROWSER.isMobile && removed.length > 0) {
-        console.log(`[Mobile] 💨 DOWNGRADE #${removed.join(',')} | upgraded=${next.size}`);
-      }
-      return changed ? next : prev;
-    });
-
-    // 2. Enqueue visible AND rendered items not yet upgraded
-    visibleDecks.forEach((idx) => {
-      if (!renderedDecks.has(idx)) return;
-      if (upgradedDecks.has(idx)) return;
-      if (upgradeQueueRef.current.includes(idx)) return;
-      if (upgradingIndex === idx) return;
-      upgradeQueueRef.current.push(idx);
-    });
-
-    // Kick processing loop - respect the max upgraded limit
-    const currentUpgradedCount = upgradedDecks.size + (upgradingIndex !== null ? 1 : 0);
-    const canUpgradeMore = !BROWSER.isMobile || currentUpgradedCount < MAX_UPGRADED_ON_MOBILE;
-
-    if (upgradingIndex === null && upgradeQueueRef.current.length > 0 && canUpgradeMore) {
-      let next = upgradeQueueRef.current.shift();
-      while (next !== undefined && (!visibleDecks.has(next) || !renderedDecks.has(next))) {
-        next = upgradeQueueRef.current.shift();
-      }
-      if (next !== undefined) {
-        setUpgradingIndex(next);
-      }
-    }
-  }, [isMobile, visibleDecks, upgradedDecks, upgradingIndex, renderedDecks]);
-
-  // Ref for scroll state (defined earlier, used here for upgrade pausing)
-  const isScrollingForUpgradeRef = useRef(false);
-
-  useEffect(() => {
-    // Progressive upgrade needed on iOS and mobile
-    if (!BROWSER.isMobile && !isMobile) return;
-    if (upgradingIndex === null) return;
-
-    // Yield to the browser; then mark upgraded and proceed to the next.
-    // iOS needs much more time between upgrades to prevent crashes
-    const delay = BROWSER.isMobile ? 800 : 50;
-    const t = window.setTimeout(() => {
-      setUpgradedDecks((prev) => {
-        const next = new Set(prev);
-        next.add(upgradingIndex);
-        if (BROWSER.isMobile) {
-          console.log(`[Mobile] 🔥 UPGRADE #${upgradingIndex} | upgraded=${next.size}`);
-        }
-        return next;
-      });
-      setUpgradingIndex(null);
-    }, delay);
-    return () => window.clearTimeout(t);
-  }, [isMobile, upgradingIndex]);
-
-  // Store observer reference so we can observe new elements as they mount
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const observedElementsRef = useRef<Set<HTMLDivElement>>(new Set());
-  // Queue for throttled rendering on iOS
-  const renderQueueRef = useRef<number[]>([]);
-  const isProcessingRenderQueueRef = useRef(false);
-  // Ref to track currently visible items (for queue processing without state dependency)
-  const visibleDecksRef = useRef<Set<number>>(new Set());
-  // Track if user is actively scrolling (pause rendering during fast scroll)
-  const isScrollingRef = useRef(false);
-  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Delayed unload timers to prevent thrashing during scroll
-  const unloadTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
-
-  // Process render queue one item at a time on iOS to prevent crashes
+  // Process render queue - ONE item at a time
   const processRenderQueue = useCallback(() => {
-    if (!BROWSER.isMobile || renderQueueRef.current.length === 0) {
-      isProcessingRenderQueueRef.current = false;
-      return;
-    }
+    if (!BROWSER.isMobile) return;
 
-    // Pause rendering while user is actively scrolling
+    // Pause during scroll
     if (isScrollingRef.current) {
-      console.log(`[Mobile] ⏸️ PAUSED - scrolling, queue=${renderQueueRef.current.length}`);
-      // Check again after scroll settles
       setTimeout(processRenderQueue, 200);
       return;
     }
 
-    isProcessingRenderQueueRef.current = true;
-
-    // Skip items that are no longer visible (user scrolled past them)
-    let nextIndex = renderQueueRef.current.shift();
-    let skipped = 0;
-    while (nextIndex !== undefined && !visibleDecksRef.current.has(nextIndex)) {
-      skipped++;
-      nextIndex = renderQueueRef.current.shift();
+    // If currently rendering one, check if it's cached now
+    if (activeRenderIndexRef.current !== null) {
+      const deck = safeDecksRef.current[activeRenderIndexRef.current];
+      if (deck?.uuid && hasCachedThumbnailRef.current(deck.uuid)) {
+        console.log(`[DeckGrid] ✅ Cached: #${activeRenderIndexRef.current}`);
+        activeRenderIndexRef.current = null;
+      } else {
+        // Still rendering, don't start another
+        return;
+      }
     }
-    if (skipped > 0) {
-      console.log(`[Mobile] ⏭️ Skipped ${skipped} stale items`);
-    }
 
+    // Clean queue - remove cached and non-visible items
+    renderQueueRef.current = renderQueueRef.current.filter(index => {
+      const deck = safeDecksRef.current[index];
+      if (!deck?.uuid) return false;
+      if (hasCachedThumbnailRef.current(deck.uuid)) return false;
+      if (!visibleDecksRef.current.has(index)) return false;
+      return true;
+    });
+
+    if (renderQueueRef.current.length === 0) return;
+
+    // Get next item
+    const nextIndex = renderQueueRef.current[0];
     if (nextIndex !== undefined) {
-      setRenderedDecks((prev) => {
-        const next = new Set(prev).add(nextIndex);
-        console.log(`[Mobile] ✅ RENDER #${nextIndex} | rendered=${next.size} visible=${visibleDecksRef.current.size} queue=${renderQueueRef.current.length}`);
-        return next;
-      });
+      console.log(`[DeckGrid] 🎬 Rendering: #${nextIndex}, queue: ${renderQueueRef.current.length}`);
+      activeRenderIndexRef.current = nextIndex;
+      setRenderedDecks(prev => new Set(prev).add(nextIndex));
+      forceUpdate(v => v + 1);
     }
+  }, []); // No dependencies - uses refs
 
-    // Process next item after delay - iOS needs more time between renders
-    setTimeout(processRenderQueue, 300);
-  }, []);
+  // When cache changes, process next in queue
+  useEffect(() => {
+    if (BROWSER.isMobile) {
+      const timer = setTimeout(processRenderQueue, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [cacheVersion, processRenderQueue]);
 
-  // Track scrolling to pause rendering during fast scroll
+  // Check initial visibility for desktop animations
+  useEffect(() => {
+    if (!hasCheckedInitialVisibility.current && decks.length > 0 && itemRefs.current.size > 0) {
+      setTimeout(() => {
+        const visibleIndexes = new Set<number>();
+        let scrollContainer = containerRef.current?.parentElement;
+        while (scrollContainer && scrollContainer !== document.body) {
+          const style = window.getComputedStyle(scrollContainer);
+          if (style.overflowY === 'auto' || style.overflowY === 'scroll') break;
+          scrollContainer = scrollContainer.parentElement;
+        }
+        const containerRect = scrollContainer?.getBoundingClientRect() || { top: 0, bottom: window.innerHeight };
+        itemRefs.current.forEach((element, index) => {
+          const rect = element.getBoundingClientRect();
+          if (rect.top < containerRect.bottom && rect.bottom > containerRect.top) {
+            visibleIndexes.add(index);
+          }
+        });
+        setInitiallyVisibleDecks(visibleIndexes);
+        hasCheckedInitialVisibility.current = true;
+      }, 100);
+    }
+  }, [safeDecks.length]);
+
+  // Track scrolling to pause rendering
   useEffect(() => {
     if (!BROWSER.isMobile) return;
-
     const handleScroll = () => {
       isScrollingRef.current = true;
-      isScrollingForUpgradeRef.current = true;
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-      // Mark scroll as ended after 150ms of no scroll events
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       scrollTimeoutRef.current = setTimeout(() => {
         isScrollingRef.current = false;
-        isScrollingForUpgradeRef.current = false;
+        // Resume processing after scroll
+        processRenderQueue();
       }, 150);
     };
-
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       window.removeEventListener('scroll', handleScroll);
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     };
-  }, []);
+  }, [processRenderQueue]);
 
-  // Refs for observer to access without stale closures
-  const safeDecksRef = useRef(safeDecks);
-  safeDecksRef.current = safeDecks;
-  const upgradedDecksRef = useRef(upgradedDecks);
-  upgradedDecksRef.current = upgradedDecks;
-  const thumbnailRefsMapRef = useRef<Map<string, HTMLDivElement>>(new Map());
-  const hasCachedThumbnailRef = useRef(hasCachedThumbnail);
-  hasCachedThumbnailRef.current = hasCachedThumbnail;
-  const captureThumbnailRef = useRef(captureThumbnail);
-  captureThumbnailRef.current = captureThumbnail;
+  // Intersection observer for visibility
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const observedElementsRef = useRef<Set<HTMLDivElement>>(new Set());
 
   useEffect(() => {
     observerRef.current = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           const index = parseInt(entry.target.getAttribute('data-index') || '0');
-          if (entry.isIntersecting) {
-            // Cancel any pending unload for this item
-            const pendingUnload = unloadTimersRef.current.get(index);
-            if (pendingUnload) {
-              clearTimeout(pendingUnload);
-              unloadTimersRef.current.delete(index);
-            }
 
-            // Update ref immediately (for queue processing)
+          if (entry.isIntersecting) {
             visibleDecksRef.current.add(index);
 
-            // Track visibility for progressive mobile upgrade
-            setVisibleDecks((prev) => {
-              const next = new Set(prev);
-              next.add(index);
-              return next;
-            });
-
-            // On iOS, queue items for throttled rendering to prevent crash
             if (BROWSER.isMobile) {
-              setRenderedDecks((prev) => {
-                if (prev.has(index)) return prev;
-                // Queue for throttled processing - limit queue size to prevent buildup
-                if (!renderQueueRef.current.includes(index) && renderQueueRef.current.length < 10) {
+              // Queue for rendering if not cached and not already queued
+              const deck = safeDecksRef.current[index];
+              if (deck?.uuid && !hasCachedThumbnailRef.current(deck.uuid)) {
+                if (!renderQueueRef.current.includes(index) && activeRenderIndexRef.current !== index) {
                   renderQueueRef.current.push(index);
-                  if (!isProcessingRenderQueueRef.current) {
-                    setTimeout(processRenderQueue, 50);
-                  }
+                  setTimeout(processRenderQueue, 50);
                 }
-                return prev;
-              });
+              }
             } else {
               // Desktop: render immediately
-              setRenderedDecks((prev) => new Set(prev).add(index));
+              setRenderedDecks(prev => new Set(prev).add(index));
             }
           } else {
-            // Update ref immediately (for queue processing)
             visibleDecksRef.current.delete(index);
 
-            // Track when items leave viewport (for mobile memory management)
-            setVisibleDecks((prev) => {
-              const next = new Set(prev);
-              next.delete(index);
-              return next;
-            });
-
-            // On iOS: Capture screenshot BEFORE unloading for cache
             if (BROWSER.isMobile) {
-              // Remove from queues immediately
+              // Remove from queue
               renderQueueRef.current = renderQueueRef.current.filter(i => i !== index);
-              upgradeQueueRef.current = upgradeQueueRef.current.filter(i => i !== index);
 
-              // Capture screenshot before unload (if upgraded and not already cached)
+              // Capture screenshot before "unloading" if rendered
               const deck = safeDecksRef.current[index];
-              if (deck?.uuid && upgradedDecksRef.current.has(index)) {
+              if (deck?.uuid) {
                 const thumbnailEl = thumbnailRefsMapRef.current.get(deck.uuid);
                 if (thumbnailEl && !hasCachedThumbnailRef.current(deck.uuid)) {
-                  console.log(`[Mobile] 📸 CAPTURE before unload #${index} (${deck.uuid})`);
+                  console.log(`[DeckGrid] 📸 Capture on exit: #${index}`);
                   captureThumbnailRef.current(deck.uuid, thumbnailEl);
                 }
               }
-
-              // Delay actual unload by 500ms - if item becomes visible again, cancel
-              const timer = setTimeout(() => {
-                unloadTimersRef.current.delete(index);
-                // Double-check still not visible before unloading
-                if (!visibleDecksRef.current.has(index)) {
-                  setRenderedDecks((prev) => {
-                    if (!prev.has(index)) return prev;
-                    const next = new Set(prev);
-                    next.delete(index);
-                    console.log(`[Mobile] ❌ UNLOAD #${index} | rendered=${next.size}`);
-                    return next;
-                  });
-                }
-              }, 500);
-              unloadTimersRef.current.set(index, timer);
             }
           }
         });
       },
-      {
-        root: null,
-        rootMargin: '100px', // Load items 100px before they become visible
-        threshold: 0
-      }
+      { root: null, rootMargin: '100px', threshold: 0 }
     );
 
-    // Observe any elements that were already mounted
     itemRefs.current.forEach((element) => {
       if (!observedElementsRef.current.has(element)) {
         observerRef.current?.observe(element);
@@ -448,15 +314,12 @@ export const VirtualizedDeckGrid = React.memo(({
       observerRef.current?.disconnect();
       observerRef.current = null;
       observedElementsRef.current.clear();
-      renderQueueRef.current = [];
     };
   }, [processRenderQueue]);
 
-  // Re-observe when deck count changes (new decks loaded via loadMore)
+  // Re-observe when deck count changes
   useEffect(() => {
     if (!observerRef.current) return;
-
-    // Small delay to ensure new elements have their refs set
     const timer = setTimeout(() => {
       itemRefs.current.forEach((element) => {
         if (!observedElementsRef.current.has(element)) {
@@ -465,27 +328,22 @@ export const VirtualizedDeckGrid = React.memo(({
         }
       });
     }, 50);
-
     return () => clearTimeout(timer);
   }, [safeDecks.length]);
 
-  // Set up infinite scroll observer
+  // Infinite scroll observer
   useEffect(() => {
-    // Find the scrollable container
     const findScrollContainer = () => {
       let element = containerRef.current?.parentElement;
       while (element && element !== document.body) {
         const style = window.getComputedStyle(element);
-        if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
-          return element;
-        }
+        if (style.overflowY === 'auto' || style.overflowY === 'scroll') return element;
         element = element.parentElement;
       }
       return null;
     };
 
     scrollContainerRef.current = findScrollContainer();
-
     if (!scrollContainerRef.current || !loadMoreTriggerRef.current || !hasMore) return;
 
     const scrollObserver = new IntersectionObserver(
@@ -494,88 +352,39 @@ export const VirtualizedDeckGrid = React.memo(({
           onLoadMore();
         }
       },
-      {
-        root: scrollContainerRef.current,
-        rootMargin: '200px',
-        threshold: 0
-      }
+      { root: scrollContainerRef.current, rootMargin: '200px', threshold: 0 }
     );
-
     scrollObserver.observe(loadMoreTriggerRef.current);
-
-    return () => {
-      scrollObserver.disconnect();
-    };
+    return () => scrollObserver.disconnect();
   }, [hasMore, isLoadingMore, onLoadMore]);
 
-  // Track which items have been rendered at least once (for showing cached on return)
+  // Track which items have been rendered (for showing cached on scroll back)
   const hasBeenRenderedRef = useRef<Set<string>>(new Set());
-  // Track pending captures (items that left viewport and need capture)
-  const pendingCapturesRef = useRef<Map<string, HTMLDivElement>>(new Map());
-
-  // Capture screenshots when items leave the viewport (not when upgraded)
-  // This is triggered by the visibility observer when items become non-visible
-  const captureOnExit = useCallback((deckId: string) => {
-    if (!BROWSER.isMobile) return;
-    if (hasCachedThumbnail(deckId)) return; // Already cached
-
-    const thumbnailEl = thumbnailRefsMapRef.current.get(deckId);
-    if (thumbnailEl) {
-      // Capture immediately when leaving viewport
-      captureThumbnail(deckId, thumbnailEl);
-    }
-  }, [hasCachedThumbnail, captureThumbnail]);
-
-  // Store captureOnExit in ref for use in observer
-  const captureOnExitRef = useRef(captureOnExit);
-  captureOnExitRef.current = captureOnExit;
 
   return (
     <div ref={containerRef} className="grid grid-cols-1 gap-3 auto-rows-max">
       {safeDecks.map((deck, index) => {
-        // Only animate if this card was initially visible
+        // Only animate if this card was initially visible (desktop only)
         const shouldAnimate = initiallyVisibleDecks.has(index);
         const shouldRender = renderedDecks.has(index);
-        const isVisible = visibleDecks.has(index);
 
         // Track that this item has been rendered
         if (shouldRender && deck.uuid) {
           hasBeenRenderedRef.current.add(deck.uuid);
         }
 
-        // On iOS: Check for cached thumbnail - only use it if item was previously rendered
-        // This ensures we show the full slide on first visit, cached on return
-        const hasBeenRendered = deck.uuid ? hasBeenRenderedRef.current.has(deck.uuid) : false;
-        const cachedUrl = BROWSER.isMobile && deck.uuid && hasBeenRendered && !isVisible
-          ? getCachedThumbnail(deck.uuid)
-          : null;
+        // Check for cached thumbnail
+        const cachedUrl = BROWSER.isMobile && deck.uuid ? getCachedThumbnail(deck.uuid) : null;
 
-        // On iOS: Always render full mode when visible (so we capture the actual slide)
-        // Use progressive upgrade for initial render, but don't downgrade to background for cached
-        const isUpgraded = upgradedDecks.has(index);
-        const thumbnailRenderMode: 'full' | 'background' =
-          !BROWSER.isMobile ? 'full' : (isUpgraded ? 'full' : 'background');
+        // On mobile: show cached if available, otherwise check if this is the active render
+        const isActiveRender = BROWSER.isMobile && activeRenderIndexRef.current === index;
 
-        // Trigger capture when item leaves viewport (becomes non-visible but was rendered)
-        if (!isVisible && shouldRender && deck.uuid && !hasCachedThumbnail(deck.uuid)) {
-          // Schedule capture for items leaving viewport
-          if (!pendingCapturesRef.current.has(deck.uuid)) {
-            const el = thumbnailRefsMapRef.current.get(deck.uuid);
-            if (el) {
-              pendingCapturesRef.current.set(deck.uuid, el);
-              // Delay capture slightly to ensure we're not in rapid scroll
-              setTimeout(() => {
-                if (pendingCapturesRef.current.has(deck.uuid)) {
-                  captureOnExitRef.current(deck.uuid);
-                  pendingCapturesRef.current.delete(deck.uuid);
-                }
-              }, 300);
-            }
-          }
-        } else if (isVisible && deck.uuid) {
-          // Cancel pending capture if item becomes visible again
-          pendingCapturesRef.current.delete(deck.uuid);
-        }
+        // Determine what to show:
+        // - Desktop: always render full
+        // - Mobile with cache: show cached image
+        // - Mobile active render: show full DeckCard (so we can capture it)
+        // - Mobile waiting: show placeholder
+        const showDeckCard = !BROWSER.isMobile || isActiveRender || shouldRender;
 
         return (
           <div
@@ -585,18 +394,27 @@ export const VirtualizedDeckGrid = React.memo(({
             }}
             data-index={index}
           >
-            {shouldRender ? (
+            {showDeckCard ? (
               <DeckCard
                 deck={deck}
                 onEdit={onEdit}
                 onShowDeleteDialog={onShowDeleteDialog}
                 index={index}
                 shouldAnimate={shouldAnimate}
-                thumbnailRenderMode={thumbnailRenderMode}
-                cachedThumbnailUrl={null} // Don't use cached while visible - show live render
+                thumbnailRenderMode="full"
+                cachedThumbnailUrl={cachedUrl}
                 onThumbnailRef={(el) => {
                   if (el && deck.uuid) {
                     thumbnailRefsMapRef.current.set(deck.uuid, el);
+                    // Capture after render if this is the active render and not yet cached
+                    if (BROWSER.isMobile && isActiveRender && !hasCachedThumbnail(deck.uuid)) {
+                      setTimeout(() => {
+                        const element = thumbnailRefsMapRef.current.get(deck.uuid!);
+                        if (element) {
+                          captureThumbnail(deck.uuid!, element);
+                        }
+                      }, 400);
+                    }
                   } else if (deck.uuid) {
                     thumbnailRefsMapRef.current.delete(deck.uuid);
                   }
@@ -608,7 +426,7 @@ export const VirtualizedDeckGrid = React.memo(({
                 className="relative aspect-[16/9] bg-zinc-200 dark:bg-zinc-800 rounded-lg cursor-pointer ring-1 ring-zinc-200 dark:ring-zinc-700 overflow-hidden"
                 onClick={() => onEdit(deck)}
               >
-                {/* Show cached thumbnail in placeholder if available (when scrolled away) */}
+                {/* Show cached thumbnail in placeholder if available */}
                 {cachedUrl && (
                   <img
                     src={cachedUrl}

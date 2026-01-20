@@ -27,41 +27,75 @@ except ImportError:
 
 
 # =============================================================================
-# LOGO.DEV INTEGRATION
+# LOGO.DEV INTEGRATION (AI-based detection)
 # =============================================================================
 
-def _is_company_logo_query(query: str) -> Tuple[bool, str]:
+async def _detect_logo_query_with_ai(query: str) -> Tuple[bool, str]:
     """
-    Detect if a query is for a company logo and extract the company name.
+    Use AI to detect if a query is asking for a company/brand logo.
 
     Returns:
         Tuple of (is_logo_query, company_name)
     """
-    if not query:
+    if not query or len(query.strip()) < 2:
         return False, ""
 
-    q = query.lower().strip()
+    try:
+        from agents.ai.clients import get_client, invoke
+        from agents.config import IMAGE_SEARCH_MODEL
 
-    # Skip generic logo queries
-    generic_terms = {'logo', 'company logo', 'brand logo', 'business logo', 'corporate logo'}
-    if q in generic_terms:
+        client, model_name = get_client(IMAGE_SEARCH_MODEL)
+
+        prompt = f"""Analyze this image search query and determine if the user wants a company/brand logo.
+
+QUERY: "{query}"
+
+If the user is asking for a specific company, brand, or organization's logo, respond with:
+LOGO: <company name>
+
+If the user is NOT asking for a logo (wants a regular image, photo, illustration, etc.), respond with:
+NOT_LOGO
+
+Examples:
+- "Apple logo" → LOGO: Apple
+- "the Nike swoosh" → LOGO: Nike
+- "Microsoft branding" → LOGO: Microsoft
+- "Stripe's logo" → LOGO: Stripe
+- "add the Airbnb logo" → LOGO: Airbnb
+- "put Google's logo here" → LOGO: Google
+- "sunset beach photo" → NOT_LOGO
+- "business team meeting" → NOT_LOGO
+- "a generic logo" → NOT_LOGO
+- "company logo placeholder" → NOT_LOGO
+
+Respond with ONLY "LOGO: <company>" or "NOT_LOGO", nothing else."""
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            invoke,
+            client,
+            model_name,
+            [{"role": "user", "content": prompt}],
+            None,
+            30,  # Short response
+            0.0  # Deterministic
+        )
+
+        result = str(response).strip()
+
+        if result.upper().startswith("LOGO:"):
+            company = result[5:].strip()
+            if company and len(company) > 1:
+                logger.info(f"[IMAGES] AI detected logo query for company: '{company}'")
+                return True, company
+
+        logger.debug(f"[IMAGES] AI determined not a logo query: '{query}'")
         return False, ""
 
-    # Patterns like "Apple logo", "Google Logo", "Microsoft logo"
-    logo_suffix_match = re.match(r'^(.+?)\s+logo\s*$', q, re.IGNORECASE)
-    if logo_suffix_match:
-        company = logo_suffix_match.group(1).strip()
-        if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
-            return True, company
-
-    # Patterns like "logo of Apple", "logo for Google"
-    logo_prefix_match = re.match(r'^logo\s+(?:of|for)\s+(.+)$', q, re.IGNORECASE)
-    if logo_prefix_match:
-        company = logo_prefix_match.group(1).strip()
-        if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
-            return True, company
-
-    return False, ""
+    except Exception as e:
+        logger.warning(f"[IMAGES] AI logo detection failed: {e}")
+        return False, ""
 
 
 async def _fetch_logo_from_logodev(company_name: str) -> Optional[str]:
@@ -412,12 +446,16 @@ def search_images(
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    # Check if this is a company logo query - route to logo.dev first
-    is_logo_query, company_name = _is_company_logo_query(query)
+    # Check if this is a company logo query using AI - route to logo.dev first
     new_url = None
     new_alt = query
+    is_logo_query = False
+    company_name = ""
 
-    if is_logo_query and company_name and LOGODEV_AVAILABLE:
+    if LOGODEV_AVAILABLE:
+        is_logo_query, company_name = loop.run_until_complete(_detect_logo_query_with_ai(query))
+
+    if is_logo_query and company_name:
         logger.info(f"[IMAGES] Detected company logo query, trying logo.dev for '{company_name}'")
         new_url = loop.run_until_complete(_fetch_logo_from_logodev(company_name))
         if new_url:

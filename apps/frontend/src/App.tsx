@@ -48,16 +48,16 @@ import AdminServices from './pages/admin/AdminServices';
 import AdminCosts from './pages/admin/AdminCosts';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
 import AdminIntegrations from './pages/admin/AdminIntegrations';
+import AdminLeads from './pages/admin/AdminLeads';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
 import TemporaryPasswordGate from './components/TemporaryPasswordGate';
 import SmartGallery from './pages/SmartGallery';
 import Pricing from './pages/Pricing';
 import DeveloperAPI from './pages/DeveloperAPI';
 import { CreditsProvider } from './context/CreditsContext';
-import { OnboardingProvider, useOnboarding } from './context/OnboardingContext';
+import { OnboardingProvider } from './context/OnboardingContext';
 import UpgradePrompt from './components/billing/UpgradePrompt';
-import { RewardProvider, useReward, REWARD_CONFIGS } from './context/RewardContext';
-import { useCredits } from './context/CreditsContext';
+import { RewardProvider } from './context/RewardContext';
 
 // Component to initialize font optimization
 // Removed FontOptimizationInitializer
@@ -68,48 +68,6 @@ function UserRecordInitializer() {
   return null;
 }
 
-// Component to show welcome reward on first visit (only once per session)
-// Shows to any user where welcome_shown=false in database
-const WELCOME_SHOWN_SESSION_KEY = 'nextslide_welcome_shown_session';
-
-function WelcomeRewardController() {
-  const { shouldShowWelcome, markWelcomeShown, state } = useOnboarding();
-  const { user } = useAuth();
-  const { refreshBalance } = useCredits();
-  const { showReward } = useReward();
-  // Track if we've already triggered to prevent double-showing
-  const hasTriggeredReward = React.useRef(false);
-
-  // Show reward when:
-  // 1. User is logged in
-  // 2. Onboarding state says welcome not shown
-  // 3. Haven't triggered yet this session (ref + sessionStorage backup)
-  useEffect(() => {
-    // Wait for onboarding state to load
-    if (!user || !state) return;
-    if (hasTriggeredReward.current) return;
-
-    // Check sessionStorage as a backup (survives component remounts during disconnects)
-    if (sessionStorage.getItem(WELCOME_SHOWN_SESSION_KEY) === 'true') return;
-
-    // Show to any user who hasn't seen the welcome yet
-    // The welcome_shown flag in the database is the source of truth
-    if (shouldShowWelcome) {
-      hasTriggeredReward.current = true;
-      sessionStorage.setItem(WELCOME_SHOWN_SESSION_KEY, 'true');
-
-      // Show the welcome bonus reward
-      showReward(REWARD_CONFIGS.welcomeBonus);
-
-      // Mark as shown in backend
-      markWelcomeShown();
-      // Refresh credit balance after a delay (in case credits were just initialized)
-      setTimeout(() => refreshBalance(), 1000);
-    }
-  }, [user, state, shouldShowWelcome, showReward, markWelcomeShown, refreshBalance]);
-
-  return null;
-}
 
 // Extend window interface for debug commands
 declare global {
@@ -554,6 +512,14 @@ const AppContent = () => {
                   </AdminProtectedRoute>
                 }
               />
+              <Route
+                path="/admin/leads"
+                element={
+                  <AdminProtectedRoute>
+                    <AdminLeads />
+                  </AdminProtectedRoute>
+                }
+              />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/smart-gallery" element={<SmartGallery />} />
@@ -617,7 +583,6 @@ function App() {
                   <OnboardingProvider>
                     <RewardProvider>
                       <UserRecordInitializer />
-                      <WelcomeRewardController />
                       <AppContent />
                       <UpgradePrompt />
                       {DevPerformanceHUD ? (

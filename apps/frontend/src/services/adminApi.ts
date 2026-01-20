@@ -14,6 +14,9 @@ export interface UserSummary {
   role: 'user' | 'admin' | 'super_admin';
   isAdmin: boolean;
   emailVerified: boolean;
+  creditsRemaining: number;
+  creditsUsed: number;
+  creditsTotal: number;
 }
 
 export interface UserStats {
@@ -21,6 +24,16 @@ export interface UserStats {
   newThisWeek: number;
   adminCount: number;
   verifiedCount: number;
+}
+
+export interface UserCredits {
+  user_id: string;
+  monthly_credits: number;
+  purchased_credits: number;
+  used_credits: number;
+  remaining_credits: number;
+  plan_id: string;
+  period_end?: string;
 }
 
 export interface GetUsersResponse {
@@ -278,6 +291,9 @@ class AdminApi {
         role: user.role || 'user',
         isAdmin: user.isAdmin || user.is_admin || user.role === 'admin',
         emailVerified: user.emailVerified || user.email_verified || false,
+        creditsRemaining: user.creditsRemaining ?? 0,
+        creditsUsed: user.creditsUsed ?? 0,
+        creditsTotal: user.creditsTotal ?? 0,
       }));
 
       // Map stats from backend response
@@ -703,6 +719,36 @@ class AdminApi {
     }
   }
 
+  // Get user credits
+  async getUserCredits(userId: string): Promise<UserCredits> {
+    try {
+      return await this.request<UserCredits>(`/admin/users/${userId}/credits`);
+    } catch (error) {
+      console.error('Error fetching user credits:', error);
+      throw error;
+    }
+  }
+
+  // Update user credits
+  async updateUserCredits(userId: string, updates: {
+    monthly_credits?: number;
+    purchased_credits?: number;
+    used_credits?: number;
+  }): Promise<{ success: boolean; message: string; credits: UserCredits }> {
+    try {
+      return await this.request<{ success: boolean; message: string; credits: UserCredits }>(
+        `/admin/users/${userId}/credits`,
+        {
+          method: 'PUT',
+          body: JSON.stringify(updates),
+        }
+      );
+    } catch (error) {
+      console.error('Error updating user credits:', error);
+      throw error;
+    }
+  }
+
   // Deck actions
   async deleteDeck(deckId: string): Promise<{ success: boolean; message: string }> {
     const { error } = await supabase
@@ -1036,6 +1082,53 @@ class AdminApi {
       throw error;
     }
   }
+
+  // Share Viewers / Leads
+  async getShareViewers(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<GetShareViewersResponse> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      if (params?.search) queryParams.append('search', params.search);
+      if (params?.sortBy) queryParams.append('sort_by', params.sortBy);
+      if (params?.sortOrder) queryParams.append('sort_order', params.sortOrder);
+
+      const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
+      return await this.request<GetShareViewersResponse>(`/admin/share-viewers${query}`);
+    } catch (error) {
+      console.error('Error fetching share viewers:', error);
+      throw error;
+    }
+  }
+
+  async exportShareViewers(search?: string): Promise<Blob> {
+    const token = await this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token available');
+    }
+
+    const queryParams = new URLSearchParams();
+    if (search) queryParams.append('search', search);
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
+
+    const response = await fetch(`${this.baseUrl}/admin/share-viewers/export${query}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Export failed: ${response.statusText}`);
+    }
+
+    return response.blob();
+  }
 }
 
 export interface Brand {
@@ -1228,6 +1321,25 @@ export interface CommunityStats {
   total: number;
   total_remixes: number;
   total_views: number;
+}
+
+// Share Viewers / Leads Types
+export interface ShareViewer {
+  id: string;
+  email: string;
+  name?: string;
+  company?: string;
+  registered_at: string;
+  share_id: string;
+  deck_name?: string;
+  deck_owner_email?: string;
+}
+
+export interface GetShareViewersResponse {
+  viewers: ShareViewer[];
+  total: number;
+  page: number;
+  totalPages: number;
 }
 
 export const adminApi = new AdminApi();

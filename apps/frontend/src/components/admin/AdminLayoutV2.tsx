@@ -15,6 +15,7 @@ import {
   DollarSign,
   ExternalLink,
   Plug,
+  Mail,
 } from 'lucide-react';
 
 interface AdminLayoutV2Props {
@@ -25,6 +26,7 @@ const navItems = [
   { title: 'Overview', href: '/admin', icon: LayoutDashboard },
   { title: 'Users', href: '/admin/users', icon: Users },
   { title: 'Decks', href: '/admin/decks', icon: FileStack },
+  { title: 'Leads', href: '/admin/leads', icon: Mail },
   { title: 'Community', href: '/admin/community', icon: Users2 },
   { title: 'Integrations', href: '/admin/integrations', icon: Plug },
   { title: 'Brands', href: '/admin/brands', icon: Palette },

@@ -240,9 +240,9 @@ class MockShareService {
   }
   
   getShareUrl(shortCode: string, shareType: 'view' | 'edit'): string {
-    // Use API domain so bots get OG meta tags, real users get redirected to frontend
+    // Cloudflare Worker handles bot detection at the edge
     const path = shareType === 'view' ? `/p/${shortCode}` : `/e/${shortCode}`;
-    return `https://api.nextslide.ai${path}`;
+    return `https://nextslide.ai${path}`;
   }
 }
 

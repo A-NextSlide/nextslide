@@ -33,6 +33,10 @@ class UserSummary(BaseModel):
     role: str = "user"
     isAdmin: bool = False
     emailVerified: bool = False
+    # Credit info
+    creditsRemaining: int = 0
+    creditsUsed: int = 0
+    creditsTotal: int = 0
 
 class UserStats(BaseModel):
     totalActive: int = 0
@@ -337,8 +341,15 @@ async def list_users(
             "fullName": "full_name",
             "full_name": "full_name",
             "created_at": "created_at",
+            "status": "status",
+            "role": "role",
+            "deckCount": "created_at",  # Can't sort by deck count at DB level, fallback
         }
         db_sort_by = sort_field_map.get(sort_by, sort_by)
+
+        # For lastActive, we need to sort in Python after merging with auth data
+        # So we fetch more data and sort/paginate later
+        sort_in_python = sort_by in ["lastActive", "lastActiveAt"]
 
         # Build query
         query = supabase.table("users").select("*", count="exact")
@@ -349,12 +360,16 @@ async def list_users(
             safe_search = search.replace("%", "\\%").replace("_", "\\_")
             query = query.or_(f"email.ilike.%{safe_search}%,full_name.ilike.%{safe_search}%")
 
-        # Apply sorting BEFORE pagination (order matters in PostgREST)
-        query = query.order(db_sort_by, desc=(sort_order == "desc"))
-
-        # Apply pagination AFTER sorting
-        offset = (page - 1) * limit
-        query = query.range(offset, offset + limit - 1)
+        if sort_in_python:
+            # For Python sorting, fetch all matching users (up to 1000)
+            query = query.order("created_at", desc=True)
+            query = query.range(0, 999)
+        else:
+            # Apply sorting BEFORE pagination (order matters in PostgREST)
+            query = query.order(db_sort_by, desc=(sort_order == "desc"))
+            # Apply pagination AFTER sorting
+            offset = (page - 1) * limit
+            query = query.range(offset, offset + limit - 1)
 
         # Execute query
         response = query.execute()
@@ -401,6 +416,29 @@ async def list_users(
                     count_response = supabase.table("decks").select("uuid", count="exact").eq("user_id", user_id).execute()
                     deck_counts[user_id] = count_response.count or 0
 
+        # Fetch credit balances for all users
+        credit_data = {}
+        if user_ids:
+            try:
+                credits_response = supabase.table("credit_balances").select(
+                    "user_id,monthly_credits,purchased_credits,used_credits"
+                ).in_("user_id", user_ids).execute()
+                if credits_response.data:
+                    for credit in credits_response.data:
+                        user_id = credit["user_id"]
+                        monthly = credit.get("monthly_credits", 0) or 0
+                        purchased = credit.get("purchased_credits", 0) or 0
+                        used = credit.get("used_credits", 0) or 0
+                        total = monthly + purchased if monthly != -1 else -1
+                        remaining = max(0, total - used) if total != -1 else -1
+                        credit_data[user_id] = {
+                            "remaining": remaining,
+                            "used": used,
+                            "total": total
+                        }
+            except Exception as e:
+                logger.warning(f"Failed to fetch credit balances: {str(e)}")
+
         # Format users - merge with auth data
         users = []
         for user in response.data:
@@ -413,6 +451,9 @@ async def list_users(
             email_confirmed = auth_info.get("email_confirmed_at") or user.get("email_confirmed_at")
             is_verified = email_confirmed is not None or user.get("email_verified", False)
 
+            # Get credit info for this user
+            user_credits = credit_data.get(user_id, {"remaining": 0, "used": 0, "total": 0})
+
             users.append(UserSummary(
                 id=user_id,
                 email=user.get("email", ""),
@@ -424,8 +465,29 @@ async def list_users(
                 status=user.get("status", "active"),
                 role=user_role,
                 isAdmin=user_role == "admin",
-                emailVerified=is_verified
+                emailVerified=is_verified,
+                creditsRemaining=user_credits["remaining"],
+                creditsUsed=user_credits["used"],
+                creditsTotal=user_credits["total"]
             ))
+
+        # If sorting in Python (for lastActive), sort and paginate now
+        if sort_in_python:
+            def parse_date(date_str):
+                if not date_str:
+                    return datetime.min
+                try:
+                    return datetime.fromisoformat(date_str.replace("Z", "+00:00")).replace(tzinfo=None)
+                except:
+                    return datetime.min
+
+            users.sort(key=lambda u: parse_date(u.lastActive), reverse=(sort_order == "desc"))
+            # Apply pagination
+            offset = (page - 1) * limit
+            total_count = len(users)
+            users = users[offset:offset + limit]
+        else:
+            total_count = response.count or 0
 
         # Calculate aggregate stats using auth data for accuracy
         stats = UserStats()
@@ -489,11 +551,14 @@ async def list_users(
             details={"page": page, "search": search}
         )
 
+        # Use total_count from Python sort if applicable, otherwise from DB response
+        final_total = total_count if sort_in_python else (response.count or 0)
+
         return UsersListResponse(
             users=users,
-            total=response.count or 0,
+            total=final_total,
             page=page,
-            totalPages=max(1, (response.count or 0) // limit + (1 if (response.count or 0) % limit > 0 else 0)),
+            totalPages=max(1, final_total // limit + (1 if final_total % limit > 0 else 0)),
             stats=stats
         )
         
@@ -903,6 +968,148 @@ async def perform_user_action(
     except Exception as e:
         logger.error(f"User action error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class UserCreditsResponse(BaseModel):
+    user_id: str
+    monthly_credits: int
+    purchased_credits: int
+    used_credits: int
+    remaining_credits: int
+    plan_id: str
+    period_end: Optional[str] = None
+
+
+class UpdateUserCreditsRequest(BaseModel):
+    monthly_credits: Optional[int] = None
+    purchased_credits: Optional[int] = None
+    used_credits: Optional[int] = None
+
+
+@router.get("/users/{user_id}/credits", response_model=UserCreditsResponse)
+async def get_user_credits(
+    user_id: str,
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Get a user's credit balance
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Get credit balance
+        balance_result = supabase.table("credit_balances").select("*").eq("user_id", user_id).execute()
+
+        if not balance_result.data or len(balance_result.data) == 0:
+            raise HTTPException(status_code=404, detail="User credit balance not found")
+
+        balance = balance_result.data[0]
+
+        # Get subscription plan
+        sub_result = supabase.table("subscriptions").select("plan_id").eq("user_id", user_id).execute()
+        plan_id = "free"
+        if sub_result.data and len(sub_result.data) > 0:
+            plan_id = sub_result.data[0].get("plan_id", "free")
+
+        # Calculate remaining credits
+        monthly = balance.get("monthly_credits", 0)
+        purchased = balance.get("purchased_credits", 0)
+        used = balance.get("used_credits", 0)
+
+        if monthly == -1:  # Unlimited
+            remaining = -1
+        else:
+            remaining = max(0, monthly + purchased - used)
+
+        return UserCreditsResponse(
+            user_id=user_id,
+            monthly_credits=monthly,
+            purchased_credits=purchased,
+            used_credits=used,
+            remaining_credits=remaining,
+            plan_id=plan_id,
+            period_end=balance.get("period_end")
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get user credits error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/users/{user_id}/credits")
+async def update_user_credits(
+    user_id: str,
+    request: Request,
+    update_request: UpdateUserCreditsRequest,
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Update a user's credit balance
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Check if user exists
+        user_result = supabase.table("users").select("id").eq("id", user_id).execute()
+        if not user_result.data or len(user_result.data) == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Build update dict with only provided fields
+        update_data = {"updated_at": datetime.utcnow().isoformat()}
+
+        if update_request.monthly_credits is not None:
+            update_data["monthly_credits"] = update_request.monthly_credits
+        if update_request.purchased_credits is not None:
+            update_data["purchased_credits"] = update_request.purchased_credits
+        if update_request.used_credits is not None:
+            update_data["used_credits"] = update_request.used_credits
+
+        # Update credit balance
+        result = supabase.table("credit_balances").update(update_data).eq("user_id", user_id).execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Credit balance not found for user")
+
+        # Log the action
+        await log_admin_action(
+            admin_user_id=admin["id"],
+            action="update_credits",
+            request=request,
+            target_user_id=user_id,
+            details={"updates": update_data}
+        )
+
+        # Fetch and return updated balance
+        balance = result.data[0]
+        monthly = balance.get("monthly_credits", 0)
+        purchased = balance.get("purchased_credits", 0)
+        used = balance.get("used_credits", 0)
+
+        if monthly == -1:
+            remaining = -1
+        else:
+            remaining = max(0, monthly + purchased - used)
+
+        return {
+            "success": True,
+            "message": "Credits updated successfully",
+            "credits": {
+                "user_id": user_id,
+                "monthly_credits": monthly,
+                "purchased_credits": purchased,
+                "used_credits": used,
+                "remaining_credits": remaining
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Update user credits error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/decks")
 async def list_all_decks(
@@ -3177,3 +3384,229 @@ async def cleanup_user_decks(
     except Exception as e:
         logger.error(f"Cleanup error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# SHARE VIEWERS / LEADS ENDPOINTS
+# ============================================================================
+
+class ShareViewerSummary(BaseModel):
+    id: str
+    email: str
+    name: Optional[str] = None
+    company: Optional[str] = None
+    registered_at: str
+    share_id: str
+    deck_name: Optional[str] = None
+    deck_owner_email: Optional[str] = None
+
+
+class ShareViewersListResponse(BaseModel):
+    viewers: List[ShareViewerSummary]
+    total: int
+    page: int
+    totalPages: int
+
+
+@router.get("/share-viewers", response_model=ShareViewersListResponse)
+async def list_share_viewers(
+    request: Request,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=500),
+    search: Optional[str] = Query(None),
+    sort_by: str = Query("registered_at"),
+    sort_order: str = Query("desc"),
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    List all share viewers (collected emails) across all shares
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Build query for share_viewers with related data
+        query = supabase.table("share_viewers").select(
+            "id, email, name, company, registered_at, share_id, client_ip",
+            count="exact"
+        )
+
+        # Apply search filter
+        if search:
+            safe_search = search.replace("%", "\\%").replace("_", "\\_")
+            query = query.or_(f"email.ilike.%{safe_search}%,name.ilike.%{safe_search}%,company.ilike.%{safe_search}%")
+
+        # Apply sorting
+        sort_field_map = {
+            "registered_at": "registered_at",
+            "email": "email",
+            "name": "name",
+            "company": "company",
+        }
+        db_sort_by = sort_field_map.get(sort_by, "registered_at")
+        query = query.order(db_sort_by, desc=(sort_order == "desc"))
+
+        # Apply pagination
+        offset = (page - 1) * limit
+        query = query.range(offset, offset + limit - 1)
+
+        # Execute query
+        response = query.execute()
+        viewers_data = response.data or []
+        total = response.count or 0
+
+        # Get related deck and owner info
+        share_ids = list(set(v["share_id"] for v in viewers_data if v.get("share_id")))
+
+        deck_info_map = {}
+        if share_ids:
+            # Get share -> deck mapping
+            shares_result = supabase.table("deck_shares").select(
+                "id, deck_uuid, created_by"
+            ).in_("id", share_ids).execute()
+
+            if shares_result.data:
+                deck_uuids = list(set(s["deck_uuid"] for s in shares_result.data if s.get("deck_uuid")))
+                owner_ids = list(set(s["created_by"] for s in shares_result.data if s.get("created_by")))
+
+                # Get deck names
+                deck_names = {}
+                if deck_uuids:
+                    decks_result = supabase.table("decks").select("uuid, name").in_("uuid", deck_uuids).execute()
+                    deck_names = {d["uuid"]: d["name"] for d in (decks_result.data or [])}
+
+                # Get owner emails
+                owner_emails = {}
+                if owner_ids:
+                    owners_result = supabase.table("users").select("id, email").in_("id", owner_ids).execute()
+                    owner_emails = {o["id"]: o["email"] for o in (owners_result.data or [])}
+
+                # Build mapping
+                for share in shares_result.data:
+                    deck_info_map[share["id"]] = {
+                        "deck_name": deck_names.get(share.get("deck_uuid")),
+                        "deck_owner_email": owner_emails.get(share.get("created_by"))
+                    }
+
+        # Build response
+        viewers = []
+        for v in viewers_data:
+            share_info = deck_info_map.get(v["share_id"], {})
+            viewers.append(ShareViewerSummary(
+                id=v["id"],
+                email=v["email"],
+                name=v.get("name"),
+                company=v.get("company"),
+                registered_at=v["registered_at"],
+                share_id=v["share_id"],
+                deck_name=share_info.get("deck_name"),
+                deck_owner_email=share_info.get("deck_owner_email")
+            ))
+
+        total_pages = (total + limit - 1) // limit if total > 0 else 1
+
+        return ShareViewersListResponse(
+            viewers=viewers,
+            total=total,
+            page=page,
+            totalPages=total_pages
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing share viewers: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/share-viewers/export")
+async def export_share_viewers(
+    request: Request,
+    search: Optional[str] = Query(None),
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Export all share viewers as CSV
+    """
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+
+    try:
+        supabase = get_supabase_client()
+
+        # Get all viewers (no pagination for export)
+        query = supabase.table("share_viewers").select(
+            "id, email, name, company, registered_at, share_id, client_ip"
+        )
+
+        if search:
+            safe_search = search.replace("%", "\\%").replace("_", "\\_")
+            query = query.or_(f"email.ilike.%{safe_search}%,name.ilike.%{safe_search}%,company.ilike.%{safe_search}%")
+
+        query = query.order("registered_at", desc=True)
+        response = query.execute()
+        viewers_data = response.data or []
+
+        # Get related deck and owner info
+        share_ids = list(set(v["share_id"] for v in viewers_data if v.get("share_id")))
+
+        deck_info_map = {}
+        if share_ids:
+            shares_result = supabase.table("deck_shares").select(
+                "id, deck_uuid, created_by"
+            ).in_("id", share_ids).execute()
+
+            if shares_result.data:
+                deck_uuids = list(set(s["deck_uuid"] for s in shares_result.data if s.get("deck_uuid")))
+                owner_ids = list(set(s["created_by"] for s in shares_result.data if s.get("created_by")))
+
+                deck_names = {}
+                if deck_uuids:
+                    decks_result = supabase.table("decks").select("uuid, name").in_("uuid", deck_uuids).execute()
+                    deck_names = {d["uuid"]: d["name"] for d in (decks_result.data or [])}
+
+                owner_emails = {}
+                if owner_ids:
+                    owners_result = supabase.table("users").select("id, email").in_("id", owner_ids).execute()
+                    owner_emails = {o["id"]: o["email"] for o in (owners_result.data or [])}
+
+                for share in shares_result.data:
+                    deck_info_map[share["id"]] = {
+                        "deck_name": deck_names.get(share.get("deck_uuid")),
+                        "deck_owner_email": owner_emails.get(share.get("created_by"))
+                    }
+
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Header
+        writer.writerow(["Email", "Name", "Company", "Registered At", "Deck Name", "Deck Owner Email"])
+
+        # Data rows
+        for v in viewers_data:
+            share_info = deck_info_map.get(v["share_id"], {})
+            writer.writerow([
+                v["email"],
+                v.get("name") or "",
+                v.get("company") or "",
+                v["registered_at"],
+                share_info.get("deck_name") or "",
+                share_info.get("deck_owner_email") or ""
+            ])
+
+        output.seek(0)
+
+        # Log the export action
+        await log_admin_action(
+            admin_user_id=admin["id"],
+            action="export_share_viewers",
+            request=request,
+            details={"count": len(viewers_data), "search": search}
+        )
+
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=share_viewers_export.csv"}
+        )

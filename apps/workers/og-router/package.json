@@ -1,0 +1,15 @@
+{
+  "name": "og-router",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker for OG image bot detection and routing",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "login": "wrangler login"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
