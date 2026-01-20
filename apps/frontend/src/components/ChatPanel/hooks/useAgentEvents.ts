@@ -299,11 +299,12 @@ export function useAgentEvents({
       }
 
       const text = String(target.message ?? '').trim();
-      if (text === '' || /^\d+$/.test(text)) {
-        return prev.filter(m => m.id !== resolvedId);
-      }
 
-      const humanized = humanizeSystemPhrases(text);
+      // Don't delete empty/numeric messages - just mark them as finalized
+      // The edit_applied message will be associated with this AI message
+      // and ChatMessageList will handle display appropriately
+      const humanized = text && !/^\d+$/.test(text) ? humanizeSystemPhrases(text) : '';
+
       return prev.map(m => m.id === resolvedId ? {
         ...m,
         message: humanized,

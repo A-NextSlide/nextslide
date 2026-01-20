@@ -1,6 +1,6 @@
 """Image post-processing helpers for slide generation."""
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple, Optional
 import re
 import logging
 
@@ -8,6 +8,68 @@ from agents.domain.models import SlideGenerationContext
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
+
+# Check if logo.dev is available
+_LOGODEV_AVAILABLE = False
+try:
+    from agents.tools.theme.logodev_service import LogoDevService
+    _LOGODEV_AVAILABLE = True
+except ImportError:
+    pass
+
+
+def _is_company_logo_query(query: str) -> Tuple[bool, str]:
+    """Detect if a query is for a company logo and extract the company name."""
+    q = query.lower().strip()
+
+    # Skip generic logo queries (these return random vistaprint images)
+    generic_terms = {'logo', 'company logo', 'brand logo', 'business logo', 'corporate logo'}
+    if q in generic_terms:
+        return False, ""
+
+    # Patterns like "Apple logo", "Google Logo"
+    logo_suffix_match = re.match(r'^(.+?)\s+logo$', q, re.IGNORECASE)
+    if logo_suffix_match:
+        company = logo_suffix_match.group(1).strip()
+        if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
+            return True, company
+
+    # Patterns like "logo of Stripe", "logo for Netflix"
+    logo_prefix_match = re.match(r'^logo\s+(?:of|for)\s+(.+)$', q, re.IGNORECASE)
+    if logo_prefix_match:
+        company = logo_prefix_match.group(1).strip()
+        if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
+            return True, company
+
+    return False, ""
+
+
+async def _fetch_logo_from_logodev(company_name: str) -> Optional[str]:
+    """Fetch company logo from logo.dev and upload to our storage."""
+    if not _LOGODEV_AVAILABLE:
+        return None
+
+    try:
+        async with LogoDevService() as logo_service:
+            result = await logo_service.get_logo_with_fallback(company_name)
+            if result.get("available") and result.get("logo_url"):
+                logo_url = result["logo_url"]
+                logger.info(f"[CUSTOM IMG] Found logo via logo.dev for '{company_name}'")
+
+                # Upload to our storage for CORS safety
+                from services.image_storage_service import get_image_storage_service
+                storage = get_image_storage_service()
+                upload_result = await storage.upload_image_from_url(
+                    logo_url,
+                    metadata={"alt": f"{company_name} logo", "source": "logodev"}
+                )
+                if upload_result and upload_result.get("url"):
+                    return upload_result["url"]
+                return logo_url  # Fallback to direct URL
+    except Exception as e:
+        logger.warning(f"[CUSTOM IMG] Logo.dev lookup failed for '{company_name}': {e}")
+
+    return None
 
 
 async def process_custom_component_images(
@@ -59,41 +121,59 @@ async def process_custom_component_images(
                     logger.info(f"[CUSTOM IMG] Empty alt text - using fallback: {search_query}")
 
                 try:
-                    from services.combined_image_service import CombinedImageService
-                    image_service = CombinedImageService()
+                    final_url = None
 
-                    search_result = await image_service.search_images(
-                        query=search_query,
-                        per_page=1,
-                        page=1,
-                    )
-
-                    images = search_result.get("photos", []) or search_result.get("results", [])
-                    if not images:
-                        logger.warning(f"[CUSTOM IMG] No images found for: {search_query}")
+                    # Check if this is a company logo query - route to logo.dev
+                    is_logo, company_name = _is_company_logo_query(search_query)
+                    if is_logo and company_name:
+                        logger.info(f"[CUSTOM IMG] Routing company logo to logo.dev: '{company_name}'")
+                        final_url = await _fetch_logo_from_logodev(company_name)
+                        if final_url:
+                            logger.info(f"[CUSTOM IMG] Got logo from logo.dev for '{company_name}'")
+                    elif 'logo' in search_query.lower():
+                        # Skip generic logo queries - they return random vistaprint images
+                        logger.info(f"[CUSTOM IMG] Skipping generic logo query: '{search_query}'")
                         continue
 
-                    image_data = images[0]
-                    image_url = (
-                        image_data.get("url")
-                        or image_data.get("src", {}).get("large")
-                        or image_data.get("src", {}).get("original")
-                        or image_data.get("original_url")
-                    )
-                    if not image_url:
-                        logger.warning(f"[CUSTOM IMG] No URL in search result for {search_query}")
-                        continue
+                    # If not a logo or logo.dev failed, use regular image search
+                    if not final_url:
+                        from services.combined_image_service import CombinedImageService
+                        image_service = CombinedImageService()
 
-                    from services.image_storage_service import get_image_storage_service
-                    storage = get_image_storage_service()
+                        search_result = await image_service.search_images(
+                            query=search_query,
+                            per_page=1,
+                            page=1,
+                        )
 
-                    upload_result = await storage.upload_image_from_url(
-                        image_url,
-                        metadata={"alt": alt, "search_query": search_query, "source": "serpapi"},
-                    )
+                        images = search_result.get("photos", []) or search_result.get("results", [])
+                        if not images:
+                            logger.warning(f"[CUSTOM IMG] No images found for: {search_query}")
+                            continue
 
-                    if upload_result and upload_result.get("url"):
-                        final_url = upload_result["url"]
+                        image_data = images[0]
+                        image_url = (
+                            image_data.get("url")
+                            or image_data.get("src", {}).get("large")
+                            or image_data.get("src", {}).get("original")
+                            or image_data.get("original_url")
+                        )
+                        if not image_url:
+                            logger.warning(f"[CUSTOM IMG] No URL in search result for {search_query}")
+                            continue
+
+                        from services.image_storage_service import get_image_storage_service
+                        storage = get_image_storage_service()
+
+                        upload_result = await storage.upload_image_from_url(
+                            image_url,
+                            metadata={"alt": alt, "search_query": search_query, "source": "serpapi"},
+                        )
+
+                        if upload_result and upload_result.get("url"):
+                            final_url = upload_result["url"]
+
+                    if final_url:
                         old_img = match.group(0)
                         if "src=" in attrs:
                             new_attrs = re.sub(

@@ -23,6 +23,14 @@ class BrandFontStorageService:
         self.bucket_name = "slide-media"
         self._cache = {}  # Cache for font URLs
 
+    def _get_clean_public_url(self, file_path: str) -> str:
+        """Get public URL and strip trailing '?' that Supabase sometimes adds."""
+        public_url = self._get_clean_public_url(file_path)
+        # Supabase Python client sometimes adds trailing '?' which breaks URLs
+        if public_url and public_url.endswith('?'):
+            public_url = public_url[:-1]
+        return public_url
+
     def _generate_font_path(self, brand_id: str, font_name: str, variant: str, extension: str) -> str:
         """
         Generate a consistent file path for font storage.
@@ -108,7 +116,7 @@ class BrandFontStorageService:
             )
 
             # Get public URL
-            public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+            public_url = self._get_clean_public_url(file_path)
 
             result = {
                 'url': public_url,
@@ -211,7 +219,7 @@ class BrandFontStorageService:
             file_path = f"fonts/brands/{brand_id}/{safe_font_name}-{safe_variant}{ext}"
             try:
                 # Check if file exists (you might want to cache this check)
-                public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+                public_url = self._get_clean_public_url(file_path)
                 return public_url
             except:
                 continue

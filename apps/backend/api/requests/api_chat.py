@@ -68,6 +68,8 @@ async def process_api_chat(request: ChatRequest, registry: Optional[ComponentReg
     """
     Process a chat message and return a response with deck updates
     """
+    # DEBUG: This is the OLD endpoint that doesn't support streaming
+    logger.warning(f"[api_chat] ⚠️ OLD /api/chat endpoint hit - NO event_cb streaming! message={request.message[:100] if request.message else 'EMPTY'}")
 
     # Validate the deck using the registry
     if registry is None:
@@ -145,7 +147,6 @@ If you need clarification, ask ONE specific question:
 
 Be friendly, not robotic!"""
 
-            from agents.config import CHAT_MODEL
             from agents.ai.clients import get_model_id
             response = client.messages.create(
                 model=get_model_id(CHAT_MODEL),

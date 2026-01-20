@@ -229,7 +229,7 @@ export function ChatMessageList({
             : null;
 
           return (
-            <div key={`${msg.id}-${editAppliedData ? 'with-edit' : 'no-edit'}`} className="opacity-70">
+            <div key={msg.id} className="opacity-70">
               <ChatMessage
                 {...msg}
                 onFeedback={(feedback) => onFeedback(msg.id, feedback)}
@@ -279,7 +279,7 @@ export function ChatMessageList({
             : null;
 
           return (
-            <div key={`${msg.id}-${editAppliedData ? 'with-edit' : 'no-edit'}`}>
+            <div key={msg.id}>
               <ChatMessage
                 {...msg}
                 message={isThinkingStatus && msg.message ? msg.message : msg.message}
@@ -315,7 +315,7 @@ export function ChatMessageList({
           </div>
         )}
 
-        {isLoading && <ChatMessage type="ai" message="" isLoading={true} timestamp={new Date()} />}
+        {isLoading && <ChatMessage type="ai" message="" isLoading={true} />}
 
         <div ref={messagesEndRef} />
       </div>

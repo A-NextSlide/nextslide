@@ -241,7 +241,17 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
         })
 
     thread_pool = ThreadPoolExecutor(max_workers=4)
+    # Track whether assistant.message.delta was emitted (to avoid duplicate fallback)
+    message_delta_emitted = {"value": False}
+
     def _event_cb(event_type: str, data: Dict[str, Any]):
+        logger.info(f"[_event_cb] 📡 Called with event_type={event_type}, data_keys={list((data or {}).keys())}")
+
+        # Track if we emitted an assistant message delta
+        if event_type == "assistant.message.delta":
+            message_delta_emitted["value"] = True
+            logger.info(f"[_event_cb] ✅ Set message_delta_emitted=True for delta: {str(data.get('delta', ''))[:100]}")
+
         # Fire-and-forget persist + stream
         try:
             # Enrich tool events with status for frontend display
@@ -529,6 +539,7 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
     # The LLM decides when to use it based on @linkedin mentions in the message
 
     try:
+        logger.info(f"[AgentChat] 🚀 About to call edit_deck with event_cb={bool(_event_cb)} (callable={callable(_event_cb)})")
         result = await run_in_threadpool(
             thread_pool,
             edit_deck,
@@ -684,6 +695,24 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
         logger.info(f"[AgentChat] Saved assistant message: {assistant_text[:100]}...")
     except Exception as e:
         logger.warning(f"[AgentChat] Failed to persist assistant message: {e}")
+
+    # FALLBACK: Emit the assistant message via WebSocket only if it wasn't already streamed
+    # This ensures the message shows even if event_cb streaming failed inside the orchestrator
+    if assistant_text.strip() and not message_delta_emitted["value"]:
+        logger.info(f"[AgentChat] ⚠️ No message was streamed via event_cb - emitting fallback")
+        try:
+            await agent_stream_bus.publish(session_id, {
+                "type": "assistant.message.delta",
+                "sessionId": session_id,
+                "messageId": message_id,
+                "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                "data": {"delta": assistant_text}
+            })
+            logger.info(f"[AgentChat] 📤 Emitted fallback assistant.message.delta: '{assistant_text[:100]}...'")
+        except Exception as emit_err:
+            logger.warning(f"[AgentChat] Failed to emit fallback message: {emit_err}")
+    elif message_delta_emitted["value"]:
+        logger.info(f"[AgentChat] ✅ Message was already streamed via event_cb - skipping fallback")
 
     # Emit a preview diff BEFORE any persistence/apply so the UI can update immediately
     if deck_id and deck_diff_plain:

@@ -3,7 +3,7 @@
  * Features a peek bar that expands into a full deck list view.
  */
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { cn } from '@/lib/utils';
 import { Search, X, ChevronUp, FolderOpen, Loader2, Plus } from 'lucide-react';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import DeckCard from './DeckCard';
+import DeckCardPlaceholder from './DeckCardPlaceholder';
 import { useDeckThumbnailCache } from '@/hooks/useDeckThumbnailCache';
 import { BROWSER } from '@/utils/browser';
 import { formatDistanceToNow } from 'date-fns';
@@ -62,8 +63,80 @@ const DeckListBottomSheet: React.FC<DeckListBottomSheetProps> = ({
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
 
   // Thumbnail caching for mobile
-  const { getCachedThumbnail, captureThumbnail, cacheVersion } = useDeckThumbnailCache();
+  const { getCachedThumbnail, hasCachedThumbnail, captureThumbnail, cacheVersion } = useDeckThumbnailCache();
   const thumbnailRefsMapRef = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // Progressive rendering for mobile - only render 2 thumbnails at a time
+  const [renderingIds, setRenderingIds] = useState<Set<string>>(new Set());
+  const renderQueueRef = useRef<string[]>([]);
+  const isProcessingRef = useRef(false);
+  const MAX_CONCURRENT_RENDERS = 2;
+
+  // Process render queue - allows next items to render
+  const processRenderQueue = useCallback(() => {
+    if (!BROWSER.isMobile || isProcessingRef.current) return;
+
+    // Get IDs that still need rendering (not cached)
+    const pendingIds = renderQueueRef.current.filter(id => !hasCachedThumbnail(id));
+    renderQueueRef.current = pendingIds;
+
+    if (pendingIds.length === 0) return;
+
+    // Count how many are currently rendering
+    const currentlyRendering = Array.from(renderingIds).filter(id => !hasCachedThumbnail(id));
+    const slotsAvailable = MAX_CONCURRENT_RENDERS - currentlyRendering.length;
+
+    if (slotsAvailable <= 0) return;
+
+    // Get next items to render
+    const nextToRender = pendingIds
+      .filter(id => !renderingIds.has(id))
+      .slice(0, slotsAvailable);
+
+    if (nextToRender.length > 0) {
+      setRenderingIds(prev => {
+        const next = new Set(prev);
+        nextToRender.forEach(id => next.add(id));
+        return next;
+      });
+    }
+  }, [hasCachedThumbnail, renderingIds]);
+
+  // When cache changes (thumbnail captured), process next in queue
+  useEffect(() => {
+    if (BROWSER.isMobile) {
+      // Small delay to let the capture complete
+      const timer = setTimeout(processRenderQueue, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [cacheVersion, processRenderQueue]);
+
+  // Add new decks to render queue when they load
+  useEffect(() => {
+    if (!BROWSER.isMobile) return;
+
+    const newIds = decks
+      .map(d => d.uuid)
+      .filter((id): id is string =>
+        !!id &&
+        !hasCachedThumbnail(id) &&
+        !renderingIds.has(id) &&
+        !renderQueueRef.current.includes(id)
+      );
+
+    if (newIds.length > 0) {
+      renderQueueRef.current.push(...newIds);
+      processRenderQueue();
+    }
+  }, [decks, hasCachedThumbnail, renderingIds, processRenderQueue]);
+
+  // Check if a deck should render its full thumbnail
+  const shouldRenderThumbnail = useCallback((deckId: string | undefined): boolean => {
+    if (!deckId) return false;
+    if (!BROWSER.isMobile) return true; // Desktop always renders
+    if (hasCachedThumbnail(deckId)) return true; // Already cached
+    return renderingIds.has(deckId); // Currently allowed to render
+  }, [hasCachedThumbnail, renderingIds]);
 
   // Heights
   const PEEK_HEIGHT = 72; // Collapsed height showing peek bar
@@ -342,6 +415,17 @@ const DeckListBottomSheet: React.FC<DeckListBottomSheetProps> = ({
                   const cachedUrl = BROWSER.isMobile && deck.uuid
                     ? getCachedThumbnail(deck.uuid)
                     : null;
+
+                  // On mobile, show placeholder if not ready to render yet
+                  if (BROWSER.isMobile && !shouldRenderThumbnail(deck.uuid)) {
+                    return (
+                      <DeckCardPlaceholder
+                        key={deck.uuid}
+                        deck={deck}
+                        onEdit={onEdit}
+                      />
+                    );
+                  }
 
                   return (
                     <DeckCard

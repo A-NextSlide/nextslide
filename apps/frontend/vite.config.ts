@@ -27,6 +27,35 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
     allowedHosts: true,
     proxy: {
+      // Agent API routes (v1/agent/*)
+      '/v1/agent': {
+        target: process.env.API_TARGET || 'http://127.0.0.1:9090',
+        changeOrigin: true,
+        ws: true, // Enable WebSocket proxying
+        timeout: 600000, // 10 minutes for long-running requests
+        proxyTimeout: 600000,
+        configure: (proxy, options) => {
+          proxy.on('error', (err, req, res) => {
+            console.log('Agent proxy error:', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log('Proxying agent:', req.method, req.url, '->', options.target + req.url);
+          });
+        }
+      },
+      // Upload routes (v1/uploads/*)
+      '/v1/uploads': {
+        target: process.env.API_TARGET || 'http://127.0.0.1:9090',
+        changeOrigin: true,
+        configure: (proxy, options) => {
+          proxy.on('error', (err, req, res) => {
+            console.log('Upload proxy error:', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log('Proxying upload:', req.method, req.url, '->', options.target + req.url);
+          });
+        }
+      },
       '/api/auth': {
         target: process.env.API_TARGET || 'http://127.0.0.1:9090',
         changeOrigin: true,

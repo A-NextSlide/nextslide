@@ -70,9 +70,9 @@ class LogoDevService:
     
     def _build_logo_url(self, identifier: str, **params) -> str:
         """Build logo.dev API URL with parameters."""
-        # Use private key if available, fallback to public key
-        token = self.private_key or self.public_key
-        
+        # Use public key for image retrieval (private key is for API operations)
+        token = self.public_key or self.private_key
+
         # Build URL with identifier
         url = f"{self.base_url}/{identifier}"
         
@@ -101,33 +101,59 @@ class LogoDevService:
                 clean_domain = self._extract_domain_from_url(domain)
                 if not clean_domain:
                     clean_domain = domain
-            
+
             # Remove www. if present
             if clean_domain.startswith('www.'):
                 clean_domain = clean_domain[4:]
-            
+
             logo_url = self._build_logo_url(clean_domain, **params)
-            
-            # Test if logo is available by making a HEAD request
-            async with self.session.head(logo_url) as response:
+
+            # Use GET request - logo.dev doesn't support HEAD properly
+            # Read just enough bytes to verify it's a valid image
+            async with self.session.get(logo_url) as response:
                 if response.status == 200:
                     content_type = response.headers.get('content-type', '')
                     content_length = response.headers.get('content-length', '0')
-                    
-                    return {
-                        'logo_url': logo_url,
-                        'domain': clean_domain,
-                        'method': 'domain_lookup',
-                        'available': True,
-                        'content_type': content_type,
-                        'size_bytes': int(content_length) if content_length.isdigit() else None,
-                        'format': params.get('format', 'png'),
-                        'dimensions': params.get('size', 200)
-                    }
+
+                    # Verify it's actually an image by checking content-type or first bytes
+                    if content_type and ('image' in content_type or 'svg' in content_type):
+                        return {
+                            'logo_url': logo_url,
+                            'domain': clean_domain,
+                            'method': 'domain_lookup',
+                            'available': True,
+                            'content_type': content_type,
+                            'size_bytes': int(content_length) if content_length.isdigit() else None,
+                            'format': params.get('format', 'png'),
+                            'dimensions': params.get('size', 200)
+                        }
+                    else:
+                        # Read first few bytes to check for image magic bytes
+                        first_bytes = await response.content.read(8)
+                        is_image = (
+                            first_bytes.startswith(b'\x89PNG') or  # PNG
+                            first_bytes.startswith(b'\xff\xd8\xff') or  # JPEG
+                            first_bytes.startswith(b'GIF') or  # GIF
+                            first_bytes.startswith(b'<svg') or  # SVG
+                            first_bytes.startswith(b'<?xml')  # SVG with XML declaration
+                        )
+                        if is_image:
+                            return {
+                                'logo_url': logo_url,
+                                'domain': clean_domain,
+                                'method': 'domain_lookup',
+                                'available': True,
+                                'content_type': content_type or 'image/png',
+                                'size_bytes': int(content_length) if content_length.isdigit() else None,
+                                'format': params.get('format', 'png'),
+                                'dimensions': params.get('size', 200)
+                            }
+                        logger.debug(f"Logo response not an image for {clean_domain}: {content_type}")
+                        return None
                 else:
                     logger.debug(f"Logo not available for domain {clean_domain}: HTTP {response.status}")
                     return None
-                    
+
         except Exception as e:
             logger.error(f"Error getting logo for domain {domain}: {e}")
             return None
@@ -138,28 +164,54 @@ class LogoDevService:
             # Logo.dev supports company name lookup directly
             clean_name = company_name.strip().lower().replace(' ', '')
             logo_url = self._build_logo_url(clean_name, **params)
-            
-            # Test availability
-            async with self.session.head(logo_url) as response:
+
+            # Use GET request - logo.dev doesn't support HEAD properly
+            async with self.session.get(logo_url) as response:
                 if response.status == 200:
                     content_type = response.headers.get('content-type', '')
                     content_length = response.headers.get('content-length', '0')
-                    
-                    return {
-                        'logo_url': logo_url,
-                        'company_name': company_name,
-                        'identifier': clean_name,
-                        'method': 'company_name_lookup',
-                        'available': True,
-                        'content_type': content_type,
-                        'size_bytes': int(content_length) if content_length.isdigit() else None,
-                        'format': params.get('format', 'png'),
-                        'dimensions': params.get('size', 200)
-                    }
+
+                    # Verify it's actually an image
+                    if content_type and ('image' in content_type or 'svg' in content_type):
+                        return {
+                            'logo_url': logo_url,
+                            'company_name': company_name,
+                            'identifier': clean_name,
+                            'method': 'company_name_lookup',
+                            'available': True,
+                            'content_type': content_type,
+                            'size_bytes': int(content_length) if content_length.isdigit() else None,
+                            'format': params.get('format', 'png'),
+                            'dimensions': params.get('size', 200)
+                        }
+                    else:
+                        # Read first few bytes to check for image magic bytes
+                        first_bytes = await response.content.read(8)
+                        is_image = (
+                            first_bytes.startswith(b'\x89PNG') or
+                            first_bytes.startswith(b'\xff\xd8\xff') or
+                            first_bytes.startswith(b'GIF') or
+                            first_bytes.startswith(b'<svg') or
+                            first_bytes.startswith(b'<?xml')
+                        )
+                        if is_image:
+                            return {
+                                'logo_url': logo_url,
+                                'company_name': company_name,
+                                'identifier': clean_name,
+                                'method': 'company_name_lookup',
+                                'available': True,
+                                'content_type': content_type or 'image/png',
+                                'size_bytes': int(content_length) if content_length.isdigit() else None,
+                                'format': params.get('format', 'png'),
+                                'dimensions': params.get('size', 200)
+                            }
+                        logger.debug(f"Logo response not an image for {company_name}: {content_type}")
+                        return None
                 else:
                     logger.debug(f"Logo not available for company {company_name}: HTTP {response.status}")
                     return None
-                    
+
         except Exception as e:
             logger.error(f"Error getting logo for company {company_name}: {e}")
             return None
@@ -186,14 +238,17 @@ class LogoDevService:
                 logger.info(f"Found logo via domain lookup: {query}")
                 return result
         
-        # Strategy 3: Try company name lookup
-        logger.debug(f"Trying logo lookup by company name: {query}")
-        result = await self.get_logo_by_company_name(query, **params)
-        if result:
-            logger.info(f"Found logo via company name lookup: {query}")
-            return result
-        
-        # Strategy 4: Try common domain patterns
+        # Strategy 3: Try query + .com domain (most companies are at company.com)
+        clean_query = query.lower().replace(' ', '').replace('&', '')
+        for tld in ['.com', '.io', '.ai', '.co']:
+            domain_candidate = f"{clean_query}{tld}"
+            logger.debug(f"Trying logo lookup by inferred domain: {domain_candidate}")
+            result = await self.get_logo_by_domain(domain_candidate, **params)
+            if result:
+                logger.info(f"Found logo via inferred domain: {domain_candidate}")
+                return result
+
+        # Strategy 4: Try common domain patterns for multi-word companies
         if ' ' in query or len(query.split()) > 1:
             # Try common domain patterns for multi-word companies
             company_variants = [

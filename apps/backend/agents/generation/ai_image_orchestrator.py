@@ -36,6 +36,14 @@ from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
 
+# Check if logo.dev is available
+_LOGODEV_AVAILABLE = False
+try:
+    from agents.tools.theme.logodev_service import LogoDevService
+    _LOGODEV_AVAILABLE = True
+except ImportError:
+    pass
+
 
 class AIImageOrchestrator:
     """Background image generator and applier."""
@@ -660,9 +668,74 @@ class AIImageOrchestrator:
 
         return updated
 
-    async def _search_single_image(self, query: str) -> Optional[Dict[str, Any]]:
-        """Search for a single image using SerpAPI (Google Images)."""
+    def _is_company_logo_query(self, query: str) -> Tuple[bool, str]:
+        """Detect if a query is for a company logo and extract the company name."""
+        q = query.lower().strip()
+
+        # Skip generic logo queries (these return random vistaprint images)
+        generic_terms = {'logo', 'company logo', 'brand logo', 'business logo', 'corporate logo'}
+        if q in generic_terms:
+            return False, ""
+
+        # Patterns like "Apple logo", "Google Logo"
+        logo_suffix_match = re.match(r'^(.+?)\s+logo$', q, re.IGNORECASE)
+        if logo_suffix_match:
+            company = logo_suffix_match.group(1).strip()
+            if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
+                return True, company
+
+        # Patterns like "logo of Stripe", "logo for Netflix"
+        logo_prefix_match = re.match(r'^logo\s+(?:of|for)\s+(.+)$', q, re.IGNORECASE)
+        if logo_prefix_match:
+            company = logo_prefix_match.group(1).strip()
+            if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
+                return True, company
+
+        return False, ""
+
+    async def _fetch_logo_from_logodev(self, company_name: str) -> Optional[str]:
+        """Fetch company logo from logo.dev and upload to our storage."""
+        if not _LOGODEV_AVAILABLE:
+            return None
+
         try:
+            async with LogoDevService() as logo_service:
+                result = await logo_service.get_logo_with_fallback(company_name)
+                if result.get("available") and result.get("logo_url"):
+                    logo_url = result["logo_url"]
+                    logger.info("[AIImageOrchestrator] Found logo via logo.dev for '%s'", company_name)
+
+                    # Upload to our storage for CORS safety
+                    upload_result = await self.storage.upload_image_from_url(
+                        logo_url,
+                        metadata={"alt": f"{company_name} logo", "source": "logodev"}
+                    )
+                    if upload_result and upload_result.get("url"):
+                        return upload_result["url"]
+                    return logo_url  # Fallback to direct URL
+        except Exception as e:
+            logger.warning("[AIImageOrchestrator] Logo.dev lookup failed for '%s': %s", company_name, e)
+
+        return None
+
+    async def _search_single_image(self, query: str) -> Optional[Dict[str, Any]]:
+        """Search for a single image using SerpAPI (Google Images) or logo.dev for company logos."""
+        try:
+            # Check if this is a company logo query - route to logo.dev
+            is_logo, company_name = self._is_company_logo_query(query)
+            if is_logo and company_name:
+                logger.info("[AIImageOrchestrator] Routing company logo to logo.dev: '%s'", company_name)
+                logo_url = await self._fetch_logo_from_logodev(company_name)
+                if logo_url:
+                    return {'url': logo_url, 'source': 'logo.dev'}
+                # If logo.dev failed, don't fall back to SerpAPI for logos
+                logger.warning("[AIImageOrchestrator] Logo.dev failed for '%s', skipping", company_name)
+                return None
+            elif 'logo' in query.lower():
+                # Skip generic logo queries - they return random vistaprint images
+                logger.info("[AIImageOrchestrator] Skipping generic logo query: '%s'", query)
+                return None
+
             if not self.serpapi:
                 return None
 

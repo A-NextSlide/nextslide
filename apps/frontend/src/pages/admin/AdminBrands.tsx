@@ -281,6 +281,20 @@ const AdminBrands: React.FC = () => {
     }
   };
 
+  // Helper to calculate luminance (0 = black, 1 = white)
+  const getLuminance = (hex: string): number => {
+    try {
+      const clean = hex.replace('#', '');
+      const r = parseInt(clean.slice(0, 2), 16) / 255;
+      const g = parseInt(clean.slice(2, 4), 16) / 255;
+      const b = parseInt(clean.slice(4, 6), 16) / 255;
+      const linearize = (c: number) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+      return 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b);
+    } catch {
+      return 0.5;
+    }
+  };
+
   const getLabeledColors = (brand: Brand): LabeledColors => {
     const apiResponse = brand.api_response;
     const defaultColors: LabeledColors = {
@@ -304,65 +318,92 @@ const AdminBrands: React.FC = () => {
       };
     }
 
-    // Extract from various Brandfetch formats
-    const extractedColors: string[] = [];
+    // Extract from various Brandfetch formats into categorized lists
+    const primaryColors: string[] = [];
+    const accentColors: string[] = [];
+    const allColors: string[] = [];
 
-    // Case 1: colors is directly an array of hex strings
-    if (Array.isArray(colors)) {
-      colors.forEach((c: any) => {
-        const hex = typeof c === 'string' ? c : c?.hex;
-        if (hex && !extractedColors.includes(hex)) extractedColors.push(hex);
-      });
-    }
+    // Helper to add unique color
+    const addUnique = (arr: string[], hex: string) => {
+      if (hex && !arr.includes(hex.toUpperCase())) arr.push(hex.toUpperCase());
+    };
 
-    // Case 2: colors.hex_list (SimpleBrandfetchCache format)
+    // Extract from hex_list (most common Brandfetch format)
     if (Array.isArray(colors.hex_list)) {
-      colors.hex_list.forEach((c: string) => {
-        if (c && !extractedColors.includes(c)) extractedColors.push(c);
+      colors.hex_list.forEach((c: string) => addUnique(allColors, c));
+    }
+
+    // Extract from primary array
+    if (Array.isArray(colors.primary)) {
+      colors.primary.forEach((c: any) => {
+        const hex = typeof c === 'string' ? c : c?.hex;
+        if (hex) { addUnique(primaryColors, hex); addUnique(allColors, hex); }
       });
     }
 
-    // Case 3: colors.hex array
-    if (Array.isArray(colors.hex)) {
-      colors.hex.forEach((c: string) => {
-        if (c && !extractedColors.includes(c)) extractedColors.push(c);
+    // Extract from accent array
+    if (Array.isArray(colors.accent)) {
+      colors.accent.forEach((c: any) => {
+        const hex = typeof c === 'string' ? c : c?.hex;
+        if (hex) { addUnique(accentColors, hex); addUnique(allColors, hex); }
       });
     }
 
-    // Case 4: colors.primary/accent/dark/light arrays with hex objects
-    const colorArrays = ['primary', 'accent', 'dark', 'light'];
-    for (const key of colorArrays) {
-      if (Array.isArray(colors[key])) {
-        colors[key].forEach((color: any) => {
-          const hex = typeof color === 'string' ? color : color?.hex;
-          if (hex && !extractedColors.includes(hex)) {
-            extractedColors.push(hex);
+    // Extract from all array
+    if (Array.isArray(colors.all)) {
+      colors.all.forEach((c: any) => {
+        const hex = typeof c === 'string' ? c : c?.hex;
+        if (hex) addUnique(allColors, hex);
+      });
+    }
+
+    // Fallback: direct array or other nested arrays
+    if (allColors.length === 0) {
+      if (Array.isArray(colors)) {
+        colors.forEach((c: any) => {
+          const hex = typeof c === 'string' ? c : c?.hex;
+          if (hex) addUnique(allColors, hex);
+        });
+      } else if (typeof colors === 'object') {
+        Object.values(colors).forEach((value: any) => {
+          if (Array.isArray(value)) {
+            value.forEach((c: any) => {
+              const hex = typeof c === 'string' ? c : c?.hex;
+              if (hex) addUnique(allColors, hex);
+            });
           }
         });
       }
     }
 
-    // Case 5: Fallback - iterate all object values
-    if (extractedColors.length === 0 && typeof colors === 'object') {
-      Object.values(colors).forEach((value: any) => {
-        if (Array.isArray(value)) {
-          value.forEach((color: any) => {
-            const hex = typeof color === 'string' ? color : color?.hex;
-            if (hex && !extractedColors.includes(hex)) {
-              extractedColors.push(hex);
-            }
-          });
-        }
-      });
+    if (allColors.length === 0) return defaultColors;
+
+    // Categorize by luminance: dark for background, mid for accent
+    const darkColors = allColors.filter(c => getLuminance(c) < 0.25);
+    const lightColors = allColors.filter(c => getLuminance(c) > 0.85);
+    const midColors = allColors.filter(c => {
+      const l = getLuminance(c);
+      return l >= 0.25 && l <= 0.85;
+    });
+
+    // Choose accent: prefer explicit accent/primary, else mid-luminance colors
+    const accent = accentColors[0] || primaryColors[0] || midColors[0] || allColors[0];
+    // Choose accent2: next different color from accent
+    const accent2 = (accentColors[1] || primaryColors[1] || midColors[1] || allColors[1]) !== accent
+      ? (accentColors[1] || primaryColors[1] || midColors[1] || allColors[1])
+      : (allColors[2] || defaultColors.accent2);
+
+    // Choose background: prefer dark color that's NOT already used as accent
+    let background = darkColors.find(c => c !== accent && c !== accent2) || darkColors[0];
+    if (!background) {
+      background = lightColors.find(c => c !== accent && c !== accent2) || defaultColors.background;
     }
 
-    // Map extracted colors to labeled structure (matches theme_agent.py)
-    return {
-      background: defaultColors.background,
-      text: defaultColors.text,
-      accent: extractedColors[0] || defaultColors.accent,
-      accent2: extractedColors[1] || defaultColors.accent2,
-    };
+    // Choose text based on background luminance
+    const bgLuminance = getLuminance(background);
+    const text = bgLuminance > 0.5 ? '#1A1A1A' : '#FFFFFF';
+
+    return { background, text, accent, accent2: accent2 || defaultColors.accent2 };
   };
 
   const getFonts = (brand: Brand): string[] => {
@@ -539,10 +580,10 @@ const AdminBrands: React.FC = () => {
           </div>
         </div>
 
-        {/* Brands Grid */}
+        {/* Brands List */}
         <Card className="overflow-hidden">
           <ScrollArea className="h-[calc(100vh-240px)]" onScrollCapture={handleScroll}>
-            <div className="p-4">
+            <div className="p-2">
               {brands.length === 0 && !loading ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <Palette className="h-12 w-12 text-muted-foreground mb-4" />
@@ -556,7 +597,7 @@ const AdminBrands: React.FC = () => {
                   </Button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="divide-y divide-border">
                   {brands.map((brand) => {
                     const labeledColors = getLabeledColors(brand);
                     const fonts = getFonts(brand);
@@ -567,167 +608,166 @@ const AdminBrands: React.FC = () => {
                     const isRefreshing = refreshingBrand === brand.id;
 
                     return (
-                      <Card
+                      <div
                         key={brand.id}
                         className={cn(
-                          "overflow-hidden transition-all hover:shadow-lg",
-                          !brand.success && "border-red-300 bg-red-50/30 dark:border-red-900 dark:bg-red-950/30"
+                          "flex items-center gap-4 p-3 hover:bg-muted/50 transition-colors",
+                          !brand.success && "bg-red-50/30 dark:bg-red-950/30"
                         )}
                       >
-                        {/* Logo Section */}
-                        <div className="relative h-24 bg-gradient-to-br from-gray-100 to-gray-50 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center">
+                        {/* Logo with checkered background for white logo visibility */}
+                        <div
+                          className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 border overflow-hidden"
+                          style={{
+                            backgroundImage: `
+                              linear-gradient(45deg, #d1d5db 25%, transparent 25%),
+                              linear-gradient(-45deg, #d1d5db 25%, transparent 25%),
+                              linear-gradient(45deg, transparent 75%, #d1d5db 75%),
+                              linear-gradient(-45deg, transparent 75%, #d1d5db 75%)
+                            `,
+                            backgroundSize: '8px 8px',
+                            backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0px',
+                            backgroundColor: '#f3f4f6'
+                          }}
+                        >
                           {logoUrl ? (
                             <img
                               src={logoUrl}
                               alt={brandName}
-                              className="max-h-16 max-w-[80%] object-contain"
+                              className="max-h-9 max-w-9 object-contain"
                               onError={(e) => {
                                 (e.target as HTMLImageElement).style.display = 'none';
                               }}
                             />
                           ) : (
-                            <div className="flex flex-col items-center text-muted-foreground">
-                              <Image className="h-8 w-8 mb-1 opacity-50" />
-                              <span className="text-xs">No logo</span>
-                            </div>
+                            <Image className="h-5 w-5 text-muted-foreground opacity-50" />
                           )}
-
-                          {/* Status badge */}
-                          <Badge
-                            variant={brand.success ? 'outline' : 'destructive'}
-                            className="absolute top-2 right-2 text-xs"
-                          >
-                            {brand.success ? 'Active' : 'Failed'}
-                          </Badge>
                         </div>
 
-                        <CardContent className="p-4 space-y-3">
-                          {/* Brand Name & Domain */}
-                          <div>
-                            <h3 className="font-semibold text-sm truncate" title={brandName}>
+                        {/* Brand Name & Domain */}
+                        <div className="min-w-[180px] flex-shrink-0">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-medium text-sm truncate max-w-[150px]" title={brandName}>
                               {brandName}
                             </h3>
-                            <a
-                              href={`https://${domain}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 truncate"
+                            <Badge
+                              variant={brand.success ? 'outline' : 'destructive'}
+                              className="text-[10px] px-1.5 py-0"
                             >
-                              <Globe className="h-3 w-3" />
-                              {domain}
-                              <ExternalLink className="h-2.5 w-2.5" />
-                            </a>
+                              {brand.success ? 'Active' : 'Failed'}
+                            </Badge>
                           </div>
+                          <a
+                            href={`https://${domain}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1"
+                          >
+                            <Globe className="h-3 w-3" />
+                            <span className="truncate max-w-[130px]">{domain}</span>
+                            <ExternalLink className="h-2.5 w-2.5 flex-shrink-0" />
+                          </a>
+                        </div>
 
-                          {/* Colors */}
-                          <div>
-                            <Label className="text-xs text-muted-foreground mb-1.5 block">Colors</Label>
-                            <div className="flex gap-1">
-                              {[
-                                { key: 'accent', label: 'Accent' },
-                                { key: 'accent2', label: 'Accent 2' },
-                                { key: 'background', label: 'Background' },
-                                { key: 'text', label: 'Text' },
-                              ].map(({ key, label }) => (
-                                <div
-                                  key={key}
-                                  className="w-6 h-6 rounded-md border border-gray-200 dark:border-gray-700 shadow-sm"
-                                  style={{ backgroundColor: labeledColors[key as keyof LabeledColors] }}
-                                  title={`${label}: ${labeledColors[key as keyof LabeledColors]}`}
-                                />
+                        {/* Colors */}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {[
+                            { key: 'accent', label: 'Accent' },
+                            { key: 'accent2', label: 'Accent 2' },
+                            { key: 'background', label: 'Background' },
+                            { key: 'text', label: 'Text' },
+                          ].map(({ key, label }) => (
+                            <div
+                              key={key}
+                              className="w-5 h-5 rounded border border-gray-200 dark:border-gray-700"
+                              style={{ backgroundColor: labeledColors[key as keyof LabeledColors] }}
+                              title={`${label}: ${labeledColors[key as keyof LabeledColors]}`}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Fonts */}
+                        <div className="flex-1 min-w-0">
+                          {hasUploadedFontsFlag ? (
+                            <div className="flex flex-wrap gap-1">
+                              {getUploadedFontFiles(brand).slice(0, 2).map((font, idx) => (
+                                <Badge key={idx} variant="default" className="text-[10px] gap-1 bg-green-600 px-1.5 py-0">
+                                  <CheckCircle className="h-2.5 w-2.5" />
+                                  {font.name}
+                                </Badge>
                               ))}
                             </div>
-                          </div>
-
-                          {/* Fonts */}
-                          <div>
-                            <Label className="text-xs text-muted-foreground">Fonts</Label>
-                            <div className="mt-1 space-y-1">
-                              {hasUploadedFontsFlag ? (
-                                getUploadedFontFiles(brand).map((font, idx) => (
-                                  <div key={idx} className="flex items-center gap-1">
-                                    <Badge variant="default" className="text-xs gap-1 bg-green-600">
-                                      <CheckCircle className="h-2.5 w-2.5" />
-                                      {font.name}
-                                    </Badge>
-                                    <span className="text-xs text-muted-foreground">
-                                      ({Object.keys(font.variants).length} files)
-                                    </span>
-                                  </div>
-                                ))
-                              ) : fonts.length > 0 ? (
-                                <div className="flex flex-wrap gap-1">
-                                  {fonts.slice(0, 2).map((fontName, idx) => (
-                                    <Badge key={idx} variant="outline" className="text-xs gap-1 border-amber-400 text-amber-700 dark:text-amber-300">
-                                      <Type className="h-2.5 w-2.5" />
-                                      {fontName}
-                                    </Badge>
-                                  ))}
-                                  {fonts.length > 2 && (
-                                    <span className="text-xs text-muted-foreground">+{fonts.length - 2}</span>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-xs text-muted-foreground italic">No fonts</span>
+                          ) : fonts.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {fonts.slice(0, 2).map((fontName, idx) => (
+                                <Badge key={idx} variant="outline" className="text-[10px] gap-1 border-amber-400 text-amber-700 dark:text-amber-300 px-1.5 py-0">
+                                  <Type className="h-2.5 w-2.5" />
+                                  {fontName}
+                                </Badge>
+                              ))}
+                              {fonts.length > 2 && (
+                                <span className="text-[10px] text-muted-foreground">+{fonts.length - 2}</span>
                               )}
                             </div>
-                          </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">No fonts</span>
+                          )}
+                        </div>
 
-                          {/* Stats */}
-                          <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
-                            <span>{brand.hit_count} hits</span>
-                            <span>{new Date(brand.last_accessed_at).toLocaleDateString()}</span>
-                          </div>
+                        {/* Stats */}
+                        <div className="text-xs text-muted-foreground flex-shrink-0 text-right w-20">
+                          <div>{brand.hit_count} hits</div>
+                          <div>{new Date(brand.last_accessed_at).toLocaleDateString()}</div>
+                        </div>
 
-                          {/* Actions */}
-                          <div className="flex gap-1 pt-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRefreshBrand(brand)}
-                              disabled={isRefreshing}
-                              className="flex-1 h-8 text-xs"
-                              title="Refresh from Brandfetch"
-                            >
-                              {isRefreshing ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <RefreshCw className="h-3 w-3" />
-                              )}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setUploadingBrand(brand);
-                                setFontFamilyName(brand.api_response?.brand_name || '');
-                              }}
-                              className="flex-1 h-8 text-xs"
-                              title="Upload fonts"
-                            >
-                              <Upload className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEdit(brand)}
-                              className="flex-1 h-8 text-xs"
-                              title="Edit brand"
-                            >
-                              <Edit className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setDeleteConfirm(brand)}
-                              className="h-8 text-xs text-red-500 hover:text-red-700 hover:bg-red-50"
-                              title="Delete brand"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
+                        {/* Actions */}
+                        <div className="flex gap-1 flex-shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRefreshBrand(brand)}
+                            disabled={isRefreshing}
+                            className="h-8 w-8"
+                            title="Refresh from Brandfetch"
+                          >
+                            {isRefreshing ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setUploadingBrand(brand);
+                              setFontFamilyName(brand.api_response?.brand_name || '');
+                            }}
+                            className="h-8 w-8"
+                            title="Upload fonts"
+                          >
+                            <Upload className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEdit(brand)}
+                            className="h-8 w-8"
+                            title="Edit brand"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeleteConfirm(brand)}
+                            className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            title="Delete brand"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>

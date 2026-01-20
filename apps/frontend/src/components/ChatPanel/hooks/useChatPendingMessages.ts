@@ -2,19 +2,19 @@ import { useCallback, useRef, useState } from 'react';
 
 export function useChatPendingMessages() {
   const pendingMessageIdsRef = useRef<Set<string>>(new Set());
-  const [, forceUpdate] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const addPendingMessage = useCallback((msgId: string) => {
     pendingMessageIdsRef.current.add(msgId);
-    forceUpdate(n => n + 1);
+    setPendingCount(pendingMessageIdsRef.current.size);
   }, []);
 
   const removePendingMessage = useCallback((msgId: string) => {
     pendingMessageIdsRef.current.delete(msgId);
-    forceUpdate(n => n + 1);
+    setPendingCount(pendingMessageIdsRef.current.size);
   }, []);
 
-  const isLoading = pendingMessageIdsRef.current.size > 0;
+  const isLoading = pendingCount > 0;
 
   return {
     isLoading,

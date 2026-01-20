@@ -1196,6 +1196,11 @@ body {
   transition-delay: 0s !important;
 }
 
+/* Exception: Allow loading spinner animations in thumbnails */
+.slide-thumbnail .animate-spin {
+  animation: spin 1s linear infinite !important;
+}
+
 /* Force transparent backgrounds in thumbnails to prevent white overlays */
 .slide-thumbnail,
 .slide-thumbnail .slide-container,

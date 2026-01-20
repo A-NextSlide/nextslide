@@ -617,16 +617,30 @@ class BrandfetchService:
             if c and c not in final_backgrounds:
                 final_backgrounds.append(c)
 
+        # Build accent list, avoiding duplicates with backgrounds
+        final_accents = []
+        accent_sources = accent_colors + accent2_colors if accent_colors else accent_final[:3]
+        for c in accent_sources:
+            if c and c not in final_accents and c not in final_backgrounds:
+                final_accents.append(c)
+        # If no accents left after dedup, use primary colors that aren't backgrounds
+        if not final_accents:
+            for c in primary_colors:
+                if c and c not in final_backgrounds:
+                    final_accents.append(c)
+                    if len(final_accents) >= 2:
+                        break
+
         # Use Brandfetch categories if available, otherwise use our intelligent categorization
         result = {
             "primary": primary_colors or all_colors[:2],
             "secondary": secondary_colors or all_colors[2:4] if len(all_colors) > 2 else [],
-            "accent": accent_colors + accent2_colors if accent_colors else accent_final[:3],
+            "accent": final_accents[:3],  # Deduplicated accents
             "backgrounds": final_backgrounds[:4],  # Brandfetch backgrounds first, then luminance-based
             "text": text_brandfetch if text_brandfetch else text_colors[:4],
             "all": all_colors
         }
-        
+
         return result
     
     def _calculate_luminance(self, hex_color: str) -> float:

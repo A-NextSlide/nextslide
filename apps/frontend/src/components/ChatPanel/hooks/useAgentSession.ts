@@ -134,7 +134,8 @@ export function useAgentSession({
         const deckId = deckData?.uuid || deckData?.id;
         const slideId = slides[currentSlideIndex]?.id;
         if (!deckId || !slideId) return;
-        if (!API_CONFIG.AGENT_BASE_URL) {
+        // Note: Empty string is valid (means use relative URLs via proxy in development)
+        if (API_CONFIG.AGENT_BASE_URL === undefined) {
           throw new Error('Agent backend not configured');
         }
         const client = await createClient('primary');
@@ -189,7 +190,8 @@ export function useAgentSession({
       const deckId = deckData?.uuid || deckData?.id;
       const slideId = slides[currentSlideIndex]?.id;
       if (!deckId || !slideId) { connectingRef.current = null; return false; }
-      if (!API_CONFIG.AGENT_BASE_URL) { connectingRef.current = null; return false; }
+      // Note: Empty string is valid (means use relative URLs via proxy in development)
+      if (API_CONFIG.AGENT_BASE_URL === undefined) { connectingRef.current = null; return false; }
       try {
         const client = await createClient('secondary');
         const sid = await client.getOrCreateSession(String(deckId), String(slideId), { agentProfile: 'authoring' });

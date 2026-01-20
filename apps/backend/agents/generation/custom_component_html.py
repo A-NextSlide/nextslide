@@ -135,12 +135,17 @@ class CustomComponentHtmlProcessor:
             return html
 
         prefetched_images = prefetched_images or {}
+
+        # Build list of non-logo images for fallback use (logos should only be used for logo props)
         image_urls = [
             v for k, v in prefetched_images.items()
             if not k.endswith('_query') and v.startswith('http') and 'logo' not in k.lower()
         ]
 
-        if not image_urls:
+        # Check if we have ANY prefetched images (including logos)
+        all_urls = [v for k, v in prefetched_images.items() if not k.endswith('_query') and v.startswith('http')]
+
+        if not all_urls:
             external_matches = re.findall(r'<img[^>]+src=["\']?(https?://[^\s"\'>]+)["\']?', html, flags=re.IGNORECASE)
             if external_matches:
                 external_to_replace = [url for url in external_matches if not any(d in url.lower() for d in BUCKET_DOMAINS)]
@@ -149,6 +154,11 @@ class CustomComponentHtmlProcessor:
                     for url in external_to_replace[:3]:
                         logger.warning(f"[IMAGE_INJECT]   - UNREPLACED: {url[:70]}...")
             return html
+
+        # Log what we have for debugging
+        logo_urls = [k for k in prefetched_images.keys() if 'logo' in k.lower() and not k.endswith('_query')]
+        if logo_urls:
+            logger.info(f"[IMAGE_INJECT] Found {len(logo_urls)} logo URLs to inject: {logo_urls}")
 
         logger.info(f"[IMAGE_INJECT] Starting guaranteed injection with {len(image_urls)} images")
 

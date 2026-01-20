@@ -117,7 +117,8 @@ class SlidePromptBuilder:
             if body_font:
                 sections.append(f"- body: {body_font}")
 
-        if brand_logo_url:
+        # Skip base64 data URLs - they're too large for prompts (can be 50K+ chars)
+        if brand_logo_url and not brand_logo_url.startswith("data:"):
             sections.append(f"LOGO: {brand_logo_url}")
 
         sections.extend(
@@ -126,10 +127,49 @@ class SlidePromptBuilder:
                 "CANVAS: 1920x1080.",
                 "OUTPUT: JSON with fields {id, title, components}.",
                 "Each component must include {id, type, props}.",
+                "VALID COMPONENT TYPES (use ONLY these): Background, TiptapTextBlock, Image, Video, Chart, Shape, CustomComponent, Lines, Group, Icon, Table, Math, Diagram.",
                 "No extra text outside JSON.",
                 "If you need images, use Image components or CustomComponent HTML with placeholder src and descriptive alt text.",
             ]
         )
+
+        # Add deck-wide research context to static block (cached once, not per-slide)
+        # This reduces prompt size from ~29K per slide to ~3K per slide + ~20K cached once
+        notes = getattr(context.deck_outline, "notes", None) if hasattr(context, "deck_outline") else None
+        if isinstance(notes, dict):
+            def _truncate_static(text: str, limit: int = 4000) -> str:
+                """Truncate with slightly higher limit for cached static context."""
+                if len(text) <= limit:
+                    return text
+                return text[:limit] + "\n[TRUNCATED]"
+
+            research_context = notes.get("research_context") or notes.get("researchContext")
+            scraped_context = notes.get("scraped_context") or notes.get("scrapedContext")
+            reference_sources = notes.get("reference_sources") or notes.get("referenceSources")
+            research_citations = notes.get("research_citations") or notes.get("researchCitations")
+
+            if research_context:
+                sections.append("\n--- DECK-WIDE RESEARCH CONTEXT (use for all slides) ---")
+                sections.append(_truncate_static(str(research_context)))
+            if scraped_context:
+                sections.append("\n--- REFERENCE CONTEXT (use for all slides) ---")
+                sections.append(_truncate_static(str(scraped_context)))
+            if isinstance(reference_sources, list) and reference_sources:
+                sources = [
+                    f"{s.get('title') or 'Source'} ({s.get('url') or 'n/a'})"
+                    for s in reference_sources
+                    if isinstance(s, dict)
+                ]
+                if sources:
+                    sections.append("REFERENCE SOURCES:")
+                    sections.append("- " + "; ".join(sources[:8]))
+            if isinstance(research_citations, list) and research_citations:
+                sections.append("RESEARCH CITATIONS:")
+                sections.append("- " + "; ".join(str(c) for c in research_citations[:8]))
+
+        # Add presentation context to static block too (it's deck-wide)
+        if context.presentation_context:
+            sections.append(f"\nPRESENTATION CONTEXT: {context.presentation_context}")
 
         return "\n".join(sections)
 
@@ -157,41 +197,9 @@ class SlidePromptBuilder:
         if slide_mode:
             sections.append(f"MODE: {slide_mode}")
 
-        if context.presentation_context:
-            sections.append(
-                f"PRESENTATION CONTEXT: {context.presentation_context}"
-            )
-
-        notes = getattr(context.deck_outline, "notes", None)
-        if isinstance(notes, dict):
-            def _truncate(text: str, limit: int = 2000) -> str:
-                if len(text) <= limit:
-                    return text
-                return text[:limit] + "\n[TRUNCATED]"
-
-            research_context = notes.get("research_context") or notes.get("researchContext")
-            scraped_context = notes.get("scraped_context") or notes.get("scrapedContext")
-            reference_sources = notes.get("reference_sources") or notes.get("referenceSources")
-            research_citations = notes.get("research_citations") or notes.get("researchCitations")
-
-            if research_context:
-                sections.append("RESEARCH CONTEXT:")
-                sections.append(_truncate(str(research_context)))
-            if scraped_context:
-                sections.append("REFERENCE CONTEXT:")
-                sections.append(_truncate(str(scraped_context)))
-            if isinstance(reference_sources, list) and reference_sources:
-                sources = [
-                    f"{s.get('title') or 'Source'} ({s.get('url') or 'n/a'})"
-                    for s in reference_sources
-                    if isinstance(s, dict)
-                ]
-                if sources:
-                    sections.append("REFERENCE SOURCES:")
-                    sections.append("- " + "; ".join(sources[:6]))
-            if isinstance(research_citations, list) and research_citations:
-                sections.append("RESEARCH CITATIONS:")
-                sections.append("- " + "; ".join(str(c) for c in research_citations[:6]))
+        # NOTE: Research context, scraped context, reference sources, and citations
+        # have been moved to the STATIC block (_build_static_block) to enable caching.
+        # This reduces per-slide prompt size significantly for large research prompts.
 
         if context.reference_images:
             refs = "\n".join(

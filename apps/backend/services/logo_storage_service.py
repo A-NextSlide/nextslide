@@ -27,6 +27,14 @@ class LogoStorageService:
         self._cache = {}  # URL -> Supabase URL cache
         self._session_owner = False
 
+    def _get_clean_public_url(self, file_path: str) -> str:
+        """Get public URL and strip trailing '?' that Supabase sometimes adds."""
+        public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+        # Supabase Python client sometimes adds trailing '?' which breaks images
+        if public_url and public_url.endswith('?'):
+            public_url = public_url[:-1]
+        return public_url
+
     async def __aenter__(self):
         """Async context manager entry."""
         if not self.session:
@@ -107,7 +115,7 @@ class LogoStorageService:
 
                 if any(f['name'] == file_name for f in existing):
                     logger.info(f"Logo already exists in storage: {file_path}")
-                    public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+                    public_url = self._get_clean_public_url(file_path)
                     result = {
                         'url': public_url,
                         'path': file_path,
@@ -141,16 +149,16 @@ class LogoStorageService:
                     logger.warning(f"Empty logo content: {logo_url}")
                     return {'url': logo_url, 'error': "Empty content"}
 
-                # Upload to Supabase
+                # Upload to Supabase with upsert to handle existing files
                 try:
                     upload_response = self.supabase.storage.from_(self.bucket_name).upload(
                         path=file_path,
                         file=content,
-                        file_options={"content-type": content_type}
+                        file_options={"content-type": content_type, "upsert": "true"}
                     )
 
-                    # Get public URL
-                    public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+                    # Get public URL (strip trailing '?' that Supabase sometimes adds)
+                    public_url = self._get_clean_public_url(file_path)
 
                     result = {
                         'url': public_url,
@@ -169,6 +177,20 @@ class LogoStorageService:
                     return result
 
                 except Exception as upload_error:
+                    # Handle duplicate error (409) - file already exists, just return the URL
+                    error_str = str(upload_error)
+                    if '409' in error_str or 'Duplicate' in error_str or 'already exists' in error_str.lower():
+                        logger.info(f"Logo already exists, using existing: {file_path}")
+                        public_url = self._get_clean_public_url(file_path)
+                        result = {
+                            'url': public_url,
+                            'path': file_path,
+                            'original_url': logo_url,
+                            'cached': True
+                        }
+                        self._cache[cache_key] = result
+                        return result
+
                     logger.error(f"Error uploading logo to Supabase: {upload_error}")
                     return {'url': logo_url, 'error': f"Upload failed: {str(upload_error)}"}
 

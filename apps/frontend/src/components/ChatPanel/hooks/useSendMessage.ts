@@ -1030,6 +1030,8 @@ export function useSendMessage({
 
       if (data.message === '__INSUFFICIENT_CREDITS__' || data.response === '__INSUFFICIENT_CREDITS__') {
         const creditsMessageId = `credits-${Date.now()}`;
+        // Remove loading state BEFORE adding message to prevent flicker
+        removePendingMessage(userMsgId);
         setMessages(prevMessages => [
           ...prevMessages,
           {
@@ -1045,10 +1047,23 @@ export function useSendMessage({
             }
           }
         ]);
-        removePendingMessage(userMsgId);
         return;
       }
 
+      // When using agent backend, WebSocket events already handle message streaming
+      // via handleAssistantMessageDelta - don't add duplicate message here
+      if (hasSession && agentClientRef.current) {
+        // Just remove loading state - WebSocket already added the AI message
+        removePendingMessage(userMsgId);
+
+        // Still apply deck_diff if present in response
+        if (data.deck_diff) {
+          applyDeckDiffRespectingEditMode(data.deck_diff, true);
+        }
+        return;
+      }
+
+      // Fallback path (non-agent backend) - add AI message manually
       const responseTimestamp = new Date(data.timestamp);
       const aiMessageId = `ai-${Date.now()}`;
 
@@ -1074,6 +1089,8 @@ export function useSendMessage({
         deckStateAfter
       };
 
+      // Remove loading state BEFORE adding AI message to prevent flicker
+      removePendingMessage(userMsgId);
       setMessages(prevMessages => [...prevMessages, aiMessage]);
 
     } catch (error) {
@@ -1082,6 +1099,7 @@ export function useSendMessage({
       const errorTimestamp = new Date();
       const errorMessageId = `error-${Date.now()}`;
 
+      removePendingMessage(userMsgId);
       setMessages(prevMessages => [
         ...prevMessages,
         {
@@ -1095,9 +1113,6 @@ export function useSendMessage({
           }
         }
       ]);
-
-    } finally {
-      removePendingMessage(userMsgId);
     }
   }, [
     addPendingMessage,

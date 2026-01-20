@@ -26,17 +26,24 @@ def build_system_prompt(
     hero_font, body_font = _extract_fonts_from_typography(typography)
 
     logo_line = (
-        "LOGO: Available at props.logoUrl - place in corner or header when appropriate."
+        "LOGO: Available at props.logoUrl - place small (max 48px height) in a corner, never center or dominate."
         if logo_url
-        else "LOGO: If props.logoUrl is provided, place it in a corner or header when appropriate."
+        else "LOGO: If props.logoUrl is provided, place small (max 48px height) in a corner, never center or dominate."
     )
 
     if has_palette:
         theme_info = (
             "THEME: --accent: {accent}; --secondary: {secondary}; --text: {text}; --bg: {bg}\n"
-            "FONTS: {hero} / {body}\n"
+            "FONTS (MUST USE): Title/Hero font: '{hero}', sans-serif | Body font: '{body}', sans-serif\n"
+            "  - ALWAYS apply: h1,h2,h3,.title {{ font-family: '{hero}', sans-serif; }}\n"
+            "  - ALWAYS apply: p,.body-text {{ font-family: '{body}', sans-serif; }}\n"
             "COLOR USE: Only use the palette values above (plus white/black for legibility).\n"
-            "IMAGES: Use <img src=\"placeholder\" alt=\"searchable query\">. If a named entity is mentioned, use the exact name in alt text.\n"
+            "IMAGES: Use <img src=\"placeholder\" alt=\"SPECIFIC DESCRIPTIVE SEARCH QUERY\">.\n"
+            "  - ALT TEXT MUST describe exactly what you want shown (e.g., \"Tesla Model S electric car\" not \"car image\")\n"
+            "  - Include proper nouns, brands, specific objects (e.g., \"Apple iPhone 15 Pro\" not \"smartphone\")\n"
+            "  - Add visual context: \"aerial view of Manhattan skyline at sunset\" not \"city\"\n"
+            "  - For people/professions: \"female doctor with stethoscope in hospital\" not \"healthcare professional\"\n"
+            "  - NEVER use generic terms like \"image\", \"photo\", \"picture\", \"illustration\" in alt text\n"
             f"{logo_line}"
         ).format(
             accent=accent,
@@ -50,8 +57,15 @@ def build_system_prompt(
         theme_info = (
             "THEME: No fixed palette provided. Choose a cohesive palette and define "
             "--accent, --secondary, --text, --bg. Use them consistently.\n"
-            "FONTS: {hero} / {body}\n"
-            "IMAGES: Use <img src=\"placeholder\" alt=\"searchable query\">. If a named entity is mentioned, use the exact name in alt text.\n"
+            "FONTS (MUST USE): Title/Hero font: '{hero}', sans-serif | Body font: '{body}', sans-serif\n"
+            "  - ALWAYS apply: h1,h2,h3,.title {{ font-family: '{hero}', sans-serif; }}\n"
+            "  - ALWAYS apply: p,.body-text {{ font-family: '{body}', sans-serif; }}\n"
+            "IMAGES: Use <img src=\"placeholder\" alt=\"SPECIFIC DESCRIPTIVE SEARCH QUERY\">.\n"
+            "  - ALT TEXT MUST describe exactly what you want shown (e.g., \"Tesla Model S electric car\" not \"car image\")\n"
+            "  - Include proper nouns, brands, specific objects (e.g., \"Apple iPhone 15 Pro\" not \"smartphone\")\n"
+            "  - Add visual context: \"aerial view of Manhattan skyline at sunset\" not \"city\"\n"
+            "  - For people/professions: \"female doctor with stethoscope in hospital\" not \"healthcare professional\"\n"
+            "  - NEVER use generic terms like \"image\", \"photo\", \"picture\", \"illustration\" in alt text\n"
             f"{logo_line}"
         ).format(
             hero=hero_font,
@@ -73,6 +87,10 @@ def build_system_prompt(
             "- Set html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; }\n"
             "- No implicit body margin/padding; use explicit layout containers for spacing\n"
             "- ALL content must fit within bounds - nothing cut off or extending below 1080px\n\n"
+            "ELEMENT POSITIONS (use these when the element appears for cross-slide consistency):\n"
+            "- Title: top-left (x:80px, y:50px), 48-56px font\n"
+            "- Logo: bottom-left (x:60px, y:1020px), max 40px height\n"
+            "- Source/footnote: bottom-right (right-aligned to x:1860px, y:1050px), 12px muted\n\n"
             "LAYERING:\n"
             "- Background/decorative: z-index 1-10\n"
             "- Media: 20-30\n"
@@ -356,7 +374,8 @@ def build_user_prompt(
                     "for background and controls for demos."
                 )
 
-    if logo_url:
+    # Skip base64 data URLs - they're too large for prompts (can be 50K+ chars)
+    if logo_url and not logo_url.startswith("data:"):
         sections.append(f"LOGO URL: {logo_url}")
 
     conversation_history = slide_context.get("conversation_history")

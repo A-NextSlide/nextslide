@@ -1533,49 +1533,71 @@ class CombinedImageService:
             for i, slide in enumerate(deck_outline.slides):
                 if self._slide_needs_images(slide, i):
                     slides_needing_images.append((i, slide))
-            
+
             if slides_needing_images:
-                # Strategy: Build per-slide topics from deck-wide phrase(s) + slide titles
-                # This avoids overly generic deck-wide queries like 'super'
+                # NEW STRATEGY: Use AI extraction for EACH slide to get relevant terms
+                # Deck-wide topics are used as context, not as the primary search terms
+                presentation_title = getattr(deck_outline, 'title', '') or ''
+                presentation_context = ' '.join(deck_wide_topics) if deck_wide_topics else ''
+
+                logger.info(f"Using AI extraction for {len(slides_needing_images)} slides with context: {presentation_context[:100]}")
+
                 for i, slide in slides_needing_images:
                     slide_id = slide.id
                     if slide_id not in slide_topics:
                         slide_topics[slide_id] = []
-                    # Prefer combining deck-wide core phrase (e.g., 'super smash bros') with slide-specific cues
-                    # Extract slide-specific phrases
+
                     slide_title = getattr(slide, 'title', '') or ''
+                    slide_content = getattr(slide, 'content', '') or ''
+
+                    # Try AI extraction first (much better quality)
+                    try:
+                        ai_topics = await extract_image_search_terms_with_ai(
+                            slide_title=slide_title,
+                            slide_content=slide_content,
+                            presentation_title=presentation_title,
+                            presentation_context=presentation_context
+                        )
+                        if ai_topics:
+                            logger.info(f"[AI IMAGE] Slide '{slide_title}' -> {ai_topics[:3]}")
+                            for q in ai_topics[:2]:  # Use top 2 AI-generated terms
+                                if q and len(q) >= 3:
+                                    slide_topics[slide_id].append(q)
+                                    if q not in topics_to_search:
+                                        topics_to_search[q] = []
+                                    topics_to_search[q].append(slide_id)
+                            continue  # Skip fallback if AI worked
+                    except Exception as e:
+                        logger.debug(f"[AI IMAGE] Failed for slide {i}: {e}")
+
+                    # Fallback: Combine deck-wide topics with slide-specific cues
                     specific = self._extract_topics_from_text(slide_title) or []
-                    # If none, use the slide title itself chunked
                     if not specific and slide_title:
                         specific = [w for w in re.findall(r"[A-Za-z][A-Za-z\-']+", slide_title) if len(w) > 3][:2]
-                    # Combine with deck-wide topics to form targeted queries per slide
+
                     combined_for_slide: List[str] = []
-                    for core in deck_wide_topics:
+                    for core in deck_wide_topics[:2]:  # Limit to top 2 deck topics
                         core = (core or '').strip()
                         if not core:
                             continue
                         if specific:
-                            # Form queries like 'super smash bros pikachu' rather than just 'super'
                             q = f"{core} {' '.join(specific[:2])}".strip()
                         else:
                             q = core
                         q = q.strip()
                         if len(q) >= 3 and q.lower() not in self.VAGUE_TERMS:
                             combined_for_slide.append(q)
-                    # De-dup and trim
-                    dedup: List[str] = []
+
+                    # De-dup and assign
                     seen_local = set()
-                    for q in combined_for_slide:
+                    for q in combined_for_slide[:2]:  # Cap at 2 per slide
                         ql = q.lower()
                         if ql not in seen_local:
                             seen_local.add(ql)
-                            dedup.append(q)
-                    # Assign these queries to this slide and to topics_to_search mapping
-                    for q in dedup[:3]:  # cap per slide
-                        slide_topics[slide_id].append(q)
-                        if q not in topics_to_search:
-                            topics_to_search[q] = []
-                        topics_to_search[q].append(slide_id)
+                            slide_topics[slide_id].append(q)
+                            if q not in topics_to_search:
+                                topics_to_search[q] = []
+                            topics_to_search[q].append(slide_id)
         else:
             logger.info("No deck-wide topics found, using AI to extract smart search terms...")
             # Use AI-powered extraction for better results
@@ -1666,12 +1688,11 @@ class CombinedImageService:
             logger.debug(f"Creating search tasks for {len(topics_to_search)} topics")
             
             for topic, slide_ids in topics_to_search.items():
-                # With deck-wide searches, we can search for more images per topic
-                # since we have fewer total searches
-                # Calculate how many images we need based on number of slides using this topic
+                # Calculate how many images we need - be conservative to avoid waste
+                # Most slides only need 1-2 images, so 4 per topic is plenty
                 slides_using_topic = len(slide_ids)
-                # Get more images when multiple slides will share them
-                num_images_per_topic = max(8, slides_using_topic * 4) if deck_wide_topics else 8
+                # Get 4 images per topic, or more if multiple slides share (but cap at 6)
+                num_images_per_topic = min(6, max(4, slides_using_topic * 2))
                 
                 # Create coroutine (not task yet)
                 coro = self._search_images_for_topic_optimized(

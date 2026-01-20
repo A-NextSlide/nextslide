@@ -11,6 +11,14 @@ from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
 
+# Logo.dev service for company logos in content
+try:
+    from agents.tools.theme.logodev_service import LogoDevService
+    LOGODEV_AVAILABLE = True
+except ImportError:
+    LOGODEV_AVAILABLE = False
+    logger.warning("[CUSTOM_COMPONENT] Logo.dev service not available")
+
 # Maximum dimensions for reference images (to prevent token explosion)
 MAX_IMAGE_DIMENSION = 384
 MAX_IMAGE_BYTES = 150_000
@@ -45,6 +53,81 @@ GENERIC_VAR_NAMES = {
 }
 
 
+def _is_company_logo_query(query: str) -> Tuple[bool, str]:
+    """
+    Detect if a query is for a company logo and extract the company name.
+
+    Returns:
+        Tuple of (is_logo_query, company_name)
+    """
+    if not query:
+        return False, ""
+
+    q = query.lower().strip()
+
+    # Patterns like "Apple logo", "Google Logo", "Microsoft logo"
+    logo_suffix_match = re.match(r'^(.+?)\s+logo\s*$', q, re.IGNORECASE)
+    if logo_suffix_match:
+        company = logo_suffix_match.group(1).strip()
+        # Filter out generic terms
+        if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
+            return True, company
+
+    # Patterns like "logo of Apple", "logo for Google"
+    logo_prefix_match = re.match(r'^logo\s+(?:of|for)\s+(.+)$', q, re.IGNORECASE)
+    if logo_prefix_match:
+        company = logo_prefix_match.group(1).strip()
+        if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
+            return True, company
+
+    return False, ""
+
+
+async def _fetch_logo_from_logodev(company_name: str, cache: Optional[ImageSearchCache] = None) -> Optional[str]:
+    """
+    Fetch a company logo from logo.dev and upload to our storage.
+
+    Returns:
+        URL of uploaded logo, or None if not found
+    """
+    if not LOGODEV_AVAILABLE:
+        return None
+
+    try:
+        from services.image_storage_service import ImageStorageService
+
+        async with LogoDevService() as logo_service:
+            result = await logo_service.get_logo_with_fallback(company_name)
+
+            if not result.get('available') or not result.get('logo_url'):
+                logger.debug(f"[LOGODEV] No logo found for: {company_name}")
+                return None
+
+            logo_url = result['logo_url']
+            logger.info(f"[LOGODEV] Found logo for {company_name}: {logo_url[:60]}...")
+
+            # Upload to our storage for consistent delivery
+            async with ImageStorageService() as storage:
+                upload_result = await storage.upload_image_from_url(
+                    logo_url,
+                    metadata={"source": "logodev", "company": company_name}
+                )
+                if upload_result and upload_result.get('url'):
+                    final_url = upload_result['url']
+                    logger.info(f"[LOGODEV] Uploaded {company_name} logo to storage")
+
+                    # Cache the result
+                    if cache:
+                        cache.set(f"{company_name} logo", final_url)
+
+                    return final_url
+
+    except Exception as e:
+        logger.warning(f"[LOGODEV] Error fetching logo for {company_name}: {e}")
+
+    return None
+
+
 def _extract_search_query_from_prop_name(prop_name: str) -> str:
     """Convert a camelCase prop name to a search query."""
     if not prop_name:
@@ -67,6 +150,33 @@ def _simple_clean_query(query: str) -> str:
     if not cleaned or cleaned.startswith('${') or cleaned.startswith('props.'):
         return ""
     return cleaned
+
+
+# Generic terms that produce poor image search results - should be enhanced or skipped
+GENERIC_IMAGE_TERMS = {
+    'image', 'photo', 'picture', 'pic', 'illustration', 'graphic', 'icon',
+    'placeholder', 'background', 'bg', 'banner', 'hero', 'visual',
+    'concept', 'abstract', 'decorative', 'default', 'sample',
+    'stock', 'generic', 'filler', 'random',
+}
+
+
+def _is_generic_query(query: str) -> bool:
+    """Check if a query is too generic to produce good image search results."""
+    if not query:
+        return True
+    q_lower = query.lower().strip()
+    words = set(re.findall(r'[a-z]+', q_lower))
+    # If all words are generic terms, it's a generic query
+    if words and words.issubset(GENERIC_IMAGE_TERMS):
+        return True
+    # Single generic word
+    if q_lower in GENERIC_IMAGE_TERMS:
+        return True
+    # Very short queries without specific content
+    if len(q_lower) <= 3:
+        return True
+    return False
 
 
 def _looks_like_image_prop(prop_name: str) -> bool:
@@ -321,7 +431,7 @@ def _match_available_images_to_props(
 
 
 async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> str:
-    """Use AI to refine a search query."""
+    """Use AI to refine a search query into a specific, concrete image search term."""
     try:
         client, model_name = get_client(IMAGE_SEARCH_MODEL)
 
@@ -343,13 +453,20 @@ async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> s
             if deck_search:
                 brand_match = deck_search.group(1).strip()
 
-        prompt = f"""Write a concise Google Images search query.
+        prompt = f"""Convert this into a SPECIFIC, concrete Google Images search query.
 
 DESCRIPTION: {query}
 CONTEXT: {slide_context[:500] if slide_context else 'Presentation slide'}
 {f"BRAND/COMPANY: {brand_match}" if brand_match else ""}
 
-Return ONLY the query (2-6 words)."""
+RULES:
+- Be SPECIFIC: "Tesla Model S white sedan" not "electric car"
+- Include proper nouns when relevant (brands, places, products)
+- Add visual details: "aerial drone photo of Tokyo skyline night" not "city"
+- For people: specify profession + context ("surgeon performing operation" not "doctor")
+- NEVER use generic words like: image, photo, picture, illustration, concept, abstract
+
+Return ONLY the search query (3-6 words)."""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -396,13 +513,76 @@ async def _search_images_for_props(
         color_palette.get('metadata', {}).get('logo_url') or
         color_palette.get('metadata', {}).get('logo_url_light')
     )
+    # Skip base64 data URLs - they're too large (50K+ chars)
+    if brandfetch_logo and brandfetch_logo.startswith("data:"):
+        logger.info("[POST_SEARCH] Skipping base64 logo, will try logo.dev")
+        brandfetch_logo = None
     if brandfetch_logo:
         prefetched['logoUrl'] = brandfetch_logo
         prefetched['logoUrl_query'] = 'brand logo'
         logger.info("[POST_SEARCH] Using Brandfetch logo")
 
-    if not prop_queries:
-        logger.debug("[POST_SEARCH] No prop queries to search")
+    # Separate company logo queries from regular image queries
+    # Company logos (e.g., "Apple logo", "Google logo") go to logo.dev
+    # Generic "Logo" queries are skipped, regular images go to SerpAPI
+    company_logo_queries: List[Tuple[str, str, str]] = []  # (prop, query, company_name)
+    regular_queries: List[Tuple[str, str]] = []
+    generic_logo_terms = {'logo', 'company logo', 'brand logo', 'business logo', 'corporate logo'}
+
+    for prop, query in prop_queries:
+        q_lower = query.lower().strip()
+
+        # Skip generic logo queries entirely
+        if q_lower in generic_logo_terms:
+            logger.debug(f"[POST_SEARCH] Skipping generic logo query: {query}")
+            continue
+
+        # Skip completely generic image queries that won't produce useful results
+        if _is_generic_query(query):
+            logger.debug(f"[POST_SEARCH] Skipping generic query: {query}")
+            continue
+
+        # Check if it's a company logo query (e.g., "Apple logo")
+        is_logo, company_name = _is_company_logo_query(query)
+        if is_logo and company_name:
+            company_logo_queries.append((prop, query, company_name))
+        else:
+            regular_queries.append((prop, query))
+
+    # Fetch company logos from logo.dev
+    if company_logo_queries and LOGODEV_AVAILABLE:
+        logger.info(f"[POST_SEARCH] Fetching {len(company_logo_queries)} company logos from logo.dev")
+        logo_tasks = []
+        for prop, query, company_name in company_logo_queries:
+            # Check cache first
+            if cache:
+                cached = cache.get(f"{company_name} logo")
+                if cached:
+                    prefetched[prop] = cached
+                    prefetched[f"{prop}_query"] = query
+                    logger.debug(f"[POST_SEARCH] Cache hit for {company_name} logo")
+                    continue
+            logo_tasks.append((prop, query, company_name, _fetch_logo_from_logodev(company_name, cache)))
+
+        # Run logo fetches in parallel
+        if logo_tasks:
+            results = await asyncio.gather(*[t[3] for t in logo_tasks], return_exceptions=True)
+            for i, result in enumerate(results):
+                prop, query, company_name, _ = logo_tasks[i]
+                if isinstance(result, str) and result:
+                    prefetched[prop] = result
+                    prefetched[f"{prop}_query"] = query
+                    logger.info(f"[POST_SEARCH] Got {company_name} logo from logo.dev")
+                elif isinstance(result, Exception):
+                    logger.warning(f"[POST_SEARCH] Logo.dev error for {company_name}: {result}")
+                    # Fall back to SerpAPI for this one
+                    regular_queries.append((prop, query))
+                else:
+                    # Not found in logo.dev, try SerpAPI
+                    regular_queries.append((prop, query))
+
+    if not regular_queries:
+        logger.debug("[POST_SEARCH] No regular image queries to search")
         return prefetched
 
     try:
@@ -414,7 +594,7 @@ async def _search_images_for_props(
         logger.warning("[POST_SEARCH] Could not init SerpAPI: %s", e)
         return prefetched
 
-    logger.info("[POST_SEARCH] Searching SERP API for %s image props", len(prop_queries))
+    logger.info("[POST_SEARCH] Searching SERP API for %s image props", len(regular_queries))
 
     async with ImageStorageService() as storage:
 
@@ -429,7 +609,14 @@ async def _search_images_for_props(
                         return (prop_name, original_query, cached)
 
                 search_query = query
-                if len(query.split()) <= 2:
+                # Enhance short queries or queries that contain mostly generic words
+                words = query.lower().split()
+                generic_word_count = sum(1 for w in words if w in GENERIC_IMAGE_TERMS)
+                needs_enhancement = (
+                    len(words) <= 2 or
+                    generic_word_count >= len(words) // 2  # Half or more words are generic
+                )
+                if needs_enhancement:
                     search_query = await _enhance_image_query_with_ai(query, slide_context)
 
                 # Ensure query is concise
@@ -485,7 +672,7 @@ async def _search_images_for_props(
                 logger.warning("[POST_SEARCH] Error for '%s': %s", query, e)
                 return (prop_name, original_query, None)
 
-        tasks = [search_and_pick_best(prop, query) for prop, query in prop_queries[:8]]
+        tasks = [search_and_pick_best(prop, query) for prop, query in regular_queries[:8]]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for result in results:

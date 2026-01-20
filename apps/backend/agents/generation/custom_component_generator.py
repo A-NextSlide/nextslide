@@ -155,7 +155,7 @@ class CustomComponentGenerator:
     def __init__(self, model: str = CUSTOM_COMPONENT_MODEL):
         self.model = model
         self.temperature = CUSTOM_COMPONENT_TEMPERATURE
-        self.generation_timeout = 120.0
+        self.generation_timeout = 240.0
         self._html_processor = CustomComponentHtmlProcessor()
 
     def _inject_prefetched_images_into_html(self, html: str, prefetched_images: Dict[str, str]) -> str:

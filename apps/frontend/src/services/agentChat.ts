@@ -84,10 +84,13 @@ export class AgentChatClient {
   }
 
   async createSession(deckId: string, slideId: string, metadata?: Record<string, any>, retryCount = 0): Promise<string> {
-    const base = (API_CONFIG.AGENT_BASE_URL || '').replace(/\/$/, '');
-    if (!base) throw new Error('AGENT_BASE_URL not configured');
+    // Empty string is valid in development (means use relative URLs via proxy)
+    const base = (API_CONFIG.AGENT_BASE_URL ?? '').replace(/\/$/, '');
+    console.log('[AgentChat] createSession - AGENT_BASE_URL:', API_CONFIG.AGENT_BASE_URL, 'base:', base);
+    if (API_CONFIG.AGENT_BASE_URL === undefined) throw new Error('AGENT_BASE_URL not configured');
     // Only call the canonical Python agent endpoint path. Allow a single trailing-slash retry.
     const urlNoSlash = `${base}/v1/agent/sessions`;
+    console.log('[AgentChat] createSession - URL:', urlNoSlash);
     const requestInit: RequestInit = {
       method: 'POST',
       headers: {
@@ -122,10 +125,18 @@ export class AgentChatClient {
     if (!this.sessionId) throw new Error('openWebSocket called before createSession');
     // Compose WS URL by replacing http(s) with ws(s)
     const base = this.getApiBase();
-    const wsBase = base.replace(/^http/, 'ws');
+    let wsBase: string;
+    if (base) {
+      wsBase = base.replace(/^http/, 'ws');
+    } else {
+      // In development with empty base, construct WebSocket URL from current location
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsBase = `${protocol}//${window.location.host}`;
+    }
     const q = new URLSearchParams({ sessionId: this.sessionId });
     if (this.authToken) q.set('token', this.authToken);
     const url = `${wsBase}/v1/agent/stream?${q.toString()}`;
+    console.log('[AgentChat] Opening WebSocket:', url);
     const ws = new WebSocket(url);
     this.ws = ws;
 
@@ -147,6 +158,10 @@ export class AgentChatClient {
       try {
         const msg = JSON.parse(evt.data);
         if (msg && msg.type) {
+          // Debug: log all incoming events, especially tool events
+          if (msg.type.startsWith('agent.tool.') || msg.type.startsWith('agent.plan')) {
+            console.log('[AgentChat WS] 📥 Received event:', msg.type, msg.data);
+          }
           this.handlers.onEvent?.({ type: msg.type, data: msg.data });
         }
       } catch (e) {

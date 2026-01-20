@@ -396,12 +396,13 @@ GENERATING SEARCH QUERIES (KEEP IT SIMPLE):
 
 3. SIMPLE RULE: If your query is more than 4 words, shorten it!
 
-EXAMPLE - "Replace all 4 company images":
-Return 4 tool_calls in your response:
-  {"tool_name": "search_images", "tool_args": {"query": "Google logo", "target_image": "Google"}, "summary": "Replace Google image"}
-  {"tool_name": "search_images", "tool_args": {"query": "YouTube player", "target_image": "YouTube"}, "summary": "Replace YouTube image"}
-  {"tool_name": "search_images", "tool_args": {"query": "PayPal app", "target_image": "PayPal"}, "summary": "Replace PayPal image"}
-  {"tool_name": "search_images", "tool_args": {"query": "LinkedIn profile", "target_image": "LinkedIn"}, "summary": "Replace LinkedIn image"}
+EXAMPLE - "Replace all 4 company images" or "logos next to Costco, Sephora, Aldi":
+Return one tool_call PER company/image - use target_image to specify WHICH logo to replace:
+  {"tool_name": "search_images", "tool_args": {"query": "Costco logo", "target_image": "Costco"}, "summary": "Replace Costco logo"}
+  {"tool_name": "search_images", "tool_args": {"query": "Sephora logo", "target_image": "Sephora"}, "summary": "Replace Sephora logo"}
+  {"tool_name": "search_images", "tool_args": {"query": "Aldi logo", "target_image": "Aldi"}, "summary": "Replace Aldi logo"}
+The target_image parameter tells the tool which image to replace (matches by nearby text/company name).
+The query parameter is what to search for (the replacement image).
 
 CANVAS: 1920x1080 pixels. Origin (0,0) top-left.
 
@@ -838,7 +839,14 @@ def build_context(
     history_str = ""
     if chat_history:
         recent = chat_history[-10:]  # Last 10 messages
-        history_lines = [f"  {m.get('role', 'user')}: {str(m.get('content', ''))[:250]}" for m in recent]
+        # Handle both dict and Pydantic ChatMessage objects
+        def get_msg_field(m, field, default=''):
+            if hasattr(m, field):
+                return getattr(m, field, default)
+            elif isinstance(m, dict):
+                return m.get(field, default)
+            return default
+        history_lines = [f"  {get_msg_field(m, 'role', 'user')}: {str(get_msg_field(m, 'content', ''))[:250]}" for m in recent]
         history_str = f"\n\nRECENT CHAT:\n" + "\n".join(history_lines)
 
     context = f"""{presentation_overview}{theme_str}{current_date_line}
@@ -1315,9 +1323,12 @@ Respond with the tool_calls to execute."""
             # Emit tool start
             if event_cb:
                 try:
+                    logger.info(f"[ORCHESTRATOR] 📡 Emitting agent.tool.start for: {tool_name}")
                     event_cb("agent.tool.start", {"tool": tool_name})
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[ORCHESTRATOR] ⚠️ Failed to emit tool start: {e}")
+            else:
+                logger.warning(f"[ORCHESTRATOR] ⚠️ event_cb is None - cannot emit tool start for: {tool_name}")
 
             logger.info(f"[ORCHESTRATOR] 🔧 Executing tool: {tool_name} with args: {list(tool_args.keys())}")
 
@@ -1912,6 +1923,11 @@ def edit_deck(
         slide_screenshot: Optional dict with 'data' (base64) and 'media_type' for vision
         classification: Optional MessageClassification for model selection
     """
+    # DEBUG: Log entry to track event_cb
+    import traceback
+    logger.info(f"[EDIT_DECK] Entry - event_cb={bool(event_cb)} (callable={callable(event_cb) if event_cb else False})")
+    if not event_cb:
+        logger.warning(f"[EDIT_DECK] ⚠️ event_cb is None! Call stack:\n{''.join(traceback.format_stack()[-5:-1])}")
 
     # Convert to dict if needed (handle both old .dict() and new .model_dump())
     if hasattr(deck_data, 'model_dump'):

@@ -589,6 +589,19 @@ export async function* streamOutlineAgentChat(
         }
       }
     }
+
+    // Final check: extract any JSON that wasn't emitted during streaming
+    // This handles cases where the JSON block comes at the very end of the stream
+    if (!outlineEmitted && accumulatedText) {
+      const { data } = extractJSONFromText(accumulatedText);
+      if (data) {
+        console.log('[OutlineAgent] Final extraction - outline from text:', data);
+        yield {
+          type: 'outline',
+          data
+        };
+      }
+    }
   } catch (error) {
     console.error('[OutlineAgent] Error:', error);
     yield {

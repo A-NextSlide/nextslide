@@ -70,12 +70,45 @@ async def resolve_images(
     )
     if isinstance(logo_url, str) and logo_url.endswith("?"):
         logo_url = logo_url[:-1]
+    # Skip base64 data URLs - they're too large (50K+ chars)
+    if isinstance(logo_url, str) and logo_url.startswith("data:"):
+        logger.info("[IMAGE_PIPELINE] Skipping base64 logo URL, will use logo.dev")
+        logo_url = None
+
+    # Find logo-related image props
+    logo_props = [(prop, query) for prop, query in image_props if "logo" in prop.lower() or "logo" in query.lower()]
+
     if logo_url:
-        for prop_name, query in list(image_props):
-            if "logo" in prop_name.lower() or "logo" in query.lower():
-                prefetched_images[prop_name] = logo_url
-                prefetched_images[f"{prop_name}_query"] = query
+        # Use theme logo URL for logo props
+        for prop_name, query in logo_props:
+            prefetched_images[prop_name] = logo_url
+            prefetched_images[f"{prop_name}_query"] = query
         image_props = [(prop, query) for prop, query in image_props if prop not in prefetched_images]
+    elif logo_props:
+        # No valid logo URL - try logo.dev
+        brand_name = brand_info.get("name") or brand_info.get("domain")
+        if not brand_name:
+            metadata = color_palette.get("metadata", {}) if isinstance(color_palette, dict) else {}
+            brand_name = metadata.get("brand_name") or metadata.get("domain")
+
+        if brand_name:
+            try:
+                from agents.tools.theme.logodev_service import LogoDevService
+                async with LogoDevService() as logo_service:
+                    result = await logo_service.get_logo_with_fallback(brand_name)
+                    if result.get("available") and result.get("logo_url"):
+                        fetched_logo = result["logo_url"]
+                        logger.info(f"[IMAGE_PIPELINE] Fetched logo from logo.dev for {brand_name}")
+                        for prop_name, query in logo_props:
+                            prefetched_images[prop_name] = fetched_logo
+                            prefetched_images[f"{prop_name}_query"] = query
+                        image_props = [(prop, query) for prop, query in image_props if prop not in prefetched_images]
+            except Exception as e:
+                logger.warning(f"[IMAGE_PIPELINE] logo.dev lookup failed for {brand_name}: {e}")
+        else:
+            logger.info("[IMAGE_PIPELINE] No brand name available for logo.dev lookup")
+            # Remove logo props from search - generic "Logo" searches return random images
+            image_props = [(prop, query) for prop, query in image_props if prop not in [p for p, _ in logo_props]]
 
     available_assets = _normalize_available_images(available_images, uploaded_media)
     if available_assets:

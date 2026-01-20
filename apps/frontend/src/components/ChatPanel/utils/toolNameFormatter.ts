@@ -105,6 +105,22 @@ const FUN_TOOL_NAMES: Record<string, string[]> = {
     'Tidying things up',
     'Making some space',
   ],
+  'web_search': [
+    'Searching the web',
+    'Looking things up',
+    'Doing some research',
+    'Finding information',
+  ],
+  'linkedin_lookup': [
+    'Looking up on LinkedIn',
+    'Finding profile details',
+    'Researching the person',
+  ],
+  'analyze_slide': [
+    'Analyzing the slide',
+    'Understanding the content',
+    'Taking a closer look',
+  ],
 };
 
 export function getFunToolName(tool: string): string {

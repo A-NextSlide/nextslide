@@ -17,6 +17,91 @@ from utils.images import image_exists
 
 logger = logging.getLogger(__name__)
 
+# Logo.dev service for company logos
+try:
+    from agents.tools.theme.logodev_service import LogoDevService
+    LOGODEV_AVAILABLE = True
+except ImportError:
+    LOGODEV_AVAILABLE = False
+    logger.warning("[IMAGES] Logo.dev service not available")
+
+
+# =============================================================================
+# LOGO.DEV INTEGRATION
+# =============================================================================
+
+def _is_company_logo_query(query: str) -> Tuple[bool, str]:
+    """
+    Detect if a query is for a company logo and extract the company name.
+
+    Returns:
+        Tuple of (is_logo_query, company_name)
+    """
+    if not query:
+        return False, ""
+
+    q = query.lower().strip()
+
+    # Skip generic logo queries
+    generic_terms = {'logo', 'company logo', 'brand logo', 'business logo', 'corporate logo'}
+    if q in generic_terms:
+        return False, ""
+
+    # Patterns like "Apple logo", "Google Logo", "Microsoft logo"
+    logo_suffix_match = re.match(r'^(.+?)\s+logo\s*$', q, re.IGNORECASE)
+    if logo_suffix_match:
+        company = logo_suffix_match.group(1).strip()
+        if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
+            return True, company
+
+    # Patterns like "logo of Apple", "logo for Google"
+    logo_prefix_match = re.match(r'^logo\s+(?:of|for)\s+(.+)$', q, re.IGNORECASE)
+    if logo_prefix_match:
+        company = logo_prefix_match.group(1).strip()
+        if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
+            return True, company
+
+    return False, ""
+
+
+async def _fetch_logo_from_logodev(company_name: str) -> Optional[str]:
+    """
+    Fetch a company logo from logo.dev and upload to our storage.
+
+    Returns:
+        URL of uploaded logo, or None if not found
+    """
+    if not LOGODEV_AVAILABLE:
+        return None
+
+    try:
+        from services.image_storage_service import ImageStorageService
+
+        async with LogoDevService() as logo_service:
+            result = await logo_service.get_logo_with_fallback(company_name)
+
+            if not result.get('available') or not result.get('logo_url'):
+                logger.debug(f"[IMAGES] Logo.dev: No logo found for '{company_name}'")
+                return None
+
+            logo_url = result['logo_url']
+            logger.info(f"[IMAGES] Logo.dev: Found logo for '{company_name}'")
+
+            # Upload to our storage for consistent delivery
+            async with ImageStorageService() as storage:
+                upload_result = await storage.upload_image_from_url(
+                    logo_url,
+                    metadata={"source": "logodev", "company": company_name}
+                )
+                if upload_result and upload_result.get('url'):
+                    logger.info(f"[IMAGES] Logo.dev: Uploaded {company_name} logo to storage")
+                    return upload_result['url']
+
+    except Exception as e:
+        logger.warning(f"[IMAGES] Logo.dev error for '{company_name}': {e}")
+
+    return None
+
 
 # =============================================================================
 # MODELS
@@ -100,16 +185,29 @@ def _extract_all_images(props: Dict[str, Any], html: str) -> List[ImageInfo]:
         alt_match = re.search(r'alt=["\']([^"\']*)["\']', full_tag)
         alt = alt_match.group(1) if alt_match else ""
 
-        # Get surrounding text
-        start = max(0, match.start() - 150)
-        end = min(len(html), match.end() + 150)
-        context = re.sub(r'<[^>]+>', ' ', html[start:end])
-        context = ' '.join(context.split())[:100]
+        # Get surrounding text with LARGER window to capture nearby labels/company names
+        # This helps when the company name is in a sibling element (e.g., <img/><span>Costco</span>)
+        start = max(0, match.start() - 300)
+        end = min(len(html), match.end() + 300)
+        context_raw = html[start:end]
+        # Extract just text content (remove HTML tags)
+        context = re.sub(r'<[^>]+>', ' ', context_raw)
+        context = ' '.join(context.split())[:150]
+
+        # Build description: include alt text AND context for better matching
+        desc_parts = []
+        if alt:
+            desc_parts.append(f"alt: {alt}")
+        if context:
+            desc_parts.append(f"nearby text: {context}")
+
+        img_desc = " | ".join(desc_parts) if desc_parts else f"image at position {len(images)}"
+        logger.info(f"[IMAGES] Extracted image [{len(images)}]: {img_desc[:100]}...")
 
         images.append(ImageInfo(
             index=len(images),
             url=url,
-            description=f"alt: {alt}" if alt else f"context: {context}"
+            description=img_desc
         ))
 
     # Source 3: CSS background images
@@ -171,9 +269,12 @@ AVAILABLE IMAGES:
 {image_list}
 
 Select the image that best matches what the user wants to change.
+- If user mentions a company name (e.g., "Costco", "Sephora", "Google") → find the image with that name in its context/description
+- If user says "logo next to X" or "X logo" → find the image whose context contains "X"
 - If user says "main image", "hero", or just "the image" → pick the primary content image, NOT logos
-- If user says "logo" or "brand" → pick the logo
+- If user says "logo" or "brand" (generic) → pick the first logo-type image
 - If user mentions specific content (like "chicken wings") → pick the image with matching description
+- Match company names case-insensitively (costco = Costco = COSTCO)
 - When in doubt, prefer content images over logos/icons
 
 Respond with ONLY the index number (0, 1, 2, etc.) of the image to replace.
@@ -311,37 +412,50 @@ def search_images(
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    # Search for new image
-    try:
-        from services.serpapi_service import SerpAPIService
-        serpapi = SerpAPIService()
+    # Check if this is a company logo query - route to logo.dev first
+    is_logo_query, company_name = _is_company_logo_query(query)
+    new_url = None
+    new_alt = query
 
-        if not serpapi.is_available:
-            logger.warning("[IMAGES] SERP API not available")
+    if is_logo_query and company_name and LOGODEV_AVAILABLE:
+        logger.info(f"[IMAGES] Detected company logo query, trying logo.dev for '{company_name}'")
+        new_url = loop.run_until_complete(_fetch_logo_from_logodev(company_name))
+        if new_url:
+            new_alt = f"{company_name} logo"
+            logger.info(f"[IMAGES] Got logo from logo.dev: {new_url[:60]}...")
+
+    # Fall back to SerpAPI if not a logo or logo.dev failed
+    if not new_url:
+        try:
+            from services.serpapi_service import SerpAPIService
+            serpapi = SerpAPIService()
+
+            if not serpapi.is_available:
+                logger.warning("[IMAGES] SERP API not available")
+                return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+            async def do_search():
+                results = await serpapi.search_images(query=query, per_page=5, size="large")
+                photos = results.get("photos", [])
+                for p in photos:
+                    url = p.get("original") or p.get("url")
+                    if url and url.startswith("http") and "placeholder" not in url.lower():
+                        return url, p.get("alt", query)
+                return None, None
+
+            new_url, new_alt = loop.run_until_complete(do_search())
+
+            if not new_url:
+                logger.warning("[IMAGES] No search results")
+                return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+            # Upload to Supabase
+            new_url, _ = loop.run_until_complete(_upload_to_supabase(new_url))
+            logger.info(f"[IMAGES] New image: {new_url[:60]}...")
+
+        except Exception as e:
+            logger.error(f"[IMAGES] Search error: {e}")
             return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-        async def do_search():
-            results = await serpapi.search_images(query=query, per_page=5, size="large")
-            photos = results.get("photos", [])
-            for p in photos:
-                url = p.get("original") or p.get("url")
-                if url and url.startswith("http") and "placeholder" not in url.lower():
-                    return url, p.get("alt", query)
-            return None, None
-
-        new_url, new_alt = loop.run_until_complete(do_search())
-
-        if not new_url:
-            logger.warning("[IMAGES] No search results")
-            return DeckDiff(DeckDiffBase(slides_to_update=[]))
-
-        # Upload to Supabase
-        new_url, _ = loop.run_until_complete(_upload_to_supabase(new_url))
-        logger.info(f"[IMAGES] New image: {new_url[:60]}...")
-
-    except Exception as e:
-        logger.error(f"[IMAGES] Search error: {e}")
-        return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
     # If no CustomComponent, check for standalone Image component
     image_component_id = None

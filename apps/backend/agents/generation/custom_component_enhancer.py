@@ -59,12 +59,17 @@ def inject_theme_data(theme_dict: Dict[str, Any], context: SlideGenerationContex
                 logo_url = metadata.get("logo_url") or metadata.get("logo_url_light")
                 logo_url_dark = metadata.get("logo_url_dark") or logo_url_dark
 
+        # Skip base64 data URLs - they're huge (50K+ chars) and shouldn't be in prompts
         if logo_url and isinstance(logo_url, str) and logo_url.strip():
-            theme_dict.setdefault("brandInfo", {})
-            theme_dict["brandInfo"]["logoUrl"] = logo_url.strip()
-            if logo_url_dark:
-                theme_dict["brandInfo"]["logoUrlDark"] = str(logo_url_dark).strip()
-            logger.info(f"[THEME INJECT] Logo injected: {logo_url[:60]}...")
+            logo_url = logo_url.strip()
+            if logo_url.startswith("data:"):
+                logger.info("[THEME INJECT] Skipping base64 logo URL (too large for prompts)")
+            else:
+                theme_dict.setdefault("brandInfo", {})
+                theme_dict["brandInfo"]["logoUrl"] = logo_url
+                if logo_url_dark and not str(logo_url_dark).startswith("data:"):
+                    theme_dict["brandInfo"]["logoUrlDark"] = str(logo_url_dark).strip()
+                logger.info(f"[THEME INJECT] Logo injected: {logo_url[:60]}...")
 
     # INJECT FONTS
     typography = theme_dict.get("typography", {})
@@ -233,6 +238,45 @@ class CustomComponentEnhancer:
         self.generator = generator
         self.full_slide = full_slide
 
+    def _enrich_content_with_research(self, content: str, context: SlideGenerationContext) -> str:
+        """Enrich slide content with research context for more detailed generation.
+
+        The outline content is often just a single line. This adds research context
+        so the CustomComponent generator has more material to work with.
+        """
+        parts = [content] if content else []
+
+        # Get research context from deck_outline.notes
+        try:
+            notes = None
+            if hasattr(context, "deck_outline") and context.deck_outline:
+                notes = getattr(context.deck_outline, "notes", None)
+
+            if isinstance(notes, dict):
+                # Add research context (truncated to avoid huge prompts)
+                research_context = notes.get("research_context") or notes.get("researchContext")
+                if research_context and isinstance(research_context, str):
+                    truncated = research_context[:3000] if len(research_context) > 3000 else research_context
+                    parts.append(f"\n\nRESEARCH CONTEXT (use relevant facts):\n{truncated}")
+
+                # Add scraped context
+                scraped_context = notes.get("scraped_context") or notes.get("scrapedContext")
+                if scraped_context and isinstance(scraped_context, str):
+                    truncated = scraped_context[:2000] if len(scraped_context) > 2000 else scraped_context
+                    parts.append(f"\n\nREFERENCE MATERIAL:\n{truncated}")
+        except Exception as e:
+            logger.debug(f"[CUSTOM_COMPONENT] Could not extract research context: {e}")
+
+        # Add presentation context if available
+        if context.presentation_context:
+            parts.append(f"\n\nPRESENTATION CONTEXT: {context.presentation_context}")
+
+        enriched = "\n".join(parts)
+        if len(enriched) > len(content) + 100:
+            logger.info(f"[CUSTOM_COMPONENT] Enriched content: {len(content)} -> {len(enriched)} chars")
+
+        return enriched
+
     async def enhance(
         self,
         slide_data: Dict[str, Any],
@@ -258,6 +302,9 @@ class CustomComponentEnhancer:
         content = content_override
         if content is None:
             content = _get_attr_or_key(context.slide_outline, "content") or ""
+
+        # Enrich content with research context if available (for more detailed slides)
+        content = self._enrich_content_with_research(content, context)
 
         enhanced = await self.generator.generate(
             content=content,

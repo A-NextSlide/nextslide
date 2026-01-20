@@ -12,6 +12,13 @@ logger = get_logger(__name__)
 class ComponentValidator:
     """Validates and lightly normalizes slide components."""
 
+    # Valid component types that the frontend can render
+    VALID_TYPES = {
+        "Background", "TiptapTextBlock", "Image", "Video", "Chart", "Shape",
+        "CustomComponent", "Lines", "Line", "line", "Group", "Icon", "Table",
+        "Math", "Diagram", "ReactBits", "ShapeWithText"
+    }
+
     def __init__(self, registry=None):
         self.registry = registry
 
@@ -35,6 +42,13 @@ class ComponentValidator:
             comp = self._clamp_component_bounds(comp)
 
             comp_type = comp.get("type")
+
+            # Check if component type is valid
+            if comp_type and comp_type not in self.VALID_TYPES:
+                logger.warning(f"Invalid component type '{comp_type}' - converting to Shape")
+                comp["type"] = "Shape"
+                comp_type = "Shape"
+
             if registry and comp_type in getattr(registry, "_component_models", {}):
                 try:
                     ComponentModel = registry._component_models[comp_type]

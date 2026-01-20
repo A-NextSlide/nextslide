@@ -14,12 +14,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _clean_logo_url(url: Optional[str]) -> Optional[str]:
+def _clean_logo_url(url: Optional[str], skip_base64: bool = False) -> Optional[str]:
     if not url or not isinstance(url, str):
         return None
     cleaned = url.strip()
     if cleaned.endswith("?"):
         cleaned = cleaned[:-1]
+    # Skip base64 data URLs if requested (they're huge and shouldn't be in prompts)
+    if skip_base64 and cleaned.startswith("data:"):
+        return None
     return cleaned or None
 
 
@@ -359,7 +362,7 @@ def get_logo_with_inversion(
 
     Returns:
         Tuple of (logo_url, False):
-        - logo_url: First available logo URL, or None if not found
+        - logo_url: First available logo URL, or None if not found (base64 data URLs are skipped)
         - False: Always False (no inversion logic)
     """
     if not theme:
@@ -388,4 +391,5 @@ def get_logo_with_inversion(
         elif isinstance(logo, str) and logo.startswith('http'):
             logo_url = logo
 
-    return _clean_logo_url(logo_url), False
+    # Skip base64 data URLs - they're too large for prompts (can be 50K+ chars)
+    return _clean_logo_url(logo_url, skip_base64=True), False

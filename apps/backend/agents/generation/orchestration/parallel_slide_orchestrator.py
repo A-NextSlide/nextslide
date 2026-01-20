@@ -15,6 +15,7 @@ from agents.generation.context_builder import build_slide_context
 from agents.application.event_bus import get_event_bus, Events
 from setup_logging_optimized import get_logger
 from agents.config import ENABLE_PROMPT_CACHE_PREWARM
+from services.gemini_cache_manager import get_gemini_cache_manager
 
 logger = get_logger(__name__)
 
@@ -129,7 +130,64 @@ class ParallelSlideOrchestrator:
                         logger.warning(f"[PREWARM] Failed to prewarm cache: {e}")
             except Exception as e:
                 logger.warning(f"[PREWARM] Skipped due to error: {e}")
-        
+
+        # Create Gemini context cache for deck-wide content (research, theme, etc.)
+        # This caches the static block once and uses it for all slide generations
+        gemini_cache_name = None
+        try:
+            if outline_slides:
+                first_slide = outline_slides[0]
+                theme_to_pass = deck_state.theme or ThemeSpec.from_dict({})
+                context = build_slide_context(
+                    deck_outline=deck_state.deck_outline,
+                    slide_outline=first_slide,
+                    slide_index=0,
+                    theme=theme_to_pass,
+                    palette=deck_state.palette or {},
+                    style_manifesto=deck_state.style_manifesto or "",
+                    deck_uuid=deck_state.deck_uuid,
+                    async_images=options.async_images,
+                    available_images=[],
+                    user_id=getattr(deck_state, "user_id", None),
+                    visual_density=self._resolve_visual_density(deck_state, first_slide),
+                )
+
+                # Get the static block for caching
+                system_prompt = self.slide_generator.prompt_builder.build_system_prompt()
+                try:
+                    static_block, _ = self.slide_generator.prompt_builder.build_user_prompt_blocks(context)
+                except Exception:
+                    static_block = ""
+
+                if static_block and len(static_block) > 2000:  # Only cache substantial content
+                    cache_manager = get_gemini_cache_manager()
+                    from agents.config import COMPOSER_MODEL
+                    model_alias = getattr(self.slide_generator.ai_generator, 'model', None) or COMPOSER_MODEL
+
+                    # Only create cache if using a Gemini model
+                    if 'gemini' in model_alias.lower():
+                        from agents.ai.clients import MODELS
+                        _, actual_model = MODELS.get(model_alias, (None, model_alias))
+
+                        gemini_cache_name = cache_manager.get_or_create_cache(
+                            deck_uuid=deck_state.deck_uuid,
+                            model=actual_model,
+                            system_prompt=system_prompt,
+                            static_block=static_block,
+                            ttl="600s",  # 10 minutes - enough for deck generation
+                        )
+
+                        if gemini_cache_name:
+                            # Store cache name in deck_state for access during slide generation
+                            deck_state.gemini_cache_name = gemini_cache_name
+                            logger.info(f"[GEMINI_CACHE] Created cache for deck {deck_state.deck_uuid[:8]}")
+                            yield {
+                                'type': 'info',
+                                'message': 'Created Gemini context cache for deck-wide content'
+                            }
+        except Exception as e:
+            logger.warning(f"[GEMINI_CACHE] Failed to create cache: {e}")
+
         # Create ALL tasks at once for true parallelism - semaphore controls concurrency
         tasks = []
         logger.debug(f"Creating {len(outline_slides)} slide tasks in parallel")
@@ -289,9 +347,21 @@ class ParallelSlideOrchestrator:
         # Count successful vs failed slides
         successful_slides = sum(1 for s in deck_state.slides if s.get('status') == SlideStatus.COMPLETED.value)
         failed_slides = sum(1 for s in deck_state.slides if s.get('status') == SlideStatus.ERROR.value)
-        
+
         logger.info(f"[PARALLEL_ORCH] Generation complete: {successful_slides} successful, {failed_slides} failed, {total_slides} total")
-        
+
+        # Clean up Gemini context cache (let TTL expire naturally, but log stats)
+        try:
+            cache_manager = get_gemini_cache_manager()
+            cache_name = cache_manager.get_cache_name(deck_state.deck_uuid)
+            if cache_name:
+                stats = cache_manager.get_stats()
+                logger.info(f"[GEMINI_CACHE] Cache used for deck {deck_state.deck_uuid[:8]}, active caches: {stats.get('active_caches', 0)}")
+                # Optionally delete the cache now (or let TTL expire)
+                # cache_manager.delete_cache(deck_state.deck_uuid)
+        except Exception as e:
+            logger.debug(f"[GEMINI_CACHE] Cleanup skipped: {e}")
+
         yield {
             'type': 'slides_generation_complete',
             'total_slides': total_slides,

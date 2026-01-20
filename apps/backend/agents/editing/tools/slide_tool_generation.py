@@ -414,6 +414,12 @@ def create_slide(
     colors = theme.get("color_palette") or theme.get("colors") or {}
     bg_color = colors.get("primary_background", "#1e1e2e")
 
+    # Extract typography/fonts from theme
+    typography = theme.get("typography") or {}
+    title_font = typography.get("hero_title", {}).get("family") or typography.get("title", {}).get("family", "Inter")
+    body_font = typography.get("body_text", {}).get("family") or typography.get("body", {}).get("family", "Inter")
+    accent_colors = colors.get("colors", []) or colors.get("accent", [])
+
     # Gather reference images from attachments
     reference_images = _gather_reference_images("", attachments)
     uploaded_media = _build_uploaded_media_from_attachments(attachments or []) if use_attachments else None
@@ -429,6 +435,35 @@ def create_slide(
     # Calculate slide index for context
     slides = (deck_data or {}).get("slides") or []
     slide_index = len(slides)  # New slide will be added at the end (or after insert_after)
+
+    # STYLE CONTEXT: Extract existing slide HTML as style reference
+    # This helps the AI match the visual style of existing slides
+    style_reference = ""
+    reference_html = None
+    for slide in slides[:3]:  # Check first 3 slides for a good style reference
+        comps = slide.get("components") or []
+        for comp in comps:
+            if comp.get("type") == "CustomComponent":
+                html = ((comp.get("props") or {}).get("render") or "").strip()
+                if html and len(html) > 200:  # Non-trivial HTML
+                    reference_html = html[:3000]  # Limit to avoid huge context
+                    break
+        if reference_html:
+            break
+
+    # Build comprehensive style context with fonts
+    font_context = f"""
+TYPOGRAPHY (MUST USE THESE FONTS):
+- Title/Header font: font-family: '{title_font}', sans-serif;
+- Body/Text font: font-family: '{body_font}', sans-serif;
+- Background: {bg_color}
+- Accent colors: {', '.join(accent_colors[:3]) if accent_colors else 'blue, purple'}
+"""
+
+    if reference_html:
+        style_reference = f"\n\nEXISTING SLIDE STYLE REFERENCE (match this visual style):\n```html\n{reference_html}\n```\n{font_context}\nIMPORTANT: Match the visual style, layout patterns, and CSS approach of the above HTML. ALWAYS use the specified fonts - '{title_font}' for titles/headers and '{body_font}' for body text."
+    else:
+        style_reference = font_context
 
     # Build slide context for CustomComponentGenerator
     slide_context = {
@@ -455,12 +490,13 @@ def create_slide(
             gen.generate(
                 content=f"""{_current_date_note()}
 
-CREATE NEW SLIDE: {instruction}{att_context}{chat_context}{instruction_note}
+CREATE NEW SLIDE: {instruction}{att_context}{chat_context}{instruction_note}{style_reference}
 
 IMPORTANT:
 - Create a complete, beautiful slide that fills the entire 1920x1080 canvas.
 - Use the conversation context above to understand what the user wants.
 - If the user discussed specific preferences (colors, style, interactivity), apply them.
+- Match the visual style of existing slides in this presentation (if reference provided).
 - Make it visually stunning and professional.""",
                 theme=theme if isinstance(theme, dict) else {},
                 slide_context=slide_context,
@@ -649,6 +685,24 @@ DECK THEME (use these colors/fonts):
     except Exception:
         pass
 
+    # STYLE CONTEXT: Extract existing slide HTML as style reference
+    style_reference = ""
+    reference_html = None
+    slides = (deck_data or {}).get("slides") or []
+    for slide in slides[:3]:  # Check first 3 slides for a good style reference
+        comps = slide.get("components") or []
+        for comp in comps:
+            if comp.get("type") == "CustomComponent":
+                html = ((comp.get("props") or {}).get("render") or "").strip()
+                if html and len(html) > 200:  # Non-trivial HTML
+                    reference_html = html[:2000]  # Limit for variant generation
+                    break
+        if reference_html:
+            break
+
+    if reference_html:
+        style_reference = f"\n\nEXISTING SLIDE STYLE (match this visual approach):\n```html\n{reference_html[:1500]}\n```\nIMPORTANT: Use font-family: '{title_font}', sans-serif for titles and '{body_font}', sans-serif for body text."
+
     client, model = get_model_and_client("slide_generate", log_prefix="SLIDE_TOOLS")
 
     # Generate two different variants
@@ -658,7 +712,7 @@ DECK THEME (use these colors/fonts):
         style_hint = "clean and minimal" if variant_num == 1 else "bold and dynamic"
         prompt = f"""{SLIDE_GENERATOR_PROMPT}
 {att_context}
-{theme_context}
+{theme_context}{style_reference}
 
 USER REQUEST: {instruction}
 

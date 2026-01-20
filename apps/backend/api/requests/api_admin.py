@@ -1641,19 +1641,46 @@ async def list_brands(
     try:
         supabase = get_supabase_client()
 
-        # Build query
-        query = supabase.table("brandfetch_cache").select("*", count="exact")
+        # First get total count with search filter applied
+        count_query = supabase.table("brandfetch_cache").select("id", count="exact")
+        if search:
+            count_query = count_query.or_(f"identifier.ilike.%{search}%,normalized_identifier.ilike.%{search}%")
+        count_response = count_query.execute()
+        total = count_response.count or 0
+
+        # Calculate pagination
+        offset = (page - 1) * limit
+        total_pages = max(1, (total + limit - 1) // limit)
+
+        # If offset exceeds total, return empty list (no more data)
+        if offset >= total:
+            # Log the action
+            await log_admin_action(
+                admin_user_id=admin["id"],
+                action="view_brands",
+                request=request,
+                details={"page": page, "search": search}
+            )
+            return BrandsListResponse(
+                brands=[],
+                total=total,
+                page=page,
+                totalPages=total_pages
+            )
+
+        # Build query for actual data
+        query = supabase.table("brandfetch_cache").select("*")
 
         # Apply search
         if search:
             query = query.or_(f"identifier.ilike.%{search}%,normalized_identifier.ilike.%{search}%")
 
-        # Apply pagination
-        offset = (page - 1) * limit
-        query = query.range(offset, offset + limit - 1)
-
-        # Apply sorting (most recently accessed first)
+        # Apply sorting (most recently accessed first) - must come before range
         query = query.order("last_accessed_at", desc=True)
+
+        # Apply pagination with safe range
+        end_offset = min(offset + limit - 1, total - 1)
+        query = query.range(offset, end_offset)
 
         # Execute query
         response = query.execute()
@@ -1682,9 +1709,9 @@ async def list_brands(
 
         return BrandsListResponse(
             brands=brands,
-            total=response.count or 0,
+            total=total,
             page=page,
-            totalPages=max(1, (response.count or 0) // limit + (1 if (response.count or 0) % limit > 0 else 0))
+            totalPages=total_pages
         )
 
     except Exception as e:
@@ -2007,8 +2034,10 @@ async def upload_brand_logo(
             else:
                 raise
 
-        # Get public URL
+        # Get public URL (strip trailing '?' that Supabase sometimes adds)
         public_url = supabase.storage.from_("slide-media").get_public_url(file_path)
+        if public_url and public_url.endswith('?'):
+            public_url = public_url[:-1]
 
         # Update brand api_response with logo
         if not api_response.get("logos"):

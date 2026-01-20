@@ -1,5 +1,8 @@
 """
 AI generator component for slide generation.
+
+Supports Gemini context caching for deck-wide content (research, theme, etc.)
+to reduce costs by 90% and improve latency for parallel slide generation.
 """
 
 import asyncio
@@ -14,6 +17,14 @@ from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
 
+# Import Gemini cache manager for context caching support
+try:
+    from services.gemini_cache_manager import get_gemini_cache_manager
+    GEMINI_CACHE_AVAILABLE = True
+except ImportError:
+    GEMINI_CACHE_AVAILABLE = False
+    get_gemini_cache_manager = None
+
 
 class AISlideGenerator:
     """Handles AI generation of slides."""
@@ -21,7 +32,127 @@ class AISlideGenerator:
     def __init__(self, model: str = COMPOSER_MODEL):
         self.model = model
         self.max_tokens_attempts = [32000, 24000, 16000, 8000]
-        self.generation_timeout = 180.0  # Increased from 90.0 to handle large prompts
+        self.generation_timeout = 240.0  # Increased from 90.0 to handle large prompts
+
+    def _invoke_with_gemini_cache(
+        self,
+        model_name: str,
+        slide_prompt: str,
+        response_model: Type,
+        max_tokens: int,
+        temperature: float,
+        cache_name: str,
+        deck_uuid: str,
+        slide_index: int,
+    ):
+        """Invoke Gemini with cached content for deck-wide context.
+
+        This uses Gemini's context caching feature to avoid resending the large
+        static block (research, theme, etc.) for each slide, reducing costs by 90%
+        and improving latency.
+        """
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client()
+
+            # Build generation config with cached content
+            config = types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+                cached_content=cache_name,
+            )
+
+            # Add explicit instruction to remind model about output format
+            enhanced_prompt = (
+                f"Generate a slide in JSON format based on the cached context above.\n\n"
+                f"{slide_prompt}\n\n"
+                f"Return ONLY valid JSON with {{id, title, components}}. No markdown fences."
+            )
+
+            logger.info(f"  [GEMINI_CACHE] Slide {slide_index + 1} sending {len(enhanced_prompt)} char prompt with cache '{cache_name[:40]}...'")
+
+            # Generate with cached context + slide-specific prompt
+            result = client.models.generate_content(
+                model=f"models/{model_name}",
+                contents=enhanced_prompt,
+                config=config,
+            )
+
+            # Log cache usage stats if available
+            if hasattr(result, 'usage_metadata'):
+                usage = result.usage_metadata
+                cached_tokens = getattr(usage, 'cached_content_token_count', 0)
+                prompt_tokens = getattr(usage, 'prompt_token_count', 0)
+                output_tokens = getattr(usage, 'candidates_token_count', 0)
+                logger.info(
+                    f"  [GEMINI_CACHE] Slide {slide_index + 1} tokens: "
+                    f"cached={cached_tokens}, prompt={prompt_tokens}, output={output_tokens}"
+                )
+
+            # Parse the response into the response model
+            response_text = result.text
+
+            # Log response length for debugging
+            logger.info(f"  [GEMINI_CACHE] Slide {slide_index + 1} received {len(response_text)} char response")
+
+            # Log first 200 chars for debugging blank slides
+            if len(response_text) < 100:
+                logger.warning(f"  [GEMINI_CACHE] Slide {slide_index + 1} SHORT RESPONSE: {response_text[:200]}")
+
+            # Try to parse as JSON and validate with response_model
+            if response_model:
+                import json
+                # Extract JSON from response
+                json_text = self._extract_json_from_response(response_text)
+
+                try:
+                    data = json.loads(json_text)
+                except json.JSONDecodeError as json_err:
+                    logger.error(f"  [GEMINI_CACHE] Slide {slide_index + 1} JSON parse error: {json_err}")
+                    logger.error(f"  [GEMINI_CACHE] Response text (first 500 chars): {response_text[:500]}")
+                    raise
+
+                # Check if components exist and have content
+                components = data.get('components', [])
+                if not components:
+                    logger.warning(f"  [GEMINI_CACHE] Slide {slide_index + 1} has EMPTY components array!")
+                else:
+                    logger.info(f"  [GEMINI_CACHE] Slide {slide_index + 1} parsed with {len(components)} components")
+
+                return response_model(**data)
+
+            return response_text
+
+        except Exception as e:
+            logger.warning(f"[GEMINI_CACHE] Cached generation failed for slide {slide_index + 1}: {e}")
+            logger.warning(f"[GEMINI_CACHE] Falling back to non-cached invoke...")
+            # Fall back to regular invoke without cache
+            from agents.ai.clients import get_client, invoke
+            client, _ = get_client(model_name)
+            messages = [{"role": "user", "content": slide_prompt}]
+            return invoke(
+                client,
+                model_name,
+                messages,
+                response_model,
+                max_tokens,
+                temperature,
+                deck_uuid=deck_uuid,
+                slide_generation=True,
+                slide_index=slide_index
+            )
+
+    def _extract_json_from_response(self, text: str) -> str:
+        """Extract JSON object from text that may have markdown fences."""
+        import re
+        t = text.strip()
+        # Strip ```json fences if present
+        if t.startswith("```"):
+            t = re.sub(r"^```[a-zA-Z]*\s*", "", t)
+            t = re.sub(r"\s*```$", "", t).strip()
+        return t
     
     async def generate(
         self,
@@ -115,11 +246,27 @@ class AISlideGenerator:
         
         temperature = 0.7
         actual_max_tokens = max_tokens
-        
+
+        # Check if we can use Gemini context caching
+        gemini_cache_name = None
+        slide_only_prompt = user_prompt
+        if GEMINI_CACHE_AVAILABLE and 'gemini' in model_name.lower():
+            cache_manager = get_gemini_cache_manager()
+            gemini_cache_name = cache_manager.get_cache_name(context.deck_uuid)
+            if gemini_cache_name:
+                # Extract just the slide-specific content (after the cache breakpoint)
+                if '<<<CACHE_BREAKPOINT>>>' in user_prompt:
+                    _, slide_only_prompt = user_prompt.split('<<<CACHE_BREAKPOINT>>>', 1)
+                    slide_only_prompt = slide_only_prompt.strip()
+                    logger.info(
+                        f"  [GEMINI_CACHE] Using cached context for slide {context.slide_index + 1} "
+                        f"(slide prompt: {len(slide_only_prompt)} chars vs full: {len(user_prompt)} chars)"
+                    )
+
         # Invoke AI with timeout
         logger.info(f"  Invoking AI model {model_name} for slide {context.slide_index + 1}...")
         invoke_start = datetime.now()
-        
+
         try:
             # Run the blocking invoke in a thread pool
             logger.info(f"[AI_GEN] Slide {context.slide_index + 1} entering run_in_executor...")
@@ -127,18 +274,33 @@ class AISlideGenerator:
 
             # Use functools.partial to pass keyword arguments
             import functools
-            invoke_fn = functools.partial(
-                invoke,
-                client,
-                model_name,
-                messages,
-                response_model,
-                actual_max_tokens,
-                temperature,
-                deck_uuid=context.deck_uuid,
-                slide_generation=True,
-                slide_index=context.slide_index
-            )
+
+            # If using Gemini cache, use the cached content
+            if gemini_cache_name:
+                invoke_fn = functools.partial(
+                    self._invoke_with_gemini_cache,
+                    model_name,
+                    slide_only_prompt,
+                    response_model,
+                    actual_max_tokens,
+                    temperature,
+                    gemini_cache_name,
+                    context.deck_uuid,
+                    context.slide_index
+                )
+            else:
+                invoke_fn = functools.partial(
+                    invoke,
+                    client,
+                    model_name,
+                    messages,
+                    response_model,
+                    actual_max_tokens,
+                    temperature,
+                    deck_uuid=context.deck_uuid,
+                    slide_generation=True,
+                    slide_index=context.slide_index
+                )
 
             response = await asyncio.wait_for(
                 loop.run_in_executor(None, invoke_fn),

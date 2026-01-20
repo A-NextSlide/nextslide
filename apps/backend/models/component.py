@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from pydantic import create_model, model_validator
-from typing import Dict, Any, Type, Literal
+from typing import Dict, Any, Type, Literal, Optional
 from uuid import uuid4
 
 # ComponentBase class for all component type
@@ -17,7 +17,7 @@ class ComponentBase(BaseModel):
 class ComponentDiffBase(BaseModel):
     """Represents a comprehensive diff of changes to apply to a component"""
     id: str  # ID of the component to update
-    type: str = Field(None, description="Type of the component (required for components_to_add)")
+    type: Optional[str] = Field(None, description="Type of the component (required for components_to_add)")
     props: Dict[str, Any] = Field(default_factory=dict, description="Properties of the component to update ")
 
 

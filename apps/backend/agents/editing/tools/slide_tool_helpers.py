@@ -153,6 +153,15 @@ def _build_attachment_context(attachments: List[Dict], header: str) -> str:
     return "\n\n" + header + "\n" + "\n".join(lines)
 
 
+def _get_msg_field(msg, field: str, default: str = '') -> str:
+    """Safely get a field from a message that might be a dict or Pydantic object."""
+    if hasattr(msg, field):
+        return getattr(msg, field, default) or default
+    elif isinstance(msg, dict):
+        return msg.get(field, default) or default
+    return default
+
+
 def _build_chat_context(chat_history: List[Dict], max_messages: int = 10) -> Tuple[str, int]:
     if not chat_history:
         return "", 0
@@ -160,8 +169,8 @@ def _build_chat_context(chat_history: List[Dict], max_messages: int = 10) -> Tup
     recent = chat_history[-max_messages:] if len(chat_history) > max_messages else chat_history
     chat_lines = []
     for msg in recent:
-        role = msg.get('role', 'user')
-        content = str(msg.get('content', ''))[:500]
+        role = _get_msg_field(msg, 'role', 'user')
+        content = str(_get_msg_field(msg, 'content', ''))[:500]
         chat_lines.append(f"[{role.upper()}]: {content}")
 
     if not chat_lines:
