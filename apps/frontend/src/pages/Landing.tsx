@@ -1119,17 +1119,17 @@ const Landing: React.FC = () => {
             ].map((feature, i) => (
               <div
                 key={i}
-                className="group p-4 rounded-2xl bg-[#FCFBF8] dark:bg-zinc-900 border border-black/5 dark:border-white/5 hover:border-[#FF4301]/30 hover:bg-[#FF4301]/5 transition-all duration-200"
+                className="group p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-[#FCFBF8] dark:bg-zinc-900 border border-black/5 dark:border-white/5 hover:border-[#FF4301]/30 hover:bg-[#FF4301]/5 transition-all duration-200"
               >
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#FF4301]/10 flex items-center justify-center flex-shrink-0 group-hover:bg-[#FF4301]/20 transition-colors">
-                    <feature.icon className="w-5 h-5 text-[#FF4301]" />
+                <div className="flex items-start gap-2 sm:gap-3">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[#FF4301]/10 flex items-center justify-center flex-shrink-0 group-hover:bg-[#FF4301]/20 transition-colors">
+                    <feature.icon className="w-4 h-4 sm:w-5 sm:h-5 text-[#FF4301]" />
                   </div>
-                  <div className="min-w-0">
-                    <div className="font-bold text-sm text-black dark:text-white truncate" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-xs sm:text-sm text-black dark:text-white" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
                       {feature.label}
                     </div>
-                    <div className="text-xs text-black/50 dark:text-white/50 truncate">
+                    <div className="text-[10px] sm:text-xs text-black/50 dark:text-white/50">
                       {feature.desc}
                     </div>
                   </div>
