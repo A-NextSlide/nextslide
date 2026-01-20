@@ -46,6 +46,7 @@ const Landing: React.FC = () => {
   const [activeDeckSlideIndex, setActiveDeckSlideIndex] = useState(0);
   const [userInteracted, setUserInteracted] = useState(false);
   const [showcaseInView, setShowcaseInView] = useState(false);
+  const [showcaseHasBeenSeen, setShowcaseHasBeenSeen] = useState(false); // Latches true once seen
   const [heroInView, setHeroInView] = useState(true);
   const [scribbleAnimated, setScribbleAnimated] = useState(false);
   const autoScrollRef = useRef<NodeJS.Timeout | null>(null);
@@ -94,7 +95,11 @@ const Landing: React.FC = () => {
   // Log showcaseInView changes
   useEffect(() => {
     console.log('[Landing] 👁️ showcaseInView CHANGED:', showcaseInView);
-  }, [showcaseInView]);
+    // Latch to true once seen - prevents re-fade on scroll back
+    if (showcaseInView && !showcaseHasBeenSeen) {
+      setShowcaseHasBeenSeen(true);
+    }
+  }, [showcaseInView, showcaseHasBeenSeen]);
 
   // Log heroInView changes
   useEffect(() => {
@@ -754,9 +759,9 @@ const Landing: React.FC = () => {
                   ))}
                 </>
               )}
-              {/* Only render hero slides when in view - unmount when scrolled past to save memory */}
-              {!isLoadingShowcase && heroInView && (showcaseDecks.length > 0 || communityDecks.length > 0) && (
-                <>
+              {/* Render hero slides but hide when not in view - keeps them mounted to avoid re-fade on scroll back */}
+              {!isLoadingShowcase && (showcaseDecks.length > 0 || communityDecks.length > 0) && (
+                <div style={{ display: heroInView ? 'contents' : 'none' }}>
                   {/* ====== LEFT SIDE ====== */}
 
                   {/* L1 - Top left corner */}
@@ -775,7 +780,7 @@ const Landing: React.FC = () => {
                     >
                       {getHeroSlide(heroSlides[0]) && (
                         <Suspense key={`hs0-${heroSlides[0]?.source}-${heroSlides[0]?.deckIdx}-${heroSlides[0]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[0])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[0])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
@@ -794,7 +799,7 @@ const Landing: React.FC = () => {
                     <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '4deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[1]) && (
                         <Suspense key={`hs1-${heroSlides[1]?.source}-${heroSlides[1]?.deckIdx}-${heroSlides[1]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[1])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[1])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
@@ -813,7 +818,7 @@ const Landing: React.FC = () => {
                     <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-2xl ring-1 ring-black/10" style={{ '--rotation': '5deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[2]) && (
                         <Suspense key={`hs2-${heroSlides[2]?.source}-${heroSlides[2]?.deckIdx}-${heroSlides[2]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[2])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[2])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
@@ -834,7 +839,7 @@ const Landing: React.FC = () => {
                     <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-6deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[4]) && (
                         <Suspense key={`hs4-${heroSlides[4]?.source}-${heroSlides[4]?.deckIdx}-${heroSlides[4]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[4])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[4])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
@@ -854,7 +859,7 @@ const Landing: React.FC = () => {
                     <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '2deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[5]) && (
                         <Suspense key={`hs5-${heroSlides[5]?.source}-${heroSlides[5]?.deckIdx}-${heroSlides[5]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[5])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[5])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
@@ -873,7 +878,7 @@ const Landing: React.FC = () => {
                     <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '6deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[6]) && (
                         <Suspense key={`hs6-${heroSlides[6]?.source}-${heroSlides[6]?.deckIdx}-${heroSlides[6]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[6])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[6])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
@@ -894,7 +899,7 @@ const Landing: React.FC = () => {
                     <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '8deg', '--wobble-amount': '1.5deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[7]) && (
                         <Suspense key={`hs7-${heroSlides[7]?.source}-${heroSlides[7]?.deckIdx}-${heroSlides[7]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[7])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[7])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
@@ -913,7 +918,7 @@ const Landing: React.FC = () => {
                     <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-4deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[8]) && (
                         <Suspense key={`hs8-${heroSlides[8]?.source}-${heroSlides[8]?.deckIdx}-${heroSlides[8]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[8])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[8])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
@@ -932,7 +937,7 @@ const Landing: React.FC = () => {
                     <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-2xl ring-1 ring-black/10" style={{ '--rotation': '-5deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[9]) && (
                         <Suspense key={`hs9-${heroSlides[9]?.source}-${heroSlides[9]?.deckIdx}-${heroSlides[9]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[9])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[9])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
@@ -953,7 +958,7 @@ const Landing: React.FC = () => {
                     <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-14deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[11]) && (
                         <Suspense key={`hs11-${heroSlides[11]?.source}-${heroSlides[11]?.deckIdx}-${heroSlides[11]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[11])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[11])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
@@ -972,7 +977,7 @@ const Landing: React.FC = () => {
                     <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '14deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[12]) && (
                         <Suspense key={`hs12-${heroSlides[12]?.source}-${heroSlides[12]?.deckIdx}-${heroSlides[12]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[12])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[12])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
@@ -991,7 +996,7 @@ const Landing: React.FC = () => {
                     <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '-12deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[13]) && (
                         <Suspense key={`hs13-${heroSlides[13]?.source}-${heroSlides[13]?.deckIdx}-${heroSlides[13]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[13])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[13])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
@@ -1010,12 +1015,12 @@ const Landing: React.FC = () => {
                     <div className="hero-slide-wobble hero-slide-swap aspect-video rounded-md overflow-hidden shadow-xl ring-1 ring-black/5" style={{ '--rotation': '12deg', '--wobble-amount': '1deg' } as React.CSSProperties}>
                       {getHeroSlide(heroSlides[14]) && (
                         <Suspense key={`hs14-${heroSlides[14]?.source}-${heroSlides[14]?.deckIdx}-${heroSlides[14]?.slideIdx}`} fallback={<div className="w-full h-full bg-zinc-100 dark:bg-zinc-800" />}>
-                          <MiniSlide slide={getHeroSlide(heroSlides[14])!} responsive className="w-full h-full" />
+                          <MiniSlide slide={getHeroSlide(heroSlides[14])!} responsive forceRender className="w-full h-full" />
                         </Suspense>
                       )}
                     </div>
                   </div>
-                </>
+                </div>
               )}
             </div>
           </div>
@@ -1211,7 +1216,7 @@ const Landing: React.FC = () => {
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
                           <div className="text-white/40 text-xl font-medium mb-2">Loading...</div>
                         </div>
-                      ) : !showcaseInView || BROWSER.isMobile ? (
+                      ) : !showcaseHasBeenSeen || BROWSER.isMobile ? (
                         // Placeholder when scrolled out of view OR on mobile (no heavy components on mobile)
                         <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center">
                           {BROWSER.isMobile && showcaseInView && (
@@ -1298,7 +1303,7 @@ const Landing: React.FC = () => {
                         [...Array(5)].map((_, idx) => (
                           <div key={idx} className="w-[100px] sm:w-[120px] aspect-video rounded overflow-hidden relative bg-white/5 animate-pulse flex-shrink-0" />
                         ))
-                      ) : !showcaseInView || BROWSER.isMobile ? (
+                      ) : !showcaseHasBeenSeen || BROWSER.isMobile ? (
                         // Placeholder thumbnails when scrolled out of view or on mobile
                         [...Array(Math.min(5, activeDeck?.slideCount || 5))].map((_, idx) => (
                           <div
@@ -1354,7 +1359,7 @@ const Landing: React.FC = () => {
                         <div className="aspect-[16/9] relative bg-white/5 animate-pulse rounded-lg" />
                       </div>
                     ))
-                  ) : !showcaseInView || BROWSER.isMobile ? (
+                  ) : !showcaseHasBeenSeen || BROWSER.isMobile ? (
                     // Placeholder gallery items when scrolled out of view or on mobile
                     [...Array(showcaseDecks.length || 6)].map((_, index) => (
                       <div

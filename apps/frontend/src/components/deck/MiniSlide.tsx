@@ -115,6 +115,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   // LAZY LOADING: Only render when first visible, then stay rendered
   // Skip if forceRender is true
   const [shouldRender, setShouldRender] = useState(forceRender);
+  // Track when content has mounted for fade-in animation (always starts false for smooth transition)
+  const [isContentMounted, setIsContentMounted] = useState(false);
 
   useEffect(() => {
     // If forceRender or already rendered, no need to observe
@@ -157,6 +159,17 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       if (renderTimeout) clearTimeout(renderTimeout);
     };
   }, [shouldRender, forceRender]);
+
+  // Trigger fade-in animation after content mounts
+  useEffect(() => {
+    if (shouldRender && !isContentMounted) {
+      // Small delay to ensure DOM has painted before triggering transition
+      const timer = requestAnimationFrame(() => {
+        setIsContentMounted(true);
+      });
+      return () => cancelAnimationFrame(timer);
+    }
+  }, [shouldRender, isContentMounted]);
 
   // Normalize slide data
   const normalizedResult = useMemo(() => {
@@ -343,6 +356,9 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
             transformOrigin: 'top left',
             pointerEvents: interactive ? 'auto' : 'none',
             willChange: 'transform',
+            // Fade-in animation
+            opacity: isContentMounted ? 1 : 0,
+            transition: 'opacity 300ms ease-out',
           } as React.CSSProperties}
         >
           {/* Inner wrapper with explicit dimensions to ensure proper sizing */}
