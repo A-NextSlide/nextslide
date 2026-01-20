@@ -3610,3 +3610,9 @@ async def export_share_viewers(
             media_type="text/csv",
             headers={"Content-Disposition": "attachment; filename=share_viewers_export.csv"}
         )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error exporting share viewers: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
