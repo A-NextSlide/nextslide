@@ -115,7 +115,7 @@ export const captureTinySlideScreenshot = async (
       const iframeBody = iframe.contentDocument.body;
       const canvas = await html2canvas(iframeBody, {
         scale: 0.4,
-        backgroundColor: '#ffffff',
+        backgroundColor: null, // Preserve actual background (gradients, colors)
         width: 1920,
         height: 1080,
         logging: false,
