@@ -18,6 +18,7 @@ const NATIVE_HEIGHT = 1080;
 /**
  * Finds a slide element by its ID using the data-slide-id attribute.
  * Prefers main editing slides over thumbnails.
+ * Excludes empty overlay elements (pointer-events-none, no children).
  */
 export function findSlideElement(slideId: string): HTMLElement | null {
   // First, try to find the main editing slide (not in a thumbnail context)
@@ -27,7 +28,7 @@ export function findSlideElement(slideId: string): HTMLElement | null {
     return null;
   }
 
-  // Find the largest slide element (main editing slide is usually largest)
+  // Find the best slide element - must have children and not be an overlay
   let bestSlide: HTMLElement | null = null;
   let bestArea = 0;
 
@@ -41,11 +42,28 @@ export function findSlideElement(slideId: string): HTMLElement | null {
       return;
     }
 
+    // Skip empty overlay elements (no children = no content to capture)
+    if (element.children.length === 0) {
+      console.log('[findSlideElement] Skipping empty element:', element.className);
+      return;
+    }
+
+    // Skip pointer-events-none overlays
+    const style = window.getComputedStyle(element);
+    if (style.pointerEvents === 'none' && element.innerHTML.length < 100) {
+      console.log('[findSlideElement] Skipping pointer-events-none overlay:', element.className);
+      return;
+    }
+
     if (area > bestArea) {
       bestArea = area;
       bestSlide = element;
     }
   });
+
+  if (bestSlide) {
+    console.log('[findSlideElement] Found slide with', bestSlide.children.length, 'children');
+  }
 
   // Fall back to first match if no good candidate found
   return bestSlide || (allSlides[0] as HTMLElement);
@@ -53,6 +71,7 @@ export function findSlideElement(slideId: string): HTMLElement | null {
 
 /**
  * Finds any slide element in the DOM, preferring larger ones.
+ * Excludes empty overlay elements.
  */
 export function findAnySlideElement(): HTMLElement | null {
   const allSlides = document.querySelectorAll('[data-slide-id]');
@@ -61,7 +80,7 @@ export function findAnySlideElement(): HTMLElement | null {
     return null;
   }
 
-  // Find the largest slide element
+  // Find the largest slide element with actual content
   let bestSlide: HTMLElement | null = null;
   let bestArea = 0;
 
@@ -72,6 +91,17 @@ export function findAnySlideElement(): HTMLElement | null {
 
     // Skip very small thumbnails
     if (rect.width < 200 || rect.height < 100) {
+      return;
+    }
+
+    // Skip empty overlay elements
+    if (element.children.length === 0) {
+      return;
+    }
+
+    // Skip pointer-events-none overlays
+    const style = window.getComputedStyle(element);
+    if (style.pointerEvents === 'none' && element.innerHTML.length < 100) {
       return;
     }
 
