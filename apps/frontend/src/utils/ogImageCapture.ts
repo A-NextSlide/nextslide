@@ -114,7 +114,10 @@ async function waitForImages(element: HTMLElement, timeout = 5000): Promise<void
 
 /**
  * Captures a slide as an OG-optimized thumbnail.
- * Uses the same proven approach as captureTinySlideScreenshot.
+ *
+ * Key insight: The slide element is inside a CSS-transformed container (zoom).
+ * getBoundingClientRect() returns the VISUALLY scaled size, not native size.
+ * We need to calculate the proper html2canvas scale to get OG dimensions.
  *
  * @param slideElementOrId - Either an HTMLElement or a slide ID string
  */
@@ -139,11 +142,22 @@ export async function captureOGThumbnail(
     await new Promise(resolve => setTimeout(resolve, 200));
     await waitForImages(slideContainer);
 
-    // Get the container's bounding rect
+    // Get the container's bounding rect (this is the VISUAL size after CSS transforms)
     const rect = slideContainer.getBoundingClientRect();
+
+    // Get native dimensions from data attributes if available
+    const nativeWidth = parseInt(slideContainer.getAttribute('data-native-width') || '0', 10) || NATIVE_WIDTH;
+    const nativeHeight = parseInt(slideContainer.getAttribute('data-native-height') || '0', 10) || NATIVE_HEIGHT;
+
+    // Calculate the current zoom factor (visual size / native size)
+    const zoomFactor = rect.width / nativeWidth;
+
     console.log('[OG Capture] Slide dimensions:', {
-      width: rect.width,
-      height: rect.height,
+      visualWidth: rect.width,
+      visualHeight: rect.height,
+      nativeWidth,
+      nativeHeight,
+      zoomFactor: zoomFactor.toFixed(3),
       ratio: (rect.width / rect.height).toFixed(3)
     });
 
@@ -159,24 +173,28 @@ export async function captureOGThumbnail(
 
     if (iframe && iframe.contentDocument?.body) {
       // CustomComponent: Capture from iframe's internal document
+      // Iframes render at native size, so use standard scale
       console.log('[OG Capture] Using iframe.contentDocument for capture');
 
       canvas = await html2canvas(iframe.contentDocument.body, {
-        scale: 0.625, // 1200 / 1920 = 0.625 to get OG width
+        scale: OG_WIDTH / NATIVE_WIDTH, // 1200 / 1920 = 0.625
         backgroundColor: '#ffffff',
-        width: 1920,
-        height: 1080,
+        width: NATIVE_WIDTH,
+        height: NATIVE_HEIGHT,
         logging: false,
         useCORS: true,
         allowTaint: true,
         imageTimeout: 3000,
       });
     } else {
-      // Regular slide: Capture directly from container (same as captureTinySlideScreenshot)
-      console.log('[OG Capture] Capturing directly from slide element');
+      // Regular slide: The element is visually scaled by CSS transform
+      // To get 1200px output width, we need: scale = 1200 / visualWidth
+      const captureScale = OG_WIDTH / rect.width;
+
+      console.log('[OG Capture] Capturing with compensating scale:', captureScale.toFixed(3));
 
       canvas = await html2canvas(slideContainer, {
-        scale: 0.625, // Scale for OG dimensions
+        scale: captureScale,
         backgroundColor: '#ffffff',
         logging: false,
         useCORS: true,
@@ -222,13 +240,13 @@ export async function captureOGThumbnail(
     let offsetY: number;
 
     if (sourceAspect > targetAspect) {
-      // Source is wider - fit to width, crop height
+      // Source is wider (16:9 slide vs 1.9:1 OG) - fit to width, letterbox vertically
       drawWidth = OG_WIDTH;
       drawHeight = OG_WIDTH / sourceAspect;
       offsetX = 0;
       offsetY = (OG_HEIGHT - drawHeight) / 2;
     } else {
-      // Source is taller - fit to height, crop width
+      // Source is taller - fit to height, letterbox horizontally
       drawHeight = OG_HEIGHT;
       drawWidth = OG_HEIGHT * sourceAspect;
       offsetX = (OG_WIDTH - drawWidth) / 2;
