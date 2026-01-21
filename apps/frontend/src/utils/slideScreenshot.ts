@@ -95,11 +95,13 @@ export const captureSlideScreenshot = async (
  */
 export const captureTinySlideScreenshot = async (
   slideContainer: HTMLElement,
-  options?: { skipIframeCapture?: boolean }
+  options?: { skipIframeCapture?: boolean; waitTime?: number }
 ): Promise<string | null> => {
   try {
-    // Wait for any animations/rendering to complete
-    await new Promise(resolve => setTimeout(resolve, 150));
+    // Wait for animations/rendering to complete (default 1 second for OG captures)
+    const waitTime = options?.waitTime ?? 1000;
+    console.log(`[TinyScreenshot] Waiting ${waitTime}ms for content to render...`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
 
     // Find iframes with srcDoc (CustomComponent content)
     const iframe = slideContainer.querySelector('iframe[srcdoc]') as HTMLIFrameElement;
