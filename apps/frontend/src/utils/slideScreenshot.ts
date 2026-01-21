@@ -45,25 +45,69 @@ export const captureElementScreenshot = async (
 export const captureSlideScreenshot = async (
   slideContainer: HTMLElement
 ): Promise<string> => {
-  // Find the actual slide content (the scaled div)
-  const slideContent = slideContainer.querySelector('div[style*="transform"]') as HTMLElement;
+  const targetWidth = 1920;
+  const targetHeight = 1080;
+  const scale = 0.25; // Scale down for smaller file size (480x270)
 
+  // CustomComponent: capture directly from iframe content to allow JS rendering
+  const iframe = slideContainer.querySelector('iframe[srcdoc]') as HTMLIFrameElement | null;
+  if (iframe) {
+    const iframeDoc = await waitForIframeReady(iframe, 2000);
+    const iframeBody = iframeDoc?.body;
+
+    if (iframeBody) {
+      await waitForImages(iframeBody, 2000);
+      try {
+        await iframeDoc?.fonts?.ready;
+      } catch {
+        // Ignore font loading failures
+      }
+
+      const animOverride = iframeDoc ? forceAnimationsToEnd(iframeDoc) : null;
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      try {
+        const canvas = await html2canvas(iframeBody, {
+          scale,
+          backgroundColor: null, // Preserve actual background
+          width: targetWidth,
+          height: targetHeight,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          imageTimeout: 2000,
+        });
+        return canvas.toDataURL('image/png');
+      } finally {
+        removeAnimationOverride(animOverride);
+      }
+    }
+
+    // Fallback: extract and render srcDoc in a non-sandboxed container
+    const srcDoc = iframe.getAttribute('srcdoc') || '';
+    const fallback = await captureFromSrcDoc(srcDoc, {
+      scale,
+      width: targetWidth,
+      height: targetHeight,
+      format: 'png'
+    });
+    if (fallback) return fallback;
+  }
+
+  // Non-iframe slide: clone and capture
+  const slideContent = slideContainer.querySelector('div[style*="transform"]') as HTMLElement;
   if (!slideContent) {
     throw new Error('Slide content not found');
   }
 
-  // Clone the slide content to avoid modifying the original
   const clone = slideContent.cloneNode(true) as HTMLElement;
-
-  // Create a temporary container
   const tempContainer = document.createElement('div');
   tempContainer.style.position = 'absolute';
   tempContainer.style.left = '-9999px';
-  tempContainer.style.width = `${1920}px`;
-  tempContainer.style.height = `${1080}px`;
+  tempContainer.style.width = `${targetWidth}px`;
+  tempContainer.style.height = `${targetHeight}px`;
   tempContainer.style.backgroundColor = '#ffffff';
 
-  // Reset transform on the clone
   clone.style.transform = 'none';
   clone.style.position = 'relative';
 
@@ -71,16 +115,13 @@ export const captureSlideScreenshot = async (
   document.body.appendChild(tempContainer);
 
   try {
-    const screenshot = await captureElementScreenshot(tempContainer, {
-      scale: 0.25, // Scale down for smaller file size (480x270)
+    return await captureElementScreenshot(tempContainer, {
+      scale,
       backgroundColor: '#ffffff',
-      width: 1920,
-      height: 1080,
+      width: targetWidth,
+      height: targetHeight,
     });
-
-    return screenshot;
   } finally {
-    // Clean up
     document.body.removeChild(tempContainer);
   }
 };
@@ -144,38 +185,60 @@ export const captureTinySlideScreenshot = async (
     const isMobile = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent);
     const skipIframe = options?.skipIframeCapture || isMobile;
 
-    if (iframe && iframe.contentDocument?.body && !skipIframe) {
-      // CustomComponent: Capture directly from iframe's internal document
-      console.log(`[TinyScreenshot] Using iframe.contentDocument for capture`);
+    if (iframe && !skipIframe) {
+      // CustomComponent: Capture the slide container, but inline iframe content
+      console.log(`[TinyScreenshot] Inlining iframe content for capture`);
 
-      // Force all animations to end state (makes fade-in elements visible)
-      console.log(`[TinyScreenshot] Forcing animations to end state...`);
-      const animOverride = forceAnimationsToEnd(iframe.contentDocument);
+      const iframeDoc = await waitForIframeReady(iframe, 2000);
+      const iframeBody = iframeDoc?.body;
 
-      // Small delay to let style apply
-      await new Promise(resolve => setTimeout(resolve, 50));
+      if (iframeBody && iframeDoc) {
+        await waitForImages(iframeBody, 2000);
+        try {
+          await iframeDoc.fonts.ready;
+        } catch {
+          // Ignore font loading failures
+        }
 
-      const iframeBody = iframe.contentDocument.body;
-      let canvas: HTMLCanvasElement;
-      try {
-        canvas = await html2canvas(iframeBody, {
-          scale: 0.4,
-          backgroundColor: null, // Preserve actual background (gradients, colors)
-          width: 1920,
-          height: 1080,
-          logging: false,
-          useCORS: true,
-          allowTaint: true,
-          imageTimeout: 2000,
-        });
-      } finally {
-        // Remove the override after capture
-        removeAnimationOverride(animOverride);
+        // Force all animations to end state (makes fade-in elements visible)
+        console.log(`[TinyScreenshot] Forcing animations to end state...`);
+        const animOverride = forceAnimationsToEnd(iframeDoc);
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        const rect = slideContainer.getBoundingClientRect();
+        if (rect.width < 10 || rect.height < 10) {
+          console.warn('[TinyScreenshot] Container too small:', rect.width, rect.height);
+          removeAnimationOverride(animOverride);
+          return null;
+        }
+
+        let canvas: HTMLCanvasElement;
+        try {
+          canvas = await html2canvas(slideContainer, {
+            scale: 0.4,
+            backgroundColor: '#ffffff',
+            logging: false,
+            useCORS: true,
+            allowTaint: true,
+            imageTimeout: 3000,
+            width: rect.width,
+            height: rect.height,
+            scrollX: 0,
+            scrollY: 0,
+            x: 0,
+            y: 0,
+            onclone: (clonedDoc, clonedEl) => {
+              inlineIframeIntoClone(iframeDoc, clonedDoc, clonedEl);
+            }
+          });
+        } finally {
+          removeAnimationOverride(animOverride);
+        }
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        logScreenshotDebug(dataUrl, canvas);
+        return dataUrl;
       }
-
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-      logScreenshotDebug(dataUrl, canvas);
-      return dataUrl;
 
     } else if (iframe && skipIframe) {
       // Fallback: Extract and render srcDoc in a non-sandboxed container
@@ -252,17 +315,26 @@ function extractBackgroundFromSrcDoc(srcDoc: string): string {
 /**
  * Helper to capture from srcDoc HTML (fallback when contentDocument isn't accessible)
  */
-async function captureFromSrcDoc(srcDoc: string): Promise<string | null> {
+async function captureFromSrcDoc(
+  srcDoc: string,
+  options?: { scale?: number; width?: number; height?: number; format?: 'png' | 'jpeg'; quality?: number }
+): Promise<string | null> {
   // Extract actual background from srcDoc
   const extractedBg = extractBackgroundFromSrcDoc(srcDoc);
   console.log(`[TinyScreenshot] Extracted background: ${extractedBg}`);
+
+  const width = options?.width ?? 1920;
+  const height = options?.height ?? 1080;
+  const scale = options?.scale ?? 0.4;
+  const format = options?.format ?? 'jpeg';
+  const quality = options?.quality ?? 0.7;
 
   const tempContainer = document.createElement('div');
   tempContainer.style.position = 'absolute';
   tempContainer.style.left = '-9999px';
   tempContainer.style.top = '0';
-  tempContainer.style.width = '1920px';
-  tempContainer.style.height = '1080px';
+  tempContainer.style.width = `${width}px`;
+  tempContainer.style.height = `${height}px`;
   tempContainer.style.background = extractedBg;
   tempContainer.style.overflow = 'hidden';
   document.body.appendChild(tempContainer);
@@ -272,8 +344,8 @@ async function captureFromSrcDoc(srcDoc: string): Promise<string | null> {
     const parser = new DOMParser();
     const doc = parser.parseFromString(srcDoc, 'text/html');
     const wrapper = document.createElement('div');
-    wrapper.style.width = '1920px';
-    wrapper.style.height = '1080px';
+    wrapper.style.width = `${width}px`;
+    wrapper.style.height = `${height}px`;
     wrapper.style.position = 'relative';
     wrapper.style.overflow = 'hidden';
 
@@ -296,17 +368,17 @@ async function captureFromSrcDoc(srcDoc: string): Promise<string | null> {
     await new Promise(resolve => setTimeout(resolve, 100));
 
     const canvas = await html2canvas(tempContainer, {
-      scale: 0.4,
+      scale,
       backgroundColor: null, // Let the element's background show through
-      width: 1920,
-      height: 1080,
+      width,
+      height,
       logging: false,
       useCORS: true,
       allowTaint: true,
       imageTimeout: 2000,
     });
 
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+    const dataUrl = canvas.toDataURL(`image/${format}`, quality);
     logScreenshotDebug(dataUrl, canvas);
     return dataUrl;
   } finally {
@@ -314,6 +386,86 @@ async function captureFromSrcDoc(srcDoc: string): Promise<string | null> {
       document.body.removeChild(tempContainer);
     }
   }
+}
+
+async function waitForIframeReady(iframe: HTMLIFrameElement, maxWait: number): Promise<Document | null> {
+  const start = Date.now();
+  return new Promise((resolve) => {
+    const check = () => {
+      const doc = iframe.contentDocument;
+      if (doc && (doc.readyState === 'complete' || doc.readyState === 'interactive')) {
+        resolve(doc);
+        return;
+      }
+      if (Date.now() - start > maxWait) {
+        resolve(doc || null);
+        return;
+      }
+      requestAnimationFrame(check);
+    };
+    check();
+  });
+}
+
+async function waitForImages(element: HTMLElement, maxWait: number): Promise<void> {
+  const images = Array.from(element.querySelectorAll('img')) as HTMLImageElement[];
+  if (images.length === 0) return;
+
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, maxWait));
+  const loading = Promise.all(images.map(img => {
+    return new Promise<void>((resolve) => {
+      if (img.complete && img.naturalWidth > 0) {
+        resolve();
+        return;
+      }
+      const onLoad = () => { img.removeEventListener('load', onLoad); img.removeEventListener('error', onLoad); resolve(); };
+      img.addEventListener('load', onLoad);
+      img.addEventListener('error', onLoad);
+    });
+  }));
+
+  await Promise.race([loading, timeout]);
+}
+
+function inlineIframeIntoClone(
+  sourceDoc: Document,
+  clonedDoc: Document,
+  clonedEl: HTMLElement
+): void {
+  const clonedIframe = clonedEl.querySelector('iframe[srcdoc], iframe[title="Custom Component"]') as HTMLIFrameElement | null;
+  if (!clonedIframe) return;
+
+  // Inject iframe styles into cloned document once
+  if (!clonedDoc.head.querySelector('[data-iframe-inline-root="true"]')) {
+    const marker = clonedDoc.createElement('meta');
+    marker.setAttribute('data-iframe-inline-root', 'true');
+    clonedDoc.head.appendChild(marker);
+
+    sourceDoc.querySelectorAll('style').forEach((style) => {
+      const clonedStyle = clonedDoc.createElement('style');
+      clonedStyle.textContent = style.textContent || '';
+      clonedDoc.head.appendChild(clonedStyle);
+    });
+
+    sourceDoc.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
+      const clonedLink = clonedDoc.createElement('link');
+      clonedLink.rel = 'stylesheet';
+      clonedLink.href = link.href;
+      clonedDoc.head.appendChild(clonedLink);
+    });
+  }
+
+  const replacement = clonedDoc.createElement('div');
+  replacement.style.cssText = clonedIframe.style.cssText;
+  replacement.style.width = clonedIframe.style.width || '100%';
+  replacement.style.height = clonedIframe.style.height || '100%';
+  replacement.style.border = 'none';
+  replacement.style.backgroundColor = 'transparent';
+  replacement.style.overflow = 'hidden';
+  replacement.style.pointerEvents = 'none';
+  replacement.innerHTML = sourceDoc.body.innerHTML;
+
+  clonedIframe.replaceWith(replacement);
 }
 
 /**
