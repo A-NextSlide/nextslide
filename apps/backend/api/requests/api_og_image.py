@@ -220,41 +220,87 @@ def apply_watermark(
     return result.convert("RGB")
 
 
+def get_font(size: int) -> ImageFont.FreeTypeFont:
+    """Get a font, trying multiple system paths."""
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",  # macOS
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+    ]
+
+    for path in font_paths:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+
+    # Last resort: use default but warn
+    logger.warning("No system fonts found, using Pillow default (will be small)")
+    return ImageFont.load_default()
+
+
 def create_fallback_og_image(title: str = "NextSlide Presentation") -> Image.Image:
     """Create a fallback OG image when no thumbnail is available."""
-    image = Image.new("RGB", (OG_WIDTH, OG_HEIGHT), (255, 255, 255))
+    # Dark gradient background for better visual appeal
+    image = Image.new("RGB", (OG_WIDTH, OG_HEIGHT), (30, 30, 35))
     draw = ImageDraw.Draw(image)
 
-    # Draw a subtle gradient background
+    # Draw gradient from dark to slightly lighter
     for y in range(OG_HEIGHT):
-        r = int(255 - (y / OG_HEIGHT) * 10)
-        g = int(255 - (y / OG_HEIGHT) * 10)
-        b = int(255 - (y / OG_HEIGHT) * 5)
+        progress = y / OG_HEIGHT
+        r = int(30 + progress * 15)
+        g = int(30 + progress * 15)
+        b = int(35 + progress * 20)
         draw.line([(0, y), (OG_WIDTH, y)], fill=(r, g, b))
 
-    # Add title text
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
-    except Exception:
-        font = ImageFont.load_default()
+    # Add a subtle accent line at top
+    draw.rectangle([(0, 0), (OG_WIDTH, 4)], fill=BRAND_ORANGE)
+
+    # Get fonts
+    title_font = get_font(52)
+    subtitle_font = get_font(24)
+
+    # Draw title (white text on dark background)
+    title_color = (255, 255, 255)
+
+    # Truncate title if too long
+    display_title = title[:45] + "..." if len(title) > 45 else title
 
     # Center the title
     if hasattr(draw, 'textbbox'):
-        bbox = draw.textbbox((0, 0), title, font=font)
+        bbox = draw.textbbox((0, 0), display_title, font=title_font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
     else:
-        text_width = len(title) * 24
-        text_height = 48
+        text_width = len(display_title) * 26
+        text_height = 52
 
     x = (OG_WIDTH - text_width) // 2
-    y = (OG_HEIGHT - text_height) // 2 - 40
+    y = (OG_HEIGHT - text_height) // 2 - 30
 
-    draw.text((x, y), title, fill=BRAND_DARK, font=font)
+    draw.text((x, y), display_title, fill=title_color, font=title_font)
 
-    # Add branding
-    watermark = create_brand_watermark(220, 50)
-    image = apply_watermark(image, watermark, "bottom-right", margin=30)
+    # Add subtitle
+    subtitle = "Shared via NextSlide"
+    if hasattr(draw, 'textbbox'):
+        sub_bbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
+        sub_width = sub_bbox[2] - sub_bbox[0]
+    else:
+        sub_width = len(subtitle) * 12
+
+    draw.text(
+        ((OG_WIDTH - sub_width) // 2, y + text_height + 20),
+        subtitle,
+        fill=(180, 180, 180),
+        font=subtitle_font
+    )
+
+    # Add branding watermark
+    watermark = create_brand_watermark(200, 45)
+    image = apply_watermark(image, watermark, "bottom-right", margin=30, opacity=0.9)
 
     return image
 

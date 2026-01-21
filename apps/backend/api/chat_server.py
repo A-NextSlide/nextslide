@@ -172,6 +172,7 @@ from api.requests.api_speech_to_text import router as speech_to_text_router
 from api.requests.api_developer import router as developer_router
 from api.requests.api_public_v1 import router as public_api_v1_router
 from api.requests.api_followup import router as followup_router
+from api.requests.api_chatbase import router as chatbase_router, help_router as chatbase_help_router
 from fastapi import Depends
 
 # Middleware imports removed - files were deleted
@@ -308,6 +309,8 @@ app.include_router(billing_router, prefix="/api", tags=["Billing"])
 app.include_router(speech_to_text_router)
 app.include_router(developer_router, tags=["Developer API"])
 app.include_router(followup_router, prefix="/api", tags=["Follow-up Messages"])
+app.include_router(chatbase_router, tags=["Chatbase Support"])
+app.include_router(chatbase_help_router, tags=["Chatbase Help Center"])
 # Mount public API at /v1 (clean URLs for api.nextslide.ai) and /api/v1 (backward compatibility)
 app.include_router(public_api_v1_router, prefix="/v1", tags=["Public API v1"])
 app.include_router(public_api_v1_router, prefix="/api/v1", tags=["Public API v1"])

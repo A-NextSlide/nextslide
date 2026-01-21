@@ -42,7 +42,9 @@ import {
   X,
   Building2,
   Clock,
-  Pencil
+  Pencil,
+  MessageCircle,
+  HelpCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
@@ -79,8 +81,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { teamsApi, Team, TeamMember } from '@/services/teamsApi';
 import ThemeChatBlock from '@/components/chat/blocks/ThemeChatBlock';
+import { API_CONFIG } from '@/config/environment';
 
-type SettingsTab = 'profile' | 'security' | 'notifications' | 'billing' | 'integrations' | 'api' | 'team';
+type SettingsTab = 'profile' | 'security' | 'notifications' | 'billing' | 'integrations' | 'api' | 'team' | 'support';
 
 type TeamRole = 'owner' | 'admin' | 'member';
 
@@ -559,6 +562,78 @@ const Profile: React.FC = () => {
       loadApiKeys();
     }
   }, [activeTab, user, authLoading]);
+
+  // Load Chatbase widget when on support tab
+  useEffect(() => {
+    if (activeTab !== 'support') return;
+
+    const loadChatbase = async () => {
+      // Initialize chatbase queue if not exists
+      if (!(window as any).chatbase || (window as any).chatbase('getState') !== 'initialized') {
+        (window as any).chatbase = (...args: any[]) => {
+          if (!(window as any).chatbase.q) {
+            (window as any).chatbase.q = [];
+          }
+          (window as any).chatbase.q.push(args);
+        };
+        (window as any).chatbase = new Proxy((window as any).chatbase, {
+          get(target: any, prop: string) {
+            if (prop === 'q') return target.q;
+            return (...args: any[]) => target(prop, ...args);
+          }
+        });
+      }
+
+      // Load script if not already loaded
+      if (!document.getElementById('chatbase-script')) {
+        const script = document.createElement('script');
+        script.src = 'https://www.chatbase.co/embed.min.js';
+        script.id = 'chatbase-script';
+        script.setAttribute('data-chatbase-id', 'lO1UjxyTYHy5jrGi9Fjnz');
+        script.domain = 'www.chatbase.co';
+        script.defer = true;
+        document.body.appendChild(script);
+      }
+
+      // Identify user for personalized support
+      if (user) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            const apiBase = API_CONFIG.BASE_URL.replace(/\/$/, '');
+            const response = await fetch(`${apiBase}/chatbase/identity-token`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+            if (response.ok) {
+              const data = await response.json();
+              if (data.token && (window as any).chatbase) {
+                (window as any).chatbase('identify', { token: data.token });
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[Chatbase] Failed to identify user:', e);
+        }
+      }
+    };
+
+    loadChatbase();
+
+    // Cleanup: hide the widget when leaving support tab
+    return () => {
+      if ((window as any).chatbase) {
+        try {
+          (window as any).chatbase('hide');
+        } catch (e) {
+          // Widget might not be initialized yet
+        }
+      }
+    };
+  }, [activeTab, user]);
 
   // Auto-enable brand settings toggle when values are modified from defaults (Create dialog)
   useEffect(() => {
@@ -1077,6 +1152,7 @@ const Profile: React.FC = () => {
     { id: 'integrations' as const, label: 'Integrations', icon: Link2 },
     { id: 'api' as const, label: 'Developer API', icon: Code },
     { id: 'notifications' as const, label: 'Notifications', icon: Bell },
+    { id: 'support' as const, label: 'Help & Support', icon: MessageCircle },
   ];
 
   return (
@@ -2230,6 +2306,69 @@ const Profile: React.FC = () => {
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Support Tab */}
+              {activeTab === 'support' && (
+                <div className="p-6 lg:p-8">
+                  <div className="mb-8">
+                    <h2 className="text-xl font-semibold mb-1">Help & Support</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Get help with NextSlide or chat with our support team
+                    </p>
+                  </div>
+
+                  <div className="space-y-6">
+                    {/* Help Center Card */}
+                    <div className="p-6 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+                      <div className="flex items-start gap-4">
+                        <div className="h-12 w-12 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center flex-shrink-0">
+                          <HelpCircle className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-semibold mb-1">Help Center</h3>
+                          <p className="text-sm text-muted-foreground mb-4">
+                            Browse our documentation, guides, and frequently asked questions.
+                          </p>
+                          <Button
+                            variant="outline"
+                            onClick={() => navigate('/help')}
+                            className="gap-2"
+                          >
+                            <HelpCircle className="h-4 w-4" />
+                            Visit Help Center
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Live Chat Card */}
+                    <div className="p-6 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+                      <div className="flex items-start gap-4">
+                        <div className="h-12 w-12 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                          <MessageCircle className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-semibold mb-1">Chat with Us</h3>
+                          <p className="text-sm text-muted-foreground mb-4">
+                            Have a question? Our AI assistant is here to help, or connect with our support team.
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Look for the chat bubble in the bottom-right corner of this page.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Contact Info */}
+                    <div className="p-4 bg-zinc-50 dark:bg-zinc-800/30 rounded-lg">
+                      <h3 className="text-sm font-medium mb-2">Other ways to reach us</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Email us at <a href="mailto:support@nextslide.ai" className="text-orange-600 dark:text-orange-400 hover:underline">support@nextslide.ai</a>
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

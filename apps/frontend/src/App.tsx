@@ -54,6 +54,7 @@ import TemporaryPasswordGate from './components/TemporaryPasswordGate';
 import SmartGallery from './pages/SmartGallery';
 import Pricing from './pages/Pricing';
 import DeveloperAPI from './pages/DeveloperAPI';
+import Help from './pages/Help';
 import { CreditsProvider } from './context/CreditsContext';
 import { OnboardingProvider } from './context/OnboardingContext';
 import UpgradePrompt from './components/billing/UpgradePrompt';
@@ -524,6 +525,7 @@ const AppContent = () => {
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/smart-gallery" element={<SmartGallery />} />
               <Route path="/developers" element={<DeveloperAPI />} />
+              <Route path="/help" element={<Help />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </TemporaryPasswordGate>
