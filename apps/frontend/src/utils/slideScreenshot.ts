@@ -93,18 +93,43 @@ export const captureSlideScreenshot = async (
  * - JPEG at 70% quality
  * - Returns base64 data URL
  */
+/**
+ * Wait for all CSS animations to complete on an element and its children
+ */
+async function waitForAnimations(element: HTMLElement | Document, timeout = 3000): Promise<void> {
+  const startTime = Date.now();
+
+  const checkAnimations = (): boolean => {
+    const animations = (element as any).getAnimations?.() || [];
+    return animations.length === 0 || animations.every((a: Animation) => a.playState === 'finished');
+  };
+
+  // Poll until animations complete or timeout
+  while (!checkAnimations() && Date.now() - startTime < timeout) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+}
+
 export const captureTinySlideScreenshot = async (
   slideContainer: HTMLElement,
   options?: { skipIframeCapture?: boolean; waitTime?: number }
 ): Promise<string | null> => {
   try {
-    // Wait for animations/rendering to complete (default 1 second for OG captures)
-    const waitTime = options?.waitTime ?? 1000;
+    // Wait for content to fully render (default 2 seconds for slides with animations)
+    const waitTime = options?.waitTime ?? 2000;
     console.log(`[TinyScreenshot] Waiting ${waitTime}ms for content to render...`);
     await new Promise(resolve => setTimeout(resolve, waitTime));
 
     // Find iframes with srcDoc (CustomComponent content)
     const iframe = slideContainer.querySelector('iframe[srcdoc]') as HTMLIFrameElement;
+
+    // If there's an iframe, wait for its animations too
+    if (iframe?.contentDocument) {
+      console.log(`[TinyScreenshot] Waiting for iframe animations to complete...`);
+      await waitForAnimations(iframe.contentDocument, 2000);
+      // Extra wait for any final rendering
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
 
     // On mobile, skip iframe.contentDocument capture - html2canvas fails due to sandbox
     const isMobile = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent);
