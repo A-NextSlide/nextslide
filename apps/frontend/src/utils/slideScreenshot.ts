@@ -96,6 +96,7 @@ export const captureSlideScreenshot = async (
 /**
  * Force all CSS animations to their end state by injecting a style override.
  * This ensures fade-in elements are visible when captured.
+ * NOTE: We do NOT override transform as that breaks layout positioning.
  */
 function forceAnimationsToEnd(doc: Document): HTMLStyleElement | null {
   try {
@@ -103,13 +104,10 @@ function forceAnimationsToEnd(doc: Document): HTMLStyleElement | null {
     style.id = '__force-animations-end__';
     style.textContent = `
       *, *::before, *::after {
-        animation-delay: -9999s !important;
-        animation-duration: 0s !important;
-        animation-play-state: paused !important;
-        transition-delay: 0s !important;
-        transition-duration: 0s !important;
+        animation: none !important;
+        transition: none !important;
         opacity: 1 !important;
-        transform: none !important;
+        visibility: visible !important;
       }
     `;
     doc.head.appendChild(style);
