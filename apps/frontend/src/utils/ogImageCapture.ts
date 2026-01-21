@@ -137,6 +137,9 @@ export async function captureOGThumbnail(
   try {
     const slideId = slideContainer.getAttribute('data-slide-id') || 'unknown';
     console.log('[OG Capture] Starting capture for slide:', slideId);
+    console.log('[OG Capture] Element:', slideContainer.tagName, slideContainer.className);
+    console.log('[OG Capture] Element innerHTML length:', slideContainer.innerHTML.length);
+    console.log('[OG Capture] Children count:', slideContainer.children.length);
 
     // Wait for any pending renders and images
     await new Promise(resolve => setTimeout(resolve, 200));
@@ -187,17 +190,22 @@ export async function captureOGThumbnail(
         imageTimeout: 3000,
       });
     } else {
-      // Regular slide: Capture at scale 1 (visual size), then scale up in final canvas
-      // html2canvas works better with scale <= 1
-      console.log('[OG Capture] Capturing at visual size, will scale up later');
+      // Regular slide: Use EXACT same params as working captureTinySlideScreenshot
+      console.log('[OG Capture] Using proven captureTinySlideScreenshot params');
 
       canvas = await html2canvas(slideContainer, {
-        scale: 1, // Capture at visual resolution - will scale up in final canvas
+        scale: 1,
+        backgroundColor: '#ffffff',
         logging: false,
         useCORS: true,
         allowTaint: true,
         imageTimeout: 3000,
-        // Let html2canvas determine bounds from the element
+        width: rect.width,
+        height: rect.height,
+        scrollX: 0,
+        scrollY: 0,
+        x: 0,
+        y: 0,
       });
     }
 
@@ -205,6 +213,15 @@ export async function captureOGThumbnail(
       canvasWidth: canvas.width,
       canvasHeight: canvas.height
     });
+
+    // Debug: Check if canvas has content by sampling pixels
+    const debugCtx = canvas.getContext('2d');
+    if (debugCtx) {
+      const centerPixel = debugCtx.getImageData(Math.floor(canvas.width/2), Math.floor(canvas.height/2), 1, 1).data;
+      const cornerPixel = debugCtx.getImageData(10, 10, 1, 1).data;
+      console.log('[OG Capture] Center pixel RGBA:', centerPixel[0], centerPixel[1], centerPixel[2], centerPixel[3]);
+      console.log('[OG Capture] Corner pixel RGBA:', cornerPixel[0], cornerPixel[1], cornerPixel[2], cornerPixel[3]);
+    }
 
     // Create final OG-sized canvas (1200x630)
     const finalCanvas = document.createElement('canvas');
