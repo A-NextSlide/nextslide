@@ -386,6 +386,8 @@ async def get_og_image(short_code: str):
             og_image_url = extract_first_slide_image(deck_data)
             if og_image_url:
                 logger.info(f"Extracted OG image from first slide: {og_image_url[:100]}...")
+            else:
+                logger.info(f"No OG image found for {short_code}, will use fallback")
 
         # Try to fetch the thumbnail
         final_image = None
