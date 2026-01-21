@@ -457,6 +457,22 @@ const DeckList: React.FC = () => {
     }
   }, [heroTextareaBaseHeight, setHeroInput, setOnboardingSeedPrompt, setOnboardingSessionId, setShowConversationalOnboarding]);
 
+  // Check for pending prompt from landing page after login
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const pendingPrompt = localStorage.getItem('landing_prompt');
+    if (pendingPrompt) {
+      // Clear it immediately to prevent re-triggering
+      localStorage.removeItem('landing_prompt');
+
+      // Small delay to ensure component is fully mounted
+      setTimeout(() => {
+        openConversationalOnboarding(pendingPrompt);
+      }, 100);
+    }
+  }, [isAuthenticated, openConversationalOnboarding]);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setUploadedFiles(prev => [...prev, ...Array.from(e.target.files!)]);

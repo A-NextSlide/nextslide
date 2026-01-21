@@ -215,12 +215,12 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
     try {
       // Load share links
       let response = await shareService.getShareLinks(deckUuid);
-      
+
       if (!response.success && response.error?.includes('401')) {
         console.log('[DeckSharing] Backend authentication failed, using mock service');
         response = await mockShareService.getShareLinks(deckUuid);
       }
-      
+
       if (response.success && response.data) {
         const links = Array.isArray(response.data) ? response.data : [];
         setShareLinks(links);
@@ -228,6 +228,8 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
 
       // Load collaborators - this would come from a separate API endpoint
       await loadCollaborators();
+    } catch (error) {
+      console.error('[DeckSharing] Error loading share data:', error);
     } finally {
       setIsLoading(false);
     }
@@ -306,15 +308,22 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
         });
 
         const fullUrl = mockShareService.getShareUrl(response.data.short_code, shareType);
-        await navigator.clipboard.writeText(fullUrl);
 
-        toast({
-          title: "Link copied",
-          description: "Share link has been copied to clipboard",
-        });
+        // Clipboard write can fail (permissions, unfocused document, etc.)
+        // Don't let it break the overall success flow
+        try {
+          await navigator.clipboard.writeText(fullUrl);
+          toast({
+            title: "Link copied",
+            description: "Share link has been copied to clipboard",
+          });
+        } catch (clipboardError) {
+          console.warn('[DeckSharing] Failed to copy to clipboard:', clipboardError);
+        }
 
-        // Capture OG thumbnail for the first slide (async, non-blocking)
-        captureAndUploadOGThumbnail(
+        // Capture OG thumbnail for the first slide before sharing
+        // This avoids social crawlers caching the fallback OG image
+        await captureAndUploadOGThumbnail(
           response.data.id,
           response.data.short_code
         );

@@ -17,6 +17,7 @@ import CommunityGallery from '@/components/community/CommunityGallery';
 import CommunityBottomSheet from '@/components/community/CommunityBottomSheet';
 import { useTypewriter } from '@/hooks/useTypewriter';
 import LegalModal from '@/components/legal/LegalModal';
+import AuthDialog from '@/components/auth/AuthDialog';
 import { BROWSER } from '@/utils/browser';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
@@ -110,6 +111,10 @@ const Landing: React.FC = () => {
   // Legal modal
   const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [legalDocType, setLegalDocType] = useState<'privacy' | 'terms'>('privacy');
+
+  // Hero input and auth dialog
+  const [heroInput, setHeroInput] = useState('');
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
 
   const openLegalModal = (type: 'privacy' | 'terms') => {
     setLegalDocType(type);
@@ -1030,12 +1035,40 @@ const Landing: React.FC = () => {
             <div className="pointer-events-auto w-full max-w-2xl px-4 sm:px-8 hero-input-box">
               {/* The prompt card */}
               <div className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-lg shadow-black/10 dark:shadow-black/50 border border-black/5 dark:border-white/10 p-6 sm:p-8">
-                {/* Input with typewriter effect */}
+                {/* Editable input with typewriter placeholder */}
                 <div className="relative mb-6">
-                  <div className="text-lg sm:text-2xl md:text-3xl font-medium text-black dark:text-white leading-relaxed">
+                  <div className="relative text-lg sm:text-2xl md:text-3xl font-medium leading-relaxed">
                     <span className="text-black/40 dark:text-white/40">Create </span>
-                    <span className="text-black dark:text-white">{typewriterText}</span>
-                    <span className="inline-block w-0.5 h-[1em] bg-[#FF4301] ml-1 animate-pulse align-middle" />
+                    <div className="inline-block relative min-w-[200px] sm:min-w-[300px]">
+                      <input
+                        type="text"
+                        value={heroInput}
+                        onChange={(e) => setHeroInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && heroInput.trim()) {
+                            e.preventDefault();
+                            if (isSignedIn) {
+                              // Store prompt and navigate
+                              localStorage.setItem('landing_prompt', heroInput.trim());
+                              navigate('/app');
+                            } else {
+                              // Store prompt and show auth dialog
+                              localStorage.setItem('landing_prompt', heroInput.trim());
+                              setShowAuthDialog(true);
+                            }
+                          }
+                        }}
+                        className="w-full bg-transparent border-none outline-none text-black dark:text-white placeholder-transparent caret-[#FF4301] text-lg sm:text-2xl md:text-3xl font-medium"
+                        placeholder="a presentation about..."
+                      />
+                      {/* Typewriter placeholder - shown when input is empty */}
+                      {!heroInput && (
+                        <div className="absolute inset-0 pointer-events-none flex items-center">
+                          <span className="text-black dark:text-white">{typewriterText}</span>
+                          <span className="inline-block w-0.5 h-[1em] bg-[#FF4301] ml-1 animate-pulse align-middle" />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -1046,10 +1079,24 @@ const Landing: React.FC = () => {
                   </div>
                   <Button
                     size="lg"
-                    onClick={() => navigate(isSignedIn ? '/app' : '/signup')}
+                    onClick={() => {
+                      if (isSignedIn) {
+                        // Store prompt if exists and navigate
+                        if (heroInput.trim()) {
+                          localStorage.setItem('landing_prompt', heroInput.trim());
+                        }
+                        navigate('/app');
+                      } else {
+                        // Store prompt if exists and show auth dialog
+                        if (heroInput.trim()) {
+                          localStorage.setItem('landing_prompt', heroInput.trim());
+                        }
+                        setShowAuthDialog(true);
+                      }
+                    }}
                     className="bg-[#FF4301] hover:bg-[#E63901] text-white px-6 sm:px-8 py-3 text-sm sm:text-base font-semibold rounded-xl shadow-lg shadow-orange-500/25 transition-all hover:scale-105 active:scale-95"
                   >
-                    Get started
+                    {isSignedIn ? 'Continue to my slides' : 'Get started'}
                     <ArrowRight className="ml-2 w-4 h-4 sm:w-5 sm:h-5" />
                   </Button>
                 </div>
@@ -2049,6 +2096,17 @@ const Landing: React.FC = () => {
         isOpen={legalModalOpen}
         onClose={() => setLegalModalOpen(false)}
         documentType={legalDocType}
+      />
+
+      {/* Auth Dialog */}
+      <AuthDialog
+        open={showAuthDialog}
+        onOpenChange={setShowAuthDialog}
+        initialMode="signup"
+        onSuccess={() => {
+          // After successful auth, navigate to /app with the stored prompt
+          navigate('/app');
+        }}
       />
 
       {/* Animations */}

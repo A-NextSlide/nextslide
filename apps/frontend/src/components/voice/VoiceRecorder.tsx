@@ -236,6 +236,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   const isHoldingRef = useRef(false);
   const recordingDelayRef = useRef<NodeJS.Timeout | null>(null);
   const pendingStartRef = useRef<(() => void) | null>(null);
+  const startSequenceRef = useRef(0);
+  const connectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const ignorePointerUpRef = useRef(false);
+  const awaitingPermissionRef = useRef(false);
   // Track if we've successfully gotten mic permission (persists across renders)
   const hasGrantedPermissionRef = useRef(false);
 
@@ -261,6 +265,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
       if (recordingDelayRef.current) clearTimeout(recordingDelayRef.current);
+      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
       if (audioContextRef.current?.state !== 'closed') audioContextRef.current?.close();
       if (wsRef.current) wsRef.current.close();
@@ -318,10 +323,21 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
+      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = setTimeout(() => {
+        if (wsRef.current === ws && ws.readyState !== WebSocket.OPEN) {
+          console.error('Speech WebSocket timeout');
+          onError?.('Connection timeout');
+          ws.close();
+        }
+      }, 6000);
 
       // Set up audio context for PCM conversion
       const audioContext = new AudioContext({ sampleRate: 16000 });
       audioContextRef.current = audioContext;
+      if (audioContext.state === 'suspended') {
+        audioContext.resume().catch(() => undefined);
+      }
 
       const source = audioContext.createMediaStreamSource(stream);
 
@@ -362,6 +378,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
           if (data.type === 'ready') {
             setIsConnecting(false);
+            if (connectTimeoutRef.current) {
+              clearTimeout(connectTimeoutRef.current);
+              connectTimeoutRef.current = null;
+            }
             setIsRecording(true);
             onRecordingStart?.();
             animationFrameRef.current = requestAnimationFrame(analyzeAudio);
@@ -406,6 +426,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       ws.onclose = () => {
         console.log('Speech WebSocket closed');
         setIsConnecting(false);
+        if (connectTimeoutRef.current) {
+          clearTimeout(connectTimeoutRef.current);
+          connectTimeoutRef.current = null;
+        }
+        if (!isRecording) {
+          setIsProcessing(false);
+        }
       };
 
     } catch (error) {
@@ -424,11 +451,15 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   const stopRecording = useCallback(async () => {
     if (!isRecording && !isConnecting) return;
 
+    const wasRecording = isRecording;
     setIsRecording(false);
     setIsLocked(false);
     setAudioLevel(0);
-    setIsProcessing(true); // Show processing state while waiting for transcript
-    onRecordingEnd?.();
+    setIsProcessing(wasRecording); // Only show processing if we actually recorded
+    if (wasRecording) {
+      onRecordingEnd?.();
+    }
+    setIsConnecting(false);
 
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -436,8 +467,17 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     }
 
     // Signal end of audio to server - don't close, wait for transcript in onmessage
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'end' }));
+    if (wsRef.current) {
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        if (wasRecording) {
+          wsRef.current.send(JSON.stringify({ type: 'end' }));
+        } else {
+          wsRef.current.close();
+        }
+      } else {
+        wsRef.current.close();
+      }
+      wsRef.current = null;
     }
 
     // Stop audio processing
@@ -453,10 +493,15 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       await audioContextRef.current?.close();
       audioContextRef.current = null;
     }
+    if (connectTimeoutRef.current) {
+      clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = null;
+    }
   }, [isRecording, isConnecting, onRecordingEnd]);
 
   const handleAllowMic = useCallback(async () => {
     setShowPermissionDialog(false);
+    awaitingPermissionRef.current = false;
     if (pendingStartRef.current) {
       pendingStartRef.current();
       pendingStartRef.current = null;
@@ -465,17 +510,21 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
   const handleDenyMic = useCallback(() => {
     setShowPermissionDialog(false);
+    awaitingPermissionRef.current = false;
     pendingStartRef.current = null;
   }, []);
 
   const initiateRecording = useCallback(async (isShiftClick: boolean) => {
+    const startId = ++startSequenceRef.current;
     // Check if permission is already granted
     const hasPermission = await checkMicPermission();
 
     if (!hasPermission) {
       // Show permission dialog
       setShowPermissionDialog(true);
+      awaitingPermissionRef.current = true;
       pendingStartRef.current = () => {
+        if (startId !== startSequenceRef.current) return;
         if (isShiftClick) {
           setIsLocked(true);
         }
@@ -484,6 +533,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       return;
     }
 
+    if (startId !== startSequenceRef.current) return;
     if (isShiftClick) {
       setIsLocked(true);
     }
@@ -496,6 +546,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
     // Shift+click = toggle mode (immediate)
     if (e.shiftKey) {
+      ignorePointerUpRef.current = true;
       if (isRecording) {
         stopRecording();
       } else {
@@ -507,19 +558,26 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     // Normal click & hold - delay recording start to detect quick clicks
     pointerDownTimeRef.current = Date.now();
     isHoldingRef.current = true;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
 
     // Start recording after a short delay (allows quick click detection)
+    const holdThresholdMs = e.pointerType === 'touch' ? 300 : 160;
     recordingDelayRef.current = setTimeout(() => {
       if (isHoldingRef.current) {
         initiateRecording(false);
       }
-    }, 150);
+    }, holdThresholdMs);
   }, [isRecording, initiateRecording, stopRecording]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
+    if (ignorePointerUpRef.current) {
+      ignorePointerUpRef.current = false;
+      return;
+    }
 
     const holdDuration = Date.now() - pointerDownTimeRef.current;
 
@@ -528,28 +586,35 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       clearTimeout(recordingDelayRef.current);
       recordingDelayRef.current = null;
     }
+    if (awaitingPermissionRef.current) {
+      isHoldingRef.current = false;
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      return;
+    }
+    startSequenceRef.current += 1;
 
     // If locked (shift+click mode), clicking again stops
     if (isLocked && isRecording) {
       stopRecording();
       isHoldingRef.current = false;
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
       return;
     }
 
     // Quick click (< 150ms) - just show hint, don't record
-    if (holdDuration < 150) {
+    const holdThresholdMs = e.pointerType === 'touch' ? 300 : 160;
+    if (holdDuration < holdThresholdMs) {
       setShowHint(true);
       isHoldingRef.current = false;
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
       return;
     }
 
     isHoldingRef.current = false;
-    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
 
-    // Stop recording if it was started
-    if (isRecording && !isLocked) {
+    // Stop recording or cancel connecting if it was started
+    if ((isRecording || isConnecting) && !isLocked) {
       stopRecording();
     }
   }, [isRecording, isLocked, stopRecording]);
@@ -560,12 +625,17 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       clearTimeout(recordingDelayRef.current);
       recordingDelayRef.current = null;
     }
+    if (awaitingPermissionRef.current) {
+      isHoldingRef.current = false;
+      return;
+    }
+    startSequenceRef.current += 1;
 
-    if (isRecording && !isLocked && isHoldingRef.current) {
+    if ((isRecording || isConnecting) && !isLocked && isHoldingRef.current) {
       isHoldingRef.current = false;
       stopRecording();
     }
-  }, [isRecording, isLocked, stopRecording]);
+  }, [isRecording, isConnecting, isLocked, stopRecording]);
 
   const hideHint = useCallback(() => setShowHint(false), []);
 
