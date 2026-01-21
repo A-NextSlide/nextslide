@@ -187,25 +187,17 @@ export async function captureOGThumbnail(
         imageTimeout: 3000,
       });
     } else {
-      // Regular slide: The element is visually scaled by CSS transform
-      // To get 1200px output width, we need: scale = 1200 / visualWidth
-      const captureScale = OG_WIDTH / rect.width;
-
-      console.log('[OG Capture] Capturing with compensating scale:', captureScale.toFixed(3));
+      // Regular slide: Capture at scale 1 (visual size), then scale up in final canvas
+      // html2canvas works better with scale <= 1
+      console.log('[OG Capture] Capturing at visual size, will scale up later');
 
       canvas = await html2canvas(slideContainer, {
-        scale: captureScale,
-        backgroundColor: '#ffffff',
+        scale: 1, // Capture at visual resolution - will scale up in final canvas
         logging: false,
         useCORS: true,
         allowTaint: true,
         imageTimeout: 3000,
-        width: rect.width,
-        height: rect.height,
-        scrollX: 0,
-        scrollY: 0,
-        x: 0,
-        y: 0,
+        // Let html2canvas determine bounds from the element
       });
     }
 
