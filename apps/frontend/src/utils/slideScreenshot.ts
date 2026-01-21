@@ -87,8 +87,7 @@ export const captureSlideScreenshot = async (
 
 /**
  * Captures a screenshot of the current slide for AI context.
- * Uses iframe.contentDocument for CustomComponents (same-origin srcdoc)
- * which preserves all CSS rendering including webkit features.
+ * Captures DIRECTLY from the live DOM element (no cloning) to preserve all CSS styling.
  *
  * - 768x432 output (0.4 scale of 1920x1080)
  * - JPEG at 70% quality
@@ -99,25 +98,21 @@ export const captureTinySlideScreenshot = async (
   options?: { skipIframeCapture?: boolean }
 ): Promise<string | null> => {
   try {
+    // Wait for any animations/rendering to complete
+    await new Promise(resolve => setTimeout(resolve, 150));
+
     // Find iframes with srcDoc (CustomComponent content)
     const iframe = slideContainer.querySelector('iframe[srcdoc]') as HTMLIFrameElement;
 
-    // Wait for any animations/rendering to complete
-    await new Promise(resolve => setTimeout(resolve, 100));
-
     // On mobile, skip iframe.contentDocument capture - html2canvas fails due to sandbox
-    // Use srcDoc extraction instead which renders a copy outside the sandbox
     const isMobile = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent);
     const skipIframe = options?.skipIframeCapture || isMobile;
 
     if (iframe && iframe.contentDocument?.body && !skipIframe) {
       // CustomComponent: Capture directly from iframe's internal document
-      // Since srcdoc iframes are same-origin, we can access contentDocument
       console.log(`[TinyScreenshot] Using iframe.contentDocument for capture`);
 
       const iframeBody = iframe.contentDocument.body;
-
-      // Capture the iframe's rendered content
       const canvas = await html2canvas(iframeBody, {
         scale: 0.4,
         backgroundColor: '#ffffff',
@@ -133,122 +128,52 @@ export const captureTinySlideScreenshot = async (
       logScreenshotDebug(dataUrl, canvas);
       return dataUrl;
 
-    } else if (iframe) {
+    } else if (iframe && skipIframe) {
       // Fallback: Extract and render srcDoc in a non-sandboxed container
       console.log(`[TinyScreenshot] Using srcDoc extraction for capture`);
       const srcDoc = iframe.getAttribute('srcdoc') || '';
       return await captureFromSrcDoc(srcDoc);
 
     } else {
-      // Non-iframe slide: Capture directly from container
-      console.log(`[TinyScreenshot] Non-iframe slide, capturing from container`);
+      // Non-iframe slide: Capture DIRECTLY from the container (NO CLONING)
+      // This preserves all Tailwind CSS and computed styles
+      console.log(`[TinyScreenshot] Capturing directly from live element (no clone)`);
 
-      const slideContent = slideContainer.querySelector('div[style*="transform"]') as HTMLElement;
-      if (!slideContent) {
-        console.warn('[TinyScreenshot] No slide content found');
+      // Get the container's bounding rect to know its current size
+      const rect = slideContainer.getBoundingClientRect();
+      if (rect.width < 10 || rect.height < 10) {
+        console.warn('[TinyScreenshot] Container too small:', rect.width, rect.height);
         return null;
       }
 
-      // Extract background from the slide content or its children
-      const extractedBg = extractBackgroundFromElement(slideContent);
-      console.log(`[TinyScreenshot] Extracted element background: ${extractedBg}`);
+      // html2canvas captures what's visible, accounting for transforms
+      // We don't need to clone or modify the element
+      const canvas = await html2canvas(slideContainer, {
+        scale: 0.4, // Final output will be ~40% of capture size
+        backgroundColor: '#ffffff',
+        logging: false,
+        useCORS: true,
+        allowTaint: true,
+        imageTimeout: 3000,
+        // Capture the visible rendered size (html2canvas handles transforms)
+        width: rect.width,
+        height: rect.height,
+        // Important: Scroll the element into "view" for html2canvas
+        scrollX: 0,
+        scrollY: 0,
+        x: 0,
+        y: 0,
+      });
 
-      // Clone to avoid modifying the original
-      const tempContainer = document.createElement('div');
-      tempContainer.style.position = 'absolute';
-      tempContainer.style.left = '-9999px';
-      tempContainer.style.top = '0';
-      tempContainer.style.width = '1920px';
-      tempContainer.style.height = '1080px';
-      tempContainer.style.background = extractedBg; // Use extracted background
-      tempContainer.style.overflow = 'hidden';
-
-      const clone = slideContent.cloneNode(true) as HTMLElement;
-      clone.style.transform = 'none';
-      clone.style.position = 'relative';
-      clone.style.width = '1920px';
-      clone.style.height = '1080px';
-      tempContainer.appendChild(clone);
-      document.body.appendChild(tempContainer);
-
-      try {
-        await new Promise(resolve => setTimeout(resolve, 50));
-
-        const canvas = await html2canvas(tempContainer, {
-          scale: 0.4,
-          backgroundColor: null, // Let the element's background show through
-          width: 1920,
-          height: 1080,
-          logging: false,
-          useCORS: true,
-          allowTaint: true,
-          imageTimeout: 2000,
-        });
-
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        logScreenshotDebug(dataUrl, canvas);
-        return dataUrl;
-      } finally {
-        document.body.removeChild(tempContainer);
-      }
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+      logScreenshotDebug(dataUrl, canvas);
+      return dataUrl;
     }
   } catch (error) {
     console.error('[TinyScreenshot] Failed to capture:', error);
     return null;
   }
 };
-
-/**
- * Extract background color/gradient from a DOM element
- * Checks the element and its immediate children for background styles
- */
-function extractBackgroundFromElement(element: HTMLElement): string {
-  // First check the element's computed style
-  const computedStyle = window.getComputedStyle(element);
-  let bg = computedStyle.background || computedStyle.backgroundColor;
-
-  // If element has a non-transparent/non-initial background, use it
-  if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && bg !== 'initial' && bg !== 'none') {
-    return bg;
-  }
-
-  // Check inline style
-  if (element.style.background) {
-    return element.style.background;
-  }
-  if (element.style.backgroundColor) {
-    return element.style.backgroundColor;
-  }
-
-  // Check first child div (often where the actual slide background is)
-  const firstChild = element.querySelector(':scope > div') as HTMLElement;
-  if (firstChild) {
-    const childStyle = window.getComputedStyle(firstChild);
-    bg = childStyle.background || childStyle.backgroundColor;
-    if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && bg !== 'initial' && bg !== 'none') {
-      return bg;
-    }
-    if (firstChild.style.background) {
-      return firstChild.style.background;
-    }
-    if (firstChild.style.backgroundColor) {
-      return firstChild.style.backgroundColor;
-    }
-  }
-
-  // Check for any element with explicit background
-  const bgElement = element.querySelector('[style*="background"]') as HTMLElement;
-  if (bgElement) {
-    const bgStyle = window.getComputedStyle(bgElement);
-    bg = bgStyle.background || bgStyle.backgroundColor;
-    if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && bg !== 'initial' && bg !== 'none') {
-      return bg;
-    }
-  }
-
-  // Default to white
-  return '#ffffff';
-}
 
 /**
  * Extract background color/gradient from srcDoc styles

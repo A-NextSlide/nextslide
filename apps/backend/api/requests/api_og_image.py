@@ -259,6 +259,44 @@ def create_fallback_og_image(title: str = "NextSlide Presentation") -> Image.Ima
     return image
 
 
+def extract_first_slide_image(deck_data: dict) -> Optional[str]:
+    """
+    Extract the first usable image URL from the first slide of a deck.
+
+    Looks for:
+    1. Background image on the first slide
+    2. Image components in the first slide
+    """
+    slides = deck_data.get('slides', [])
+    if not slides:
+        return None
+
+    first_slide = slides[0]
+
+    # Check for background image
+    props = first_slide.get('props', {})
+    bg_url = props.get('backgroundImageUrl')
+    if bg_url and bg_url.startswith('http'):
+        return bg_url
+
+    # Check components for Image type
+    components = first_slide.get('components', [])
+    for comp in components:
+        if comp.get('type') == 'Image':
+            src = comp.get('props', {}).get('src', '')
+            if src and src.startswith('http') and 'placeholder' not in src.lower():
+                return src
+
+    # Check for CustomComponent with background image
+    for comp in components:
+        comp_props = comp.get('props', {})
+        bg_url = comp_props.get('backgroundImageUrl')
+        if bg_url and bg_url.startswith('http'):
+            return bg_url
+
+    return None
+
+
 @router.get("/og/{short_code}.png")
 async def get_og_image(short_code: str):
     """
@@ -266,9 +304,10 @@ async def get_og_image(short_code: str):
 
     This endpoint:
     1. Fetches the share link metadata to get the OG image URL
-    2. If a thumbnail exists, downloads it and applies the NextSlide watermark
-    3. If no thumbnail, generates a fallback branded image
-    4. Returns the image with proper caching headers
+    2. If not found, extracts an image from the first slide of the deck
+    3. If a thumbnail exists, downloads it and applies the NextSlide watermark
+    4. If no thumbnail, generates a fallback branded image
+    5. Returns the image with proper caching headers
     """
     try:
         supabase = get_supabase_client()
@@ -285,14 +324,22 @@ async def get_og_image(short_code: str):
         metadata = share_data.get('metadata') or {}
         og_image_url = metadata.get('og_image_url')
 
-        # Get deck name for fallback
-        deck_result = supabase.table('decks').select('name').eq(
+        # Get deck data (name and slides for image extraction)
+        deck_result = supabase.table('decks').select('name, slides').eq(
             'uuid', share_data['deck_uuid']
         ).execute()
 
         deck_name = "Presentation"
+        deck_data = {}
         if deck_result.data:
-            deck_name = deck_result.data[0].get('name', 'Presentation')
+            deck_data = deck_result.data[0]
+            deck_name = deck_data.get('name', 'Presentation')
+
+        # If no explicit og_image_url, try to extract from first slide
+        if not og_image_url:
+            og_image_url = extract_first_slide_image(deck_data)
+            if og_image_url:
+                logger.info(f"Extracted OG image from first slide: {og_image_url[:100]}...")
 
         # Try to fetch the thumbnail
         final_image = None
