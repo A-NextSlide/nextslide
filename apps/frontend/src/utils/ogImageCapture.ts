@@ -113,6 +113,36 @@ async function waitForImages(element: HTMLElement, timeout = 5000): Promise<void
 }
 
 /**
+ * Temporarily remove transforms from element and ancestors, returning restore function
+ */
+function neutralizeTransforms(element: HTMLElement): () => void {
+  const savedStyles: Array<{ el: HTMLElement; transform: string; willChange: string }> = [];
+
+  let current: HTMLElement | null = element;
+  while (current && current !== document.body) {
+    const style = window.getComputedStyle(current);
+    if (style.transform !== 'none' || current.style.transform) {
+      savedStyles.push({
+        el: current,
+        transform: current.style.transform,
+        willChange: current.style.willChange
+      });
+      current.style.transform = 'none';
+      current.style.willChange = 'auto';
+    }
+    current = current.parentElement;
+  }
+
+  // Return restore function
+  return () => {
+    savedStyles.forEach(({ el, transform, willChange }) => {
+      el.style.transform = transform;
+      el.style.willChange = willChange;
+    });
+  };
+}
+
+/**
  * Captures a slide as an OG-optimized thumbnail.
  * Automatically handles various slide sizes and scales appropriately.
  *
@@ -131,6 +161,8 @@ export async function captureOGThumbnail(
     return null;
   }
 
+  let restoreTransforms: (() => void) | null = null;
+
   try {
     const slideId = slideContainer.getAttribute('data-slide-id') || 'unknown';
     console.log('[OG Capture] Starting capture for slide:', slideId);
@@ -139,7 +171,14 @@ export async function captureOGThumbnail(
     await new Promise(resolve => setTimeout(resolve, 200));
     await waitForImages(slideContainer);
 
-    // Get actual dimensions of the slide element
+    // Neutralize CSS transforms that confuse html2canvas
+    restoreTransforms = neutralizeTransforms(slideContainer);
+
+    // Force a reflow after removing transforms
+    void slideContainer.offsetHeight;
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Get actual dimensions of the slide element (after transform removal)
     const rect = slideContainer.getBoundingClientRect();
     const actualWidth = Math.round(rect.width);
     const actualHeight = Math.round(rect.height);
@@ -161,14 +200,17 @@ export async function captureOGThumbnail(
 
     console.log('[OG Capture] Using capture scale:', finalScale);
 
-    // Capture using html2canvas
+    // Capture using html2canvas with explicit dimensions
     const canvas = await html2canvas(slideContainer, {
       scale: finalScale,
       useCORS: true,
       allowTaint: true,
-      backgroundColor: null,
+      backgroundColor: '#1e1e23', // Dark fallback background
       logging: false,
-      // Don't specify width/height - let html2canvas use actual element size
+      width: actualWidth,
+      height: actualHeight,
+      windowWidth: actualWidth,
+      windowHeight: actualHeight,
     });
 
     console.log('[OG Capture] html2canvas completed:', {
@@ -250,6 +292,11 @@ export async function captureOGThumbnail(
   } catch (error) {
     console.error('[OG Capture] Failed to capture:', error);
     return null;
+  } finally {
+    // Always restore transforms
+    if (restoreTransforms) {
+      restoreTransforms();
+    }
   }
 }
 
