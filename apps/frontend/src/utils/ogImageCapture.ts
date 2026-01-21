@@ -1,6 +1,7 @@
 import html2canvas from 'html2canvas';
 import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
+import { captureTinySlideScreenshot } from './slideScreenshot';
 
 /**
  * OG Image dimensions (optimized for social sharing)
@@ -144,10 +145,7 @@ async function waitForImages(element: HTMLElement, timeout = 5000): Promise<void
 
 /**
  * Captures a slide as an OG-optimized thumbnail.
- *
- * Key insight: The slide element is inside a CSS-transformed container (zoom).
- * getBoundingClientRect() returns the VISUALLY scaled size, not native size.
- * We need to calculate the proper html2canvas scale to get OG dimensions.
+ * Uses the proven captureTinySlideScreenshot function and scales up to OG dimensions.
  *
  * @param slideElementOrId - Either an HTMLElement or a slide ID string
  */
@@ -168,90 +166,29 @@ export async function captureOGThumbnail(
     const slideId = slideContainer.getAttribute('data-slide-id') || 'unknown';
     console.log('[OG Capture] Starting capture for slide:', slideId);
     console.log('[OG Capture] Element:', slideContainer.tagName, slideContainer.className);
-    console.log('[OG Capture] Element innerHTML length:', slideContainer.innerHTML.length);
     console.log('[OG Capture] Children count:', slideContainer.children.length);
 
-    // Wait for any pending renders and images
-    await new Promise(resolve => setTimeout(resolve, 200));
-    await waitForImages(slideContainer);
+    // Use the PROVEN working captureTinySlideScreenshot function
+    // This captures slides correctly including backgrounds, text, and components
+    console.log('[OG Capture] Using captureTinySlideScreenshot (proven working)');
+    const tinyDataUrl = await captureTinySlideScreenshot(slideContainer);
 
-    // Get the container's bounding rect (this is the VISUAL size after CSS transforms)
-    const rect = slideContainer.getBoundingClientRect();
-
-    // Get native dimensions from data attributes if available
-    const nativeWidth = parseInt(slideContainer.getAttribute('data-native-width') || '0', 10) || NATIVE_WIDTH;
-    const nativeHeight = parseInt(slideContainer.getAttribute('data-native-height') || '0', 10) || NATIVE_HEIGHT;
-
-    // Calculate the current zoom factor (visual size / native size)
-    const zoomFactor = rect.width / nativeWidth;
-
-    console.log('[OG Capture] Slide dimensions:', {
-      visualWidth: rect.width,
-      visualHeight: rect.height,
-      nativeWidth,
-      nativeHeight,
-      zoomFactor: zoomFactor.toFixed(3),
-      ratio: (rect.width / rect.height).toFixed(3)
-    });
-
-    if (rect.width < 10 || rect.height < 10) {
-      console.warn('[OG Capture] Container too small:', rect.width, rect.height);
+    if (!tinyDataUrl) {
+      console.warn('[OG Capture] captureTinySlideScreenshot returned null');
       return null;
     }
 
-    // Check for iframe (CustomComponent) - handle specially
-    const iframe = slideContainer.querySelector('iframe[srcdoc]') as HTMLIFrameElement;
+    console.log('[OG Capture] Got tiny screenshot, scaling up to OG dimensions');
 
-    let canvas: HTMLCanvasElement;
-
-    if (iframe && iframe.contentDocument?.body) {
-      // CustomComponent: Capture from iframe's internal document
-      // Iframes render at native size, so use standard scale
-      console.log('[OG Capture] Using iframe.contentDocument for capture');
-
-      canvas = await html2canvas(iframe.contentDocument.body, {
-        scale: OG_WIDTH / NATIVE_WIDTH, // 1200 / 1920 = 0.625
-        backgroundColor: '#ffffff',
-        width: NATIVE_WIDTH,
-        height: NATIVE_HEIGHT,
-        logging: false,
-        useCORS: true,
-        allowTaint: true,
-        imageTimeout: 3000,
-      });
-    } else {
-      // Regular slide: Use EXACT same params as working captureTinySlideScreenshot
-      console.log('[OG Capture] Using proven captureTinySlideScreenshot params');
-
-      canvas = await html2canvas(slideContainer, {
-        scale: 1,
-        backgroundColor: '#ffffff',
-        logging: false,
-        useCORS: true,
-        allowTaint: true,
-        imageTimeout: 3000,
-        width: rect.width,
-        height: rect.height,
-        scrollX: 0,
-        scrollY: 0,
-        x: 0,
-        y: 0,
-      });
-    }
-
-    console.log('[OG Capture] html2canvas completed:', {
-      canvasWidth: canvas.width,
-      canvasHeight: canvas.height
+    // Load the tiny screenshot into an image
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('Failed to load captured image'));
+      img.src = tinyDataUrl;
     });
 
-    // Debug: Check if canvas has content by sampling pixels
-    const debugCtx = canvas.getContext('2d');
-    if (debugCtx) {
-      const centerPixel = debugCtx.getImageData(Math.floor(canvas.width/2), Math.floor(canvas.height/2), 1, 1).data;
-      const cornerPixel = debugCtx.getImageData(10, 10, 1, 1).data;
-      console.log('[OG Capture] Center pixel RGBA:', centerPixel[0], centerPixel[1], centerPixel[2], centerPixel[3]);
-      console.log('[OG Capture] Corner pixel RGBA:', cornerPixel[0], cornerPixel[1], cornerPixel[2], cornerPixel[3]);
-    }
+    console.log('[OG Capture] Tiny image size:', img.width, 'x', img.height);
 
     // Create final OG-sized canvas (1200x630)
     const finalCanvas = document.createElement('canvas');
@@ -263,13 +200,13 @@ export async function captureOGThumbnail(
       throw new Error('Could not get canvas context');
     }
 
-    // Fill with white background first
+    // Fill with white background first (for letterboxing)
     finalCtx.fillStyle = '#ffffff';
     finalCtx.fillRect(0, 0, OG_WIDTH, OG_HEIGHT);
 
     // Calculate how to fit the captured slide into OG dimensions
-    const sourceWidth = canvas.width;
-    const sourceHeight = canvas.height;
+    const sourceWidth = img.width;
+    const sourceHeight = img.height;
     const sourceAspect = sourceWidth / sourceHeight;
     const targetAspect = OG_WIDTH / OG_HEIGHT;
 
@@ -292,9 +229,9 @@ export async function captureOGThumbnail(
       offsetY = 0;
     }
 
-    // Draw the captured slide centered in the OG canvas
+    // Draw the captured slide centered in the OG canvas (scaled up from tiny)
     finalCtx.drawImage(
-      canvas,
+      img,
       0, 0, sourceWidth, sourceHeight,
       offsetX, offsetY, drawWidth, drawHeight
     );
