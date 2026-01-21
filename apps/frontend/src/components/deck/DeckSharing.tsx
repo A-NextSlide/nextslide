@@ -63,7 +63,7 @@ import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { shareService, ShareLink, ApiResponse, CollaboratorResponse, ShareAnalytics, ShareViewer } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
-import { generateShareOGImage } from '@/utils/ogImageCapture';
+import { generateShareOGImage, findSlideElement, findAnySlideElement } from '@/utils/ogImageCapture';
 import { formatDistanceToNow } from 'date-fns';
 import { useDeckStore } from '@/stores/deckStore';
 import { Switch } from '../ui/switch';
@@ -346,7 +346,7 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
 
   /**
    * Captures a slide as an OG thumbnail and uploads it.
-   * Tries first slide, falls back to current slide if not in DOM.
+   * Uses improved slide finding that prefers larger (main) slides over thumbnails.
    * Runs in background, non-blocking.
    */
   const captureAndUploadOGThumbnail = async (shareId: string, shortCode: string) => {
@@ -360,24 +360,21 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
         return;
       }
 
-      // Try to find first slide, fall back to any visible slide
-      let slideElement: HTMLElement | null = null;
-
-      // Try first slide
+      // Use improved slide finding - prefers larger slides (main editor) over thumbnails
       const firstSlideId = slides[0].id;
-      slideElement = document.querySelector(
-        `[data-slide-id="${firstSlideId}"]`
-      ) as HTMLElement;
+      let slideElement = findSlideElement(firstSlideId);
 
-      // If first slide not in DOM, try to find any slide that is rendered
+      // If first slide not found, try to find any slide
       if (!slideElement) {
-        slideElement = document.querySelector('[data-slide-id]') as HTMLElement;
+        slideElement = findAnySlideElement();
       }
 
       if (!slideElement) {
-        console.log('[DeckSharing] No slide element found in DOM');
+        console.log('[DeckSharing] No slide element found in DOM for OG capture');
         return;
       }
+
+      console.log('[DeckSharing] Capturing OG image from slide:', slideElement.getAttribute('data-slide-id'));
 
       // Generate and upload the OG image
       const ogImageUrl = await generateShareOGImage(slideElement, shortCode);
@@ -388,6 +385,8 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
           og_image_url: ogImageUrl,
         });
         console.log('[DeckSharing] OG image saved:', ogImageUrl);
+      } else {
+        console.log('[DeckSharing] OG capture returned null - using backend fallback');
       }
     } catch (error) {
       // Non-blocking - just log the error

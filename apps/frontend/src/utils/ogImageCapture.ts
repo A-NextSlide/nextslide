@@ -17,9 +17,71 @@ const NATIVE_HEIGHT = 1080;
 
 /**
  * Finds a slide element by its ID using the data-slide-id attribute.
+ * Prefers main editing slides over thumbnails.
  */
 export function findSlideElement(slideId: string): HTMLElement | null {
-  return document.querySelector(`[data-slide-id="${slideId}"]`) as HTMLElement | null;
+  // First, try to find the main editing slide (not in a thumbnail context)
+  const allSlides = document.querySelectorAll(`[data-slide-id="${slideId}"]`);
+
+  if (allSlides.length === 0) {
+    return null;
+  }
+
+  // Find the largest slide element (main editing slide is usually largest)
+  let bestSlide: HTMLElement | null = null;
+  let bestArea = 0;
+
+  allSlides.forEach((el) => {
+    const element = el as HTMLElement;
+    const rect = element.getBoundingClientRect();
+    const area = rect.width * rect.height;
+
+    // Skip very small thumbnails (less than 200x100)
+    if (rect.width < 200 || rect.height < 100) {
+      return;
+    }
+
+    if (area > bestArea) {
+      bestArea = area;
+      bestSlide = element;
+    }
+  });
+
+  // Fall back to first match if no good candidate found
+  return bestSlide || (allSlides[0] as HTMLElement);
+}
+
+/**
+ * Finds any slide element in the DOM, preferring larger ones.
+ */
+export function findAnySlideElement(): HTMLElement | null {
+  const allSlides = document.querySelectorAll('[data-slide-id]');
+
+  if (allSlides.length === 0) {
+    return null;
+  }
+
+  // Find the largest slide element
+  let bestSlide: HTMLElement | null = null;
+  let bestArea = 0;
+
+  allSlides.forEach((el) => {
+    const element = el as HTMLElement;
+    const rect = element.getBoundingClientRect();
+    const area = rect.width * rect.height;
+
+    // Skip very small thumbnails
+    if (rect.width < 200 || rect.height < 100) {
+      return;
+    }
+
+    if (area > bestArea) {
+      bestArea = area;
+      bestSlide = element;
+    }
+  });
+
+  return bestSlide || (allSlides[0] as HTMLElement);
 }
 
 /**
@@ -51,40 +113,8 @@ async function waitForImages(element: HTMLElement, timeout = 5000): Promise<void
 }
 
 /**
- * Finds parent elements with transforms and returns their original transform values
- */
-function neutralizeParentTransforms(element: HTMLElement): Map<HTMLElement, string> {
-  const originalTransforms = new Map<HTMLElement, string>();
-  let parent = element.parentElement;
-
-  while (parent && parent !== document.body) {
-    const computedStyle = window.getComputedStyle(parent);
-    const transform = computedStyle.transform;
-
-    if (transform && transform !== 'none') {
-      originalTransforms.set(parent, parent.style.transform);
-      parent.style.transform = 'none';
-    }
-
-    parent = parent.parentElement;
-  }
-
-  return originalTransforms;
-}
-
-/**
- * Restores the original transforms to parent elements
- */
-function restoreParentTransforms(originalTransforms: Map<HTMLElement, string>): void {
-  originalTransforms.forEach((originalValue, element) => {
-    element.style.transform = originalValue;
-  });
-}
-
-/**
  * Captures a slide as an OG-optimized thumbnail.
- * Uses the same proven approach as SimpleThumbnail.
- * The image is sized to 1200x630 (standard OG dimensions).
+ * Automatically handles various slide sizes and scales appropriately.
  *
  * @param slideElementOrId - Either an HTMLElement or a slide ID string
  */
@@ -102,29 +132,43 @@ export async function captureOGThumbnail(
   }
 
   try {
-    console.log('[OG Capture] Starting capture for slide:', slideContainer.getAttribute('data-slide-id'));
+    const slideId = slideContainer.getAttribute('data-slide-id') || 'unknown';
+    console.log('[OG Capture] Starting capture for slide:', slideId);
 
-    // Wait for any pending renders and images (same timing as SimpleThumbnail)
-    await new Promise(resolve => setTimeout(resolve, 150));
+    // Wait for any pending renders and images
+    await new Promise(resolve => setTimeout(resolve, 200));
     await waitForImages(slideContainer);
 
+    // Get actual dimensions of the slide element
+    const rect = slideContainer.getBoundingClientRect();
+    const actualWidth = Math.round(rect.width);
+    const actualHeight = Math.round(rect.height);
+
     console.log('[OG Capture] Slide dimensions:', {
-      offsetWidth: slideContainer.offsetWidth,
-      offsetHeight: slideContainer.offsetHeight,
-      scrollWidth: slideContainer.scrollWidth,
-      scrollHeight: slideContainer.scrollHeight
+      actualWidth,
+      actualHeight,
+      ratio: (actualWidth / actualHeight).toFixed(3)
     });
 
-    // Capture using html2canvas - EXACT same options as SimpleThumbnail
-    // (which is proven to work)
+    // Calculate optimal capture scale
+    // We want to capture at a resolution that gives us good quality at 1200x630
+    // Target: at least 1200px wide for the final image
+    const minCaptureWidth = 1200;
+    const captureScale = Math.max(1, minCaptureWidth / actualWidth);
+
+    // Cap scale to prevent memory issues
+    const finalScale = Math.min(captureScale, 3);
+
+    console.log('[OG Capture] Using capture scale:', finalScale);
+
+    // Capture using html2canvas
     const canvas = await html2canvas(slideContainer, {
-      scale: 0.5, // Same as SimpleThumbnail
+      scale: finalScale,
       useCORS: true,
       allowTaint: true,
-      backgroundColor: null, // Same as SimpleThumbnail - preserve transparency
+      backgroundColor: null,
       logging: false,
-      width: NATIVE_WIDTH,
-      height: NATIVE_HEIGHT,
+      // Don't specify width/height - let html2canvas use actual element size
     });
 
     console.log('[OG Capture] html2canvas completed:', {
@@ -135,13 +179,17 @@ export async function captureOGThumbnail(
     // Check if the canvas has any content
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      const imageData = ctx.getImageData(0, 0, Math.min(100, canvas.width), Math.min(100, canvas.height));
+      const sampleSize = Math.min(100, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, sampleSize, sampleSize);
       const hasContent = imageData.data.some((val, i) => {
-        // Check if any pixel is not transparent
-        if (i % 4 === 3) return val > 0; // Alpha channel
+        // Check if any pixel is not fully transparent
+        if (i % 4 === 3) return val > 10;
         return false;
       });
-      console.log('[OG Capture] Canvas has non-transparent content:', hasContent);
+
+      if (!hasContent) {
+        console.warn('[OG Capture] Canvas appears to be empty/transparent');
+      }
     }
 
     // Create final OG-sized canvas (1200x630)
@@ -154,31 +202,45 @@ export async function captureOGThumbnail(
       throw new Error('Could not get canvas context');
     }
 
-    // Fill with white background first
-    finalCtx.fillStyle = '#ffffff';
+    // Fill with a neutral background first
+    finalCtx.fillStyle = '#1e1e23';  // Dark background like the fallback
     finalCtx.fillRect(0, 0, OG_WIDTH, OG_HEIGHT);
 
-    // Scale up from SimpleThumbnail's 960x540 (1920*0.5, 1080*0.5) to OG 1200x630
-    // We need to crop vertically and scale
-    const sourceWidth = canvas.width; // ~960
-    const sourceHeight = canvas.height; // ~540
+    // Calculate how to fit the captured slide into OG dimensions
+    // Maintain aspect ratio and center
+    const sourceWidth = canvas.width;
+    const sourceHeight = canvas.height;
+    const sourceAspect = sourceWidth / sourceHeight;
+    const targetAspect = OG_WIDTH / OG_HEIGHT;
 
-    // Calculate how much to scale to fill OG width
-    const scaleToFill = OG_WIDTH / sourceWidth; // 1.25
+    let drawWidth: number;
+    let drawHeight: number;
+    let offsetX: number;
+    let offsetY: number;
 
-    // Calculate scaled source height and vertical crop
-    const scaledSourceHeight = sourceHeight * scaleToFill; // ~675
-    const cropAmount = Math.max(0, (scaledSourceHeight - OG_HEIGHT) / 2); // ~22.5
+    if (sourceAspect > targetAspect) {
+      // Source is wider - fit to width
+      drawWidth = OG_WIDTH;
+      drawHeight = OG_WIDTH / sourceAspect;
+      offsetX = 0;
+      offsetY = (OG_HEIGHT - drawHeight) / 2;
+    } else {
+      // Source is taller - fit to height
+      drawHeight = OG_HEIGHT;
+      drawWidth = OG_HEIGHT * sourceAspect;
+      offsetX = (OG_WIDTH - drawWidth) / 2;
+      offsetY = 0;
+    }
 
-    // Draw scaled and cropped
+    // Draw the captured slide centered in the OG canvas
     finalCtx.drawImage(
       canvas,
-      0, 0, sourceWidth, sourceHeight, // Source: full canvas
-      0, -cropAmount, OG_WIDTH, scaledSourceHeight // Dest: scaled and offset to crop
+      0, 0, sourceWidth, sourceHeight,
+      offsetX, offsetY, drawWidth, drawHeight
     );
 
     const dataUrl = finalCanvas.toDataURL('image/jpeg', 0.92);
-    console.log('[OG Capture] Final image size:', dataUrl.length, 'bytes');
+    console.log('[OG Capture] Final image size:', Math.round(dataUrl.length / 1024), 'KB');
 
     // Store for debugging
     (window as any).__lastOGCapture = dataUrl;
@@ -252,4 +314,19 @@ export async function generateShareOGImage(
   const publicUrl = await uploadOGThumbnail(dataUrl, shortCode);
 
   return publicUrl;
+}
+
+/**
+ * Attempts to capture the first slide from the current deck.
+ * Searches for any available slide element in the DOM.
+ */
+export async function captureFirstSlideOG(shortCode: string): Promise<string | null> {
+  const slideElement = findAnySlideElement();
+
+  if (!slideElement) {
+    console.warn('[OG Capture] No slide element found in DOM');
+    return null;
+  }
+
+  return generateShareOGImage(slideElement, shortCode);
 }
