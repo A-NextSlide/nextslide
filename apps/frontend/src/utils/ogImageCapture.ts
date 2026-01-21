@@ -113,38 +113,8 @@ async function waitForImages(element: HTMLElement, timeout = 5000): Promise<void
 }
 
 /**
- * Temporarily remove transforms from element and ancestors, returning restore function
- */
-function neutralizeTransforms(element: HTMLElement): () => void {
-  const savedStyles: Array<{ el: HTMLElement; transform: string; willChange: string }> = [];
-
-  let current: HTMLElement | null = element;
-  while (current && current !== document.body) {
-    const style = window.getComputedStyle(current);
-    if (style.transform !== 'none' || current.style.transform) {
-      savedStyles.push({
-        el: current,
-        transform: current.style.transform,
-        willChange: current.style.willChange
-      });
-      current.style.transform = 'none';
-      current.style.willChange = 'auto';
-    }
-    current = current.parentElement;
-  }
-
-  // Return restore function
-  return () => {
-    savedStyles.forEach(({ el, transform, willChange }) => {
-      el.style.transform = transform;
-      el.style.willChange = willChange;
-    });
-  };
-}
-
-/**
  * Captures a slide as an OG-optimized thumbnail.
- * Automatically handles various slide sizes and scales appropriately.
+ * Uses the same proven approach as captureTinySlideScreenshot.
  *
  * @param slideElementOrId - Either an HTMLElement or a slide ID string
  */
@@ -161,8 +131,6 @@ export async function captureOGThumbnail(
     return null;
   }
 
-  let restoreTransforms: (() => void) | null = null;
-
   try {
     const slideId = slideContainer.getAttribute('data-slide-id') || 'unknown';
     console.log('[OG Capture] Starting capture for slide:', slideId);
@@ -171,68 +139,62 @@ export async function captureOGThumbnail(
     await new Promise(resolve => setTimeout(resolve, 200));
     await waitForImages(slideContainer);
 
-    // Neutralize CSS transforms that confuse html2canvas
-    restoreTransforms = neutralizeTransforms(slideContainer);
-
-    // Force a reflow after removing transforms
-    void slideContainer.offsetHeight;
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-    // Get actual dimensions of the slide element (after transform removal)
+    // Get the container's bounding rect
     const rect = slideContainer.getBoundingClientRect();
-    const actualWidth = Math.round(rect.width);
-    const actualHeight = Math.round(rect.height);
-
     console.log('[OG Capture] Slide dimensions:', {
-      actualWidth,
-      actualHeight,
-      ratio: (actualWidth / actualHeight).toFixed(3)
+      width: rect.width,
+      height: rect.height,
+      ratio: (rect.width / rect.height).toFixed(3)
     });
 
-    // Calculate optimal capture scale
-    // We want to capture at a resolution that gives us good quality at 1200x630
-    // Target: at least 1200px wide for the final image
-    const minCaptureWidth = 1200;
-    const captureScale = Math.max(1, minCaptureWidth / actualWidth);
+    if (rect.width < 10 || rect.height < 10) {
+      console.warn('[OG Capture] Container too small:', rect.width, rect.height);
+      return null;
+    }
 
-    // Cap scale to prevent memory issues
-    const finalScale = Math.min(captureScale, 3);
+    // Check for iframe (CustomComponent) - handle specially
+    const iframe = slideContainer.querySelector('iframe[srcdoc]') as HTMLIFrameElement;
 
-    console.log('[OG Capture] Using capture scale:', finalScale);
+    let canvas: HTMLCanvasElement;
 
-    // Capture using html2canvas with explicit dimensions
-    const canvas = await html2canvas(slideContainer, {
-      scale: finalScale,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#1e1e23', // Dark fallback background
-      logging: false,
-      width: actualWidth,
-      height: actualHeight,
-      windowWidth: actualWidth,
-      windowHeight: actualHeight,
-    });
+    if (iframe && iframe.contentDocument?.body) {
+      // CustomComponent: Capture from iframe's internal document
+      console.log('[OG Capture] Using iframe.contentDocument for capture');
+
+      canvas = await html2canvas(iframe.contentDocument.body, {
+        scale: 0.625, // 1200 / 1920 = 0.625 to get OG width
+        backgroundColor: '#ffffff',
+        width: 1920,
+        height: 1080,
+        logging: false,
+        useCORS: true,
+        allowTaint: true,
+        imageTimeout: 3000,
+      });
+    } else {
+      // Regular slide: Capture directly from container (same as captureTinySlideScreenshot)
+      console.log('[OG Capture] Capturing directly from slide element');
+
+      canvas = await html2canvas(slideContainer, {
+        scale: 0.625, // Scale for OG dimensions
+        backgroundColor: '#ffffff',
+        logging: false,
+        useCORS: true,
+        allowTaint: true,
+        imageTimeout: 3000,
+        width: rect.width,
+        height: rect.height,
+        scrollX: 0,
+        scrollY: 0,
+        x: 0,
+        y: 0,
+      });
+    }
 
     console.log('[OG Capture] html2canvas completed:', {
       canvasWidth: canvas.width,
       canvasHeight: canvas.height
     });
-
-    // Check if the canvas has any content
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      const sampleSize = Math.min(100, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, sampleSize, sampleSize);
-      const hasContent = imageData.data.some((val, i) => {
-        // Check if any pixel is not fully transparent
-        if (i % 4 === 3) return val > 10;
-        return false;
-      });
-
-      if (!hasContent) {
-        console.warn('[OG Capture] Canvas appears to be empty/transparent');
-      }
-    }
 
     // Create final OG-sized canvas (1200x630)
     const finalCanvas = document.createElement('canvas');
@@ -244,12 +206,11 @@ export async function captureOGThumbnail(
       throw new Error('Could not get canvas context');
     }
 
-    // Fill with a neutral background first
-    finalCtx.fillStyle = '#1e1e23';  // Dark background like the fallback
+    // Fill with white background first
+    finalCtx.fillStyle = '#ffffff';
     finalCtx.fillRect(0, 0, OG_WIDTH, OG_HEIGHT);
 
     // Calculate how to fit the captured slide into OG dimensions
-    // Maintain aspect ratio and center
     const sourceWidth = canvas.width;
     const sourceHeight = canvas.height;
     const sourceAspect = sourceWidth / sourceHeight;
@@ -261,13 +222,13 @@ export async function captureOGThumbnail(
     let offsetY: number;
 
     if (sourceAspect > targetAspect) {
-      // Source is wider - fit to width
+      // Source is wider - fit to width, crop height
       drawWidth = OG_WIDTH;
       drawHeight = OG_WIDTH / sourceAspect;
       offsetX = 0;
       offsetY = (OG_HEIGHT - drawHeight) / 2;
     } else {
-      // Source is taller - fit to height
+      // Source is taller - fit to height, crop width
       drawHeight = OG_HEIGHT;
       drawWidth = OG_HEIGHT * sourceAspect;
       offsetX = (OG_WIDTH - drawWidth) / 2;
@@ -292,11 +253,6 @@ export async function captureOGThumbnail(
   } catch (error) {
     console.error('[OG Capture] Failed to capture:', error);
     return null;
-  } finally {
-    // Always restore transforms
-    if (restoreTransforms) {
-      restoreTransforms();
-    }
   }
 }
 
