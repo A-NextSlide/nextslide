@@ -94,19 +94,37 @@ export const captureSlideScreenshot = async (
  * - Returns base64 data URL
  */
 /**
- * Wait for all CSS animations to complete on an element and its children
+ * Force all CSS animations to their end state by injecting a style override.
+ * This ensures fade-in elements are visible when captured.
  */
-async function waitForAnimations(element: HTMLElement | Document, timeout = 3000): Promise<void> {
-  const startTime = Date.now();
+function forceAnimationsToEnd(doc: Document): HTMLStyleElement | null {
+  try {
+    const style = doc.createElement('style');
+    style.id = '__force-animations-end__';
+    style.textContent = `
+      *, *::before, *::after {
+        animation-delay: -9999s !important;
+        animation-duration: 0s !important;
+        animation-play-state: paused !important;
+        transition-delay: 0s !important;
+        transition-duration: 0s !important;
+        opacity: 1 !important;
+        transform: none !important;
+      }
+    `;
+    doc.head.appendChild(style);
+    return style;
+  } catch (e) {
+    console.warn('[TinyScreenshot] Could not inject animation override:', e);
+    return null;
+  }
+}
 
-  const checkAnimations = (): boolean => {
-    const animations = (element as any).getAnimations?.() || [];
-    return animations.length === 0 || animations.every((a: Animation) => a.playState === 'finished');
-  };
-
-  // Poll until animations complete or timeout
-  while (!checkAnimations() && Date.now() - startTime < timeout) {
-    await new Promise(resolve => setTimeout(resolve, 100));
+function removeAnimationOverride(style: HTMLStyleElement | null) {
+  try {
+    style?.remove();
+  } catch (e) {
+    // Ignore
   }
 }
 
@@ -115,21 +133,13 @@ export const captureTinySlideScreenshot = async (
   options?: { skipIframeCapture?: boolean; waitTime?: number }
 ): Promise<string | null> => {
   try {
-    // Wait for content to fully render (default 2 seconds for slides with animations)
-    const waitTime = options?.waitTime ?? 2000;
+    // Short wait for initial render
+    const waitTime = options?.waitTime ?? 500;
     console.log(`[TinyScreenshot] Waiting ${waitTime}ms for content to render...`);
     await new Promise(resolve => setTimeout(resolve, waitTime));
 
     // Find iframes with srcDoc (CustomComponent content)
     const iframe = slideContainer.querySelector('iframe[srcdoc]') as HTMLIFrameElement;
-
-    // If there's an iframe, wait for its animations too
-    if (iframe?.contentDocument) {
-      console.log(`[TinyScreenshot] Waiting for iframe animations to complete...`);
-      await waitForAnimations(iframe.contentDocument, 2000);
-      // Extra wait for any final rendering
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
 
     // On mobile, skip iframe.contentDocument capture - html2canvas fails due to sandbox
     const isMobile = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent);
@@ -139,17 +149,30 @@ export const captureTinySlideScreenshot = async (
       // CustomComponent: Capture directly from iframe's internal document
       console.log(`[TinyScreenshot] Using iframe.contentDocument for capture`);
 
+      // Force all animations to end state (makes fade-in elements visible)
+      console.log(`[TinyScreenshot] Forcing animations to end state...`);
+      const animOverride = forceAnimationsToEnd(iframe.contentDocument);
+
+      // Small delay to let style apply
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       const iframeBody = iframe.contentDocument.body;
-      const canvas = await html2canvas(iframeBody, {
-        scale: 0.4,
-        backgroundColor: null, // Preserve actual background (gradients, colors)
-        width: 1920,
-        height: 1080,
-        logging: false,
-        useCORS: true,
-        allowTaint: true,
-        imageTimeout: 2000,
-      });
+      let canvas: HTMLCanvasElement;
+      try {
+        canvas = await html2canvas(iframeBody, {
+          scale: 0.4,
+          backgroundColor: null, // Preserve actual background (gradients, colors)
+          width: 1920,
+          height: 1080,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          imageTimeout: 2000,
+        });
+      } finally {
+        // Remove the override after capture
+        removeAnimationOverride(animOverride);
+      }
 
       const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
       logScreenshotDebug(dataUrl, canvas);
