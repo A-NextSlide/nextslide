@@ -30,7 +30,7 @@ const ComparisonSection = () => {
         <div className="relative z-10 container mx-auto px-4 sm:px-6 lg:px-8 h-full flex flex-col items-center justify-center">
 
           {/* Header */}
-          <div className="text-center mb-8 sm:mb-12 relative h-24 w-full flex items-center justify-center">
+          <div className="text-center mb-8 sm:mb-12 mt-4 sm:mt-6 relative h-24 w-full flex items-center justify-center">
             <motion.div style={{ opacity: oldWayOpacity, position: 'absolute' }}>
               <h2 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight text-zinc-400 line-through decoration-zinc-500/50 decoration-4">
                 The Old Way
