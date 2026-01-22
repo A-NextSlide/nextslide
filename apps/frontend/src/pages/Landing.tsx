@@ -485,7 +485,7 @@ const Landing: React.FC = () => {
                 </div>
 
                 <div className="px-4 pb-4 flex items-center justify-between">
-                  <div className="flex items-center gap-4 text-xs font-bold text-zinc-400 uppercase tracking-widest pl-2">
+                  <div className="flex items-center gap-1 text-xs font-bold text-zinc-400 uppercase tracking-widest pl-2">
                     <span className="flex items-center gap-1"><Sparkles className="w-3 h-3" /> The New Standard</span>
                     <span className="hidden sm:inline">for Presentations</span>
                   </div>
