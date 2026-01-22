@@ -794,7 +794,7 @@ const Landing: React.FC = () => {
       </section>
 
       {/* FAQ */}
-      <section className="py-24 px-8 bg-white dark:bg-black/30">
+      <section className="pt-24 pb-12 px-8 bg-white dark:bg-black/30">
         <div className="max-w-[900px] mx-auto">
           <div className="text-center mb-16 animate-on-scroll opacity-0">
             <h2
@@ -846,7 +846,7 @@ const Landing: React.FC = () => {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="pt-24 pb-12 px-8 bg-[#FCFBF8] dark:bg-[#0a0a0a]">
+      <section id="pricing" className="pt-16 pb-12 px-8 bg-[#FCFBF8] dark:bg-[#0a0a0a]">
         <div className="max-w-[1200px] mx-auto">
           <div className="text-center mb-16 animate-on-scroll opacity-0">
             <h2
@@ -975,9 +975,7 @@ const Landing: React.FC = () => {
       </section>
 
       {/* Community Slides */}
-      {/* Community Slides - Only show when loaded */}
-      {communityDecks.length > 0 && (
-        <section className="py-24 px-8 bg-white dark:bg-black/30">
+      <section className="py-24 px-8 bg-white dark:bg-black/30">
           <div className="max-w-[1400px] mx-auto">
             <div className="text-center mb-12 animate-on-scroll opacity-0">
               <h2
@@ -1018,7 +1016,6 @@ const Landing: React.FC = () => {
             </div>
           </div>
         </section>
-      )}
 
       {/* Community Bottom Sheet */}
       <CommunityBottomSheet
