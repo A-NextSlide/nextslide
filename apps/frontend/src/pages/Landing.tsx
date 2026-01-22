@@ -14,6 +14,7 @@ import { showcaseService, ShowcaseDeck } from '@/services/showcaseService';
 import InteractiveHero from '@/components/landing/InteractiveHero';
 import PixelGridBackground from '@/components/landing/PixelGridBackground';
 import ComparisonSection from '@/components/landing/ComparisonSection';
+import { HeroTitle } from '@/components/landing/HeroTitle';
 import { communityService, CommunityDeck } from '@/services/communityService';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import CommunityGallery from '@/components/community/CommunityGallery';
@@ -47,7 +48,7 @@ const Landing: React.FC = () => {
   const [isLoadingShowcase, setIsLoadingShowcase] = useState(true);
 
   // Hero Animation State
-  const [scribbleAnimated, setScribbleAnimated] = useState(false);
+  // Scribble animation is now handled internally by HeroTitle
   const [heroInView, setHeroInView] = useState(true);
   const heroRef = useRef<HTMLDivElement>(null);
   const heroTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -389,48 +390,11 @@ const Landing: React.FC = () => {
         {/* Hero - Clean, focused design */}
         <section ref={heroRef} className="relative min-h-[90vh] flex flex-col justify-center overflow-visible -mt-[100vh]">
 
-          {/* Top headline - Bold, poppy */}
+          {/* Hero Title Animation */}
           <div className="relative z-30 pt-32 sm:pt-40 pb-8 text-center px-4">
-            <h1
-              className="text-black dark:text-white hero-title-animate"
-              style={{
-                fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-                fontWeight: 900,
-                fontSize: 'clamp(40px, 7vw, 96px)',
-                lineHeight: '1.05',
-                letterSpacing: '-0.03em',
-                textTransform: 'uppercase'
-              }}
-            >
-              <span className="relative inline-block">
-                The
-                {/* Animated calligraphy scribble underline */}
-                <svg
-                  className="absolute left-0 -bottom-2 w-full overflow-visible pointer-events-none"
-                  viewBox="0 0 100 12"
-                  preserveAspectRatio="none"
-                  style={{ height: 'clamp(12px, 2vw, 24px)' }}
-                >
-                  <path
-                    d="M2 6 Q 15 2, 25 7 Q 35 12, 50 5 Q 65 -2, 75 6 Q 85 12, 98 5"
-                    fill="none"
-                    stroke="#FF4301"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    style={{
-                      strokeDasharray: 150,
-                      strokeDashoffset: scribbleAnimated ? 0 : 150,
-                      transition: 'stroke-dashoffset 0.8s cubic-bezier(0.65, 0, 0.35, 1)',
-                    }}
-                  />
-                </svg>
-              </span>{' '}
-              presentation
-              <br />
-              platform
-            </h1>
-            <p className="mt-8 text-xl sm:text-2xl text-black/60 dark:text-white/60 max-w-2xl mx-auto px-4 hero-subtitle-animate font-light tracking-wide">
+            <HeroTitle />
+
+            <p className="mt-12 text-xl sm:text-2xl text-black/60 dark:text-white/60 max-w-2xl mx-auto px-4 hero-subtitle-animate font-light tracking-wide">
               Beautiful decks for every idea. Perfected in seconds.
             </p>
           </div>
@@ -882,7 +846,7 @@ const Landing: React.FC = () => {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="py-24 px-8 bg-[#FCFBF8] dark:bg-[#0a0a0a]">
+      <section id="pricing" className="pt-24 pb-12 px-8 bg-[#FCFBF8] dark:bg-[#0a0a0a]">
         <div className="max-w-[1200px] mx-auto">
           <div className="text-center mb-16 animate-on-scroll opacity-0">
             <h2
@@ -997,12 +961,12 @@ const Landing: React.FC = () => {
           </div>
 
           {/* Credit info */}
-          <p className="text-center text-sm text-black/40 dark:text-white/40 mt-6">
+          <p className="text-center text-sm text-black/40 dark:text-white/40 mt-4">
             Each slide uses ~5 credits
           </p>
 
           {/* See all plans link */}
-          <div className="text-center mt-4">
+          <div className="text-center mt-2">
             <Button variant="link" className="text-[#FF4301]" onClick={() => navigate('/pricing')}>
               See all plans & credit details →
             </Button>
