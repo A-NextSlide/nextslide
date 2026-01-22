@@ -6,6 +6,7 @@ import { DeckStatus } from '@/types/DeckTypes';
 import SlideGeneratingUI, { LoaderBrandTheme } from '../../common/SlideGeneratingUI';
 import SelectionRectangle from '@/components/SelectionRectangle';
 import { GenerationProgressTracker, ProgressState } from '@/services/generation/GenerationProgressTracker';
+import { useLockedSlides } from '@/hooks/useLockedSlides';
 
 interface SimpleSlideDisplayProps {
   slide: SlideData | null;
@@ -40,6 +41,10 @@ const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
 }) => {
   // Track generation progress from the tracker
   const [progressState, setProgressState] = useState<ProgressState | null>(null);
+
+  // Get locked slides info
+  const { isLocked, lockedCount } = useLockedSlides();
+  const slideIsLocked = isLocked(slideIndex);
 
   useEffect(() => {
     const tracker = GenerationProgressTracker.getInstance();
@@ -105,18 +110,20 @@ const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
     
     return (
       <div className="absolute inset-0 w-full h-full">
-        <Slide 
+        <Slide
           key={slide.id}
           slide={slide}
           isActive={true}
-          direction={direction} 
-          isEditing={isEditing}
+          direction={direction}
+          isEditing={slideIsLocked ? false : isEditing}
           onSave={updatedSlide => {
             updateSlide(slide.id, updatedSlide);
-          }} 
-          selectedComponentId={selectedComponentId}
+          }}
+          selectedComponentId={slideIsLocked ? undefined : selectedComponentId}
           onComponentSelect={onComponentSelect}
           style={slideStyle}
+          isLocked={slideIsLocked}
+          lockedCount={lockedCount}
         />
       </div>
     );

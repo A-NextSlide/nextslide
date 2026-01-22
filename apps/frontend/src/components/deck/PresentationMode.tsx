@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronLeft, ChevronRight, Grid3X3 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Grid3X3, Lock } from 'lucide-react';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useNavigation } from '@/context/NavigationContext';
 import { SlideData } from '@/types/SlideTypes';
@@ -12,6 +12,8 @@ import MobilePresentationThumbnail from './MobilePresentationThumbnail';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { BROWSER } from '@/utils/browser';
 import { captureTinySlideScreenshot } from '@/utils/slideScreenshot';
+import { useLockedSlides } from '@/hooks/useLockedSlides';
+import LockedSlideOverlay from './LockedSlideOverlay';
 
 interface PresentationModeProps {
   slides: SlideData[];
@@ -91,6 +93,9 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
   const { setCurrentSlideIndex } = useNavigation();
   const isMobile = useIsMobile();
+
+  // Get locked slides info
+  const { isLocked, lockedCount } = useLockedSlides();
 
   // Use lightweight thumbnails on mobile to prevent crashes
   const useMobileThumbnails = BROWSER.isMobile;
@@ -247,6 +252,9 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     () => (slides.length ? slides[validIndex] : null),
     [slides, validIndex]
   );
+
+  // Check if current slide is locked
+  const currentSlideIsLocked = isLocked(validIndex);
 
   // Calculate scale and determine if we need forced landscape rotation
   useLayoutEffect(() => {
@@ -447,8 +455,28 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
           >
             {currentSlide && (
               <div key={`slide-${currentSlide.id || validIndex}`} className="w-full h-full relative">
-                {slideContent}
-                {isViewOnly && (
+                {/* Slide content - blurred if locked */}
+                <div
+                  className="w-full h-full"
+                  style={currentSlideIsLocked ? {
+                    filter: 'blur(16px) saturate(0.7) brightness(0.95)',
+                    pointerEvents: 'none'
+                  } : undefined}
+                >
+                  {slideContent}
+                </div>
+
+                {/* Locked slide overlay - shown on top of blurred content */}
+                {currentSlideIsLocked && (
+                  <LockedSlideOverlay
+                    lockedCount={lockedCount}
+                    mode="full"
+                    openInNewTab={true}
+                    className="absolute inset-0"
+                  />
+                )}
+
+                {isViewOnly && !currentSlideIsLocked && (
                   <Watermark text="VIEW ONLY" opacity={0.06} fontSize={120} rotation={-30} repeat={false} />
                 )}
               </div>
@@ -564,6 +592,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                       {slides.map((slide, index) => {
                         if (!slide?.id || slide.id.startsWith('placeholder-')) return null;
 
+                        const slideIsLocked = isLocked(index);
+
                         // On mobile, use lightweight thumbnail with cached screenshots
                         if (useMobileThumbnails) {
                           return (
@@ -577,6 +607,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                               onClick={() => { goToSlide(index); setShowThumbnails(false); }}
                               cachedUrl={thumbnailCache.get(slide.id) || null}
                               isCapturing={captureIndex === index}
+                              isLocked={slideIsLocked}
                             />
                           );
                         }
@@ -589,6 +620,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                             className={cn(
                               'relative group flex-shrink-0 overflow-hidden rounded-md bg-gray-800',
                               'ring-1 ring-transparent hover:ring-white/50',
+                              slideIsLocked && 'ring-1 ring-orange-500/50',
                               validIndex === index && 'ring-2 ring-white'
                             )}
                             style={{ height: thumbnailHeight, width: thumbnailWidth }}
@@ -601,14 +633,21 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                                 responsive={false}
                                 className="pointer-events-none"
                                 slideSize={deckSlideSize}
+                                isLocked={slideIsLocked}
                               />
                             </div>
-                            <div className="absolute top-1 left-1 bg-black/70 rounded-full px-2 py-0.5 text-white text-xs font-medium">
+                            <div className="absolute top-1 left-1 bg-black/70 rounded-full px-2 py-0.5 text-white text-xs font-medium flex items-center gap-1">
+                              {slideIsLocked && <Lock size={10} className="text-orange-400" />}
                               {index + 1}
                             </div>
-                            {validIndex === index && (
+                            {validIndex === index && !slideIsLocked && (
                               <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-white rounded-full px-2 py-0.5 text-black text-xs font-bold">
                                 Current
+                              </div>
+                            )}
+                            {slideIsLocked && (
+                              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-orange-500 rounded-full px-2 py-0.5 text-white text-xs font-bold">
+                                Locked
                               </div>
                             )}
                           </button>

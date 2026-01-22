@@ -15,8 +15,22 @@ export const useOutlineState = () => {
   const [outlineBlock, setOutlineBlock] = useState<OutlinePreviewData | null>(null);
 
   const initializeOutline = useCallback((outlineData: OutlineData) => {
+    console.log('[OutlineState] initializeOutline called with:', {
+      hasSlides: Boolean(outlineData?.slides?.length),
+      slideCount: outlineData?.slides?.length,
+      title: outlineData?.title,
+      action: outlineData?.action,
+    });
+
     const preview = buildOutlinePreview(outlineData);
     const sourceSlides = extractOutlineSlides(outlineData);
+
+    console.log('[OutlineState] buildOutlinePreview result:', {
+      hasPreview: Boolean(preview),
+      previewSlideCount: preview?.slides?.length,
+      sourceSlideCount: sourceSlides.length,
+    });
+
     if (preview?.slides?.length && sourceSlides.length > 0) {
       const normalizedSlides = sourceSlides.map((slide, index) => {
         const previewSlide = preview.slides[index];

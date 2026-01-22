@@ -8,17 +8,26 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Zap, Sparkles, ArrowRight, CreditCard } from 'lucide-react';
+import { X, Zap, Sparkles, ArrowRight, CreditCard, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCredits } from '@/context/CreditsContext';
 
 interface UpgradePromptProps {
   onClose?: () => void;
+  /** Action type for custom messaging */
+  action?: string;
+  /** Metadata like locked slide count */
+  metadata?: {
+    lockedCount?: number;
+  };
 }
 
-export const UpgradePrompt: React.FC<UpgradePromptProps> = ({ onClose }) => {
+export const UpgradePrompt: React.FC<UpgradePromptProps> = ({ onClose, action: propAction, metadata }) => {
   const navigate = useNavigate();
   const { showUpgradePrompt, setShowUpgradePrompt, insufficientCreditsAction, balance } = useCredits();
+
+  // Use prop action if provided, otherwise use context action
+  const currentAction = propAction || insufficientCreditsAction;
 
   const handleClose = () => {
     setShowUpgradePrompt(false);
@@ -30,9 +39,15 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({ onClose }) => {
     navigate('/pricing');
   };
 
+  // Check if this is an unlock_slides action
+  const isUnlockSlides = currentAction === 'unlock_slides';
+  const lockedCount = metadata?.lockedCount || 0;
+
   // Action-specific messages
   const getActionMessage = () => {
-    switch (insufficientCreditsAction) {
+    switch (currentAction) {
+      case 'unlock_slides':
+        return `unlock ${lockedCount} ${lockedCount === 1 ? 'slide' : 'slides'}`;
       case 'slide_generation':
         return 'generate this slide';
       case 'ai_chat':
@@ -46,6 +61,22 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({ onClose }) => {
       default:
         return 'complete this action';
     }
+  };
+
+  // Get header text based on action
+  const getHeaderText = () => {
+    if (isUnlockSlides) {
+      return 'Unlock Your Slides';
+    }
+    return 'Out of Credits';
+  };
+
+  // Get subheader text based on action
+  const getSubheaderText = () => {
+    if (isUnlockSlides) {
+      return `${lockedCount} ${lockedCount === 1 ? 'slide awaits' : 'slides await'} - upgrade to unlock and share`;
+    }
+    return `You need more credits to ${getActionMessage()}`;
   };
 
   if (!showUpgradePrompt) return null;
@@ -91,16 +122,20 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({ onClose }) => {
               transition={{ delay: 0.1, type: 'spring' }}
               className="w-16 h-16 mx-auto mb-4 bg-white/20 rounded-2xl flex items-center justify-center"
             >
-              <Zap className="w-8 h-8" />
+              {isUnlockSlides ? (
+                <Sparkles className="w-8 h-8" />
+              ) : (
+                <Zap className="w-8 h-8" />
+              )}
             </motion.div>
             <h2
               className="text-2xl font-bold mb-2"
               style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}
             >
-              Out of Credits
+              {getHeaderText()}
             </h2>
             <p className="text-white/80">
-              You need more credits to {getActionMessage()}
+              {getSubheaderText()}
             </p>
           </div>
 
@@ -122,14 +157,19 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({ onClose }) => {
             {/* Pro benefits */}
             <div className="space-y-3 mb-6">
               <p className="text-sm font-medium text-black dark:text-white">
-                Upgrade to Pro and get:
+                {isUnlockSlides ? 'What you\'ll get:' : 'Upgrade to Pro and get:'}
               </p>
-              {[
+              {(isUnlockSlides ? [
+                'Unlock all your slides instantly',
+                'Share your full presentation',
+                'Export to PDF & offline formats',
+                'Unlimited presentations'
+              ] : [
                 '2,000 credits/month (~400 presentations)',
                 'Priority AI generation',
                 'All export formats',
                 'Pay-as-you-go if you need more'
-              ].map((benefit, i) => (
+              ]).map((benefit, i) => (
                 <motion.div
                   key={i}
                   initial={{ opacity: 0, x: -10 }}

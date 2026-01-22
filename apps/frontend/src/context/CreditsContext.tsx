@@ -9,6 +9,10 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { billingApi, type CreditBalance } from '@/services/billingApi';
 import { useAuth } from '@/context/SupabaseAuthContext';
 
+interface UpgradePromptMetadata {
+  lockedCount?: number;
+}
+
 interface CreditsContextType {
   balance: CreditBalance | null;
   loading: boolean;
@@ -18,6 +22,10 @@ interface CreditsContextType {
   showUpgradePrompt: boolean;
   setShowUpgradePrompt: (show: boolean) => void;
   insufficientCreditsAction: string | null;
+  /** Trigger upgrade prompt with custom action and metadata */
+  triggerUpgradePrompt: (action: string, metadata?: UpgradePromptMetadata) => void;
+  /** Metadata for upgrade prompt */
+  upgradePromptMetadata: UpgradePromptMetadata | null;
 }
 
 const CreditsContext = createContext<CreditsContextType | null>(null);
@@ -29,6 +37,14 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [insufficientCreditsAction, setInsufficientCreditsAction] = useState<string | null>(null);
+  const [upgradePromptMetadata, setUpgradePromptMetadata] = useState<UpgradePromptMetadata | null>(null);
+
+  // Trigger upgrade prompt with custom action and metadata
+  const triggerUpgradePrompt = useCallback((action: string, metadata?: UpgradePromptMetadata) => {
+    setInsufficientCreditsAction(action);
+    setUpgradePromptMetadata(metadata || null);
+    setShowUpgradePrompt(true);
+  }, []);
 
   const refreshBalance = useCallback(async () => {
     // Wait for auth to finish loading and require user to be logged in
@@ -92,7 +108,9 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
         checkCredits,
         showUpgradePrompt,
         setShowUpgradePrompt,
-        insufficientCreditsAction
+        insufficientCreditsAction,
+        triggerUpgradePrompt,
+        upgradePromptMetadata
       }}
     >
       {children}

@@ -685,7 +685,15 @@ export class DeckSyncService {
       if (deck.shared_by) {
         (formattedDeck as any).shared_by = deck.shared_by;
       }
-      
+
+      // Preserve locked slide info for freemium gating
+      // Check both root level and data field (backend stores it in data JSONB column)
+      const lockedInfo = deck.locked_slide_info || deck.data?.locked_slide_info;
+      if (lockedInfo) {
+        (formattedDeck as any).locked_slide_info = lockedInfo;
+        console.log('[deckSyncService] Preserved locked_slide_info:', lockedInfo);
+      }
+
       return formattedDeck;
     } catch (error) {
       console.error('[deckSyncService] Error formatting backend deck:', error);

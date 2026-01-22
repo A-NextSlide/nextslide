@@ -16,6 +16,7 @@ import { useDeckStore } from '@/stores/deckStore';
 import { isBackgroundOnlySelection } from '@/utils/selectionUtils';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useEditorStateSafe } from '@/context/EditorStateContext';
+import LockedSlideOverlay from '@/components/deck/LockedSlideOverlay';
 
 interface SlideProps {
   slide: SlideData;
@@ -32,6 +33,12 @@ interface SlideProps {
   showDebugOverlay?: boolean;
   showDebugLegend?: boolean;
   forceSimpleContainer?: boolean; // Use simple div instead of AspectRatio (for presentation mode)
+  /** Whether this slide is locked (freemium gating) */
+  isLocked?: boolean;
+  /** Callback when user clicks upgrade on locked slide */
+  onUpgradeClick?: () => void;
+  /** Number of locked slides (for overlay message) */
+  lockedCount?: number;
 }
 
 // The Slide component is responsible for displaying and editing slide content
@@ -49,7 +56,10 @@ const SlideContent: React.FC<SlideProps> = ({
   isThumbnail = false,
   showDebugOverlay = false,
   showDebugLegend = true,
-  forceSimpleContainer = false
+  forceSimpleContainer = false,
+  isLocked = false,
+  onUpgradeClick,
+  lockedCount = 0
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const isDraggingRef = useRef(false);
@@ -390,12 +400,16 @@ const SlideContent: React.FC<SlideProps> = ({
         {...containerProps}
         className={`w-full h-full p-0 m-0 relative slide-container ${isDraggingRef.current ? 'dragging' : ''}`}
         style={{
-          cursor: showCrosshairCursor ? 'crosshair' : 'default',
-          ...simpleContainerStyle
+          cursor: isLocked ? 'default' : (showCrosshairCursor ? 'crosshair' : 'default'),
+          ...simpleContainerStyle,
+          // Apply blur to entire container content when locked
+          ...(isLocked && !isThumbnail ? {
+            filter: 'blur(16px) saturate(0.7) brightness(0.95)'
+          } : {})
         }}
         data-slide-id={slideData.id}
         data-dragging={isDraggingRef.current ? 'true' : 'false'}
-
+        data-locked={isLocked ? 'true' : 'false'}
         id={`slide-${slideData.id}`}
       >
         {/* Line snap indicators - render above background but below components */}
@@ -490,6 +504,16 @@ const SlideContent: React.FC<SlideProps> = ({
 
         {/* Font optimization overlay removed */}
       </SlideContainer>
+
+      {/* Locked slide overlay - rendered outside SlideContainer to not be blurred */}
+      {isLocked && !isThumbnail && (
+        <LockedSlideOverlay
+          lockedCount={lockedCount}
+          mode="full"
+          onUpgradeClick={onUpgradeClick}
+          className="absolute inset-0"
+        />
+      )}
     </div>
   );
 };

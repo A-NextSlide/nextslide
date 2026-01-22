@@ -21,7 +21,7 @@ import { buildAttachmentPreviews, convertUploadsToAttachments } from '../utils/f
 import { buildStylePreferencesFromTheme, buildThemePayload, mergeThemeBlockWithGenerated } from '../utils/theme';
 import { extractDomainFromText } from '../utils/domain';
 import { extractButtons, stripAssistantMarkup } from '../utils/chatFormatting';
-import { CREDITS_PER_SLIDE, MAX_FILE_SIZE } from '../constants';
+import { MAX_FILE_SIZE } from '../constants';
 import type { CollectedData, ConversationStage, ConversationalOnboardingProps } from '../types';
 import type { CreditWarningMode } from '@/components/billing/CreditWarningDialog';
 
@@ -663,14 +663,38 @@ export const useConversationalOnboarding = ({
           agentStatus.actions.setStatusMessage(null);
           agentStatus.actions.setStatusPhase(null);
 
-          if (event.data?.action === 'generate_outline' || event.data?.action === 'update_outline' || event.data?.action === 'update_slides') {
+          // Check for outline actions OR direct slides array (backend sometimes sends slides without action)
+          const hasOutlineAction = event.data?.action === 'generate_outline' || event.data?.action === 'update_outline' || event.data?.action === 'update_slides';
+          const hasDirectSlides = Array.isArray(event.data?.slides) && event.data.slides.length > 0;
+
+          if (hasOutlineAction || hasDirectSlides) {
             const pendingContext = pendingContextRef.current;
-            const enrichedOutline = {
+            // Flatten nested data structure - backend sends slides in different locations:
+            // 1. event.data.slides (direct)
+            // 2. event.data.data.slides (nested in data property)
+            // 3. event.data.outline.slides (nested in outline property)
+            const nestedData = event.data.data && typeof event.data.data === 'object' ? event.data.data : {};
+            const outlineData = event.data.outline && typeof event.data.outline === 'object' ? event.data.outline : {};
+
+            // Debug: Log raw data structure to understand where slides are
+            console.log('[ConvOnboarding] Raw event.data structure:', {
+              keys: Object.keys(event.data || {}),
+              directSlides: event.data?.slides?.length,
+              nestedSlides: nestedData?.slides?.length,
+              outlineSlides: outlineData?.slides?.length,
+            });
+
+            const flattenedEventData = {
               ...event.data,
-              scraped_context: event.data.scraped_context || pendingContext.scraped_context,
-              reference_sources: event.data.reference_sources?.length ? event.data.reference_sources : pendingContext.reference_sources,
-              research_context: event.data.research_context || pendingContext.research_context,
-              research_citations: event.data.research_citations?.length ? event.data.research_citations : pendingContext.research_citations,
+              ...nestedData, // Merge nested data to top level
+              ...outlineData, // Merge outline data to top level (includes slides)
+            };
+            const enrichedOutline = {
+              ...flattenedEventData,
+              scraped_context: flattenedEventData.scraped_context || pendingContext.scraped_context,
+              reference_sources: flattenedEventData.reference_sources?.length ? flattenedEventData.reference_sources : pendingContext.reference_sources,
+              research_context: flattenedEventData.research_context || pendingContext.research_context,
+              research_citations: flattenedEventData.research_citations?.length ? flattenedEventData.research_citations : pendingContext.research_citations,
             };
             pendingContextRef.current = {
               ...pendingContext,
@@ -685,11 +709,24 @@ export const useConversationalOnboarding = ({
               !isFirstOutline &&
               hasExistingOutline &&
               allowOutlineRegeneration &&
-              event.data?.action === 'generate_outline'
+              (hasOutlineAction || hasDirectSlides)
             );
             const shouldInitialize = isFirstOutline || shouldRegenerate;
 
+            console.log('[ConvOnboarding] outline event - stream phase:', {
+              action: event.data?.action,
+              hasOutlineAction,
+              hasDirectSlides,
+              isFirstOutline,
+              shouldRegenerate,
+              shouldInitialize,
+              outlineInitializedRef: outlineInitializedRef.current,
+              hasSlides: Boolean(enrichedOutline?.slides?.length),
+              slideCount: enrichedOutline?.slides?.length || 0,
+            });
+
             if (shouldInitialize) {
+              console.log('[ConvOnboarding] Calling initializeOutline from stream');
               outlineInitializedRef.current = true;
               setStage('planning');
               outlineState.initializeOutline(enrichedOutline);
@@ -788,7 +825,18 @@ export const useConversationalOnboarding = ({
         const isFirstOutline = !outlineInitializedRef.current;
         const shouldRegenerate = Boolean(!isFirstOutline && hasExistingOutline && allowOutlineRegeneration);
 
+        console.log('[ConvOnboarding] outline - post-stream phase:', {
+          action: outlineData?.action,
+          isFirstOutline,
+          shouldRegenerate,
+          outlineInitializedRef: outlineInitializedRef.current,
+          hasSlides: Boolean(enrichedOutline?.slides?.length),
+          hasExistingOutline,
+          allowOutlineRegeneration,
+        });
+
         if (isFirstOutline || shouldRegenerate) {
+          console.log('[ConvOnboarding] Calling initializeOutline from post-stream');
           setStage('planning');
           outlineState.initializeOutline(enrichedOutline);
           themeState.initializeThemeFromOutline(enrichedOutline);
@@ -964,56 +1012,63 @@ export const useConversationalOnboarding = ({
       agentStatus.actions.setStatusPhase(null);
     }
 
-    const numSlides = outlineState.outlineFlow?.slides?.length ||
-      outlineState.outlineBlock?.slides?.length ||
-      collectedData.slideCount ||
-      5;
-    const requiredCredits = numSlides * CREDITS_PER_SLIDE;
-
+    // Check credits and show appropriate popup if needed
     try {
       const balance = await billingApi.getBalance();
       const remainingCredits = balance.remaining_credits;
       const planName = balance.plan_name || 'free';
       const isPaidPlan = ['starter', 'pro', 'enterprise'].includes(planName.toLowerCase());
 
-      if (remainingCredits < requiredCredits) {
-        const mode: CreditWarningMode = remainingCredits === 0
-          ? (isPaidPlan ? 'paid_overage' : 'free_no_credits')
-          : (isPaidPlan ? 'paid_overage' : 'free_low_credits');
+      const numSlides = outlineState.outlineFlow?.slides?.length ||
+        outlineState.outlineBlock?.slides?.length ||
+        collectedData.slideCount ||
+        15;
+      const requiredCredits = numSlides * 5; // 5 credits per slide
 
-        const outlineDataToSave = {
-          outlineFlow: outlineState.outlineFlow,
-          outlineBlock: outlineState.outlineBlock,
-          themeBlock: themeState.themeBlock,
-          collectedData,
-          chatHistory: chatMessages.chatHistory,
-          pendingSlideMode: slideMode,
-          savedAt: new Date().toISOString(),
-        };
-        localStorage.setItem('nextslide_pending_outline', JSON.stringify(outlineDataToSave));
-
-        setCreditWarningData({
-          remaining: remainingCredits,
-          required: requiredCredits,
-          slideCount: numSlides,
-          planName,
-          mode,
-          pendingSlideMode: slideMode,
-        });
-        setShowCreditWarning(true);
-        setIsProcessing(false);
-        return;
+      if (isPaidPlan) {
+        // Paid user: check if they have enough credits
+        if (remainingCredits < requiredCredits) {
+          // Show overage/insufficient credits dialog
+          setCreditWarningData({
+            remaining: remainingCredits,
+            required: requiredCredits,
+            slideCount: numSlides,
+            planName,
+            mode: remainingCredits === 0 ? 'free_no_credits' : 'paid_overage',
+            pendingSlideMode: slideMode,
+          });
+          setShowCreditWarning(true);
+          setIsProcessing(false);
+          return;
+        }
+        // Paid user with enough credits - proceed
+        proceedWithGeneration(slideMode);
+      } else {
+        // Free user: block only if 0 credits
+        if (remainingCredits <= 0) {
+          setCreditWarningData({
+            remaining: 0,
+            required: requiredCredits,
+            slideCount: numSlides,
+            planName,
+            mode: 'free_no_credits',
+            pendingSlideMode: slideMode,
+          });
+          setShowCreditWarning(true);
+          setIsProcessing(false);
+          return;
+        }
+        // Free user with credits - proceed (backend locks slides 11+)
+        proceedWithGeneration(slideMode);
       }
-
-      proceedWithGeneration(slideMode);
     } catch (error) {
       console.error('[ConversationalOnboarding] Failed to check credits:', error);
+      // On error, proceed anyway - backend will handle it
       proceedWithGeneration(slideMode);
     }
   }, [
     agentStatus.actions,
-    chatMessages.chatHistory,
-    collectedData,
+    collectedData.slideCount,
     outlineState.outlineBlock,
     outlineState.outlineFlow,
     proceedWithGeneration,

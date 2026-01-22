@@ -6,7 +6,7 @@ import {
   ContextMenuContent,
   ContextMenuItem
 } from '@/components/ui/context-menu';
-import { Trash2, Copy, Plus, GripVertical } from 'lucide-react';
+import { Trash2, Copy, Plus, GripVertical, Lock } from 'lucide-react';
 import { useDeckStore } from '@/stores/deckStore';
 import { useToast } from '@/hooks/use-toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -14,6 +14,7 @@ import { DeckStatus } from '@/types/DeckTypes';
 import { cn } from '@/lib/utils';
 import MiniSlide from './MiniSlide';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useLockedSlides } from '@/hooks/useLockedSlides';
 
 // ThumbnailItem component
 interface ThumbnailItemProps {
@@ -32,6 +33,8 @@ interface ThumbnailItemProps {
   renderSimple?: boolean;
   slideSize?: { width: number; height: number };
   isGenerating?: boolean;
+  /** Whether this slide is locked (freemium gating) */
+  isLocked?: boolean;
 }
 
 const getSlideFallbackBackground = (slide: SlideData): string | undefined => {
@@ -91,6 +94,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
   renderSimple = false,
   slideSize,
   isGenerating = false,
+  isLocked = false,
 }) => {
   const hasComponents = useMemo(() => {
     return Array.isArray(slide?.components) && slide.components.length > 0;
@@ -109,25 +113,30 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
             "slide-thumbnail w-40 h-24 rounded flex-shrink-0 cursor-pointer transition-all relative",
             isSelected
               ? 'border-2 border-primary shadow-sm'
-              : 'border border-border hover:border-primary/50'
+              : isLocked
+                ? 'border border-orange-300/50 hover:border-orange-400/70'
+                : 'border border-border hover:border-primary/50'
           )}
-          draggable={!renderSimple}
-          onDragStart={() => onDragStart(index)}
+          draggable={!renderSimple && !isLocked}
+          onDragStart={() => !isLocked && onDragStart(index)}
           onDragOver={(e) => onDragOver(e, index)}
           onDragLeave={onDragLeave}
           onDrop={(e) => onDrop(e, index)}
           onDragEnd={onDragEnd}
         >
-          {/* Drag handle icon */}
-          <div
-            className="absolute top-1 right-1 z-40 opacity-30 hover:opacity-100 transition-opacity cursor-grab"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <GripVertical className="h-4 w-4 text-foreground" />
-          </div>
+          {/* Drag handle icon - hide for locked slides */}
+          {!isLocked && (
+            <div
+              className="absolute top-1 right-1 z-40 opacity-30 hover:opacity-100 transition-opacity cursor-grab"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <GripVertical className="h-4 w-4 text-foreground" />
+            </div>
+          )}
 
-          {/* Slide number */}
-          <div className="absolute -top-5 w-full text-center text-[10px] text-gray-500 z-40">
+          {/* Slide number with lock indicator */}
+          <div className="absolute -top-5 w-full text-center text-[10px] text-gray-500 z-40 flex items-center justify-center gap-1">
+            {isLocked && <Lock className="w-2.5 h-2.5 text-orange-500" />}
             {index + 1}
           </div>
 
@@ -147,6 +156,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
                 responsive={false}
                 className={cn("pointer-events-none", renderSimple && "hover:ring-0 cursor-default")}
                 slideSize={slideSize}
+                isLocked={isLocked}
               />
             ) : showGeneratingState ? (
               /* Orange generating state - matches PlaceholderThumbnail */
@@ -172,18 +182,28 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onClick={() => onAddAfter(slide.id, index)}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Slide
-        </ContextMenuItem>
-        <ContextMenuItem onClick={() => onDuplicate(slide.id, index)}>
-          <Copy className="mr-2 h-4 w-4" />
-          Duplicate Slide
-        </ContextMenuItem>
-        <ContextMenuItem onClick={() => onDelete(slide.id, index)} className="text-destructive">
-          <Trash2 className="mr-2 h-4 w-4" />
-          Delete Slide
-        </ContextMenuItem>
+        {!isLocked && (
+          <>
+            <ContextMenuItem onClick={() => onAddAfter(slide.id, index)}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Slide
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onDuplicate(slide.id, index)}>
+              <Copy className="mr-2 h-4 w-4" />
+              Duplicate Slide
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onDelete(slide.id, index)} className="text-destructive">
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Slide
+            </ContextMenuItem>
+          </>
+        )}
+        {isLocked && (
+          <ContextMenuItem disabled className="text-muted-foreground">
+            <Lock className="mr-2 h-4 w-4" />
+            Upgrade to unlock
+          </ContextMenuItem>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -247,6 +267,8 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
   // Check if deck is generating
   const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating' || deckStatus?.state === 'pending';
   const totalExpectedSlides = deckStatus?.totalSlides || 0;
+  // Get locked slides info
+  const { isLocked } = useLockedSlides();
   // Store operations
   const removeSlide = useDeckStore(state => state.removeSlide);
   const duplicateSlide = useDeckStore(state => state.duplicateSlide);
@@ -610,6 +632,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                     renderSimple={isMobile}
                     slideSize={slideSize}
                     isGenerating={isGenerating}
+                    isLocked={isLocked(index)}
                   />
                 </motion.div>
 

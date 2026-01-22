@@ -72,6 +72,14 @@ export function CreditWarningDialog({
   const overageCost = (overageCredits * overageCostPerCredit).toFixed(2);
   const isPaidUser = ['starter', 'pro', 'enterprise'].includes(planName.toLowerCase());
 
+  // Determine upgrade target based on current plan
+  const getUpgradeText = () => {
+    const plan = planName.toLowerCase();
+    if (plan === 'free') return 'Upgrade to Starter — $9.99/mo';
+    if (plan === 'starter') return 'Upgrade to Pro — $19.99/mo';
+    return 'Get More Credits';
+  };
+
   // Track when dialog opens
   useEffect(() => {
     if (open) {
@@ -238,14 +246,14 @@ export function CreditWarningDialog({
 
           {/* Stats - for free users with some credits */}
           {effectiveMode === 'free_low_credits' && (
-            <div className="flex gap-3">
-              <div className="flex-1 text-center p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-700/50">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="text-center p-4 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-700/50">
                 <div className="text-2xl font-bold text-zinc-900 dark:text-white">{remainingCredits}</div>
-                <div className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">You have</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mt-1">You have</div>
               </div>
-              <div className="flex-1 text-center p-3 rounded-xl bg-[#FF4301]/5 border border-[#FF4301]/20">
+              <div className="text-center p-4 rounded-xl bg-[#FF4301]/5 border border-[#FF4301]/20">
                 <div className="text-2xl font-bold text-[#FF4301]">{requiredCredits}</div>
-                <div className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">You need</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mt-1">You need</div>
               </div>
             </div>
           )}
@@ -254,10 +262,10 @@ export function CreditWarningDialog({
           <div className="space-y-2.5 pt-2">
             {/* Primary action based on mode */}
             {effectiveMode === 'paid_overage' ? (
-              // Paid user - option to proceed with overage
+              // Paid user - option to upgrade or proceed with overage
               <>
                 <Button
-                  onClick={handleProceed}
+                  onClick={handleUpgrade}
                   className="w-full h-12 text-[15px] font-semibold text-white transition-all"
                   style={{
                     background: 'linear-gradient(135deg, #FF4301 0%, #FF6B35 100%)',
@@ -265,17 +273,19 @@ export function CreditWarningDialog({
                     fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", system-ui, sans-serif',
                   }}
                 >
-                  <CreditCard className="w-4 h-4 mr-2" />
-                  Continue with Overage (${overageCost})
-                </Button>
-                <Button
-                  onClick={handleUpgrade}
-                  variant="outline"
-                  className="w-full h-11 bg-transparent border-2 border-[#FF4301]/30 text-[#FF4301] hover:bg-[#FF4301]/5 hover:border-[#FF4301]/50 transition-all font-medium"
-                >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Upgrade for More Credits
+                  {getUpgradeText()}
                 </Button>
+                {onProceed && (
+                  <Button
+                    onClick={handleProceed}
+                    variant="outline"
+                    className="w-full h-11 bg-transparent border-2 border-[#FF4301]/30 text-[#FF4301] hover:bg-[#FF4301]/5 hover:border-[#FF4301]/50 transition-all font-medium"
+                  >
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    Continue with Overage (${overageCost})
+                  </Button>
+                )}
               </>
             ) : (
               // Free user - upgrade CTA
@@ -290,7 +300,7 @@ export function CreditWarningDialog({
                   }}
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Upgrade to Starter — $9.99/mo (1,000 credits)
+                  {getUpgradeText()}
                 </Button>
 
                 {/* Partial generation option for free users with some credits */}

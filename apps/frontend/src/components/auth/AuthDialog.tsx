@@ -417,8 +417,8 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
           <div className="text-center mb-4">
             <BrandWordmark
               tag="div"
-              className="text-[#383636] dark:text-gray-300 inline-block"
-              sizePx={16}
+              className="text-[#383636] dark:text-gray-300"
+              sizePx={18}
               xImageUrl="/brand/nextslide-x.png"
               gapLeftPx={-3}
               gapRightPx={-8}

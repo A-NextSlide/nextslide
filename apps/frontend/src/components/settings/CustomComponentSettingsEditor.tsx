@@ -121,7 +121,8 @@ const DynamicTextEditor: React.FC<{
   onSave: (message?: string) => void;
   onInjectFont?: (fontName: string, fontDef?: { source: string; url?: string; family?: string }) => void;
   onRequestHtmlUpdate?: () => void;
-}> = ({ element, onStyleUpdate, onTextUpdate, onSave, onInjectFont, onRequestHtmlUpdate }) => {
+  hideTextInput?: boolean; // Hide the text textarea when in edit mode
+}> = ({ element, onStyleUpdate, onTextUpdate, onSave, onInjectFont, onRequestHtmlUpdate, hideTextInput }) => {
   const [localText, setLocalText] = useState(element.textContent || '');
   const { groups: fontCategories } = useFontCatalog();
   const allFonts = useMemo(() => FontLoadingService.getAllFontNames(), [fontCategories]);
@@ -203,18 +204,21 @@ const DynamicTextEditor: React.FC<{
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground">Text</Label>
-        <Textarea
-          value={localText}
-          onChange={(e) => {
-            setLocalText(e.target.value);
-            onTextUpdate(element.id, e.target.value);
-          }}
-          onBlur={() => onSave('Updated text')}
-          className="w-full text-[11px] min-h-[52px] resize-none"
-        />
-      </div>
+      {/* Hide text input when in edit mode - user is editing directly in the slide */}
+      {!hideTextInput && (
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">Text</Label>
+          <Textarea
+            value={localText}
+            onChange={(e) => {
+              setLocalText(e.target.value);
+              onTextUpdate(element.id, e.target.value);
+            }}
+            onBlur={() => onSave('Updated text')}
+            className="w-full text-[11px] min-h-[52px] resize-none"
+          />
+        </div>
+      )}
 
       <div className="space-y-1">
         <Label className="text-[11px] text-muted-foreground">Font</Label>
@@ -704,12 +708,15 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   }, [component.id]);
 
   // Get detected elements from the custom component edit store
-  const { activeComponentId, detectedElements, selectedElement, updateElementStyle, updateElementText, updateElementImage, injectFont, requestHtmlUpdate } = useCustomComponentEditStore();
+  const { activeComponentId, detectedElements, selectedElement, editingElement, updateElementStyle, updateElementText, updateElementImage, injectFont, requestHtmlUpdate } = useCustomComponentEditStore();
 
   // Only use store data if it matches this component
   const isActiveComponent = activeComponentId === component.id;
   const activeDetectedElements = isActiveComponent ? detectedElements : [];
-  const activeSelectedElement = isActiveComponent ? selectedElement : null;
+  // Use editingElement when in edit mode (text editing), otherwise use selectedElement
+  const activeSelectedElement = isActiveComponent ? (editingElement || selectedElement) : null;
+  // Track if we're in text edit mode (editingElement is set but selectedElement is null)
+  const isTextEditMode = isActiveComponent && editingElement && !selectedElement;
   const imageElements = useMemo(() => {
     return activeDetectedElements.filter((element) => {
       if (element.type !== 'image') return false;
@@ -1234,6 +1241,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                   onSave={saveComponentToHistory}
                   onInjectFont={injectFont}
                   onRequestHtmlUpdate={requestHtmlUpdate}
+                  hideTextInput={isTextEditMode}
                 />
               )}
 
@@ -1323,6 +1331,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                           onSave={saveComponentToHistory}
                           onInjectFont={injectFont}
                           onRequestHtmlUpdate={requestHtmlUpdate}
+                          hideTextInput={isTextEditMode && editingElement?.id === element.id}
                         />
                       </div>
                     ))}

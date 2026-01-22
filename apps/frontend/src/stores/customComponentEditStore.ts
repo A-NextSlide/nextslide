@@ -71,6 +71,9 @@ interface CustomComponentEditState {
   // Currently selected element (derived from detectedElements)
   selectedElement: VirtualElement | null;
 
+  // Element currently being edited (text edit mode) - persists even when selection is cleared
+  editingElement: VirtualElement | null;
+
   // Reference to the iframe for sending messages
   iframeRef: React.RefObject<HTMLIFrameElement> | null;
 
@@ -79,6 +82,7 @@ interface CustomComponentEditState {
   setDetectedElements: (elements: VirtualElement[]) => void;
   setSelectedElementId: (elementId: string | null) => void;
   setSelectedElement: (element: VirtualElement | null) => void;
+  setEditingElement: (element: VirtualElement | null) => void;
   setIframeRef: (ref: React.RefObject<HTMLIFrameElement> | null) => void;
 
   // Select element by ID (for layers panel click)
@@ -120,6 +124,7 @@ export const useCustomComponentEditStore = create<CustomComponentEditState>((set
   detectedElements: [],
   selectedElementId: null,
   selectedElement: null,
+  editingElement: null,
   iframeRef: null,
 
   setActiveComponent: (componentId) => {
@@ -157,6 +162,10 @@ export const useCustomComponentEditStore = create<CustomComponentEditState>((set
       selectedElementId: element?.id || null,
       selectedElement: element,
     });
+  },
+
+  setEditingElement: (element) => {
+    set({ editingElement: element });
   },
 
   setIframeRef: (ref) => {
@@ -379,6 +388,7 @@ export const useCustomComponentEditStore = create<CustomComponentEditState>((set
       detectedElements: [],
       selectedElementId: null,
       selectedElement: null,
+      editingElement: null,
       iframeRef: null,
     });
   },

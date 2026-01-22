@@ -595,6 +595,112 @@ class BillingService:
             raise
 
 
+    # ================================================================
+    # Freemium Slide Locking
+    # ================================================================
+
+    # Free users can view up to 10 slides; slides 11+ are locked
+    FREE_PLAN_UNLOCKED_SLIDES = 10
+
+    async def should_lock_slides(self, user_id: str, total_slides: int) -> tuple[bool, int]:
+        """
+        Check if slides should be locked for this user based on their plan.
+
+        Args:
+            user_id: User's ID
+            total_slides: Total number of slides in the deck
+
+        Returns: (should_lock, unlocked_count)
+            - should_lock: True if slides beyond the free limit should be locked
+            - unlocked_count: Number of slides the user can view (e.g., 10 for free users)
+        """
+        try:
+            balance = await self.get_user_balance(user_id)
+            if not balance:
+                # Can't determine plan - default to locking
+                return total_slides > self.FREE_PLAN_UNLOCKED_SLIDES, self.FREE_PLAN_UNLOCKED_SLIDES
+
+            # Paid plans (starter, pro, enterprise) get all slides unlocked
+            if balance.plan_id in ('starter', 'pro', 'enterprise', 'friends_family'):
+                return False, total_slides
+
+            # Unlimited credits (-1) means Friends & Family - no locking
+            if balance.remaining_credits == -1:
+                return False, total_slides
+
+            # Free plan: lock slides beyond FREE_PLAN_UNLOCKED_SLIDES
+            if total_slides > self.FREE_PLAN_UNLOCKED_SLIDES:
+                return True, self.FREE_PLAN_UNLOCKED_SLIDES
+
+            return False, total_slides
+        except Exception as e:
+            logger.error(f"Error checking slide locking for user {user_id}: {e}")
+            # Default to locking on error for free-looking users
+            return total_slides > self.FREE_PLAN_UNLOCKED_SLIDES, self.FREE_PLAN_UNLOCKED_SLIDES
+
+    async def unlock_deck_slides(self, user_id: str, deck_uuid: str) -> bool:
+        """
+        Unlock all slides in a deck after user upgrades.
+
+        Args:
+            user_id: User's ID
+            deck_uuid: Deck UUID to unlock
+
+        Returns: True if successful
+        """
+        try:
+            from utils.supabase import get_deck, upload_deck
+
+            deck = get_deck(deck_uuid)
+            if not deck:
+                logger.warning(f"Cannot unlock slides: deck {deck_uuid} not found")
+                return False
+
+            # Remove locked_slide_info from deck
+            if 'locked_slide_info' in deck:
+                del deck['locked_slide_info']
+                upload_deck(deck, deck_uuid, user_id)
+                logger.info(f"Unlocked all slides in deck {deck_uuid} for user {user_id}")
+
+            return True
+        except Exception as e:
+            logger.error(f"Error unlocking deck slides: {e}")
+            return False
+
+    async def unlock_all_user_decks(self, user_id: str) -> int:
+        """
+        Unlock all slides in all decks owned by a user after upgrade.
+
+        Args:
+            user_id: User's ID
+
+        Returns: Number of decks unlocked
+        """
+        try:
+            client = self._get_client()
+
+            # Get all decks with locked slides for this user
+            result = client.table("decks") \
+                .select("uuid, locked_slide_info") \
+                .eq("user_id", user_id) \
+                .not_.is_("locked_slide_info", "null") \
+                .execute()
+
+            if not result.data:
+                return 0
+
+            unlocked_count = 0
+            for deck in result.data:
+                if await self.unlock_deck_slides(user_id, deck["uuid"]):
+                    unlocked_count += 1
+
+            logger.info(f"Unlocked {unlocked_count} decks for user {user_id} after upgrade")
+            return unlocked_count
+        except Exception as e:
+            logger.error(f"Error unlocking user decks: {e}")
+            return 0
+
+
 # Singleton instance
 _billing_service: Optional[BillingService] = None
 

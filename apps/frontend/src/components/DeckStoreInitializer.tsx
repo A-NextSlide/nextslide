@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { useDeckStore } from '../stores/deckStore';
 import { createLogger, LogCategory, LogLevel, configureLogging } from '../utils/logging';
 import { FontLoadingService } from '../services/FontLoadingService';
 import { extractFontFamiliesFromDeck } from '../utils/fontLoaderUtils';
+import { useUpgradeSuccess } from '../hooks/useUpgradeSuccess';
 
 interface DeckStoreInitializerProps {
   syncEnabled?: boolean;
@@ -53,6 +54,41 @@ export function DeckStoreInitializer({
 
   // Track if we've already initialized to prevent duplicate runs in StrictMode
   const hasInitializedRef = useRef(false);
+
+  // Refetch deck data after upgrade to unlock slides
+  const refetchDeck = useCallback(() => {
+    const currentDeckId = useDeckStore.getState().deckData?.uuid;
+    if (currentDeckId) {
+      logger.info('Refetching deck data after upgrade to unlock slides');
+      const initializeStore = useDeckStore.getState().initialize;
+      if (initializeStore) {
+        initializeStore({
+          deckId: currentDeckId,
+          isNewDeck: false,
+          syncEnabled: true,
+          useRealtimeSubscription: true,
+          forceRefresh: true // Force refetch from server
+        });
+      }
+    }
+  }, []);
+
+  // Handle upgrade success - refetch deck to unlock slides
+  useUpgradeSuccess({
+    onUpgradeSuccess: refetchDeck
+  });
+
+  // Listen for upgrade:success event to refetch deck data
+  useEffect(() => {
+    const handleUpgradeSuccess = () => {
+      refetchDeck();
+    };
+
+    window.addEventListener('upgrade:success', handleUpgradeSuccess);
+    return () => {
+      window.removeEventListener('upgrade:success', handleUpgradeSuccess);
+    };
+  }, [refetchDeck]);
 
     // Initialize the store when the component mounts
   useEffect(() => {

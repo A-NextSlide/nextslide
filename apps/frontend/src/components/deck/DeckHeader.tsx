@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { IconButton } from '../ui/IconButton';
-import { Edit, Plus, ChevronLeft, Undo, Redo, History, ZoomIn, ZoomOut, Search, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileText, Loader2, Sun, Moon, MessageSquare, Settings, Plug, LogOut, Share2 } from 'lucide-react';
+import { Edit, Plus, ChevronLeft, Undo, Redo, History, ZoomIn, ZoomOut, Search, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileText, Loader2, Sun, Moon, MessageSquare, Settings, Plug, LogOut, Share2, Lock } from 'lucide-react';
+import { useLockedSlides } from '@/hooks/useLockedSlides';
 import { useVersionHistory } from '@/context/VersionHistoryContext';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 import { ZOOM_LIMITS, ZOOM_STEP } from '@/utils/zoom';
@@ -73,6 +74,9 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
   const { signOut } = useAuth();
   const { toast } = useToast();
   const isMobile = useIsMobile();
+
+  // Get locked slides info for share button blocking
+  const { hasLockedSlides, lockedCount } = useLockedSlides();
 
   // Get Yjs status from deck store
   const getYjsConnectionStatus = useDeckStore(state => (state as any).getYjsConnectionStatus);
@@ -438,7 +442,7 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
                     window.dispatchEvent(new CustomEvent('open-deck-sharing'));
                   } catch { }
                 }}
-                className="flex items-center justify-center w-7 h-7 bg-muted hover:bg-muted/80 rounded text-foreground transition-colors"
+                className="flex items-center justify-center w-7 h-7 rounded transition-colors bg-muted hover:bg-muted/80 text-foreground"
                 title="Share"
               >
                 <Share2 size={14} />

@@ -393,9 +393,16 @@ export class GenerationCoordinator extends EventTarget {
             if (data.deck_id && !deckId) {
               deckId = data.deck_id;
               deckUrl = data.deck_url || `/deck/${deckId}`;
-              
+
               // Log for debugging
               console.log('[GenerationCoordinator] Deck created with ID:', deckId);
+
+              // Store locked_slide_info for freemium gating if present
+              if (data.locked_slide_info) {
+                console.log('[GenerationCoordinator] Setting locked_slide_info:', data.locked_slide_info);
+                const { updateDeckData } = useDeckStore.getState();
+                updateDeckData({ locked_slide_info: data.locked_slide_info } as any);
+              }
 
               // Proactively start composition streaming to avoid backend cancelling due to no client
               if (!composeStreamStarted) {

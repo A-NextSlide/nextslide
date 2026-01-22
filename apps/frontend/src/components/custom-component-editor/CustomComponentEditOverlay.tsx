@@ -938,6 +938,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     setActiveComponent,
     setDetectedElements,
     setSelectedElementId,
+    setEditingElement,
     setIframeRef: setStoreIframeRef,
     clearSelection,
   } = useCustomComponentEditStore();
@@ -1383,6 +1384,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       // Handle text editing finished - save changes and re-enable hit areas
       if (data.type === 'text-changed') {
         setEditingTextId(null);
+        setEditingElement(null);
 
         // Request HTML from iframe to persist the text change
         // Use the event source window directly to ensure we reach the right iframe
@@ -1498,6 +1500,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     setSelectionPathIndex(0);
     selectionAnchorRef.current = null;
     setEditingTextId(null);
+    setEditingElement(null);
 
     if (iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.postMessage({
@@ -1505,7 +1508,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         type: 'deselect',
       }, '*');
     }
-  }, [iframeRef, clearSelection]);
+  }, [iframeRef, clearSelection, setEditingElement]);
 
   // Handle Escape to clear selection while editing a custom component
   useEffect(() => {
@@ -1546,6 +1549,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     // This allows dragging text elements. Double-click will enter edit mode.
     const selected = selectAtPoint(point);
     setEditingTextId(null);
+    setEditingElement(null);
     if (selected) {
       skipNextSelectionNotifyRef.current = true;
       onElementSelect(toDetectedElement(selected), point.x, point.y);
@@ -1580,9 +1584,11 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     setSelectionPathIndex(0);
     selectionAnchorRef.current = null;
     setEditingTextId(element.id);
+    // Set editing element in store so sidebar can show styling controls
+    setEditingElement(element);
     skipNextSelectionNotifyRef.current = true;
     onElementSelect(null);
-  }, [iframeRef, onElementSelect, clearSelection]);
+  }, [iframeRef, onElementSelect, clearSelection, setEditingElement]);
 
   // Handle double-click - for TEXT: enter edit mode, for IMAGE: open settings
   const handleDoubleClick = useCallback((element: VirtualElement, cursorX?: number, cursorY?: number) => {
@@ -1740,15 +1746,17 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
 
     setEditingTextId(null);
+    setEditingElement(null);
 
     // Request fresh element data
     setTimeout(requestElements, 100);
-  }, [editingTextId, virtualElements, iframeRef, requestElements]);
+  }, [editingTextId, virtualElements, iframeRef, requestElements, setEditingElement]);
 
   // Handle text edit cancel
   const handleTextEditCancel = useCallback(() => {
     setEditingTextId(null);
-  }, []);
+    setEditingElement(null);
+  }, [setEditingElement]);
 
   const handleBackgroundPointerDown = useCallback((e: React.MouseEvent) => {
     if (!iframeBounds || editingTextId) return;

@@ -34,9 +34,10 @@ OUTLINE_AGENT_SYSTEM_PROMPT = (
     "You are a presentation outline agent. Return a single JSON object only. "
     "Always include a top-level action: generate_outline, update_outline, update_theme, update_slides, scrape_media, clarify. "
     "If key details are missing (topic, audience, slide_count, tone/style, delivery format) or the request is high-stakes/educational, "
-    "respond with action=clarify and include a short intro message (do not repeat field labels) plus clarification.fields "
-    "(array of {key,label,type,options?,value?}). "
+    "respond with action=clarify. ALWAYS include both: (1) a short 'message' intro, and (2) 'clarification.fields' array - NEVER omit fields. "
+    "Each field: {key,label,type,options?,value?}. "
     "Use label for the question (markdown ok). Use value for a suggested default/prefill that is ready to submit. "
+    "When asking about slide_count, default to 15 slides unless the user requests fewer. "
     "Ask for all missing essentials in a single clarify response (avoid multi-step questioning). "
     "When style or theme is unclear, include an open-text clarification question about the visual vibe and how it will be presented (e.g., live talk with minimal text, detailed analysis doc, or interactive web experience). Avoid jargon like slideMode. "
     "When a CURRENT OUTLINE is provided, do not use generate_outline unless the user explicitly asks to regenerate or start over. "
@@ -82,7 +83,7 @@ async def _repair_outline_response(
     repair_system = (
         "Return a single JSON object only. "
         "If details are missing or the response is a question, use action=clarify "
-        "with a short intro message and clarification.fields (array of {key,label,type,options?,value?}). "
+        "with both 'message' (intro) AND 'clarification.fields' array - NEVER omit fields. "
         "If style is unclear, include an open-text question about visual vibe and how it will be presented (live talk vs detailed doc vs interactive web), avoiding jargon. "
         "Otherwise use action=generate_outline with title, topic, slide_count, detail_level, tone, slides."
     )
@@ -875,7 +876,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                                 "key": "slide_count",
                                 "label": "How many slides should it be?",
                                 "type": "number",
-                                "value": 10,
+                                "value": 15,
                             },
                             {
                                 "key": "audience",

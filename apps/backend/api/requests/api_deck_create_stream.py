@@ -26,6 +26,7 @@ from api.requests.deck_create import (
     log_tagged_media_summary,
     prepare_outline_dict,
     start_narrative_flow_task,
+    add_locked_slide_info_if_needed,
 )
 
 # Import new deck composition method
@@ -272,7 +273,13 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
             deck_data_with_outline = build_initial_deck_payload(
                 deck_outline, deck_uuid
             )
-            
+
+            # Check if slides should be locked for free users (freemium gating)
+            total_slides = len(deck_outline.slides)
+            deck_data_with_outline = await add_locked_slide_info_if_needed(
+                deck_data_with_outline, user_id, total_slides
+            )
+
             start_narrative_flow_task(
                 deck_outline, deck_uuid, _background_tasks
             )
@@ -284,13 +291,18 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 logger.info(f"Successfully created deck {deck_uuid} in database for user {user_id or 'anonymous'}")
                 
                 # NOW send deck_created event - deck exists in database!
-                yield _sse({
+                deck_created_event = {
                     'type': 'deck_created',
                     'deck_id': deck_uuid,  # Frontend expects 'deck_id' not 'deck_uuid'
                     'deck_url': f'/deck/{deck_uuid}',
                     'status': 'pending',
                     'message': 'Deck created, starting generation...'
-                })
+                }
+                # Include locked_slide_info for freemium gating
+                if deck_data_with_outline.get('locked_slide_info'):
+                    deck_created_event['locked_slide_info'] = deck_data_with_outline['locked_slide_info']
+                    logger.info(f"Including locked_slide_info in deck_created event: {deck_data_with_outline['locked_slide_info']}")
+                yield _sse(deck_created_event)
                 
                 # Send deck_saved event to indicate DB persistence complete
                 response_data = {

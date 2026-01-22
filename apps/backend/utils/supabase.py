@@ -147,6 +147,9 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
         if "style_spec" in deck_data:
             data_field["style_spec"] = deck_data["style_spec"]
             logger.debug(f"Found style_spec data to save: {len(str(deck_data['style_spec']))} chars")
+        if "locked_slide_info" in deck_data:
+            data_field["locked_slide_info"] = deck_data["locked_slide_info"]
+            logger.info(f"Saving locked_slide_info to data field: {deck_data['locked_slide_info']}")
 
         # Prepare the deck data for upload (partial fields only)
         deck_record = {"uuid": deck_uuid}

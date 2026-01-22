@@ -854,7 +854,10 @@ export const createSyncOperations = (set: Function, get: Function) => {
         name: deck.name,
         slideCount: Array.isArray(deck.slides) ? deck.slides.length : 0,
         hasStatus: !!deck.status,
-        status: deck.status
+        status: deck.status,
+        // Debug locked slides
+        locked_slide_info: deck.locked_slide_info,
+        lockedSlideInfo: deck.lockedSlideInfo,
       });
 
       // Debug: Log CustomComponent render lengths from API response

@@ -9,6 +9,7 @@ import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { StaticNavigationProvider } from '@/context/NavigationContext';
 import { ThumbnailRenderProvider } from '@/context/ThumbnailRenderContext';
 import { BROWSER } from '@/utils/browser';
+import { Lock } from 'lucide-react';
 
 interface MiniSlideProps {
   slide: SlideData;
@@ -34,6 +35,11 @@ interface MiniSlideProps {
    * Use for offscreen capture scenarios.
    */
   forceRender?: boolean;
+  /**
+   * Whether this slide is locked (freemium gating).
+   * Renders blur effect and lock badge overlay.
+   */
+  isLocked?: boolean;
 }
 
 /**
@@ -106,7 +112,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   slideSize,
   renderMode = 'full',
   interactive = false,
-  forceRender = false
+  forceRender = false,
+  isLocked = false
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerDims, setContainerDims] = useState<{ width: number; height: number } | null>(null);
@@ -330,6 +337,12 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   // On iOS: Only render when shouldRender is true (debounced visibility)
   const shouldRenderContent = hasValidDimensions && shouldRender;
 
+  // Blur style for locked slides
+  const lockedBlurStyle: React.CSSProperties = isLocked ? {
+    filter: 'blur(16px) saturate(0.7) brightness(0.95)',
+    pointerEvents: 'none'
+  } : {};
+
   return (
     <div
       ref={containerRef}
@@ -354,11 +367,12 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
             transform: `scale(${scale})`,
             WebkitTransformOrigin: 'top left',
             transformOrigin: 'top left',
-            pointerEvents: interactive ? 'auto' : 'none',
+            pointerEvents: interactive && !isLocked ? 'auto' : 'none',
             willChange: 'transform',
             // Fade-in animation
             opacity: isContentMounted ? 1 : 0,
             transition: 'opacity 300ms ease-out',
+            ...lockedBlurStyle
           } as React.CSSProperties}
         >
           {/* Inner wrapper with explicit dimensions to ensure proper sizing */}
@@ -378,6 +392,21 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
                 </StaticActiveSlideProvider>
               </StaticEditorStateProvider>
             </StaticNavigationProvider>
+          </div>
+        </div>
+      )}
+
+      {/* Locked slide overlay */}
+      {isLocked && (
+        <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+          {/* Lock badge - top right */}
+          <div className="absolute top-1 right-1 bg-black/70 rounded-full p-1">
+            <Lock className="w-2.5 h-2.5 text-white" />
+          </div>
+          {/* Center lock label */}
+          <div className="bg-black/50 rounded-lg px-2 py-1 flex items-center gap-1">
+            <Lock className="w-3 h-3 text-white" />
+            <span className="text-[9px] text-white font-medium">Locked</span>
           </div>
         </div>
       )}

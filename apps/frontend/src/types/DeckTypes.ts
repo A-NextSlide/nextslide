@@ -69,6 +69,13 @@ export interface DeckData {
   };
 }
 
+// Locked slide info for freemium gating
+export interface LockedSlideInfo {
+  unlockedCount: number;      // How many slides user can view (e.g., 10)
+  totalCount: number;         // Total slides in deck (e.g., 15)
+  lockedAt?: string;          // ISO timestamp when locked
+}
+
 // Main CompleteDeckData interface for deck storage
 export interface CompleteDeckData {
   // Core fields
@@ -76,7 +83,10 @@ export interface CompleteDeckData {
   name: string;
   slides: SlideData[];
   outline?: FrontendDeckOutline;
-  
+
+  // Locked slide info for freemium gating
+  lockedSlideInfo?: LockedSlideInfo;
+
   // Timestamps
   lastModified: string;
   created_at: string;

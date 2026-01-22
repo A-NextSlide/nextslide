@@ -7,6 +7,7 @@
 import React from 'react';
 import { SlideData } from '@/types/SlideTypes';
 import { cn } from '@/lib/utils';
+import { Lock } from 'lucide-react';
 
 interface MobilePresentationThumbnailProps {
   slide: SlideData;
@@ -19,6 +20,8 @@ interface MobilePresentationThumbnailProps {
   cachedUrl: string | null;
   /** Whether this slide is currently being captured */
   isCapturing: boolean;
+  /** Whether this slide is locked (freemium gating) */
+  isLocked?: boolean;
 }
 
 /**
@@ -86,6 +89,7 @@ const MobilePresentationThumbnail: React.FC<MobilePresentationThumbnailProps> = 
   onClick,
   cachedUrl,
   isCapturing,
+  isLocked = false,
 }) => {
   const backgroundStyle = extractBackgroundStyle(slide);
 
@@ -95,6 +99,7 @@ const MobilePresentationThumbnail: React.FC<MobilePresentationThumbnailProps> = 
       className={cn(
         'relative group flex-shrink-0 overflow-hidden rounded-md',
         'ring-1 ring-transparent hover:ring-white/50',
+        isLocked && 'ring-1 ring-orange-500/50',
         isActive && 'ring-2 ring-white'
       )}
       style={{ height, width }}
@@ -105,13 +110,17 @@ const MobilePresentationThumbnail: React.FC<MobilePresentationThumbnailProps> = 
           src={cachedUrl}
           alt={`Slide ${slideNumber}`}
           className="w-full h-full object-cover"
+          style={isLocked ? { filter: 'blur(8px) saturate(0.7) brightness(0.95)' } : undefined}
           draggable={false}
         />
       ) : (
         /* Show background placeholder with loading indicator */
         <div
           className="relative w-full h-full overflow-hidden"
-          style={backgroundStyle}
+          style={{
+            ...backgroundStyle,
+            ...(isLocked ? { filter: 'blur(8px) saturate(0.7) brightness(0.95)' } : {})
+          }}
         >
           {isCapturing && (
             <div className="absolute inset-0 flex items-center justify-center">
@@ -121,15 +130,33 @@ const MobilePresentationThumbnail: React.FC<MobilePresentationThumbnailProps> = 
         </div>
       )}
 
+      {/* Lock overlay for locked slides */}
+      {isLocked && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="bg-black/50 rounded-lg px-2 py-1 flex items-center gap-1">
+            <Lock size={10} className="text-white" />
+            <span className="text-[9px] text-white font-medium">Locked</span>
+          </div>
+        </div>
+      )}
+
       {/* Slide number badge */}
-      <div className="absolute top-1 left-1 bg-black/70 rounded-full px-2 py-0.5 text-white text-xs font-medium">
+      <div className="absolute top-1 left-1 bg-black/70 rounded-full px-2 py-0.5 text-white text-xs font-medium flex items-center gap-1">
+        {isLocked && <Lock size={10} className="text-orange-400" />}
         {slideNumber}
       </div>
 
-      {/* Current indicator */}
-      {isActive && (
+      {/* Current indicator - don't show if locked */}
+      {isActive && !isLocked && (
         <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-white rounded-full px-2 py-0.5 text-black text-xs font-bold">
           Current
+        </div>
+      )}
+
+      {/* Locked indicator at bottom */}
+      {isLocked && (
+        <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-orange-500 rounded-full px-2 py-0.5 text-white text-xs font-bold">
+          Locked
         </div>
       )}
     </button>

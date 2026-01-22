@@ -1157,11 +1157,10 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
 
     # ===== CREDIT TRACKING =====
     # Check credits and determine how many slides we can generate
+    # For freemium: generate ALL slides, lock slides 11+ for free users
     num_slides = len(outline.get('slides', []))
     slides_to_generate = num_slides
-    is_partial_generation = False
-    hidden_slides_count = 0
-    force_sequential = False
+    slides_to_charge = num_slides  # Default: charge for all slides
 
     if user_id and num_slides > 0:
         from services.billing_service import get_billing_service, CreditAction
@@ -1174,59 +1173,76 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
         if balance:
             logger.info(f"[CREDITS] User {user_id} balance: {balance.remaining_credits} credits, needs {total_cost} for {num_slides} slides")
 
-            # For pro/enterprise, allow full generation
-            if balance.plan_id in ('pro', 'enterprise'):
+            # For paid plans (starter/pro/enterprise)
+            if balance.plan_id in ('starter', 'pro', 'enterprise'):
+                # Check if they have enough credits
+                if balance.remaining_credits < total_cost:
+                    # Paid user without enough credits - return error for frontend to handle
+                    # Frontend will show overage confirmation or ask them to buy more
+                    logger.info(f"[CREDITS] Paid user has insufficient credits: {balance.remaining_credits} < {total_cost}")
+
+                    async def insufficient_credits_paid_response():
+                        yield f"data: {json.dumps({'type': 'error', 'error': 'INSUFFICIENT_CREDITS', 'message': 'You need more credits for this presentation.', 'remaining': balance.remaining_credits, 'required': total_cost, 'plan': balance.plan_id, 'can_use_overage': balance.can_use_overage})}\n\n"
+                        yield f"data: {json.dumps({'type': 'end', 'message': 'Stream complete'})}\n\n"
+
+                    return StreamingResponse(
+                        insufficient_credits_paid_response(),
+                        media_type="text/event-stream",
+                        headers={
+                            "Cache-Control": "no-cache",
+                            "Connection": "keep-alive",
+                            "X-Accel-Buffering": "no"
+                        }
+                    )
                 slides_to_generate = num_slides
             else:
-                # Calculate how many slides user can afford
+                # Free plan: Check if user has ANY credits
+                if balance.remaining_credits <= 0:
+                    # User has 0 credits - return error so frontend shows paywall
+                    logger.info(f"[CREDITS] User has no credits. Returning INSUFFICIENT_CREDITS error.")
+
+                    async def insufficient_credits_response():
+                        yield f"data: {json.dumps({'type': 'error', 'error': 'INSUFFICIENT_CREDITS', 'message': 'You have no credits remaining. Please upgrade to continue.', 'remaining': 0, 'required': num_slides * credit_per_slide, 'plan': 'free'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'end', 'message': 'Stream complete'})}\n\n"
+
+                    return StreamingResponse(
+                        insufficient_credits_response(),
+                        media_type="text/event-stream",
+                        headers={
+                            "Cache-Control": "no-cache",
+                            "Connection": "keep-alive",
+                            "X-Accel-Buffering": "no"
+                        }
+                    )
+
+                # User has credits - generate ALL slides (freemium model)
+                # Slides 11+ will be locked via add_locked_slide_info_if_needed in api_deck_create_stream.py
+                slides_to_generate = num_slides
+
+                # Calculate how many slides to charge for (max 10 for free users)
+                FREE_PLAN_UNLOCKED_SLIDES = 10
                 affordable_slides = balance.remaining_credits // credit_per_slide
+                slides_to_charge = min(affordable_slides, FREE_PLAN_UNLOCKED_SLIDES, num_slides)
 
-                if affordable_slides < num_slides:
-                    # Partial generation - generate what they can afford
-                    slides_to_generate = max(0, affordable_slides)  # At least 0
-                    hidden_slides_count = num_slides - slides_to_generate
-                    is_partial_generation = True
-                    force_sequential = True  # Generate sequentially for partial generations
+                logger.info(f"[CREDITS] FREEMIUM: Generating all {num_slides} slides, charging for {slides_to_charge} slides (user can afford {affordable_slides})")
 
-                    logger.info(f"[CREDITS] PARTIAL: User can afford {slides_to_generate}/{num_slides} slides. {hidden_slides_count} slides will not be generated.")
-
-                    # Truncate outline to only include affordable slides (no upgrade slide anymore)
-                    if slides_to_generate > 0:
-                        outline['slides'] = outline.get('slides', [])[:slides_to_generate]
-                        logger.info(f"[CREDITS] Truncated outline to {slides_to_generate} slides")
-                    else:
-                        # User has 0 credits - return error so frontend shows paywall
-                        logger.info(f"[CREDITS] User has no credits. Returning INSUFFICIENT_CREDITS error.")
-
-                        async def insufficient_credits_response():
-                            yield f"data: {json.dumps({'type': 'error', 'error': 'INSUFFICIENT_CREDITS', 'message': 'You have no credits remaining. Please upgrade to continue.', 'remaining': 0, 'required': num_slides * credit_per_slide, 'plan': 'free'})}\n\n"
-                            yield f"data: {json.dumps({'type': 'end', 'message': 'Stream complete'})}\n\n"
-
-                        return StreamingResponse(
-                            insufficient_credits_response(),
-                            media_type="text/event-stream",
-                            headers={
-                                "Cache-Control": "no-cache",
-                                "Connection": "keep-alive",
-                                "X-Accel-Buffering": "no"
-                            }
-                        )
-
-            # Consume credits for the slides we're actually generating (not the upgrade slide)
-            if slides_to_generate > 0:
-                actual_cost = slides_to_generate * credit_per_slide
+            # Consume credits for the slides we're charging for
+            # slides_to_charge is already set correctly:
+            # - Paid users: num_slides (all slides)
+            # - Free users: min(affordable, 10, num_slides)
+            if slides_to_charge > 0:
+                actual_cost = slides_to_charge * credit_per_slide
                 success, remaining, overage = await billing.consume_credits(
                     user_id,
                     CreditAction.SLIDE_GENERATION,
                     metadata={
                         "deck_id": outline.get('id'),
-                        "num_slides": slides_to_generate,
+                        "num_slides_generated": slides_to_generate,
+                        "num_slides_charged": slides_to_charge,
                         "total_cost": actual_cost,
-                        "is_partial": is_partial_generation,
-                        "hidden_slides": hidden_slides_count
                     },
-                    description=f"Generate {slides_to_generate} slides for deck",
-                    quantity=slides_to_generate
+                    description=f"Generate {slides_to_generate} slides (charged for {slides_to_charge})",
+                    quantity=slides_to_charge
                 )
 
                 if success:
@@ -1250,8 +1266,7 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
         from agents.config import MAX_PARALLEL_SLIDES, DELAY_BETWEEN_SLIDES
         
         # Create the request object with the data from the raw request
-        # Use sequential generation (max_parallel=1) for partial/paywall generations
-        effective_max_parallel = 1 if force_sequential else request.get('max_parallel', MAX_PARALLEL_SLIDES)
+        effective_max_parallel = request.get('max_parallel', MAX_PARALLEL_SLIDES)
 
         # Accept both snake_case and camelCase for style preferences
         style_prefs = request.get('stylePreferences') or request.get('style_preferences')
@@ -1266,8 +1281,6 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
 
         # Store metadata in request for later use
         create_request._user_id = user_id
-        create_request._is_partial_generation = is_partial_generation
-        create_request._hidden_slides_count = hidden_slides_count
         
         # Create the streaming response
         generator = stream_deck_creation(create_request, REGISTRY)
