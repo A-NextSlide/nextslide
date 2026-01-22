@@ -35,7 +35,7 @@ const ComparisonSection = () => {
               <h2 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight text-zinc-400 line-through decoration-zinc-500/50 decoration-4">
                 The Old Way
               </h2>
-              <p className="text-zinc-500/80 font-medium mt-2">Boring. Static. Dead.</p>
+              <p className="text-zinc-500/80 font-medium mt-2">Boring. Static. Dead. Painful.</p>
             </motion.div>
 
             <motion.div style={{ opacity: newWayOpacity, position: 'absolute' }}>
