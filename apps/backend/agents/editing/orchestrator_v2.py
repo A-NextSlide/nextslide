@@ -81,18 +81,33 @@ def apply_theme_to_custom_component_html(
     # Apply typography updates
     if typography:
         # Get font families from typography config
+        # Support multiple key formats: heading/body (LLM), hero_title/body_text (deck theme)
         heading_font = None
         body_font = None
 
+        # Try heading keys (LLM format)
         if isinstance(typography.get('heading'), dict):
             heading_font = typography['heading'].get('family')
         elif isinstance(typography.get('heading'), str):
             heading_font = typography['heading']
+        # Fallback to deck theme format (hero_title/hero_font)
+        if not heading_font:
+            if isinstance(typography.get('hero_title'), dict):
+                heading_font = typography['hero_title'].get('family')
+            elif isinstance(typography.get('hero_font'), str):
+                heading_font = typography['hero_font']
 
+        # Try body keys (LLM format)
         if isinstance(typography.get('body'), dict):
             body_font = typography['body'].get('family')
         elif isinstance(typography.get('body'), str):
             body_font = typography['body']
+        # Fallback to deck theme format (body_text/body_font)
+        if not body_font:
+            if isinstance(typography.get('body_text'), dict):
+                body_font = typography['body_text'].get('family')
+            elif isinstance(typography.get('body_font'), str):
+                body_font = typography['body_font']
 
         # Update Google Fonts import if present
         if heading_font or body_font:
@@ -942,8 +957,9 @@ SCOPE:
    - Safe operation - just updates CSS values, doesn't restructure HTML
    - USE THIS when user says "change all colors to X" or "update fonts across the deck"
    - Args: { "colors": optional dict, "typography": optional dict }
-   - If no args provided, uses deck's existing theme
-   - Example: {"colors": {"accent_1": "#FF0000", "primary_text": "#333333"}}
+   - If no args provided, uses deck's existing theme (from deck.theme.typography)
+   - Example colors: {"colors": {"accent_1": "#FF0000", "primary_text": "#333333"}}
+   - Example typography: {"typography": {"heading": "Press Start 2P", "body": "VT323"}}
 
 11. component_prop_update
    - Mechanical prop merge for a component (no AI)

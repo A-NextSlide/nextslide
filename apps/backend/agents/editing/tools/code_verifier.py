@@ -145,6 +145,10 @@ def _analyze_javascript(html: str) -> Tuple[List[str], List[str]]:
         function_calls = re.findall(r'(\w+)\s*\(', script)
         function_defs = re.findall(r'function\s+(\w+)', script)
         builtin_funcs = {
+            # JS keywords (matched by regex but not function calls)
+            'if', 'else', 'for', 'while', 'do', 'switch', 'return', 'throw',
+            'try', 'catch', 'finally', 'new', 'typeof', 'instanceof', 'async', 'await',
+            # DOM/Browser APIs
             'addEventListener', 'querySelector', 'querySelectorAll', 'getElementById',
             'getElementsByClassName', 'getElementsByTagName', 'setTimeout', 'setInterval',
             'clearTimeout', 'clearInterval', 'console', 'alert', 'confirm', 'prompt',
@@ -161,6 +165,8 @@ def _analyze_javascript(html: str) -> Tuple[List[str], List[str]]:
             'DOMContentLoaded', 'load', 'click', 'mouseover', 'mouseout',
             'mouseenter', 'mouseleave', 'keydown', 'keyup', 'keypress',
             'submit', 'change', 'input', 'focus', 'blur', 'scroll', 'resize',
+            # Common inline utility functions
+            'swap', 'toggle', 'update', 'render', 'init', 'reset',
         }
 
         for func in function_calls:

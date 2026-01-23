@@ -40,6 +40,11 @@ def apply_theme_to_custom_components(
     colors = args.get("colors")
     typography = args.get("typography")
 
+    # Validate typography is a dict (LLM sometimes passes list like ['header', 'body'])
+    if typography and not isinstance(typography, dict):
+        logger.warning(f"[apply_theme_to_custom_components] Invalid typography type: {type(typography)}, ignoring")
+        typography = None
+
     # Fall back to deck theme if not provided
     if not colors or not typography:
         theme = (deck_data or {}).get("theme") or {}

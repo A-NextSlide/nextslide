@@ -146,6 +146,82 @@ class CustomComponentHtmlProcessor:
         all_urls = [v for k, v in prefetched_images.items() if not k.endswith('_query') and v.startswith('http')]
 
         if not all_urls:
+            # Check if we have placeholder images that need replacement
+            has_placeholders = (
+                'src="placeholder"' in html.lower() or
+                "src='placeholder'" in html.lower() or
+                'src=""' in html or
+                "src=''" in html
+            )
+
+            if has_placeholders:
+                logger.warning("[IMAGE_INJECT] No prefetched images but found placeholders - attempting inline search")
+                # Extract alt texts from placeholder images for searching
+                placeholder_alts = []
+                for match in re.finditer(r'<img[^>]*src=["\']?(?:placeholder)?["\']?[^>]*alt=["\']([^"\']+)["\']', html, re.IGNORECASE):
+                    alt_text = match.group(1).strip()
+                    if alt_text and len(alt_text) > 3:
+                        placeholder_alts.append(alt_text)
+                # Also check reverse order (alt before src)
+                for match in re.finditer(r'<img[^>]*alt=["\']([^"\']+)["\'][^>]*src=["\']?(?:placeholder)?["\']?', html, re.IGNORECASE):
+                    alt_text = match.group(1).strip()
+                    if alt_text and len(alt_text) > 3 and alt_text not in placeholder_alts:
+                        placeholder_alts.append(alt_text)
+
+                if placeholder_alts:
+                    logger.info(f"[IMAGE_INJECT] Found {len(placeholder_alts)} placeholder images with alt text to search")
+                    # Try to search for these images synchronously (this is a fallback)
+                    try:
+                        import asyncio
+                        from services.combined_image_service import CombinedImageService
+
+                        async def search_fallback_images():
+                            service = CombinedImageService()
+                            found_images = []
+                            for alt in placeholder_alts[:5]:  # Limit to 5 searches
+                                try:
+                                    result = await service.search_images(query=alt, per_page=1, page=1)
+                                    photos = result.get("photos", []) or result.get("results", [])
+                                    if photos:
+                                        img_url = (
+                                            photos[0].get("url") or
+                                            photos[0].get("src", {}).get("large") or
+                                            photos[0].get("src", {}).get("original")
+                                        )
+                                        if img_url:
+                                            found_images.append((alt, img_url))
+                                            logger.info(f"[IMAGE_INJECT] Fallback search found image for: {alt[:40]}...")
+                                except Exception as e:
+                                    logger.debug(f"[IMAGE_INJECT] Fallback search failed for '{alt[:30]}': {e}")
+                            return found_images
+
+                        # Run the async search
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            # We're already in an async context, create a task
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as pool:
+                                fallback_images = pool.submit(
+                                    lambda: asyncio.run(search_fallback_images())
+                                ).result(timeout=30)
+                        else:
+                            fallback_images = loop.run_until_complete(search_fallback_images())
+
+                        # Replace placeholders with found images
+                        if fallback_images:
+                            for alt, img_url in fallback_images:
+                                # Replace the placeholder src with the found image URL
+                                escaped_alt = re.escape(alt)
+                                # Pattern for alt before src
+                                pattern1 = rf'(<img[^>]*alt=["\']){escaped_alt}(["\'][^>]*src=["\'])(?:placeholder)?(["\'][^>]*>)'
+                                html = re.sub(pattern1, rf'\g<1>{alt}\g<2>{img_url}\g<3>', html, flags=re.IGNORECASE)
+                                # Pattern for src before alt
+                                pattern2 = rf'(<img[^>]*src=["\'])(?:placeholder)?(["\'][^>]*alt=["\']){escaped_alt}(["\'][^>]*>)'
+                                html = re.sub(pattern2, rf'\g<1>{img_url}\g<2>{alt}\g<3>', html, flags=re.IGNORECASE)
+                            logger.info(f"[IMAGE_INJECT] Fallback replaced {len(fallback_images)} placeholder images")
+                    except Exception as e:
+                        logger.warning(f"[IMAGE_INJECT] Fallback image search failed: {e}")
+
             external_matches = re.findall(r'<img[^>]+src=["\']?(https?://[^\s"\'>]+)["\']?', html, flags=re.IGNORECASE)
             if external_matches:
                 external_to_replace = [url for url in external_matches if not any(d in url.lower() for d in BUCKET_DOMAINS)]
@@ -200,14 +276,25 @@ class CustomComponentHtmlProcessor:
             if query:
                 alt_url_map[query.strip().lower()] = url
 
+        # Track URLs that have been used to ensure each image is only used once
+        used_alt_urls = set()
+
         def _match_alt_url(alt_text: str) -> Optional[str]:
             if not alt_text:
                 return None
             alt_norm = alt_text.strip().lower()
+            # Exact match first
             if alt_norm in alt_url_map:
-                return alt_url_map[alt_norm]
+                url = alt_url_map[alt_norm]
+                if url not in used_alt_urls:
+                    used_alt_urls.add(url)
+                    return url
+            # Substring match
             for query, url in alt_url_map.items():
+                if url in used_alt_urls:
+                    continue  # Skip already used URLs
                 if query and (query in alt_norm or alt_norm in query):
+                    used_alt_urls.add(url)
                     return url
             return None
 
