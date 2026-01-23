@@ -1901,7 +1901,7 @@ const SlideEditorContent: React.FC = () => {
             title: 'AI chat helps you build',
             description: 'Ask for edits, generate content, or drop files/links. The AI will update slides for you.',
             nextAction: null,
-            demo: 'chat_target'
+            demo: null
           }
         ]}
       />

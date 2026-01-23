@@ -138,6 +138,7 @@ export function ChatInputArea({
               fontWeight: 600,
               letterSpacing: '0.3px'
             }}
+            data-tour="edit-button"
           >
             {isEditing ? 'DONE' : 'EDIT SLIDE'}
           </button>
