@@ -57,7 +57,12 @@ async def resolve_images(
         return html, prefetched_images
 
     image_props = _extract_image_props_from_html(html)
+    logger.info(f"[IMAGE_PIPELINE] Extracted {len(image_props)} image props from HTML")
+    if image_props:
+        for prop, query in image_props[:5]:  # Log first 5
+            logger.info(f"[IMAGE_PIPELINE]   - {prop}: {query[:50]}...")
     if not image_props:
+        logger.warning("[IMAGE_PIPELINE] No image props found in HTML - skipping image resolution")
         return html, prefetched_images
 
     brand_info = theme.get("brandInfo", {}) if isinstance(theme, dict) else {}
@@ -148,10 +153,20 @@ async def resolve_images(
             slide_search_context,
             cache=cache,
         )
+        logger.info(f"[IMAGE_PIPELINE] SERP search returned {len(serp_results) if serp_results else 0} results")
+        if serp_results:
+            for k, v in list(serp_results.items())[:3]:
+                if not k.endswith('_query'):
+                    logger.info(f"[IMAGE_PIPELINE]   - {k}: {v[:60]}...")
         prefetched_images.update(serp_results or {})
+
+    image_count = len([k for k in prefetched_images.keys() if not k.endswith('_query') and prefetched_images[k].startswith('http')])
+    logger.info(f"[IMAGE_PIPELINE] Total prefetched images before injection: {image_count}")
 
     if prefetched_images:
         html = html_processor.inject_prefetched_images(html, prefetched_images)
+    else:
+        logger.warning("[IMAGE_PIPELINE] No prefetched images available for injection - placeholders will remain")
 
     return html, prefetched_images
 
@@ -166,9 +181,17 @@ async def upload_external_urls_to_bucket(html: str) -> str:
         for url in external_urls:
             try:
                 upload_result = await storage.upload_image_from_url(url, metadata={"source": "custom_component"})
-                new_url = upload_result.get("url") if isinstance(upload_result, dict) else None
-                if new_url:
-                    html = html.replace(url, new_url)
+                # Check for error - upload returns {'url': original_url, 'error': ...} on failure
+                if isinstance(upload_result, dict) and "error" not in upload_result:
+                    new_url = upload_result.get("url")
+                    if new_url and new_url != url:
+                        html = html.replace(url, new_url)
+                        logger.info("[CUSTOM_COMPONENT] Uploaded external image: %s", url[:60])
+                    else:
+                        logger.warning("[CUSTOM_COMPONENT] Upload returned same URL, skipping: %s", url[:60])
+                else:
+                    error_msg = upload_result.get("error", "Unknown error") if isinstance(upload_result, dict) else "Invalid result"
+                    logger.warning("[CUSTOM_COMPONENT] Failed to upload external image %s: %s", url[:60], error_msg)
             except Exception as exc:
                 logger.warning("[CUSTOM_COMPONENT] Failed to upload external image %s: %s", url[:80], exc)
 

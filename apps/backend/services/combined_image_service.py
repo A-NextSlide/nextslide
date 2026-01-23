@@ -1542,15 +1542,11 @@ class CombinedImageService:
 
                 logger.info(f"Using AI extraction for {len(slides_needing_images)} slides with context: {presentation_context[:100]}")
 
-                for i, slide in slides_needing_images:
-                    slide_id = slide.id
-                    if slide_id not in slide_topics:
-                        slide_topics[slide_id] = []
-
+                # PARALLEL: Create all AI extraction tasks at once
+                async def extract_for_slide(idx: int, slide) -> tuple:
+                    """Extract AI topics for a single slide, returns (idx, slide, ai_topics or None)."""
                     slide_title = getattr(slide, 'title', '') or ''
                     slide_content = getattr(slide, 'content', '') or ''
-
-                    # Try AI extraction first (much better quality)
                     try:
                         ai_topics = await extract_image_search_terms_with_ai(
                             slide_title=slide_title,
@@ -1558,17 +1554,34 @@ class CombinedImageService:
                             presentation_title=presentation_title,
                             presentation_context=presentation_context
                         )
-                        if ai_topics:
-                            logger.info(f"[AI IMAGE] Slide '{slide_title}' -> {ai_topics[:3]}")
-                            for q in ai_topics[:2]:  # Use top 2 AI-generated terms
-                                if q and len(q) >= 3:
-                                    slide_topics[slide_id].append(q)
-                                    if q not in topics_to_search:
-                                        topics_to_search[q] = []
-                                    topics_to_search[q].append(slide_id)
-                            continue  # Skip fallback if AI worked
+                        return (idx, slide, ai_topics)
                     except Exception as e:
-                        logger.debug(f"[AI IMAGE] Failed for slide {i}: {e}")
+                        logger.debug(f"[AI IMAGE] Failed for slide {idx}: {e}")
+                        return (idx, slide, None)
+
+                # Run all extractions in parallel
+                extraction_tasks = [extract_for_slide(i, slide) for i, slide in slides_needing_images]
+                extraction_results = await asyncio.gather(*extraction_tasks)
+
+                logger.info(f"[AI IMAGE] Parallel extraction completed for {len(extraction_results)} slides")
+
+                # Process results
+                for idx, slide, ai_topics in extraction_results:
+                    slide_id = slide.id
+                    slide_title = getattr(slide, 'title', '') or ''
+
+                    if slide_id not in slide_topics:
+                        slide_topics[slide_id] = []
+
+                    if ai_topics:
+                        logger.info(f"[AI IMAGE] Slide '{slide_title}' -> {ai_topics[:3]}")
+                        for q in ai_topics[:2]:  # Use top 2 AI-generated terms
+                            if q and len(q) >= 3:
+                                slide_topics[slide_id].append(q)
+                                if q not in topics_to_search:
+                                    topics_to_search[q] = []
+                                topics_to_search[q].append(slide_id)
+                        continue  # Skip fallback if AI worked
 
                     # Fallback: Combine deck-wide topics with slide-specific cues
                     specific = self._extract_topics_from_text(slide_title) or []
@@ -1603,6 +1616,10 @@ class CombinedImageService:
             # Use AI-powered extraction for better results
             presentation_title = getattr(deck_outline, 'title', '') or ''
 
+            # First pass: identify slides and separate pre-generated vs needs-AI
+            slides_with_pregenerated = []  # (slide_idx, slide, query)
+            slides_needing_ai = []  # (slide_idx, slide)
+
             for slide_idx, slide in enumerate(deck_outline.slides):
                 # Check if slide needs images
                 if not self._slide_needs_images(slide, slide_idx):
@@ -1610,30 +1627,53 @@ class CombinedImageService:
                     continue
 
                 slide_id = slide.id
-                slide_topic_list = []
-
-                # Extract topics from slide content
                 if search_queries and slide_id in search_queries:
-                    # Use pre-generated queries if available
                     query = search_queries[slide_id]
                     if query:
-                        slide_topic_list.append(query)
+                        slides_with_pregenerated.append((slide_idx, slide, query))
                 else:
-                    # Try AI-powered extraction first (much better quality)
+                    slides_needing_ai.append((slide_idx, slide))
+
+            # Process pre-generated queries (no AI needed)
+            for slide_idx, slide, query in slides_with_pregenerated:
+                slide_id = slide.id
+                slide_topics[slide_id] = [query]
+                if query not in topics_to_search:
+                    topics_to_search[query] = []
+                topics_to_search[query].append(slide_id)
+                logger.debug(f"Slide {slide_idx + 1} '{slide.title}' using pre-generated: {query}")
+
+            # PARALLEL: Run AI extraction for all slides that need it
+            if slides_needing_ai:
+                async def extract_for_slide_no_context(slide_idx: int, slide) -> tuple:
+                    """Extract AI topics for a single slide without deck context."""
                     slide_title = getattr(slide, 'title', '') or ''
                     slide_content = getattr(slide, 'content', '') or ''
-
                     try:
                         ai_topics = await extract_image_search_terms_with_ai(
                             slide_title=slide_title,
                             slide_content=slide_content,
                             presentation_title=presentation_title
                         )
-                        if ai_topics:
-                            logger.info(f"[AI IMAGE] Slide '{slide_title}' -> {ai_topics}")
-                            slide_topic_list.extend(ai_topics[:3])
+                        return (slide_idx, slide, ai_topics)
                     except Exception as e:
                         logger.warning(f"[AI IMAGE] Failed for slide {slide_idx}: {e}")
+                        return (slide_idx, slide, None)
+
+                # Run all AI extractions in parallel
+                extraction_tasks = [extract_for_slide_no_context(idx, slide) for idx, slide in slides_needing_ai]
+                extraction_results = await asyncio.gather(*extraction_tasks)
+
+                logger.info(f"[AI IMAGE] Parallel extraction completed for {len(extraction_results)} slides (no deck context)")
+
+                # Process results
+                for slide_idx, slide, ai_topics in extraction_results:
+                    slide_id = slide.id
+                    slide_topic_list = []
+
+                    if ai_topics:
+                        logger.info(f"[AI IMAGE] Slide '{slide.title}' -> {ai_topics}")
+                        slide_topic_list.extend(ai_topics[:3])
 
                     # Fallback to regex if AI fails or returns nothing
                     if not slide_topic_list:
@@ -1662,17 +1702,17 @@ class CombinedImageService:
                                 logger.debug(f"Deck title topics: {deck_title_topics}")
 
                         slide_topic_list = list(dict.fromkeys(topics))[:3]  # Deduplicate and limit to 3
-                
-                logger.debug(f"Slide {slide_idx + 1} '{slide.title}' final topics: {slide_topic_list}")
-                
-                # Store topics
-                if slide_topic_list:
-                    slide_topics[slide_id] = slide_topic_list
-                    
-                    for topic in slide_topic_list:
-                        if topic not in topics_to_search:
-                            topics_to_search[topic] = []
-                        topics_to_search[topic].append(slide_id)
+
+                    logger.debug(f"Slide {slide_idx + 1} '{slide.title}' final topics: {slide_topic_list}")
+
+                    # Store topics
+                    if slide_topic_list:
+                        slide_topics[slide_id] = slide_topic_list
+
+                        for topic in slide_topic_list:
+                            if topic not in topics_to_search:
+                                topics_to_search[topic] = []
+                            topics_to_search[topic].append(slide_id)
         
         logger.debug(f"Searching {len(topics_to_search)} unique topics")
 

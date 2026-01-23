@@ -97,6 +97,11 @@ export function useChatSystemMessages({
   }, [setCurrentPhase, setIsGenerating, setMessages]);
 
   const upsertStreamingMessage = useCallback((message: string, metadata?: Record<string, any>) => {
+    // Don't process streaming updates if completion was already handled
+    if (completionHandledRef.current) {
+      return;
+    }
+
     // Set isGenerating to true when we receive streaming updates
     setIsGenerating(true);
 
@@ -111,6 +116,17 @@ export function useChatSystemMessages({
     }, AGENT_PROCESSING_TIMEOUT_MS);
 
     setMessages(prev => {
+      // Don't add/update progress message if completion message already exists
+      const hasCompletion = prev.some(m =>
+        m.metadata?.type === 'generation_complete' ||
+        m.id === 'generation-complete'
+      );
+      if (hasCompletion) {
+        // Also remove any existing progress message to be safe
+        const filtered = prev.filter(msg => msg.id !== 'generation-progress');
+        return filtered.length !== prev.length ? filtered : prev;
+      }
+
       const progressId = 'generation-progress';
       const existingIdx = prev.findIndex(msg => msg.id === progressId);
 

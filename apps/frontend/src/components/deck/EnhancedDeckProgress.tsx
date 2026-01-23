@@ -99,8 +99,8 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
   
   // No auto-increment - backend sends accurate real-time progress updates
   useEffect(() => {
-    // Only ensure completion at 100%
-    if (phase === 'generation_complete' || phase === 'finalization' || phase === 'complete' || localProgress >= 100) {
+    // Only ensure completion at 100% - finalization is still a progress phase, not completion
+    if (phase === 'generation_complete' || phase === 'complete' || localProgress >= 100) {
       setLocalProgress(100);
       return;
     }
@@ -126,7 +126,8 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
     return () => clearInterval(timer);
   }, [localProgress]);
 
-  const isComplete = phase === 'generation_complete' || phase === 'finalization' || phase === 'complete' || progress >= 100;
+  // Only consider truly complete states - finalization is still a progress phase
+  const isComplete = phase === 'generation_complete' || phase === 'complete' || progress >= 100;
 
   // Game state - tracks if user has opened the game
   const [gameOpen, setGameOpen] = useState(false);
