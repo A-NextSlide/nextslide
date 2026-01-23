@@ -1,5 +1,5 @@
-// Cache bust: 2026-01-23
 import './utils/consoleSuppressor'; // Initialize console suppressor first
+const BUILD_VERSION = "2026-01-23-v2"; // Cache bust
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'

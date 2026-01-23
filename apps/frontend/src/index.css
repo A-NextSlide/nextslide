@@ -1,5 +1,5 @@
-/* Cache bust: 2026-01-23 */
 /* Import Google Fonts */
+:root { --cache-bust: "2026-01-23-v2"; }
 @import './fonts.css';
 @import './styles/presentation.css';
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
