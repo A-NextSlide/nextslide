@@ -119,9 +119,16 @@ const GuidedTour: React.FC<GuidedTourProps> = ({ isOpen, onClose, steps, onActio
   useEffect(() => {
     if (!isOpen || !activeStep) return;
 
-    if (activeStep.id === 'chat') {
+    // Exit edit mode when entering present, share, or chat steps
+    // This ensures the edit panel doesn't cover the present/share buttons
+    if (['present', 'share', 'chat'].includes(activeStep.id)) {
       try {
         window.dispatchEvent(new CustomEvent('tour:exit-edit'));
+      } catch {}
+    }
+
+    if (activeStep.id === 'chat') {
+      try {
         window.dispatchEvent(new CustomEvent('tour:open-chat'));
       } catch {}
     }
@@ -269,7 +276,8 @@ const GuidedTour: React.FC<GuidedTourProps> = ({ isOpen, onClose, steps, onActio
                 position: 'absolute',
                 inset: 0,
                 pointerEvents: 'none',
-                background: 'rgba(0, 0, 0, 0.75)',
+                // Use lower opacity for 'components' step so slide text remains visible
+                background: activeStep?.id === 'components' ? 'rgba(0, 0, 0, 0.45)' : 'rgba(0, 0, 0, 0.75)',
                 WebkitMaskImage: `radial-gradient(ellipse ${spotlightCenter.radius * 1.2}px ${spotlightCenter.radius}px at ${spotlightCenter.x}px ${spotlightCenter.y}px, transparent 85%, black 100%)`,
                 maskImage: `radial-gradient(ellipse ${spotlightCenter.radius * 1.2}px ${spotlightCenter.radius}px at ${spotlightCenter.x}px ${spotlightCenter.y}px, transparent 85%, black 100%)`,
               }}
