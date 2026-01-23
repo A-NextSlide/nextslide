@@ -1,3 +1,4 @@
+// Cache bust: 2026-01-23
 import './utils/consoleSuppressor'; // Initialize console suppressor first
 import React from 'react'
 import { createRoot } from 'react-dom/client'
