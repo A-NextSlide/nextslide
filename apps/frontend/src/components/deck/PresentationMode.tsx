@@ -201,6 +201,57 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     }
   }, [captureIndex, useMobileThumbnails, showThumbnails, slides.length, captureCurrentSlide]);
 
+  // Edge detection state and timeout ref
+  const [isInEdgeZone, setIsInEdgeZone] = useState(false);
+  const edgeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Handle mouse movement to detect edge zones (30% from each side)
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (showThumbnails || isMobile) return;
+
+    const containerWidth = window.innerWidth;
+    const mouseX = e.clientX;
+    const edgeThreshold = containerWidth * 0.30; // 30% from each edge
+
+    const inLeftZone = mouseX < edgeThreshold;
+    const inRightZone = mouseX > containerWidth - edgeThreshold;
+    const inEdge = inLeftZone || inRightZone;
+
+    if (inEdge) {
+      // Clear any pending hide timeout
+      if (edgeTimeoutRef.current) {
+        clearTimeout(edgeTimeoutRef.current);
+        edgeTimeoutRef.current = null;
+      }
+
+      if (!isInEdgeZone) {
+        setIsInEdgeZone(true);
+      }
+      // Always show controls when in edge zone
+      setShowControls(true);
+    } else {
+      // Left the edge zone - start a short delay before hiding
+      if (isInEdgeZone) {
+        if (edgeTimeoutRef.current) {
+          clearTimeout(edgeTimeoutRef.current);
+        }
+        edgeTimeoutRef.current = setTimeout(() => {
+          setIsInEdgeZone(false);
+          edgeTimeoutRef.current = null;
+        }, 300);
+      }
+    }
+  }, [showThumbnails, isMobile, isInEdgeZone, setShowControls]);
+
+  // Clean up edge timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (edgeTimeoutRef.current) {
+        clearTimeout(edgeTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Navigation functions
   const goToNextSlide = useCallback(() => {
     if (currentSlideIndex < slides.length - 1) {
@@ -438,6 +489,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       exit={{ opacity: 0 }}
       className={cn("bg-black", forceLandscape ? "" : "fixed inset-0 z-[100]")}
       style={containerStyle}
+      onMouseMove={handleMouseMove}
     >
       {/* Slide container */}
       <div className="relative w-full h-full flex items-center justify-center">
@@ -487,7 +539,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
       {/* Controls overlay */}
       <AnimatePresence>
-        {(showControls || alwaysShowControls) && !showThumbnails && (
+        {(showControls || alwaysShowControls || isInEdgeZone) && !showThumbnails && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
