@@ -858,40 +858,44 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label htmlFor="share-type" className="text-xs font-medium mb-1.5 block text-zinc-600">Access</Label>
-                      <Select value={shareType} onValueChange={(v) => setShareType(v as 'view' | 'edit')}>
-                        <SelectTrigger id="share-type" className="h-8 text-xs bg-white border-zinc-200 text-zinc-900">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="view">
-                            <div className="flex items-center">
-                              <Eye size={12} className="mr-1.5 text-zinc-400" />
-                              <span className="text-xs">View Only</span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="edit">
-                            <div className="flex items-center">
-                              <Edit size={12} className="mr-1.5 text-zinc-400" />
-                              <span className="text-xs">Can Edit</span>
-                            </div>
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="relative">
+                        <select
+                          id="share-type"
+                          value={shareType}
+                          onChange={(e) => setShareType(e.target.value as 'view' | 'edit')}
+                          className="h-8 w-full text-xs bg-white border border-zinc-200 text-zinc-900 rounded-md pl-3 pr-8 appearance-none cursor-pointer hover:border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:border-[#FF6B00] transition-colors"
+                        >
+                          <option value="view">View Only</option>
+                          <option value="edit">Can Edit</option>
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                          <svg className="h-4 w-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
                     </div>
 
                     <div>
                       <Label htmlFor="expiration" className="text-xs font-medium mb-1.5 block text-zinc-600">Expires</Label>
-                      <Select value={expiresIn} onValueChange={setExpiresIn}>
-                        <SelectTrigger id="expiration" className="h-8 text-xs bg-white border-zinc-200 text-zinc-900">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="never">Never</SelectItem>
-                          <SelectItem value="24">24 hours</SelectItem>
-                          <SelectItem value="168">7 days</SelectItem>
-                          <SelectItem value="720">30 days</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="relative">
+                        <select
+                          id="expiration"
+                          value={expiresIn}
+                          onChange={(e) => setExpiresIn(e.target.value)}
+                          className="h-8 w-full text-xs bg-white border border-zinc-200 text-zinc-900 rounded-md pl-3 pr-8 appearance-none cursor-pointer hover:border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:border-[#FF6B00] transition-colors"
+                        >
+                          <option value="never">Never</option>
+                          <option value="24">24 hours</option>
+                          <option value="168">7 days</option>
+                          <option value="720">30 days</option>
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                          <svg className="h-4 w-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
