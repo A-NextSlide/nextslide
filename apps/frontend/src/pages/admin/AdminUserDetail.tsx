@@ -87,7 +87,7 @@ const AdminUserDetail: React.FC = () => {
   // Credits dialog state
   const [creditsDialogOpen, setCreditsDialogOpen] = useState(false);
   const [creditsLoading, setCreditsLoading] = useState(false);
-  const [editedCredits, setEditedCredits] = useState({ monthly: 0, purchased: 0, used: 0 });
+  const [editedCredits, setEditedCredits] = useState({ total: 0, used: 0 });
 
   useEffect(() => {
     if (userId) {
@@ -146,9 +146,12 @@ const AdminUserDetail: React.FC = () => {
 
   const openCreditsDialog = () => {
     if (userCredits) {
+      // Combine monthly + purchased into total for simpler editing
+      const total = userCredits.monthly_credits === -1
+        ? -1
+        : userCredits.monthly_credits + userCredits.purchased_credits;
       setEditedCredits({
-        monthly: userCredits.monthly_credits,
-        purchased: userCredits.purchased_credits,
+        total,
         used: userCredits.used_credits,
       });
     }
@@ -158,9 +161,10 @@ const AdminUserDetail: React.FC = () => {
   const handleSaveCredits = async () => {
     try {
       setCreditsLoading(true);
+      // Store total in monthly_credits, reset purchased_credits to 0
       await adminApi.updateUserCredits(userId!, {
-        monthly_credits: editedCredits.monthly,
-        purchased_credits: editedCredits.purchased,
+        monthly_credits: editedCredits.total,
+        purchased_credits: 0,
         used_credits: editedCredits.used,
       });
       toast({ title: 'Credits updated', description: 'User credits have been updated successfully' });
@@ -551,27 +555,20 @@ const AdminUserDetail: React.FC = () => {
             <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 text-center">
               <p className="text-sm text-gray-500">Available Tokens</p>
               <p className="text-3xl font-bold text-orange-600">
-                {editedCredits.monthly === -1 ? '∞' : Math.max(0, editedCredits.monthly + editedCredits.purchased - editedCredits.used)}
+                {editedCredits.total === -1 ? '∞' : Math.max(0, editedCredits.total - editedCredits.used)}
               </p>
+              <p className="text-xs text-gray-400 mt-1">Plan: {userCredits?.plan_id || 'free'}</p>
             </div>
             <div className="space-y-3">
               <div className="space-y-1">
-                <Label className="text-xs">Monthly Credits (-1 for unlimited)</Label>
+                <Label className="text-xs">Total Credits</Label>
                 <Input
                   type="number"
-                  value={editedCredits.monthly}
-                  onChange={(e) => setEditedCredits(prev => ({ ...prev, monthly: parseInt(e.target.value) || 0 }))}
+                  value={editedCredits.total}
+                  onChange={(e) => setEditedCredits(prev => ({ ...prev, total: parseInt(e.target.value) || 0 }))}
                   className="font-mono"
                 />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Bonus Credits</Label>
-                <Input
-                  type="number"
-                  value={editedCredits.purchased}
-                  onChange={(e) => setEditedCredits(prev => ({ ...prev, purchased: parseInt(e.target.value) || 0 }))}
-                  className="font-mono"
-                />
+                <p className="text-xs text-gray-400">Use -1 for unlimited</p>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Used Credits</Label>

@@ -31,6 +31,21 @@ export const useOutlineState = () => {
       sourceSlideCount: sourceSlides.length,
     });
 
+    // Helper to preserve needsBrandDomainConfirmation: false once user confirms domain
+    const preserveConfirmedDomain = (prev: OutlineFlowState | null, newData: OutlineData) => {
+      const userConfirmedDomain = prev?.stylePreferences?.needsBrandDomainConfirmation === false;
+      if (userConfirmedDomain && newData.stylePreferences?.needsBrandDomainConfirmation !== false) {
+        return {
+          ...newData,
+          stylePreferences: {
+            ...newData.stylePreferences,
+            needsBrandDomainConfirmation: false,
+          },
+        };
+      }
+      return newData;
+    };
+
     if (preview?.slides?.length && sourceSlides.length > 0) {
       const normalizedSlides = sourceSlides.map((slide, index) => {
         const previewSlide = preview.slides[index];
@@ -46,7 +61,7 @@ export const useOutlineState = () => {
             : slide.key_points,
         };
       });
-      setOutlineFlow({ ...outlineData, slides: normalizedSlides });
+      setOutlineFlow((prev) => preserveConfirmedDomain(prev, { ...outlineData, slides: normalizedSlides }));
     } else {
       const fallbackSlides = preview?.slides?.length
         ? preview.slides.map((slide) => ({
@@ -58,7 +73,10 @@ export const useOutlineState = () => {
           taggedMedia: slide.taggedMedia,
         }))
         : outlineData.slides;
-      setOutlineFlow(fallbackSlides ? { ...outlineData, slides: fallbackSlides } : outlineData);
+      setOutlineFlow((prev) => preserveConfirmedDomain(
+        prev,
+        fallbackSlides ? { ...outlineData, slides: fallbackSlides } : outlineData
+      ));
     }
     setOutlineBlock(preview);
     return preview;
@@ -74,6 +92,16 @@ export const useOutlineState = () => {
       const shouldReplace = allowReplace && !hasSlideTitleOverlap(existingSlides, incomingSlides);
 
       if (shouldReplace) {
+        // Even when replacing, preserve needsBrandDomainConfirmation=false if set locally
+        if (prev.stylePreferences?.needsBrandDomainConfirmation === false) {
+          return {
+            ...outlineData,
+            stylePreferences: {
+              ...outlineData.stylePreferences,
+              needsBrandDomainConfirmation: false,
+            },
+          };
+        }
         return outlineData;
       }
       const maxSlides = Math.max(existingSlides.length, incomingSlides.length);
@@ -104,9 +132,22 @@ export const useOutlineState = () => {
         };
       }).filter((slide): slide is NonNullable<typeof slide> => slide !== null);
 
+      // CRITICAL: Preserve needsBrandDomainConfirmation=false if it was explicitly set locally
+      // Once user confirms domain, backend responses should NEVER re-lock generation
+      const userConfirmedDomain = prev.stylePreferences?.needsBrandDomainConfirmation === false;
+      const mergedStylePreferences = {
+        ...prev.stylePreferences,
+        ...outlineData.stylePreferences,
+        // If user already confirmed domain locally (false), ALWAYS preserve it - never let backend overwrite to true
+        needsBrandDomainConfirmation: userConfirmedDomain
+          ? false
+          : (outlineData.stylePreferences?.needsBrandDomainConfirmation ?? prev.stylePreferences?.needsBrandDomainConfirmation),
+      };
+
       return {
         ...prev,
         ...outlineData,
+        stylePreferences: mergedStylePreferences,
         slides: mergedSlides,
         scraped_context: outlineData.scraped_context ?? prev.scraped_context,
         reference_sources: outlineData.reference_sources ?? prev.reference_sources,

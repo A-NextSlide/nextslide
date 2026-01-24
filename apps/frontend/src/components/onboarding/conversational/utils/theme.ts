@@ -141,7 +141,11 @@ export const mergeThemeBlockWithGenerated = (prev: ThemeEditorData, theme: any):
       brandName: brandInfo.brandName || prev.branding?.brandName,
       brandDomain: brandInfo.brandDomain || prev.branding?.brandDomain,
       brandDomainCandidates: brandInfo.brandDomainCandidates || prev.branding?.brandDomainCandidates,
-      needsBrandDomainConfirmation: brandInfo.needsBrandDomainConfirmation ?? prev.branding?.needsBrandDomainConfirmation,
+      // Preserve needsBrandDomainConfirmation=false if it was explicitly set locally
+      // (backend theme might not include this field, so we don't want to lose the local value)
+      needsBrandDomainConfirmation: prev.branding?.needsBrandDomainConfirmation === false
+        ? false
+        : (brandInfo.needsBrandDomainConfirmation ?? prev.branding?.needsBrandDomainConfirmation),
     },
     hasExplicitColors: hasExplicitColors || prev.hasExplicitColors,
   };

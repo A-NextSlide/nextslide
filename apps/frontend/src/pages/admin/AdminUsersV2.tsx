@@ -108,7 +108,7 @@ const AdminUsersV2: React.FC = () => {
   const [userToEditCredits, setUserToEditCredits] = useState<UserSummary | null>(null);
   const [userCredits, setUserCredits] = useState<UserCredits | null>(null);
   const [creditsLoading, setCreditsLoading] = useState(false);
-  const [editedCredits, setEditedCredits] = useState<{ monthly: number; purchased: number; used: number }>({ monthly: 0, purchased: 0, used: 0 });
+  const [editedCredits, setEditedCredits] = useState<{ total: number; used: number }>({ total: 0, used: 0 });
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -353,9 +353,12 @@ const AdminUsersV2: React.FC = () => {
     try {
       const credits = await adminApi.getUserCredits(user.id);
       setUserCredits(credits);
+      // Combine monthly + purchased into total for simpler editing
+      const total = credits.monthly_credits === -1
+        ? -1
+        : credits.monthly_credits + credits.purchased_credits;
       setEditedCredits({
-        monthly: credits.monthly_credits,
-        purchased: credits.purchased_credits,
+        total,
         used: credits.used_credits,
       });
     } catch (error) {
@@ -374,9 +377,10 @@ const AdminUsersV2: React.FC = () => {
     if (!userToEditCredits || !userCredits) return;
     try {
       setCreditsLoading(true);
+      // Store total in monthly_credits, reset purchased_credits to 0
       await adminApi.updateUserCredits(userToEditCredits.id, {
-        monthly_credits: editedCredits.monthly,
-        purchased_credits: editedCredits.purchased,
+        monthly_credits: editedCredits.total,
+        purchased_credits: 0,
         used_credits: editedCredits.used,
       });
       toast({
@@ -944,7 +948,7 @@ const AdminUsersV2: React.FC = () => {
                 <div className="text-center">
                   <p className="text-sm text-gray-500 dark:text-gray-400">Available Tokens</p>
                   <p className="text-3xl font-bold text-orange-600 dark:text-orange-400">
-                    {userCredits.remaining_credits === -1 ? '∞' : (editedCredits.monthly + editedCredits.purchased - editedCredits.used)}
+                    {editedCredits.total === -1 ? '∞' : Math.max(0, editedCredits.total - editedCredits.used)}
                   </p>
                   <p className="text-xs text-gray-400 mt-1">Plan: {userCredits.plan_id}</p>
                 </div>
@@ -952,28 +956,16 @@ const AdminUsersV2: React.FC = () => {
 
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <Label htmlFor="monthly-credits">Monthly Credits</Label>
+                  <Label htmlFor="total-credits">Total Credits</Label>
                   <Input
-                    id="monthly-credits"
+                    id="total-credits"
                     type="number"
-                    value={editedCredits.monthly}
-                    onChange={(e) => setEditedCredits(prev => ({ ...prev, monthly: parseInt(e.target.value) || 0 }))}
+                    value={editedCredits.total}
+                    onChange={(e) => setEditedCredits(prev => ({ ...prev, total: parseInt(e.target.value) || 0 }))}
                     min={-1}
                     className="font-mono"
                   />
                   <p className="text-xs text-gray-500">Use -1 for unlimited</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="purchased-credits">Purchased/Bonus Credits</Label>
-                  <Input
-                    id="purchased-credits"
-                    type="number"
-                    value={editedCredits.purchased}
-                    onChange={(e) => setEditedCredits(prev => ({ ...prev, purchased: parseInt(e.target.value) || 0 }))}
-                    min={0}
-                    className="font-mono"
-                  />
                 </div>
 
                 <div className="space-y-2">

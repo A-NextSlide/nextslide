@@ -206,9 +206,12 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
 
   const initializeThemeFromOutline = useCallback((outlineData: OutlineData) => {
     const hasExistingTheme = Boolean(themeBlock?.hasExplicitColors);
+    // Track if user has already confirmed the domain locally - this should NEVER be overwritten by backend
+    const userConfirmedDomain = themeBlock?.branding?.needsBrandDomainConfirmation === false;
 
     const stylePrefs = outlineData.stylePreferences || {};
-    const needsDomainConfirmation = Boolean(stylePrefs.needsBrandDomainConfirmation);
+    // If user already confirmed domain locally, ignore backend's needsBrandDomainConfirmation
+    const needsDomainConfirmation = userConfirmedDomain ? false : Boolean(stylePrefs.needsBrandDomainConfirmation);
     const vibeContext = stylePrefs.brandDomain || outlineData.brandContext || outlineData.style || outlineData.topic || outlineData.title;
     const vibeContextChanged = vibeContext && lastThemeVibeContext &&
       vibeContext.toLowerCase() !== lastThemeVibeContext.toLowerCase();
@@ -218,13 +221,28 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
       ? themeBlock
       : buildThemeBlockFromOutline(outlineData);
 
+    // CRITICAL: Always preserve needsBrandDomainConfirmation: false once user confirmed domain locally
+    // This prevents backend responses from re-locking the generation buttons
+    if (userConfirmedDomain && currentThemeBlock?.branding?.needsBrandDomainConfirmation !== false) {
+      currentThemeBlock = {
+        ...currentThemeBlock!,
+        branding: {
+          ...currentThemeBlock!.branding,
+          needsBrandDomainConfirmation: false,
+        },
+      };
+    }
+
     if (currentThemeBlock && hasExistingTheme && !vibeContextChanged) {
       const mergedBranding = {
         ...currentThemeBlock.branding,
         brandName: stylePrefs.brandName ?? currentThemeBlock.branding?.brandName ?? outlineData.brandContext,
         brandDomain: stylePrefs.brandDomain ?? currentThemeBlock.branding?.brandDomain,
         brandDomainCandidates: stylePrefs.brandDomainCandidates ?? currentThemeBlock.branding?.brandDomainCandidates,
-        needsBrandDomainConfirmation: stylePrefs.needsBrandDomainConfirmation ?? currentThemeBlock.branding?.needsBrandDomainConfirmation,
+        // Preserve false if user already confirmed - never let backend overwrite this back to true
+        needsBrandDomainConfirmation: userConfirmedDomain
+          ? false
+          : (stylePrefs.needsBrandDomainConfirmation ?? currentThemeBlock.branding?.needsBrandDomainConfirmation),
         logoUrl: stylePrefs.logoUrl ?? currentThemeBlock.branding?.logoUrl,
       };
       const brandingChanged = Boolean(

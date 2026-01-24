@@ -448,7 +448,7 @@ async def stream_theme_from_outline(
 
             # Optionally persist theme to deck (only by the owner to avoid duplicate writes)
             if is_owner and store and deck_id and isinstance(deck_theme, dict):
-                is_temp_uuid = deck_id.startswith('temp-') if deck_id else True
+                is_temp_uuid = (deck_id.startswith('temp-') or deck_id.startswith('theme-')) if deck_id else True
                 if is_temp_uuid:
                     logger.info(
                         "[THEME API] Skipping persistence for temp UUID: %s - theme will be passed via stylePreferences",
@@ -727,7 +727,7 @@ async def theme_from_outline_json(
             palette = None
 
         # Optionally persist (skip for temp UUIDs)
-        is_temp_uuid = deck_id.startswith('temp-') if deck_id else True
+        is_temp_uuid = (deck_id.startswith('temp-') or deck_id.startswith('theme-')) if deck_id else True
         if deck_id and isinstance(deck_theme, dict) and not is_temp_uuid:
             try:
                 from utils.supabase import get_deck, upload_deck

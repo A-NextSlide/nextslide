@@ -239,8 +239,7 @@ export const useConversationalOnboarding = ({
     if (stage !== 'planning') return;
     if (!outlineState.outlineFlow) return;
     if (needsFileImageConfirmation) return;
-    if (outlineState.outlineFlow.stylePreferences?.needsBrandDomainConfirmation) return;
-    if (themeState.themeBlock?.branding?.needsBrandDomainConfirmation) return;
+    // Brand confirmation is optional - don't block slide mode selection
     if (isOutlinePrefetching) return;
     if (themeState.isThemeLoading) return;
 
@@ -261,7 +260,6 @@ export const useConversationalOnboarding = ({
     isOutlinePrefetching,
     stage,
     themeState.isThemeLoading,
-    themeState.themeBlock,
   ]);
 
   useEffect(() => {
@@ -270,8 +268,7 @@ export const useConversationalOnboarding = ({
     if (stage !== 'planning') return;
     if (!outlineState.outlineFlow) return;
     if (!needsFileImageConfirmation) return;
-    if (outlineState.outlineFlow.stylePreferences?.needsBrandDomainConfirmation) return;
-    if (themeState.themeBlock?.branding?.needsBrandDomainConfirmation) return;
+    // Brand confirmation is optional - don't block file image prompt
 
     const fileImageField = {
       key: 'use_file_images',
@@ -298,7 +295,6 @@ export const useConversationalOnboarding = ({
     needsFileImageConfirmation,
     outlineState.outlineFlow,
     stage,
-    themeState.themeBlock,
   ]);
 
   useEffect(() => {
@@ -862,7 +858,12 @@ export const useConversationalOnboarding = ({
         const detailLevel = enrichedOutline.detail_level || 'standard';
         setCollectedData((prev) => ({ ...prev, presentationType: 'simple', detailLevel }));
 
-        const needsDomainConfirmation = Boolean(enrichedOutline.stylePreferences?.needsBrandDomainConfirmation);
+        // Check if user already confirmed domain locally - don't re-prompt from backend response
+        const userAlreadyConfirmed = outlineState.outlineFlow?.stylePreferences?.needsBrandDomainConfirmation === false ||
+          themeState.themeBlock?.branding?.needsBrandDomainConfirmation === false;
+        const needsDomainConfirmation = !userAlreadyConfirmed &&
+          !brandConfirmationPromptedRef.current &&
+          Boolean(enrichedOutline.stylePreferences?.needsBrandDomainConfirmation);
         if (needsDomainConfirmation) {
           const candidate = enrichedOutline.stylePreferences?.brandDomain ||
             enrichedOutline.stylePreferences?.brandDomainCandidates?.[0];
@@ -1167,6 +1168,8 @@ export const useConversationalOnboarding = ({
   }, []);
 
   const generationStatus = useMemo(() => {
+    // Brand confirmation is optional - colors are already loaded, so don't block generation
+    // User can still confirm domain to refine brand, but it's not required
     const needsBrandConfirmation = Boolean(
       outlineState.outlineFlow?.stylePreferences?.needsBrandDomainConfirmation ||
       themeState.themeBlock?.branding?.needsBrandDomainConfirmation
@@ -1177,7 +1180,8 @@ export const useConversationalOnboarding = ({
       outlineState.outlineBlock?.slides?.length ||
       outlineState.outlineFlow?.slide_count
     );
-    const canGenerate = hasOutline && !needsBrandConfirmation && !needsFileImageChoice;
+    // Don't block on brand confirmation - it's optional since colors are already showing
+    const canGenerate = hasOutline && !needsFileImageChoice;
     const outlineBlocking = !hasOutline && isOutlinePrefetching;
     const isBlocking = Boolean(
       isProcessing ||
@@ -1190,11 +1194,9 @@ export const useConversationalOnboarding = ({
       : themeState.isThemeLoading
         ? (themeState.themeBlock?.loadingMessage || 'Generating theme...')
         : 'Preparing your deck...';
-    const lockedLabel = needsBrandConfirmation
-      ? 'Confirm the brand domain to unlock generation.'
-      : needsFileImageChoice
-        ? 'Choose whether to use uploaded images to unlock generation.'
-        : 'Keep chatting to finalize the outline.';
+    const lockedLabel = needsFileImageChoice
+      ? 'Choose whether to use uploaded images to unlock generation.'
+      : 'Keep chatting to finalize the outline.';
 
     return {
       canGenerate,

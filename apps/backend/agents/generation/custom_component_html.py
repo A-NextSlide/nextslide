@@ -624,7 +624,7 @@ class CustomComponentHtmlProcessor:
             return html
         base_style = (
             "<style>"
-            "html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 100%; }"
+            "html, body { margin: 0 !important; padding: 0 !important; width: 1920px; height: 1080px; overflow: hidden; }"
             "*, *::before, *::after { box-sizing: border-box; }"
             "</style>"
         )

@@ -107,8 +107,8 @@ async def get_api_key_auth(
     try:
         balance = await billing.get_user_balance(user_id)
         if not balance or balance.plan_id not in ('pro', 'enterprise'):
-            # Check for friends & family
-            if not (balance and hasattr(balance, 'is_friends_family') and balance.is_friends_family):
+            # Check for friends & family (unlimited credits = -1)
+            if not (balance and balance.remaining_credits == -1):
                 raise HTTPException(
                     status_code=403,
                     detail="Developer API requires a Pro subscription"
@@ -459,7 +459,8 @@ async def create_deck(
         balance = await billing.get_user_balance(user_id)
         credit_cost = billing.get_credit_cost(CreditAction.SLIDE_GENERATION) * request.slides
 
-        if balance and balance.remaining_credits < credit_cost:
+        # -1 means unlimited credits (Friends & Family), skip the check
+        if balance and balance.remaining_credits != -1 and balance.remaining_credits < credit_cost:
             raise HTTPException(
                 status_code=402,
                 detail=f"Insufficient credits. Need {credit_cost}, have {balance.remaining_credits}"

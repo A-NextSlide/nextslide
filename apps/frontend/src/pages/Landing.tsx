@@ -43,6 +43,19 @@ const Landing: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
+  // Force light mode on landing page regardless of user's dark mode preference
+  useEffect(() => {
+    const wasDark = document.documentElement.classList.contains('dark');
+    document.documentElement.classList.remove('dark');
+
+    return () => {
+      // Restore dark mode if it was enabled when user navigates away
+      if (wasDark) {
+        document.documentElement.classList.add('dark');
+      }
+    };
+  }, []);
+
   // Showcase state
   const [showcaseDecks, setShowcaseDecks] = useState<ShowcaseDeck[]>([]);
   const [isLoadingShowcase, setIsLoadingShowcase] = useState(true);
