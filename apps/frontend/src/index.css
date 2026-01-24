@@ -1,9 +1,7 @@
-/* Import Google Fonts */
+/* Import Google Fonts - Inter and Hanken Grotesk are now preloaded in index.html */
 :root { --cache-bust: "2026-01-23-v2"; }
 @import './fonts.css';
 @import './styles/presentation.css';
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&display=swap');
 
 /* HK Grotesk Wide - Local fonts */
 @font-face {
