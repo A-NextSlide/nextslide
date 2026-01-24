@@ -536,6 +536,12 @@ export const useConversationalOnboarding = ({
 
     fileUploads.clearUploads();
 
+    // Start theme generation in parallel with outline generation (for first message only)
+    // This reduces perceived latency by fetching brand colors while outline is being generated
+    if (!hasExistingOutline && userMessage && !themeState.themeBlock?.hasExplicitColors) {
+      themeState.prefetchThemeFromPrompt(userMessage);
+    }
+
     try {
       agentStatus.actions.setIsAgentTyping(true);
       agentStatus.actions.setStreamingText('');

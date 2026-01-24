@@ -306,7 +306,11 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
 
     all_img_tags = re.findall(r'<img[^>]+>', html, re.IGNORECASE)
     for img_tag in all_img_tags:
+        # Try quoted src first, then unquoted
         src_match = re.search(r'src=["\']([^"\']*)["\']', img_tag, re.IGNORECASE)
+        if not src_match:
+            # Try unquoted src (e.g., src=/path/placeholder or src=http://...)
+            src_match = re.search(r'src=([^\s"\'<>]+)', img_tag, re.IGNORECASE)
         src = src_match.group(1) if src_match else ""
         is_placeholder = (
             not src

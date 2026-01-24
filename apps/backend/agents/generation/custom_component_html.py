@@ -438,10 +438,40 @@ class CustomComponentHtmlProcessor:
             logger.info(f"[IMAGE_INJECT] Replaced placeholder with {url[:50]}...")
             return f'<img {before}src="{url}"{after}>'
 
+        # Match exact src="" or src="placeholder"
         quoted_placeholder_pattern = r'<img\s+([^>]*?)src=(["\'])(?:placeholder)?\2([^>]*?)>'
         result = re.sub(
             quoted_placeholder_pattern,
             replace_placeholder_src_quoted,
+            result,
+            flags=re.IGNORECASE,
+        )
+
+        # Match any src containing "placeholder" in the path (e.g., src="/deck/placeholder")
+        def replace_placeholder_path_src(match):
+            nonlocal images_injected, image_index
+            before = match.group(1)
+            src_value = match.group(3)
+            after = match.group(4)
+
+            # Skip if it's already one of our bucket URLs
+            if is_our_url(src_value):
+                return match.group(0)
+
+            if image_index < len(image_urls):
+                url = image_urls[image_index]
+                image_index += 1
+            else:
+                url = image_urls[images_injected % len(image_urls)]
+
+            images_injected += 1
+            logger.info(f"[IMAGE_INJECT] Replaced placeholder path '{src_value}' with {url[:50]}...")
+            return f'<img {before}src="{url}"{after}>'
+
+        placeholder_path_pattern = r'<img\s+([^>]*?)src=(["\'])([^"\']*placeholder[^"\']*)\2([^>]*?)>'
+        result = re.sub(
+            placeholder_path_pattern,
+            replace_placeholder_path_src,
             result,
             flags=re.IGNORECASE,
         )
@@ -465,6 +495,34 @@ class CustomComponentHtmlProcessor:
         result = re.sub(
             unquoted_placeholder_pattern,
             replace_placeholder_src_unquoted,
+            result,
+            flags=re.IGNORECASE,
+        )
+
+        # Match unquoted src containing "placeholder" path (e.g., src=/deck/placeholder)
+        def replace_unquoted_placeholder_path(match):
+            nonlocal images_injected, image_index
+            before = match.group(1)
+            src_value = match.group(2)
+            after = match.group(3)
+
+            if is_our_url(src_value):
+                return match.group(0)
+
+            if image_index < len(image_urls):
+                url = image_urls[image_index]
+                image_index += 1
+            else:
+                url = image_urls[images_injected % len(image_urls)]
+
+            images_injected += 1
+            logger.info(f"[IMAGE_INJECT] Replaced unquoted placeholder path '{src_value}' with {url[:50]}...")
+            return f'<img {before}src="{url}"{after}>'
+
+        unquoted_placeholder_path_pattern = r'<img\s+([^>]*?)src=([^\s"\'<>]*placeholder[^\s"\'<>]*)(?=[\s>])([^>]*?)>'
+        result = re.sub(
+            unquoted_placeholder_path_pattern,
+            replace_unquoted_placeholder_path,
             result,
             flags=re.IGNORECASE,
         )

@@ -215,7 +215,12 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
     const vibeContext = stylePrefs.brandDomain || outlineData.brandContext || outlineData.style || outlineData.topic || outlineData.title;
     const vibeContextChanged = vibeContext && lastThemeVibeContext &&
       vibeContext.toLowerCase() !== lastThemeVibeContext.toLowerCase();
-    const shouldFetchTheme = !isThemeLoadingRef.current && (!hasExistingTheme || vibeContextChanged);
+
+    // If we already have explicit colors from prefetch and no new brand domain was detected,
+    // skip regeneration - the prefetched theme is good enough for topic-based themes
+    const hasBrandDomain = Boolean(stylePrefs.brandDomain || outlineData.brandContext);
+    const prefetchedThemeIsGoodEnough = hasExistingTheme && !hasBrandDomain;
+    const shouldFetchTheme = !isThemeLoadingRef.current && !prefetchedThemeIsGoodEnough && (!hasExistingTheme || vibeContextChanged);
 
     let currentThemeBlock = (hasExistingTheme && !vibeContextChanged)
       ? themeBlock
