@@ -39,6 +39,33 @@ const Landing: React.FC = () => {
   const { user } = useAuth();
   const isSignedIn = !!user;
   const [fontsLoaded, setFontsLoaded] = useState(false);
+
+  // Wait for HK Grotesk Wide font to load before showing hero content
+  useEffect(() => {
+    // Check if fonts API is available
+    if (typeof document !== 'undefined' && document.fonts) {
+      // Check if font is already loaded
+      const checkFont = () => {
+        return document.fonts.check('900 1em "HK Grotesk Wide"');
+      };
+
+      if (checkFont()) {
+        setFontsLoaded(true);
+      } else {
+        // Wait for fonts to be ready
+        document.fonts.ready.then(() => {
+          // Small delay to ensure rendering is complete
+          requestAnimationFrame(() => {
+            setFontsLoaded(true);
+          });
+        });
+      }
+    } else {
+      // Fallback: assume fonts loaded after a short delay
+      const timer = setTimeout(() => setFontsLoaded(true), 100);
+      return () => clearTimeout(timer);
+    }
+  }, []);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -84,14 +111,7 @@ const Landing: React.FC = () => {
     paused: !heroInView || isHeroInputFocused || !!heroInput,
   });
 
-  // Trigger scribble animation
-  useEffect(() => {
-    if (!fontsLoaded) return;
-    const timer = setTimeout(() => {
-      setScribbleAnimated(true);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [fontsLoaded]);
+  // Note: Scribble animation is now handled internally by HeroTitle component
 
   // Track hero visibility
   useEffect(() => {
@@ -404,7 +424,10 @@ const Landing: React.FC = () => {
         <section ref={heroRef} className="relative min-h-[90vh] flex flex-col justify-center overflow-visible -mt-[100vh]">
 
           {/* Hero Title Animation */}
-          <div className="relative z-30 pt-32 sm:pt-40 pb-8 text-center px-4">
+          <div
+            className="relative z-30 pt-32 sm:pt-40 pb-8 text-center px-4 transition-opacity duration-300"
+            style={{ opacity: fontsLoaded ? 1 : 0 }}
+          >
             <HeroTitle />
 
             <p className="mt-12 text-xl sm:text-2xl text-black/60 dark:text-white/60 max-w-2xl mx-auto px-4 hero-subtitle-animate font-light tracking-wide">
