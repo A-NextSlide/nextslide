@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 from typing import Any, Dict, List, Tuple
 
@@ -14,25 +15,24 @@ from agents.generation.custom_component_helpers import (
 from agents.generation.custom_component_html import CustomComponentHtmlProcessor
 from services.image_cache import ImageSearchCache
 from services.image_storage_service import ImageStorageService
+from services.image import (
+    BUCKET_DOMAINS,
+    needs_image_search as unified_needs_image_search,
+    find_external_image_urls,
+    is_bucket_url,
+)
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
 
-BUCKET_DOMAINS = ("nextslide.ai", "supabase.co", "supabase.com")
 
-
-def _find_external_image_urls(html: str) -> List[str]:
-    urls = re.findall(r'<img[^>]*src=["\']?(https?://[^\s"\'>]+)["\']?', html, re.IGNORECASE)
-    return list({url for url in urls if not any(domain in url.lower() for domain in BUCKET_DOMAINS)})
+# Use unified service for finding external image URLs and placeholder detection
+# These functions are imported from services.image
 
 
 def _needs_image_search(html: str) -> bool:
-    if not html:
-        return False
-    has_placeholders = "placeholder" in html.lower() or "${" in html or 'src=""' in html
-    if has_placeholders:
-        return True
-    return bool(_find_external_image_urls(html))
+    """Check if HTML needs image search/resolution."""
+    return unified_needs_image_search(html)
 
 
 async def resolve_images(
@@ -171,28 +171,114 @@ async def resolve_images(
     return html, prefetched_images
 
 
-async def upload_external_urls_to_bucket(html: str) -> str:
-    """Upload external image URLs to storage and replace them in HTML."""
-    external_urls = _find_external_image_urls(html)
+def _extract_alt_for_url(html_content: str, url: str) -> str | None:
+    """Extract the alt text from an img tag containing the given URL."""
+    # Escape special regex chars in URL
+    escaped_url = re.escape(url)
+    # Try to find img tag with this URL and extract alt text
+    # Pattern 1: alt comes before src
+    match = re.search(rf'<img[^>]*alt=["\']([^"\']+)["\'][^>]*src=["\']?{escaped_url}', html_content, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    # Pattern 2: src comes before alt
+    match = re.search(rf'<img[^>]*src=["\']?{escaped_url}["\']?[^>]*alt=["\']([^"\']+)["\']', html_content, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return None
+
+
+async def _search_fallback_image(alt_text: str, storage: ImageStorageService) -> str | None:
+    """Search for an image using alt text and upload to bucket. Returns bucket URL or None."""
+    if not alt_text or len(alt_text) <= 5:
+        return None
+
+    logger.info("[UPLOAD_EXTERNAL] Searching fallback image for: '%s'", alt_text[:50])
+    try:
+        from services.serpapi_service import SerpAPIService
+        async with SerpAPIService() as serpapi:
+            # Truncate query to first 6 words for better results
+            search_query = " ".join(alt_text.split()[:6])
+            results = await serpapi.search_images(search_query)
+            photos = results.get('photos', []) if isinstance(results, dict) else results
+
+            if not photos or not isinstance(photos, list):
+                logger.warning("[UPLOAD_EXTERNAL] No fallback results for: '%s'", search_query[:40])
+                return None
+
+            # Try multiple results in case some fail
+            for photo in photos[:3]:
+                fallback_url = photo.get('url') or photo.get('original') or photo.get('thumbnail')
+                if not fallback_url:
+                    continue
+
+                fallback_result = await storage.upload_image_from_url(fallback_url)
+                if isinstance(fallback_result, dict) and "error" not in fallback_result:
+                    bucket_url = fallback_result.get("url")
+                    if bucket_url:
+                        logger.info("[UPLOAD_EXTERNAL] FALLBACK SUCCESS -> %s", bucket_url[:80])
+                        return bucket_url
+
+            logger.warning("[UPLOAD_EXTERNAL] All fallback URLs failed for: '%s'", search_query[:40])
+            return None
+
+    except Exception as exc:
+        logger.warning("[UPLOAD_EXTERNAL] Fallback search failed: %s", exc)
+        return None
+
+
+async def upload_external_urls_to_bucket(html_content: str) -> str:
+    """Upload external image URLs to storage and replace them in HTML.
+
+    If any external URL fails to download, falls back to searching for a
+    replacement image using the alt text.
+    """
+    logger.info("[UPLOAD_EXTERNAL] Checking HTML for external URLs to upload...")
+    external_urls = find_external_image_urls(html_content)
     if not external_urls:
-        return html
+        logger.info("[UPLOAD_EXTERNAL] No external URLs found - all images already use our bucket or placeholders")
+        return html_content
+
+    logger.info("[UPLOAD_EXTERNAL] Found %d external URLs to upload", len(external_urls))
 
     async with ImageStorageService() as storage:
-        for url in external_urls:
-            try:
-                upload_result = await storage.upload_image_from_url(url, metadata={"source": "custom_component"})
-                # Check for error - upload returns {'url': original_url, 'error': ...} on failure
-                if isinstance(upload_result, dict) and "error" not in upload_result:
-                    new_url = upload_result.get("url")
-                    if new_url and new_url != url:
-                        html = html.replace(url, new_url)
-                        logger.info("[CUSTOM_COMPONENT] Uploaded external image: %s", url[:60])
-                    else:
-                        logger.warning("[CUSTOM_COMPONENT] Upload returned same URL, skipping: %s", url[:60])
-                else:
-                    error_msg = upload_result.get("error", "Unknown error") if isinstance(upload_result, dict) else "Invalid result"
-                    logger.warning("[CUSTOM_COMPONENT] Failed to upload external image %s: %s", url[:60], error_msg)
-            except Exception as exc:
-                logger.warning("[CUSTOM_COMPONENT] Failed to upload external image %s: %s", url[:80], exc)
+        for raw_url in external_urls:
+            # Decode HTML entities (e.g., &amp; -> &) for the actual HTTP request
+            decoded_url = html.unescape(raw_url)
+            logger.info("[UPLOAD_EXTERNAL] Processing: %s", decoded_url[:100])
 
-    return html
+            bucket_url = None
+            upload_failed = False
+
+            try:
+                upload_result = await storage.upload_image_from_url(
+                    decoded_url,
+                    metadata={"source": "custom_component"}
+                )
+                if isinstance(upload_result, dict) and "error" not in upload_result:
+                    bucket_url = upload_result.get("url")
+                    if bucket_url and bucket_url != decoded_url:
+                        logger.info("[UPLOAD_EXTERNAL] SUCCESS: Uploaded -> %s", bucket_url[:80])
+                    else:
+                        # Upload returned same URL or no URL - treat as failure
+                        upload_failed = True
+                        logger.warning("[UPLOAD_EXTERNAL] Upload returned invalid result for: %s", decoded_url[:60])
+                else:
+                    upload_failed = True
+                    error_msg = upload_result.get("error", "Unknown error") if isinstance(upload_result, dict) else "Invalid result"
+                    logger.warning("[UPLOAD_EXTERNAL] FAILED: %s - %s", decoded_url[:60], error_msg)
+            except Exception as exc:
+                upload_failed = True
+                logger.warning("[UPLOAD_EXTERNAL] EXCEPTION: %s - %s", decoded_url[:60], exc)
+
+            # Only try fallback if upload actually failed
+            if upload_failed:
+                alt_text = _extract_alt_for_url(html_content, raw_url)
+                bucket_url = await _search_fallback_image(alt_text, storage)
+
+            # Replace URL in HTML only if we got a valid bucket URL
+            if bucket_url and any(domain in bucket_url for domain in BUCKET_DOMAINS):
+                html_content = html_content.replace(raw_url, bucket_url)
+            elif not bucket_url:
+                logger.warning("[UPLOAD_EXTERNAL] No replacement found for: %s", decoded_url[:60])
+
+    return html_content

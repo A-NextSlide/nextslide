@@ -316,21 +316,21 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                     </TabsList>
 
                     {/* --- Tab Content Panes --- */}
-                    <div className="p-3 min-h-[180px]"> 
-                        <TabsContent value="image">
+                    <div className="p-3 min-h-[180px] max-h-[400px] flex flex-col"> 
+                        <TabsContent value="image" className="flex-1 flex flex-col min-h-0">
                            <ImageTab onSelect={(url, type) => handleSelect(url, type, 'image')} />
                         </TabsContent>
-                         <TabsContent value="video">
+                         <TabsContent value="video" className="flex-1 flex flex-col min-h-0">
                             <VideoTab onSelect={(url, type) => handleSelect(url, type, 'video')} />
                         </TabsContent>
-                         <TabsContent value="search">
+                         <TabsContent value="search" className="flex-1 flex flex-col min-h-0">
                              <SearchTab
                                  onSelect={(url, type) => handleSelect(url, type, 'search')}
                                  defaultSearchTerm={defaultSearchTerm}
                                  autoSearchToken={autoSearch ? searchToken : undefined}
                              />
                          </TabsContent>
-                        <TabsContent value="generate" className="space-y-3 generate-content">
+                        <TabsContent value="generate" className="flex-1 flex flex-col min-h-0 space-y-3 generate-content">
                             <div className="space-y-2">
                                 <label className="text-xs font-medium">Describe what you want to generate</label>
                                 <Textarea
@@ -375,7 +375,7 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                                 )}
                             </Button>
                         </TabsContent>
-                        <TabsContent value="recent">
+                        <TabsContent value="recent" className="flex-1 flex flex-col min-h-0">
                             {recentMedia.length === 0 ? (
                                 <div className="text-center text-sm text-muted-foreground py-6">
                                     <Clock className="w-6 h-6 mx-auto mb-2 opacity-50" />

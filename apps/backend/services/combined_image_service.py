@@ -931,102 +931,12 @@ class CombinedImageService:
         color: Optional[str] = None,
         locale: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Web image search disabled (no backend aggregation)."""
+        """Web image search - delegated to UnifiedImageService.
+
+        Note: This method is kept for backward compatibility but returns empty.
+        Use services.image.UnifiedImageService for new code.
+        """
         logger.debug(f"search_images called with query: '{query}', per_page: {per_page}")
-        return {"photos": [], "total_results": 0}
-        if provider == 'perplexity' and (getattr(self.perplexity, 'is_available', False) or getattr(self.serpapi, 'is_available', False)):
-            tasks = []
-            pplx_task = None
-            serp_task = None
-            # Request more from Perplexity for richer coverage
-            if getattr(self.perplexity, 'is_available', False):
-                pplx_task = asyncio.create_task(self.perplexity.search_images(
-                    query=query,
-                    per_page=max(per_page * 3, per_page + 10),
-                    page=page,
-                    orientation=orientation,
-                    size=size,
-                    color=color,
-                    locale=locale
-                ))
-                tasks.append(pplx_task)
-            if getattr(self.serpapi, 'is_available', False):
-                serp_task = asyncio.create_task(self.serpapi.search_images(
-                    query=query,
-                    per_page=max(per_page, 20),
-                    page=page,
-                    orientation=orientation,
-                    size=size,
-                    color=color,
-                    locale=locale
-                ))
-                tasks.append(serp_task)
-
-            combined: list[dict] = []
-            try:
-                # Collect both providers with an overall timeout for reliability
-                results = await asyncio.wait_for(
-                    asyncio.gather(*tasks, return_exceptions=True),
-                    timeout=10.0
-                )
-                for r in results:
-                    if isinstance(r, dict):
-                        photos = r.get('photos', [])
-                        if photos:
-                            combined.extend(photos)
-            except Exception:
-                # On any error, attempt direct single-provider fallback
-                if getattr(self.perplexity, 'is_available', False):
-                    try:
-                        r = await self.perplexity.search_images(query=query, per_page=per_page * 2)
-                        combined = r.get('photos', [])
-                    except Exception:
-                        combined = []
-                if not combined and getattr(self.serpapi, 'is_available', False):
-                    try:
-                        r = await self.serpapi.search_images(query=query, per_page=per_page)
-                        combined = r.get('photos', [])
-                    except Exception:
-                        combined = []
-
-            # Reorder: Perplexity first, then SerpAPI; dedupe by URL
-            def is_from_pplx(img: dict) -> bool:
-                return (img.get('source') == 'perplexity') or ('perplexity' in str(img.get('photographer', '')).lower())
-
-            pplx_imgs = [img for img in combined if is_from_pplx(img)]
-            serp_imgs = [img for img in combined if not is_from_pplx(img)]
-
-            seen_urls = set()
-            ordered: list[dict] = []
-            for arr in (pplx_imgs, serp_imgs):
-                for img in arr:
-                    url = img.get('url') or img.get('src', {}).get('original')
-                    if not url or url in seen_urls:
-                        continue
-                    seen_urls.add(url)
-                    ordered.append(img)
-
-            # Cap to an expanded size (favor more Perplexity)
-            cap = max(per_page * 3, per_page + 20)
-            logger.debug(f"Returning {len(ordered[:cap])} images (perplexity: {len(pplx_imgs)}, serpapi: {len(serp_imgs)})")
-            return {"photos": ordered[:cap], "total_results": len(ordered)}
-
-        # Non-aggregation path
-        if getattr(self.serpapi, 'is_available', False):
-            logger.debug(f"Using SerpAPI only (non-aggregation path)")
-            results = await self.serpapi.search_images(
-                query=query,
-                per_page=per_page,
-                page=page,
-                orientation=orientation,
-                size=size,
-                color=color,
-                locale=locale
-            )
-            logger.debug(f"SerpAPI returned {len(results.get('photos', []))} images")
-            return results
-
-        logger.warning(f"No web image provider available for query: {query}")
         return {"photos": [], "total_results": 0}
     
     def _extract_topics_from_text(self, text: str) -> List[str]:

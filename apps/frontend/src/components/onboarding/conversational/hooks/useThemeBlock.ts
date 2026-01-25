@@ -222,7 +222,10 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
     const prefetchedThemeIsGoodEnough = hasExistingTheme && !hasBrandDomain;
     const shouldFetchTheme = !isThemeLoadingRef.current && !prefetchedThemeIsGoodEnough && (!hasExistingTheme || vibeContextChanged);
 
-    let currentThemeBlock = (hasExistingTheme && !vibeContextChanged)
+    // CRITICAL: If we already have explicit colors from theme generation, KEEP them
+    // even if vibe context changed. Only rebuild if we don't have colors.
+    // The theme generation happens async and its colors should persist.
+    let currentThemeBlock = hasExistingTheme
       ? themeBlock
       : buildThemeBlockFromOutline(outlineData);
 

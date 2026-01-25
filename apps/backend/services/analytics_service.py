@@ -24,20 +24,21 @@ def _get_posthog():
 
     _is_initialized = True
 
-    api_key = os.getenv("POSTHOG_API_KEY")
+    api_key = os.getenv("POSTHOG_API_KEY", "").strip()
     if not api_key:
         logger.warning("[Analytics] POSTHOG_API_KEY not configured - analytics disabled")
         return None
 
     try:
-        import posthog
-        posthog.project_api_key = api_key
-        posthog.host = os.getenv("POSTHOG_HOST", "https://us.i.posthog.com")
-        # Disable debug mode in production
-        posthog.debug = os.getenv("ENV", "development") == "development"
-        _posthog_client = posthog
+        from posthog import Posthog
+        client = Posthog(
+            project_api_key=api_key,
+            host=os.getenv("POSTHOG_HOST", "https://us.i.posthog.com"),
+            debug=os.getenv("POSTHOG_DEBUG", "").lower() == "true",
+        )
+        _posthog_client = client
         logger.info("[Analytics] PostHog initialized successfully")
-        return posthog
+        return client
     except ImportError:
         logger.warning("[Analytics] posthog package not installed - analytics disabled")
         return None

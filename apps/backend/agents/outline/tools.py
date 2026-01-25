@@ -199,7 +199,7 @@ def firecrawl_outline_fetch(args: FirecrawlOutlineArgs, outline: Dict[str, Any])
         if not svc.is_configured():
             return outline, "No-op: Firecrawl not configured"
         if args.operation == "scrape" and args.url:
-            res = svc.scrape(args.url, formats=["markdown", "html", "metadata"]) or {}
+            res = svc.scrape(args.url, formats=["markdown", "html"]) or {}
             data = (res or {}).get("data") or res
             text = (data or {}).get("markdown") or (data or {}).get("metadata", {}).get("title") or ""
         else:

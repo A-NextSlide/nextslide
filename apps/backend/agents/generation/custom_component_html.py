@@ -4,11 +4,13 @@ from typing import Dict, Any, Optional, Tuple
 import re
 
 from setup_logging_optimized import get_logger
+from services.image import (
+    is_placeholder_src as unified_is_placeholder_src,
+    BUCKET_DOMAINS,
+    GENERIC_VAR_NAMES as GENERIC_JS_VARS,
+)
 
 logger = get_logger(__name__)
-
-BUCKET_DOMAINS = ('nextslide.ai', 'supabase.co', 'supabase.com')
-GENERIC_JS_VARS = {"obj", "item", "data", "entry", "row", "card", "element", "node"}
 
 
 def _iter_js_objects(text: str):
@@ -64,16 +66,8 @@ def _extract_js_object_label(obj_text: str) -> str:
 
 
 def _is_placeholder_src(value: str) -> bool:
-    if not value:
-        return True
-    lowered = value.strip().lower()
-    return (
-        lowered == "placeholder"
-        or "placeholder" in lowered
-        or lowered.startswith("${")
-        or lowered.startswith("props.")
-        or (not lowered.startswith("http") and not lowered.startswith("data:") and not lowered.startswith("blob:"))
-    )
+    """Check if a src value is a placeholder. Uses unified service implementation."""
+    return unified_is_placeholder_src(value)
 
 
 class CustomComponentHtmlProcessor:
@@ -254,19 +248,25 @@ class CustomComponentHtmlProcessor:
                 continue
             escaped_alt = re.escape(alt_text)
 
+            logger.info("[IMAGE_INJECT] Attempting to match alt text: '%s' (key=%s)", alt_text[:60], key)
+
             def replace_by_alt_first(match, url=url, alt_text=alt_text):
                 nonlocal images_injected
                 full_tag = match.group(0)
                 if is_our_url(full_tag):
+                    logger.debug("[IMAGE_INJECT] Skipping already-replaced tag")
                     return full_tag
                 new_tag = re.sub(r'src=["\'][^"\']*["\']', f'src="{url}"', full_tag)
                 if new_tag != full_tag:
                     images_injected += 1
-                    logger.debug("[IMAGE_INJECT] ALT match: '%s' -> %s", alt_text, url[:40])
+                    logger.info("[IMAGE_INJECT] ALT match SUCCESS: '%s' -> %s", alt_text[:40], url[:60])
                 return new_tag
 
             alt_pattern = rf'<img[^>]*alt=["\']({escaped_alt}[^"\']*)["\'][^>]*>'
+            old_result = result
             result = re.sub(alt_pattern, replace_by_alt_first, result, flags=re.IGNORECASE)
+            if result == old_result:
+                logger.debug("[IMAGE_INJECT] No match found for alt pattern: %s...", alt_pattern[:80])
 
         alt_url_map = {}
         for key, url in prefetched_images.items():
@@ -399,7 +399,8 @@ class CustomComponentHtmlProcessor:
             logger.info(f"[IMAGE_INJECT] Replaced ${{{var_name}}} with {url[:50]}...")
             return f'<img {before}src="{url}"{after}>'
 
-        var_pattern = r'<img\s+([^>]*?)src=["\']?\$\{+\s*(\w+)\s*\}+["\']?([^>]*?)>'
+        # Pattern handles both <img src=... and <img alt="..." src=...
+        var_pattern = r'<img\s*([^>]*?)src=["\']?\$\{+\s*(\w+)\s*\}+["\']?([^>]*?)>'
         result = re.sub(var_pattern, replace_variable_src, result, flags=re.IGNORECASE)
 
         def replace_props_reference(match):
@@ -420,7 +421,7 @@ class CustomComponentHtmlProcessor:
             logger.info(f"[IMAGE_INJECT] Replaced props.{prop_name} with {url[:50]}...")
             return f'<img {before}src="{url}"{after}>'
 
-        props_ref_pattern = r'<img\s+([^>]*?)src=["\']props\.(\w+)["\']([^>]*?)>'
+        props_ref_pattern = r'<img\s*([^>]*?)src=["\']props\.(\w+)["\']([^>]*?)>'
         result = re.sub(props_ref_pattern, replace_props_reference, result, flags=re.IGNORECASE)
 
         def replace_placeholder_src_quoted(match):
@@ -439,7 +440,7 @@ class CustomComponentHtmlProcessor:
             return f'<img {before}src="{url}"{after}>'
 
         # Match exact src="" or src="placeholder"
-        quoted_placeholder_pattern = r'<img\s+([^>]*?)src=(["\'])(?:placeholder)?\2([^>]*?)>'
+        quoted_placeholder_pattern = r'<img\s*([^>]*?)src=(["\'])(?:placeholder)?\2([^>]*?)>'
         result = re.sub(
             quoted_placeholder_pattern,
             replace_placeholder_src_quoted,
@@ -468,7 +469,7 @@ class CustomComponentHtmlProcessor:
             logger.info(f"[IMAGE_INJECT] Replaced placeholder path '{src_value}' with {url[:50]}...")
             return f'<img {before}src="{url}"{after}>'
 
-        placeholder_path_pattern = r'<img\s+([^>]*?)src=(["\'])([^"\']*placeholder[^"\']*)\2([^>]*?)>'
+        placeholder_path_pattern = r'<img\s*([^>]*?)src=(["\'])([^"\']*placeholder[^"\']*)\2([^>]*?)>'
         result = re.sub(
             placeholder_path_pattern,
             replace_placeholder_path_src,
@@ -491,7 +492,7 @@ class CustomComponentHtmlProcessor:
             logger.info(f"[IMAGE_INJECT] Replaced placeholder with {url[:50]}...")
             return f'<img {before}src="{url}"{after}>'
 
-        unquoted_placeholder_pattern = r'<img\s+([^>]*?)src=(?:placeholder)?(?=[\s>])([^>]*?)>'
+        unquoted_placeholder_pattern = r'<img\s*([^>]*?)src=(?:placeholder)?(?=[\s>])([^>]*?)>'
         result = re.sub(
             unquoted_placeholder_pattern,
             replace_placeholder_src_unquoted,
@@ -519,7 +520,7 @@ class CustomComponentHtmlProcessor:
             logger.info(f"[IMAGE_INJECT] Replaced unquoted placeholder path '{src_value}' with {url[:50]}...")
             return f'<img {before}src="{url}"{after}>'
 
-        unquoted_placeholder_path_pattern = r'<img\s+([^>]*?)src=([^\s"\'<>]*placeholder[^\s"\'<>]*)(?=[\s>])([^>]*?)>'
+        unquoted_placeholder_path_pattern = r'<img\s*([^>]*?)src=([^\s"\'<>]*placeholder[^\s"\'<>]*)(?=[\s>])([^>]*?)>'
         result = re.sub(
             unquoted_placeholder_path_pattern,
             replace_unquoted_placeholder_path,
@@ -543,7 +544,7 @@ class CustomComponentHtmlProcessor:
             logger.info(f"[IMAGE_INJECT] Replaced local file '{local_path}' with {url[:50]}...")
             return f'<img {before}src="{url}"{after}>'
 
-        local_file_pattern = r'<img\s+([^>]*?)src=["\']([a-zA-Z0-9_\-\.]+\.(?:jpg|jpeg|png|gif|webp|svg|avif))["\']([^>]*?)>'
+        local_file_pattern = r'<img\s*([^>]*?)src=["\']([a-zA-Z0-9_\-\.]+\.(?:jpg|jpeg|png|gif|webp|svg|avif))["\']([^>]*?)>'
         result = re.sub(local_file_pattern, replace_local_file_src, result, flags=re.IGNORECASE)
 
         def replace_local_bg_image(match):
@@ -615,7 +616,7 @@ class CustomComponentHtmlProcessor:
             logger.info(f"[IMAGE_INJECT] Replaced external URL {external_url[:40]}... with {url[:40]}...")
             return f'<img {before}src="{url}"{after}>'
 
-        external_url_pattern = r'<img\s+([^>]*?)src=["\'](https?://[^"\']+)["\']([^>]*?)>'
+        external_url_pattern = r'<img\s*([^>]*?)src=["\'](https?://[^"\']+)["\']([^>]*?)>'
         result = re.sub(external_url_pattern, replace_external_img_src, result, flags=re.IGNORECASE)
 
         def replace_background_image_url(match):
@@ -648,8 +649,12 @@ class CustomComponentHtmlProcessor:
         result = re.sub(inline_bg_pattern, replace_background_image_url, result, flags=re.IGNORECASE)
 
         external_matches = re.findall(r'<img[^>]+src=["\']?(https?://[^\s"\'>]+)["\']?', result, flags=re.IGNORECASE)
-        if external_matches:
-            logger.warning(f"[IMAGE_INJECT] {len(external_matches)} external URLs remain after replacement")
+        # Filter out our bucket URLs - those are successfully replaced images
+        truly_external = [url for url in external_matches if not is_our_url(url)]
+        if truly_external:
+            logger.warning(f"[IMAGE_INJECT] {len(truly_external)} external URLs remain after replacement")
+            for url in truly_external[:3]:
+                logger.warning(f"[IMAGE_INJECT]   - {url[:80]}...")
 
         logger.info(f"[IMAGE_INJECT] Finished with {images_injected} injections")
         return result

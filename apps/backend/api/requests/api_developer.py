@@ -26,12 +26,28 @@ router = APIRouter(prefix="/api/developer", tags=["Developer API"])
 # Request/Response Models
 # =============================================================================
 
+class BrandColors(BaseModel):
+    """Color settings for brand theme."""
+    background: Optional[str] = Field(default=None)
+    text: Optional[str] = Field(default=None)
+    accent: Optional[str] = Field(default=None)
+
+class BrandFonts(BaseModel):
+    """Font settings for brand theme."""
+    heading: Optional[str] = Field(default=None)
+    body: Optional[str] = Field(default=None)
+
 class BrandSettings(BaseModel):
     """Brand settings for API-generated decks."""
+    # Legacy format (kept for backward compatibility)
     logo_url: Optional[str] = Field(default=None)
-    primary_color: Optional[str] = Field(default=None, pattern=r'^#[0-9A-Fa-f]{6}$')
-    secondary_color: Optional[str] = Field(default=None, pattern=r'^#[0-9A-Fa-f]{6}$')
+    primary_color: Optional[str] = Field(default=None)
+    secondary_color: Optional[str] = Field(default=None)
     font_family: Optional[str] = Field(default=None)
+    # New format with separate heading/body fonts
+    colors: Optional[BrandColors] = Field(default=None)
+    fonts: Optional[BrandFonts] = Field(default=None)
+    logo: Optional[str] = Field(default=None)
 
 
 class CreateApiKeyRequest(BaseModel):

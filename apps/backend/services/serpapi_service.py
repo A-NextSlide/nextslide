@@ -462,8 +462,8 @@ class SerpAPIService:
 
         Strategy:
         - SerpAPI thumbnails (serpapi.com/searches/...) are ALWAYS reliable
-        - Original URLs from preferred domains (Wikipedia, Imgur) are reliable
-        - Original URLs from blocked domains (Facebook, Pinterest) will fail
+        - Original URLs from preferred domains (Imgur, Unsplash, etc.) are reliable
+        - Original URLs from blocked domains (Facebook, Pinterest, Wikipedia) will fail
         - For blocked domains, use SerpAPI thumbnail which is cached and works
         """
         photos = []
@@ -479,11 +479,11 @@ class SerpAPIService:
             'linkedin.com',
             'reddit.com', 'redd.it',  # Often blocks
             'deviantart.com',  # Blocks hotlinking
+            'wikimedia.org', 'wikipedia.org',  # Aggressive rate limiting (HTTP 429)
         }
 
         # Domains known to be reliable for direct image access
         PREFERRED_DOMAINS = {
-            'wikimedia.org', 'wikipedia.org',
             'imgur.com', 'i.imgur.com',
             'cloudinary.com',
             'googleusercontent.com',
@@ -519,7 +519,7 @@ class SerpAPIService:
             is_serpapi_thumbnail = thumbnail_url and 'serpapi.com' in thumbnail_url
 
             # URL selection priority:
-            # 1. Preferred domain original (Wikipedia, Imgur, etc.) - high quality, reliable
+            # 1. Preferred domain original (Imgur, Unsplash, etc.) - high quality, reliable
             # 2. SerpAPI cached thumbnail - always works, decent quality
             # 3. Unknown domain original - might work, try it
             # 4. Never use blocked domain originals

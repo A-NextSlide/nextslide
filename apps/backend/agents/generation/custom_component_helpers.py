@@ -7,17 +7,20 @@ from typing import Dict, Any, Optional, List, Tuple
 from agents.ai.clients import get_client, invoke
 from agents.config import IMAGE_SEARCH_MODEL
 from services.image_cache import ImageSearchCache
+from services.image import (
+    is_company_logo_query as unified_is_company_logo_query,
+    fetch_logo as unified_fetch_logo,
+    is_generic_query as unified_is_generic_query,
+    is_placeholder_src,
+    is_logodev_available,
+    GENERIC_IMAGE_TERMS,
+)
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
 
-# Logo.dev service for company logos in content
-try:
-    from agents.tools.theme.logodev_service import LogoDevService
-    LOGODEV_AVAILABLE = True
-except ImportError:
-    LOGODEV_AVAILABLE = False
-    logger.warning("[CUSTOM_COMPONENT] Logo.dev service not available")
+# Use unified service for logo.dev availability
+LOGODEV_AVAILABLE = is_logodev_available()
 
 # Maximum dimensions for reference images (to prevent token explosion)
 MAX_IMAGE_DIMENSION = 384
@@ -57,75 +60,24 @@ def _is_company_logo_query(query: str) -> Tuple[bool, str]:
     """
     Detect if a query is for a company logo and extract the company name.
 
+    Uses unified service implementation.
+
     Returns:
         Tuple of (is_logo_query, company_name)
     """
-    if not query:
-        return False, ""
-
-    q = query.lower().strip()
-
-    # Patterns like "Apple logo", "Google Logo", "Microsoft logo"
-    logo_suffix_match = re.match(r'^(.+?)\s+logo\s*$', q, re.IGNORECASE)
-    if logo_suffix_match:
-        company = logo_suffix_match.group(1).strip()
-        # Filter out generic terms
-        if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
-            return True, company
-
-    # Patterns like "logo of Apple", "logo for Google"
-    logo_prefix_match = re.match(r'^logo\s+(?:of|for)\s+(.+)$', q, re.IGNORECASE)
-    if logo_prefix_match:
-        company = logo_prefix_match.group(1).strip()
-        if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
-            return True, company
-
-    return False, ""
+    return unified_is_company_logo_query(query)
 
 
 async def _fetch_logo_from_logodev(company_name: str, cache: Optional[ImageSearchCache] = None) -> Optional[str]:
     """
     Fetch a company logo from logo.dev and upload to our storage.
 
+    Uses unified service implementation.
+
     Returns:
         URL of uploaded logo, or None if not found
     """
-    if not LOGODEV_AVAILABLE:
-        return None
-
-    try:
-        from services.image_storage_service import ImageStorageService
-
-        async with LogoDevService() as logo_service:
-            result = await logo_service.get_logo_with_fallback(company_name)
-
-            if not result.get('available') or not result.get('logo_url'):
-                logger.debug(f"[LOGODEV] No logo found for: {company_name}")
-                return None
-
-            logo_url = result['logo_url']
-            logger.info(f"[LOGODEV] Found logo for {company_name}: {logo_url[:60]}...")
-
-            # Upload to our storage for consistent delivery
-            async with ImageStorageService() as storage:
-                upload_result = await storage.upload_image_from_url(
-                    logo_url,
-                    metadata={"source": "logodev", "company": company_name}
-                )
-                if upload_result and upload_result.get('url'):
-                    final_url = upload_result['url']
-                    logger.info(f"[LOGODEV] Uploaded {company_name} logo to storage")
-
-                    # Cache the result
-                    if cache:
-                        cache.set(f"{company_name} logo", final_url)
-
-                    return final_url
-
-    except Exception as e:
-        logger.warning(f"[LOGODEV] Error fetching logo for {company_name}: {e}")
-
-    return None
+    return await unified_fetch_logo(company_name, cache)
 
 
 def _extract_search_query_from_prop_name(prop_name: str) -> str:
@@ -152,31 +104,15 @@ def _simple_clean_query(query: str) -> str:
     return cleaned
 
 
-# Generic terms that produce poor image search results - should be enhanced or skipped
-GENERIC_IMAGE_TERMS = {
-    'image', 'photo', 'picture', 'pic', 'illustration', 'graphic', 'icon',
-    'placeholder', 'background', 'bg', 'banner', 'hero', 'visual',
-    'concept', 'abstract', 'decorative', 'default', 'sample',
-    'stock', 'generic', 'filler', 'random',
-}
+# GENERIC_IMAGE_TERMS is now imported from services.image
 
 
 def _is_generic_query(query: str) -> bool:
-    """Check if a query is too generic to produce good image search results."""
-    if not query:
-        return True
-    q_lower = query.lower().strip()
-    words = set(re.findall(r'[a-z]+', q_lower))
-    # If all words are generic terms, it's a generic query
-    if words and words.issubset(GENERIC_IMAGE_TERMS):
-        return True
-    # Single generic word
-    if q_lower in GENERIC_IMAGE_TERMS:
-        return True
-    # Very short queries without specific content
-    if len(q_lower) <= 3:
-        return True
-    return False
+    """Check if a query is too generic to produce good image search results.
+
+    Uses unified service implementation.
+    """
+    return unified_is_generic_query(query)
 
 
 def _looks_like_image_prop(prop_name: str) -> bool:
@@ -305,6 +241,7 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
                 seen_props.add(prop)
 
     all_img_tags = re.findall(r'<img[^>]+>', html, re.IGNORECASE)
+    logger.debug("[IMAGE_EXTRACT] Found %d img tags in HTML", len(all_img_tags))
     for img_tag in all_img_tags:
         # Try quoted src first, then unquoted
         src_match = re.search(r'src=["\']([^"\']*)["\']', img_tag, re.IGNORECASE)
@@ -324,9 +261,19 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
             alt_match = re.search(r'alt=["\']([^"\']+)["\']', img_tag, re.IGNORECASE)
             if alt_match:
                 alt = alt_match.group(1).strip()
+                # Skip template variables like ${item.alt} or {props.alt}
+                if alt.startswith("${") or alt.startswith("{") or "${" in alt:
+                    logger.debug("[IMAGE_EXTRACT] Skipping template variable alt: %s", alt[:50])
+                    continue
                 if alt and alt.lower() not in seen_props:
-                    results.append((f"alt_{alt.replace(' ', '_').replace('-', '_')[:30]}", alt))
+                    prop_key = f"alt_{alt.replace(' ', '_').replace('-', '_')[:30]}"
+                    results.append((prop_key, alt))
                     seen_props.add(alt.lower())
+                    logger.info("[IMAGE_EXTRACT] Found placeholder img with alt: '%s' -> key '%s'", alt[:60], prop_key)
+                elif alt and alt.lower() in seen_props:
+                    logger.debug("[IMAGE_EXTRACT] Skipping duplicate alt: %s", alt[:50])
+            else:
+                logger.debug("[IMAGE_EXTRACT] Placeholder img without alt text: %s", img_tag[:100])
 
     our_bucket_domains = ['nextslide.ai', 'supabase.co', 'supabase.com']
     external_imgs = re.findall(r'<img\s*[^>]*alt=["\']([^"\']+)["\'][^>]*src=["\']?(https?://[^\s"\'<>]+)["\']?[^>]*>', html, re.IGNORECASE)
@@ -340,6 +287,9 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
         if any(domain in url.lower() for domain in our_bucket_domains):
             continue
         alt = alt.strip()
+        # Skip template variables like ${item.alt} or {props.alt}
+        if alt.startswith("${") or alt.startswith("{") or "${" in alt:
+            continue
         if alt and alt.lower() not in seen_props:
             results.append((f"alt_{alt.replace(' ', '_').replace('-', '_')[:30]}", alt))
             seen_props.add(alt.lower())
@@ -457,20 +407,15 @@ async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> s
             if deck_search:
                 brand_match = deck_search.group(1).strip()
 
-        prompt = f"""Convert this into a SPECIFIC, concrete Google Images search query.
+        prompt = f"""Write a short Google Images search query for this slide image.
 
-DESCRIPTION: {query}
-CONTEXT: {slide_context[:500] if slide_context else 'Presentation slide'}
-{f"BRAND/COMPANY: {brand_match}" if brand_match else ""}
+CURRENT QUERY: {query}
+SLIDE CONTEXT: {slide_context[:400] if slide_context else 'Presentation slide'}
+{f"BRAND: {brand_match}" if brand_match else ""}
 
-RULES:
-- Be SPECIFIC: "Tesla Model S white sedan" not "electric car"
-- Include proper nouns when relevant (brands, places, products)
-- Add visual details: "aerial drone photo of Tokyo skyline night" not "city"
-- For people: specify profession + context ("surgeon performing operation" not "doctor")
-- NEVER use generic words like: image, photo, picture, illustration, concept, abstract
+Based on the context, what specific image should appear here? Use names, brands, or specific things mentioned in the context. Keep it 2-5 words.
 
-Return ONLY the search query (3-6 words)."""
+Return ONLY the search query, nothing else."""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -480,12 +425,14 @@ Return ONLY the search query (3-6 words)."""
             model_name,
             [{"role": "user", "content": prompt}],
             None,
-            100,
+            50,  # Short response for concise queries
             0.3,
         )
 
         enhanced = str(response).strip().strip('"\'')
-        if enhanced and len(enhanced) < 60 and "cannot" not in enhanced.lower() and "I " not in enhanced:
+        # Reject if too long (more than ~5 words) or contains refusal language
+        word_count = len(enhanced.split())
+        if enhanced and word_count <= 6 and len(enhanced) < 50 and "cannot" not in enhanced.lower() and "I " not in enhanced:
             logger.debug("[POST_SEARCH] AI optimized query: '%s' -> '%s'", query, enhanced)
             return enhanced
     except Exception as e:
@@ -541,10 +488,11 @@ async def _search_images_for_props(
             logger.debug(f"[POST_SEARCH] Skipping generic logo query: {query}")
             continue
 
-        # Skip completely generic image queries that won't produce useful results
+        # For generic image queries, try to enhance with slide context instead of skipping
         if _is_generic_query(query):
-            logger.debug(f"[POST_SEARCH] Skipping generic query: {query}")
-            continue
+            logger.info(f"[POST_SEARCH] Generic query detected: '{query}' - will enhance with context")
+            # Don't skip - let the enhancement happen in search_and_pick_best
+            # The query will be enhanced with slide context via _enhance_image_query_with_ai
 
         # Check if it's a company logo query (e.g., "Apple logo")
         is_logo, company_name = _is_company_logo_query(query)
@@ -613,15 +561,30 @@ async def _search_images_for_props(
                         return (prop_name, original_query, cached)
 
                 search_query = query
-                # Enhance short queries or queries that contain mostly generic words
+                logger.info(f"[POST_SEARCH] Processing query for '{prop_name}': '{query[:60]}...'")
+
+                # Enhance short queries, generic queries, or queries that contain mostly generic words
                 words = query.lower().split()
                 generic_word_count = sum(1 for w in words if w in GENERIC_IMAGE_TERMS)
+                is_entirely_generic = _is_generic_query(query)
                 needs_enhancement = (
+                    is_entirely_generic or  # Always enhance placeholder/generic queries
                     len(words) <= 2 or
                     generic_word_count >= len(words) // 2  # Half or more words are generic
                 )
                 if needs_enhancement:
-                    search_query = await _enhance_image_query_with_ai(query, slide_context)
+                    logger.info(f"[POST_SEARCH] Query needs enhancement (generic={is_entirely_generic}, words={len(words)}, generic_count={generic_word_count})")
+                    # For completely generic queries, rely entirely on slide context
+                    context_for_enhancement = slide_context
+                    if is_entirely_generic and slide_context:
+                        # Prepend a hint that we need to generate a query from scratch
+                        context_for_enhancement = f"Generate image query from context (original was too generic: '{query}'). {slide_context}"
+                    search_query = await _enhance_image_query_with_ai(query, context_for_enhancement)
+                    logger.info(f"[POST_SEARCH] Enhanced query: '{query[:40]}' -> '{search_query[:40]}'")
+                    # If enhancement didn't help for a generic query, skip it
+                    if is_entirely_generic and _is_generic_query(search_query):
+                        logger.warning(f"[POST_SEARCH] Could not enhance generic query '{query}' -> '{search_query}', skipping")
+                        return (prop_name, original_query, None)
 
                 # Ensure query is concise
                 words = search_query.split()

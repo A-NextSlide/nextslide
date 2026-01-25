@@ -52,10 +52,32 @@ export const buildThemeBlockFromOutline = (outlineData: OutlineData): ThemeEdito
   };
 };
 
+// Default colors that should not be considered "explicit" theme choices
+// These match the defaults in buildThemeBlockFromOutline
+const DEFAULT_THEME_COLORS = new Set([
+  '#ffffff', '#FFFFFF',
+  '#1f2937', '#1F2937',
+  '#ff4301', '#FF4301',
+  '#3b82f6', '#3B82F6'
+]);
+
+const hasValidColors = (colors: ThemeEditorData['colors']): boolean => {
+  if (!colors) return false;
+  // Check if any color is set and is not a default placeholder
+  // We check accent colors and background - these are the key differentiators
+  const colorsToCheck = [
+    colors.accent_1,
+    colors.accent_2,
+    colors.primary_background,
+  ];
+  return colorsToCheck.some(c => c && !DEFAULT_THEME_COLORS.has(c));
+};
+
 export const buildThemePayload = (themeBlock: ThemeEditorData) => {
   const { colors, typography } = themeBlock;
   const accentsArray = [colors.accent_1, colors.accent_2].filter(Boolean);
-  const includePalette = themeBlock.hasExplicitColors === true;
+  // Include palette if flag is set OR if we have valid non-default colors
+  const includePalette = themeBlock.hasExplicitColors === true || hasValidColors(colors);
 
   return {
     ...(includePalette ? {
@@ -80,25 +102,30 @@ export const buildThemePayload = (themeBlock: ThemeEditorData) => {
   };
 };
 
-export const buildStylePreferencesFromTheme = (themeBlock: ThemeEditorData) => ({
-  ...(themeBlock.hasExplicitColors ? {
-    colors: {
-      type: 'custom' as const,
-      background: themeBlock.colors.primary_background,
-      text: themeBlock.colors.primary_text,
-      accent1: themeBlock.colors.accent_1,
-      accent2: themeBlock.colors.accent_2,
-    },
-  } : {}),
-  font: themeBlock.typography.headingFont,
-  bodyFont: themeBlock.typography.bodyFont,
-  logoUrl: themeBlock.branding?.logoUrl,
-  brandName: themeBlock.branding?.brandName,
-  brandDomain: themeBlock.branding?.brandDomain,
-  brandDomainCandidates: themeBlock.branding?.brandDomainCandidates,
-  needsBrandDomainConfirmation: themeBlock.branding?.needsBrandDomainConfirmation,
-  vibeContext: themeBlock.vibeContext,
-});
+export const buildStylePreferencesFromTheme = (themeBlock: ThemeEditorData) => {
+  // Include colors if flag is set OR if we have valid non-default colors
+  const includeColors = themeBlock.hasExplicitColors === true || hasValidColors(themeBlock.colors);
+
+  return {
+    ...(includeColors ? {
+      colors: {
+        type: 'custom' as const,
+        background: themeBlock.colors.primary_background,
+        text: themeBlock.colors.primary_text,
+        accent1: themeBlock.colors.accent_1,
+        accent2: themeBlock.colors.accent_2,
+      },
+    } : {}),
+    font: themeBlock.typography.headingFont,
+    bodyFont: themeBlock.typography.bodyFont,
+    logoUrl: themeBlock.branding?.logoUrl,
+    brandName: themeBlock.branding?.brandName,
+    brandDomain: themeBlock.branding?.brandDomain,
+    brandDomainCandidates: themeBlock.branding?.brandDomainCandidates,
+    needsBrandDomainConfirmation: themeBlock.branding?.needsBrandDomainConfirmation,
+    vibeContext: themeBlock.vibeContext,
+  };
+};
 
 export const resolveThemeLogoUrl = (theme: any) => {
   return (

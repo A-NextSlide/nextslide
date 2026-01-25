@@ -32,17 +32,22 @@ from agents.generation.image_prompt_builder import ImageGenerationPromptBuilder
 from agents.persistence.deck_persistence import DeckPersistence
 from utils.chroma import chroma_key
 from setup_logging_optimized import get_logger
+from services.image import (
+    is_company_logo_query as unified_is_company_logo_query,
+    fetch_logo as unified_fetch_logo,
+    is_generic_query as unified_is_generic_query,
+    is_blocked_domain as unified_is_blocked_domain,
+    is_placeholder_src,
+    is_logodev_available,
+    GENERIC_IMAGE_TERMS,
+    BLOCKED_DOMAINS,
+)
 
 
 logger = get_logger(__name__)
 
-# Check if logo.dev is available
-_LOGODEV_AVAILABLE = False
-try:
-    from agents.tools.theme.logodev_service import LogoDevService
-    _LOGODEV_AVAILABLE = True
-except ImportError:
-    pass
+# Use unified service for logo.dev availability
+_LOGODEV_AVAILABLE = is_logodev_available()
 
 
 class AIImageOrchestrator:
@@ -422,7 +427,7 @@ class AIImageOrchestrator:
         query = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', query)
         return query.strip().lower()
 
-    def _extract_placeholder_images_from_html(self, html: str) -> List[Dict[str, str]]:
+    def _extract_placeholder_images_from_html(self, html: str, slide_title: str = '') -> List[Dict[str, str]]:
         """Extract placeholder images from CustomComponent HTML/JS and generate search queries."""
         placeholders = []
 
@@ -464,6 +469,11 @@ class AIImageOrchestrator:
             alt_match = re.search(r'alt=["\']([^"\']*)["\']', img_tag, re.IGNORECASE)
             alt = alt_match.group(1) if alt_match else ''
 
+            # Skip template variables in alt text - we can't search for these
+            if alt and ('${' in alt or alt.startswith('{') or 'props.' in alt):
+                logger.info("[AIImageOrchestrator] Skipping template variable alt text: '%s'", alt[:50])
+                continue
+
             # Try to match to a prop name from src
             search_query = ''
             matched_prop = ''
@@ -492,9 +502,13 @@ class AIImageOrchestrator:
 
             # Fallback to alt text if we still don't have a search query
             if not search_query and alt:
-                search_query = alt.strip()
-                if search_query:
+                alt_stripped = alt.strip()
+                # Skip generic alt texts that won't produce useful search results
+                if alt_stripped and not self._is_generic_query(alt_stripped):
+                    search_query = alt_stripped
                     logger.info("[AIImageOrchestrator] Using alt text as search query: '%s'", search_query)
+                elif alt_stripped:
+                    logger.info("[AIImageOrchestrator] Skipping generic alt text: '%s'", alt_stripped)
 
             # If still no search query, try to use any unused prop
             if not search_query and prop_names_found:
@@ -506,6 +520,16 @@ class AIImageOrchestrator:
                         break
 
             if search_query:
+                # Check if the query is too generic
+                if self._is_generic_query(search_query):
+                    # Try to use slide title as context
+                    if slide_title and not self._is_generic_query(slide_title):
+                        search_query = f"{slide_title} illustration"
+                        logger.info("[AIImageOrchestrator] Enhanced generic query with slide title: '%s'", search_query)
+                    else:
+                        logger.info("[AIImageOrchestrator] Skipping generic search query: '%s'", search_query)
+                        continue
+
                 placeholders.append({
                     'alt': alt or search_query,
                     'search_query': search_query,
@@ -520,29 +544,14 @@ class AIImageOrchestrator:
         logger.info("[AIImageOrchestrator] Total placeholders found: %d", len(placeholders))
         return placeholders
 
-    # Domains that are known to block hotlinking or have CORS issues
-    BLOCKED_IMAGE_DOMAINS = {
-        'instagram.com', 'lookaside.instagram.com', 'cdninstagram.com',
-        'facebook.com', 'fbcdn.net',
-        'twitter.com', 'twimg.com', 'x.com',
-        'pinterest.com', 'pinimg.com',
-        'tiktok.com',
-        'linkedin.com',
-        'reddit.com', 'redd.it',
-    }
+    # BLOCKED_IMAGE_DOMAINS is now imported from services.image as BLOCKED_DOMAINS
 
     def _is_blocked_domain(self, url: str) -> bool:
-        """Check if URL is from a domain that blocks hotlinking."""
-        try:
-            from urllib.parse import urlparse
-            parsed = urlparse(url)
-            domain = parsed.netloc.lower()
-            for blocked in self.BLOCKED_IMAGE_DOMAINS:
-                if blocked in domain:
-                    return True
-            return False
-        except Exception:
-            return False
+        """Check if URL is from a domain that blocks hotlinking.
+
+        Uses unified service implementation.
+        """
+        return unified_is_blocked_domain(url)
 
     async def _search_and_apply_custom_component_images(
         self,
@@ -581,8 +590,11 @@ class AIImageOrchestrator:
             if not render_html:
                 continue
 
+            # Get slide title for context
+            slide_title = slide_data.get('title', '') or ''
+
             # Extract placeholder images from the HTML
-            placeholders = self._extract_placeholder_images_from_html(render_html)
+            placeholders = self._extract_placeholder_images_from_html(render_html, slide_title)
             if not placeholders:
                 continue
 
@@ -669,58 +681,36 @@ class AIImageOrchestrator:
         return updated
 
     def _is_company_logo_query(self, query: str) -> Tuple[bool, str]:
-        """Detect if a query is for a company logo and extract the company name."""
-        q = query.lower().strip()
+        """Detect if a query is for a company logo and extract the company name.
 
-        # Skip generic logo queries (these return random vistaprint images)
-        generic_terms = {'logo', 'company logo', 'brand logo', 'business logo', 'corporate logo'}
-        if q in generic_terms:
-            return False, ""
-
-        # Patterns like "Apple logo", "Google Logo"
-        logo_suffix_match = re.match(r'^(.+?)\s+logo$', q, re.IGNORECASE)
-        if logo_suffix_match:
-            company = logo_suffix_match.group(1).strip()
-            if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
-                return True, company
-
-        # Patterns like "logo of Stripe", "logo for Netflix"
-        logo_prefix_match = re.match(r'^logo\s+(?:of|for)\s+(.+)$', q, re.IGNORECASE)
-        if logo_prefix_match:
-            company = logo_prefix_match.group(1).strip()
-            if company and company not in ('company', 'brand', 'business', 'corporate', 'the'):
-                return True, company
-
-        return False, ""
+        Uses unified service implementation.
+        """
+        return unified_is_company_logo_query(query)
 
     async def _fetch_logo_from_logodev(self, company_name: str) -> Optional[str]:
-        """Fetch company logo from logo.dev and upload to our storage."""
-        if not _LOGODEV_AVAILABLE:
-            return None
+        """Fetch company logo from logo.dev and upload to our storage.
 
-        try:
-            async with LogoDevService() as logo_service:
-                result = await logo_service.get_logo_with_fallback(company_name)
-                if result.get("available") and result.get("logo_url"):
-                    logo_url = result["logo_url"]
-                    logger.info("[AIImageOrchestrator] Found logo via logo.dev for '%s'", company_name)
+        Uses unified service implementation.
+        """
+        return await unified_fetch_logo(company_name, None)
 
-                    # Upload to our storage for CORS safety
-                    upload_result = await self.storage.upload_image_from_url(
-                        logo_url,
-                        metadata={"alt": f"{company_name} logo", "source": "logodev"}
-                    )
-                    if upload_result and upload_result.get("url"):
-                        return upload_result["url"]
-                    return logo_url  # Fallback to direct URL
-        except Exception as e:
-            logger.warning("[AIImageOrchestrator] Logo.dev lookup failed for '%s': %s", company_name, e)
+    # GENERIC_IMAGE_TERMS is now imported from services.image
 
-        return None
+    def _is_generic_query(self, query: str) -> bool:
+        """Check if a query is too generic to produce good image search results.
+
+        Uses unified service implementation.
+        """
+        return unified_is_generic_query(query)
 
     async def _search_single_image(self, query: str) -> Optional[Dict[str, Any]]:
         """Search for a single image using SerpAPI (Google Images) or logo.dev for company logos."""
         try:
+            # Skip generic queries that will return useless results (like "Placeholder")
+            if self._is_generic_query(query):
+                logger.warning("[AIImageOrchestrator] Skipping generic query: '%s'", query)
+                return None
+
             # Check if this is a company logo query - route to logo.dev
             is_logo, company_name = self._is_company_logo_query(query)
             if is_logo and company_name:
