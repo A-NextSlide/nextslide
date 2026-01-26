@@ -113,6 +113,29 @@ export const useCustomComponentImageAutoApply = ({
     const trimmedHtml = html.trim().toLowerCase();
     if (!trimmedHtml.startsWith('<!doctype html') && !trimmedHtml.startsWith('<html')) return;
 
+    // Skip auto-apply if HTML already has real images (backend already injected them)
+    // Check for common image hosting domains that indicate real images
+    // Also check for any valid HTTPS URLs in src attributes
+    const hasRealImages = /src=["']https?:\/\/[^"']*(?:supabase|nextslide|unsplash|pexels|cloudinary|images\.|storage\.googleapis)/i.test(html) || /src=["']data:/i.test(html);
+
+    // Check if JavaScript arrays/objects contain real image URLs
+    // This indicates the backend has already injected images into the data, so we shouldn't try to "fix" template variables
+    // Pattern: image: "https://..." or src: "https://..." or similar in JS objects
+    const jsArrayHasRealImages = /(?:image|src|img|photo|thumbnail|picture)\s*:\s*["']https?:\/\/[^"']*(?:supabase|nextslide|storage\.googleapis)/i.test(html);
+
+    if (jsArrayHasRealImages) {
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Skipping auto-apply - JS arrays already have real image URLs from backend');
+      return;
+    }
+
+    // Check for placeholders: literal "placeholder", template syntax ${}, or non-URL src values
+    const hasPlaceholders = /src=["']?(?:placeholder|\$\{)/i.test(html) || /src=["'](?!https?:|data:|blob:|\/\/)[^"']*["']/i.test(html);
+
+    if (hasRealImages && !hasPlaceholders) {
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Skipping auto-apply - HTML already has real images');
+      return;
+    }
+
     const imagePropSearchQueries = extractImagePropsFromJS(html);
     DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Extracted image props:', Array.from(imagePropSearchQueries.entries()));
 
@@ -130,6 +153,17 @@ export const useCustomComponentImageAutoApply = ({
 
       const isPlaceholder = !src || src === 'placeholder' || src.includes('placeholder') ||
         (!src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:') && !src.startsWith('//'));
+
+      // Skip template variable images like src="${item.image}" - these are rendered dynamically by JS
+      // and should not be modified. The backend has already injected real URLs into the data arrays.
+      const isTemplateVariable = src.includes('${') && src.includes('.');
+      const hasTemplateAlt = alt.includes('${');
+
+      if (isTemplateVariable || hasTemplateAlt) {
+        DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Skipping template variable image:', { src: src.substring(0, 40), alt: alt.substring(0, 40) });
+        imgIndex++;
+        continue;
+      }
 
       if (isPlaceholder) {
         const placeholderKey = `${component.id}-${alt || imgIndex}`;
@@ -212,7 +246,8 @@ export const useCustomComponentImageAutoApply = ({
 
     const autoApplyImages = async () => {
       const propsToUpdate: Record<string, string> = {};
-      let currentHtml = component.props.render as string;
+      // Use renderCode (the current rendered HTML) instead of component.props.render (which may be stale)
+      let currentHtml = renderCode;
       let anyReplaced = false;
 
       for (const { alt, searchQuery, propName } of placeholders) {

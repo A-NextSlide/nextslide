@@ -26,7 +26,7 @@ from agents.config import (
 from agents.generation.exceptions import AIRateLimitError
 from utils.logo_extractor import get_logo_with_inversion
 from agents.generation.custom_component_multimodal import build_multimodal_user_content
-from agents.generation.custom_component_image_pipeline import resolve_images, upload_external_urls_to_bucket
+from agents.generation.custom_component_image_pipeline import resolve_images, upload_external_urls_to_bucket, resolve_remaining_placeholders
 
 # Provider name for rate limit tracking
 GEMINI_PROVIDER = "gemini"
@@ -285,6 +285,9 @@ class CustomComponentGenerator:
             )
 
             html_content = await upload_external_urls_to_bucket(html_content)
+
+            # Final safety net: resolve any remaining src="placeholder" using alt text
+            html_content = await resolve_remaining_placeholders(html_content)
 
             # Verify the generated code for common issues
             try:

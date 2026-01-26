@@ -66,7 +66,8 @@ export const useCustomComponentImageProxy = ({
     DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] External URLs to proxy:', externalUrls.length);
 
     const proxyExternalUrls = async () => {
-      let currentHtml = component.props.render as string;
+      // Use renderCode (the current rendered HTML) instead of component.props.render (which may be stale)
+      let currentHtml = renderCode;
       let updated = false;
 
       for (const { originalUrl, decodedUrl } of externalUrls) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Sparkles, Rocket, Briefcase, Microscope, Palette, HeartHandshake, ArrowRight, MousePointer2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles, Rocket, Briefcase, Microscope, Coffee, Timer, FlaskConical, BookOpen, Handshake, Globe, MousePointer2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ShowcaseDeck } from '@/services/showcaseService';
 import MiniSlide from '@/components/deck/MiniSlide';
@@ -15,41 +15,65 @@ const PROMPTS = [
         id: 'startup',
         badge: 'Startup',
         icon: Rocket,
-        text: "For that seed round pitch I need to nail yesterday",
+        text: "Pitch deck for VCs who've already seen 500 this month",
         theme: 'light' as const,
         deckIndex: 0
     },
     {
-        id: 'quarterly',
-        badge: 'Business',
-        icon: Briefcase,
-        text: "A Q3 review that doesn't put the board to sleep",
+        id: 'education-algebra',
+        badge: 'Education',
+        icon: Microscope,
+        text: "Algebra for kids who ask 'when will I use this'",
         theme: 'light' as const,
         deckIndex: 1
     },
     {
-        id: 'research',
-        badge: 'Education',
-        icon: Microscope,
-        text: "Explaining quantum entanglement to high schoolers",
+        id: 'learn-coffee',
+        badge: 'Learn',
+        icon: Coffee,
+        text: "How coffee conquered the world",
         theme: 'light' as const,
         deckIndex: 2
     },
     {
-        id: 'creative',
-        badge: 'Creative',
-        icon: Palette,
-        text: "A design system proposal that looks like a design system",
-        theme: 'orange' as const,
+        id: 'pitch',
+        badge: 'Pitch',
+        icon: Timer,
+        text: "Demo day pitch that actually fits in 3 minutes",
+        theme: 'light' as const,
         deckIndex: 3
     },
     {
-        id: 'onboarding',
-        badge: 'HR',
-        icon: HeartHandshake,
-        text: "New employee onboarding but actually welcoming",
+        id: 'education-biology',
+        badge: 'Education',
+        icon: FlaskConical,
+        text: "Cellular Respiration: From Glucose to ATP",
         theme: 'light' as const,
         deckIndex: 4
+    },
+    {
+        id: 'learn-history',
+        badge: 'Learn',
+        icon: BookOpen,
+        text: "The French Revolution: From Monarchy to Republic",
+        theme: 'light' as const,
+        deckIndex: 5
+    },
+    {
+        id: 'sales',
+        badge: 'Sales',
+        icon: Handshake,
+        text: "Client proposal that closes itself",
+        theme: 'orange' as const,
+        deckIndex: 6
+    },
+    {
+        id: 'learn-internet',
+        badge: 'Learn',
+        icon: Globe,
+        text: "Interactive Presentation About 2000s Internet Culture",
+        theme: 'light' as const,
+        deckIndex: 7
     }
 ];
 

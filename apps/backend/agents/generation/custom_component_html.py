@@ -58,10 +58,30 @@ def _object_is_image_like(obj_text: str) -> bool:
 
 
 def _extract_js_object_label(obj_text: str) -> str:
-    for field in ("alt", "title", "name", "label", "heading"):
+    """Extract a label/alt text from a JS object.
+
+    Looks for common label properties in priority order:
+    1. Alt-related properties (thumbAlt, imgAlt, imageAlt, photoAlt, alt)
+    2. Standard label properties (title, name, label, heading, description)
+    """
+    # First priority: explicit alt-related properties (these are search queries)
+    alt_fields = ("thumbAlt", "imgAlt", "imageAlt", "photoAlt", "pictureAlt", "bgAlt", "backgroundAlt", "alt")
+    for field in alt_fields:
         match = re.search(rf'\b{field}\s*:\s*([\'"])(.*?)\1', obj_text, re.IGNORECASE | re.DOTALL)
         if match:
-            return match.group(2).strip()
+            value = match.group(2).strip()
+            if value and len(value) > 3:
+                return value
+
+    # Second priority: standard label properties
+    label_fields = ("title", "name", "label", "heading", "description")
+    for field in label_fields:
+        match = re.search(rf'\b{field}\s*:\s*([\'"])(.*?)\1', obj_text, re.IGNORECASE | re.DOTALL)
+        if match:
+            value = match.group(2).strip()
+            if value and len(value) > 3:
+                return value
+
     return ""
 
 
@@ -299,7 +319,8 @@ class CustomComponentHtmlProcessor:
             return None
 
         def _replace_src_in_object(obj_text: str, url: str) -> Tuple[str, bool]:
-            src_pattern = r'(\bsrc\s*:\s*)(?:(["\'])(?P<src>.*?)\2|(?P<src_unquoted>[^,\n}]+))'
+            # Match src, image, img, photo, picture, thumbnail, background properties
+            src_pattern = r'(\b(?:src|image|img|photo|picture|thumbnail|background)\s*:\s*)(?:(["\'])(?P<src>.*?)\2|(?P<src_unquoted>[^,\n}]+))'
 
             def replace_src(match):
                 prefix = match.group(1)
@@ -320,23 +341,27 @@ class CustomComponentHtmlProcessor:
             parts = []
             cursor = 0
 
+            # Match src, image, img, photo, picture, thumbnail, background properties
+            image_prop_pattern = r'\b(?:src|image|img|photo|picture|thumbnail|background)\s*:'
             for start, end, obj_text in objects:
                 new_obj = obj_text
-                if _object_is_image_like(obj_text) and re.search(r'\bsrc\s*:', obj_text, re.IGNORECASE):
+                if _object_is_image_like(obj_text) and re.search(image_prop_pattern, obj_text, re.IGNORECASE):
                     label_text = _extract_js_object_label(obj_text)
-                    src_match = re.search(r'\bsrc\s*:\s*(?:(["\'])(?P<src>.*?)\1|(?P<src_unquoted>[^,\n}]+))', obj_text, re.IGNORECASE | re.DOTALL)
+                    src_match = re.search(r'\b(?:src|image|img|photo|picture|thumbnail|background)\s*:\s*(?:(["\'])(?P<src>.*?)\1|(?P<src_unquoted>[^,\n}]+))', obj_text, re.IGNORECASE | re.DOTALL)
                     if src_match and label_text:
                         found_images = True
                         src_value = (src_match.group('src') or src_match.group('src_unquoted') or "").strip()
-                        target_url = _match_alt_url(label_text)
-                        if not target_url and image_urls and _is_placeholder_src(src_value):
-                            target_url = image_urls[image_index % len(image_urls)]
-                            image_index += 1
-                        if target_url:
-                            new_obj, replaced = _replace_src_in_object(obj_text, target_url)
-                            if replaced:
-                                images_injected += 1
-                                updated = True
+                        # Only replace if the current src is a placeholder (not a valid URL)
+                        if _is_placeholder_src(src_value):
+                            target_url = _match_alt_url(label_text)
+                            if not target_url and image_urls:
+                                target_url = image_urls[image_index % len(image_urls)]
+                                image_index += 1
+                            if target_url:
+                                new_obj, replaced = _replace_src_in_object(obj_text, target_url)
+                                if replaced:
+                                    images_injected += 1
+                                    updated = True
                 parts.append(script_content[cursor:start])
                 parts.append(new_obj)
                 cursor = end

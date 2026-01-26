@@ -170,11 +170,84 @@ def _object_is_image_like(obj_text: str) -> bool:
 
 
 def _extract_js_object_label(obj_text: str) -> str:
-    for field in ("alt", "title", "name", "label", "heading"):
+    """Extract a label/alt text from a JS object.
+
+    Looks for common label properties in priority order:
+    1. Alt-related properties (thumbAlt, imgAlt, imageAlt, photoAlt, alt)
+    2. Standard label properties (title, name, label, heading, description)
+    """
+    # First priority: explicit alt-related properties (these are search queries)
+    alt_fields = ("thumbAlt", "imgAlt", "imageAlt", "photoAlt", "pictureAlt", "bgAlt", "backgroundAlt", "alt")
+    for field in alt_fields:
         match = re.search(rf'\b{field}\s*:\s*([\'"])(.*?)\1', obj_text, re.IGNORECASE | re.DOTALL)
         if match:
-            return match.group(2).strip()
+            value = match.group(2).strip()
+            if value and len(value) > 3:
+                return value
+
+    # Second priority: standard label properties
+    label_fields = ("title", "name", "label", "heading", "description")
+    for field in label_fields:
+        match = re.search(rf'\b{field}\s*:\s*([\'"])(.*?)\1', obj_text, re.IGNORECASE | re.DOTALL)
+        if match:
+            value = match.group(2).strip()
+            if value and len(value) > 3:
+                return value
+
     return ""
+
+
+def _extract_js_object_alt_property(obj_text: str, prop_name: str) -> str:
+    """Extract a specific alt/image-related property from a JS object."""
+    match = re.search(rf'\b{re.escape(prop_name)}\s*:\s*([\'"])(.*?)\1', obj_text, re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group(2).strip()
+    return ""
+
+
+def _extract_template_variable_alt_queries(html: str) -> List[str]:
+    """
+    Extract actual alt text values from JS arrays when template variables are used.
+
+    When HTML contains: <img src="placeholder" alt="${item.thumbAlt}">
+    This function finds the JS objects with 'thumbAlt' property and extracts their values.
+    """
+    if not html:
+        return []
+
+    queries: List[str] = []
+    seen = set()
+
+    # Find template variable alt attributes: alt="${something.propName}" or alt="${propName}"
+    template_alts = re.findall(r'alt=["\']?\$\{(?:\w+\.)?(\w+)\}["\']?', html, re.IGNORECASE)
+    if not template_alts:
+        return []
+
+    # Common alt property names the model might use
+    alt_prop_names = set(template_alts)
+    # Also add common variations
+    for prop in list(alt_prop_names):
+        lower_prop = prop.lower()
+        if 'alt' in lower_prop or 'img' in lower_prop or 'image' in lower_prop:
+            alt_prop_names.add(prop)
+
+    logger.debug("[IMAGE_EXTRACT] Looking for template alt properties: %s", alt_prop_names)
+
+    # Extract script content
+    for script_content in re.findall(r'<script[^>]*>([\s\S]*?)</script>', html, re.IGNORECASE):
+        # Parse all JS objects in the script
+        for _, _, obj_text in _iter_js_objects(script_content):
+            # Look for any of the alt property names in this object
+            for prop_name in alt_prop_names:
+                value = _extract_js_object_alt_property(obj_text, prop_name)
+                if value:
+                    cleaned = _simple_clean_query(value)
+                    if cleaned and cleaned.lower() not in seen:
+                        seen.add(cleaned.lower())
+                        queries.append(cleaned)
+                        logger.info("[IMAGE_EXTRACT] Found template alt value from JS object: '%s' = '%s'", prop_name, cleaned[:50])
+
+    return queries
 
 
 def _extract_js_object_image_queries(html: str) -> List[str]:
@@ -182,11 +255,19 @@ def _extract_js_object_image_queries(html: str) -> List[str]:
         return []
     queries: List[str] = []
     seen = set()
+    # Match src, image, img, photo, picture, thumbnail, background properties
+    image_prop_pattern = r'\b(?:src|image|img|photo|picture|thumbnail|background)\s*:'
+    # Also match alt-related properties that indicate image search queries
+    alt_prop_pattern = r'\b(?:thumbAlt|imgAlt|imageAlt|photoAlt|pictureAlt|bgAlt|backgroundAlt)\s*:'
+
     for script_content in re.findall(r'<script[^>]*>([\s\S]*?)</script>', html, re.IGNORECASE):
         for _, _, obj_text in _iter_js_objects(script_content):
             if not _object_is_image_like(obj_text):
                 continue
-            if not re.search(r'\bsrc\s*:', obj_text, re.IGNORECASE):
+            # Check if object has either image properties or alt-related properties
+            has_image_prop = bool(re.search(image_prop_pattern, obj_text, re.IGNORECASE))
+            has_alt_prop = bool(re.search(alt_prop_pattern, obj_text, re.IGNORECASE))
+            if not has_image_prop and not has_alt_prop:
                 continue
             label = _extract_js_object_label(obj_text)
             cleaned = _simple_clean_query(label)
@@ -204,6 +285,16 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
     """Extract image prop names and their search queries from generated HTML."""
     results: List[Tuple[str, str]] = []
     seen_props = set()
+
+    # First, extract queries from template variable alt attributes (e.g., alt="${item.thumbAlt}")
+    # This finds the actual values in the JS arrays
+    template_alt_queries = _extract_template_variable_alt_queries(html)
+    for query in template_alt_queries:
+        key = f"alt_{query.replace(' ', '_').replace('-', '_')[:30]}"
+        if query.lower() not in seen_props:
+            results.append((key, query))
+            seen_props.add(query.lower())
+            logger.info("[IMAGE_EXTRACT] Added template variable alt query: '%s'", query[:50])
 
     js_image_queries = _extract_js_object_image_queries(html)
     for query in js_image_queries:

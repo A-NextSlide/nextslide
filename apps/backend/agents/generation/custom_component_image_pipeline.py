@@ -282,3 +282,132 @@ async def upload_external_urls_to_bucket(html_content: str) -> str:
                 logger.warning("[UPLOAD_EXTERNAL] No replacement found for: %s", decoded_url[:60])
 
     return html_content
+
+
+def _find_placeholder_images(html_content: str) -> List[Tuple[str, str]]:
+    """Find all img tags with src="placeholder" and return (full_img_tag, alt_text) tuples.
+
+    Skips images with template variable alt text (e.g., alt="${item.thumbAlt}") since those
+    can't be used as search queries - they should have been resolved earlier in the pipeline.
+    """
+    placeholders = []
+    # Match img tags with src="placeholder" (case insensitive, with or without quotes)
+    pattern = r'<img\s*[^>]*src\s*=\s*["\']?placeholder["\']?[^>]*>'
+    for match in re.finditer(pattern, html_content, re.IGNORECASE):
+        img_tag = match.group(0)
+        # Extract alt text from the img tag
+        alt_match = re.search(r'alt\s*=\s*["\']([^"\']+)["\']', img_tag, re.IGNORECASE)
+        alt_text = alt_match.group(1) if alt_match else None
+        if alt_text and len(alt_text) > 5:
+            # Skip template variable alt text - these can't be used as search queries
+            # They should have been resolved by _extract_template_variable_alt_queries earlier
+            if '${' in alt_text:
+                logger.debug("[PLACEHOLDER_CLEANUP] Skipping template variable alt: '%s'", alt_text[:50])
+                continue
+            placeholders.append((img_tag, alt_text))
+    return placeholders
+
+
+def _find_js_placeholder_images(html_content: str) -> List[Tuple[str, str, str]]:
+    """Find JS objects with image/src: 'placeholder' and return (obj_text, prop_name, label) tuples."""
+    placeholders = []
+
+    # Match src, image, img, photo, picture, thumbnail, background properties with placeholder value
+    placeholder_pattern = r'\b(src|image|img|photo|picture|thumbnail|background)\s*:\s*["\']placeholder["\']'
+
+    for script_match in re.finditer(r'<script[^>]*>([\s\S]*?)</script>', html_content, re.IGNORECASE):
+        script_content = script_match.group(1)
+
+        # Find objects with placeholder image properties
+        for obj_match in re.finditer(r'\{[^{}]*' + placeholder_pattern + r'[^{}]*\}', script_content, re.IGNORECASE):
+            obj_text = obj_match.group(0)
+            prop_name = obj_match.group(1)
+
+            # Try to extract a label from the object
+            # First priority: alt-related properties (these are meant to be image search queries)
+            # Second priority: standard label properties
+            label = ""
+            alt_fields = ("thumbAlt", "imgAlt", "imageAlt", "photoAlt", "pictureAlt", "bgAlt", "backgroundAlt", "alt")
+            label_fields = ("title", "name", "label", "heading", "description")
+
+            for field in alt_fields:
+                label_match = re.search(rf'\b{field}\s*:\s*(["\'])(.*?)\1', obj_text, re.IGNORECASE)
+                if label_match:
+                    label = label_match.group(2).strip()
+                    if label and len(label) > 3:
+                        break
+
+            if not label:
+                for field in label_fields:
+                    label_match = re.search(rf'\b{field}\s*:\s*(["\'])(.*?)\1', obj_text, re.IGNORECASE)
+                    if label_match:
+                        label = label_match.group(2).strip()
+                        if label and len(label) > 3:
+                            break
+
+            if label and len(label) > 3:
+                placeholders.append((obj_text, prop_name, label))
+                logger.info("[JS_PLACEHOLDER] Found JS placeholder: %s: 'placeholder' with label: '%s'", prop_name, label[:50])
+
+    return placeholders
+
+
+async def resolve_remaining_placeholders(html_content: str) -> str:
+    """Find and resolve any remaining src="placeholder" images using their alt text.
+
+    This is the final safety net - if any placeholders survived the earlier pipeline,
+    search for images using the alt text and replace them.
+
+    Also handles JavaScript object placeholders like: { image: 'placeholder' }
+    """
+    # First handle HTML img tag placeholders
+    placeholders = _find_placeholder_images(html_content)
+    js_placeholders = _find_js_placeholder_images(html_content)
+
+    if not placeholders and not js_placeholders:
+        logger.info("[PLACEHOLDER_CLEANUP] No remaining placeholder images found")
+        return html_content
+
+    logger.info("[PLACEHOLDER_CLEANUP] Found %d HTML placeholders and %d JS placeholders to resolve",
+                len(placeholders), len(js_placeholders))
+
+    async with ImageStorageService() as storage:
+        # Handle HTML img tag placeholders
+        for img_tag, alt_text in placeholders:
+            logger.info("[PLACEHOLDER_CLEANUP] Resolving HTML placeholder with alt: '%s'", alt_text[:50])
+
+            # Search for an image using the alt text
+            bucket_url = await _search_fallback_image(alt_text, storage)
+
+            if bucket_url and any(domain in bucket_url for domain in BUCKET_DOMAINS):
+                # Create new img tag with the bucket URL
+                new_img_tag = re.sub(
+                    r'src\s*=\s*["\']?placeholder["\']?',
+                    f'src="{bucket_url}"',
+                    img_tag,
+                    flags=re.IGNORECASE
+                )
+                html_content = html_content.replace(img_tag, new_img_tag)
+                logger.info("[PLACEHOLDER_CLEANUP] SUCCESS: Replaced HTML placeholder -> %s", bucket_url[:80])
+            else:
+                logger.warning("[PLACEHOLDER_CLEANUP] Could not find image for HTML: '%s'", alt_text[:50])
+
+        # Handle JavaScript object placeholders
+        for obj_text, prop_name, label in js_placeholders:
+            logger.info("[PLACEHOLDER_CLEANUP] Resolving JS placeholder %s with label: '%s'", prop_name, label[:50])
+
+            # Search for an image using the label
+            bucket_url = await _search_fallback_image(label, storage)
+
+            if bucket_url and any(domain in bucket_url for domain in BUCKET_DOMAINS):
+                # Replace the placeholder value in the JS object
+                # Match: image: "placeholder" or image: 'placeholder'
+                pattern = rf'(\b{re.escape(prop_name)}\s*:\s*)(["\'])placeholder\2'
+                new_obj_text = re.sub(pattern, rf'\1\2{bucket_url}\2', obj_text, flags=re.IGNORECASE)
+                if new_obj_text != obj_text:
+                    html_content = html_content.replace(obj_text, new_obj_text)
+                    logger.info("[PLACEHOLDER_CLEANUP] SUCCESS: Replaced JS %s placeholder -> %s", prop_name, bucket_url[:80])
+            else:
+                logger.warning("[PLACEHOLDER_CLEANUP] Could not find image for JS %s: '%s'", prop_name, label[:50])
+
+    return html_content

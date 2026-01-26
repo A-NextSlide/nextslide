@@ -611,6 +611,11 @@ def verify_slide_code(html: str, user_request: str = "") -> VerificationResult:
     issues.extend(button_issues)
     warnings.extend(button_warnings)
 
+    # Check for image issues (critical for preventing broken images)
+    image_issues, image_warnings = _check_image_issues(html)
+    issues.extend(image_issues)
+    warnings.extend(image_warnings)
+
     is_valid = len(issues) == 0
 
     return VerificationResult(
@@ -620,6 +625,107 @@ def verify_slide_code(html: str, user_request: str = "") -> VerificationResult:
         interactive_elements=interactive_elements,
         suggestions=suggestions
     )
+
+
+def _check_image_issues(html: str) -> Tuple[List[str], List[str]]:
+    """
+    Check for image-related issues that will cause broken images.
+
+    Common problems:
+    - JavaScript arrays with src/image set to literal "placeholder" string
+    - Images without proper sizing constraints
+    - Missing alt text for image search
+    - Images that might overflow bounds
+    """
+    issues = []
+    warnings = []
+
+    # Extract JavaScript from script tags
+    script_pattern = r'<script[^>]*>(.*?)</script>'
+    scripts = re.findall(script_pattern, html, re.DOTALL | re.IGNORECASE)
+
+    for script in scripts:
+        if not script.strip():
+            continue
+
+        # Check for JS objects with src/image set to "placeholder" - this is the #1 cause of broken images
+        # Pattern matches: src: "placeholder", image: 'placeholder', imgSrc: "placeholder", etc.
+        placeholder_in_js = re.findall(
+            r'(\b(?:src|image|img|imgSrc|photo|picture|thumbnail|background)\s*:\s*)["\']placeholder["\']',
+            script,
+            re.IGNORECASE
+        )
+        if placeholder_in_js:
+            issues.append(
+                f"Found {len(placeholder_in_js)} JavaScript property(ies) with literal 'placeholder' value. "
+                "This BREAKS image loading. For JS data arrays, either:\n"
+                "  1. Use the alt text as a property and render as <img src=\"placeholder\" alt=\"${item.alt}\">\n"
+                "  2. Omit the image property entirely\n"
+                "  3. Use actual image URLs from available images"
+            )
+
+        # Check for JS objects with image properties containing just descriptive text (not URLs)
+        # This catches: { image: "rocket launch" } instead of proper handling
+        non_url_images = re.findall(
+            r'\b(?:src|image|img|imgSrc)\s*:\s*["\'](?!https?://|data:|placeholder)([^"\']{3,50})["\']',
+            script,
+            re.IGNORECASE
+        )
+        # Filter out variable references like ${varName}
+        non_url_images = [img for img in non_url_images if not img.startswith('$')]
+        if non_url_images:
+            warnings.append(
+                f"Found {len(non_url_images)} image properties with non-URL values in JavaScript. "
+                "If these are search queries, they should be in 'alt' property instead, "
+                "then render as: <img src=\"placeholder\" alt=\"${item.alt}\">"
+            )
+
+    # Check for img tags with empty or missing src
+    empty_src_imgs = re.findall(r'<img[^>]*src\s*=\s*["\']["\'][^>]*>', html, re.IGNORECASE)
+    if empty_src_imgs:
+        issues.append(f"Found {len(empty_src_imgs)} <img> tag(s) with empty src attribute")
+
+    # Check for img tags without alt text (needed for image search)
+    imgs_without_alt = []
+    img_tags = re.findall(r'<img[^>]*>', html, re.IGNORECASE)
+    for img in img_tags:
+        if 'alt=' not in img.lower():
+            imgs_without_alt.append(img[:80])
+    if imgs_without_alt:
+        warnings.append(
+            f"Found {len(imgs_without_alt)} <img> tag(s) without alt attribute. "
+            "Alt text is used for image search - add descriptive alt text."
+        )
+
+    # Check for images without sizing constraints (can overflow)
+    imgs_without_sizing = []
+    for img in img_tags:
+        has_sizing = any(prop in img.lower() for prop in [
+            'width:', 'height:', 'w-', 'h-', 'max-w', 'max-h',
+            'object-fit', 'object-cover', 'object-contain'
+        ])
+        if not has_sizing and 'style=' not in img.lower():
+            imgs_without_sizing.append(img[:60])
+
+    if imgs_without_sizing and len(imgs_without_sizing) > len(img_tags) // 2:
+        warnings.append(
+            f"{len(imgs_without_sizing)} images lack explicit sizing. "
+            "Add width/height constraints and object-fit:cover to prevent overflow."
+        )
+
+    # Check for common bad alt text patterns
+    bad_alts = re.findall(
+        r'alt\s*=\s*["\'](?:image|photo|picture|placeholder|img|icon|background|figure)["\']',
+        html,
+        re.IGNORECASE
+    )
+    if bad_alts:
+        warnings.append(
+            f"Found {len(bad_alts)} images with generic alt text like 'image' or 'photo'. "
+            "Alt text should be a specific search query like 'SpaceX Falcon 9 launch'."
+        )
+
+    return issues, warnings
 
 
 def create_verification_context(result: VerificationResult, user_request: str = "") -> str:

@@ -178,145 +178,53 @@ const slideSketchLayouts: SlideSketch[] = [
   }
 ];
 
+// Total duration for progress: 1 minute 35 seconds = 95 seconds
+const TOTAL_DURATION_MS = 95 * 1000;
+
 export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = (props) => {
   const {
-    progress = 0,
     totalSlides,
     message,
     slidesCompleted = 0,
     slidesInProgress = 0,
-    elapsedTime = 0
   } = props;
-  // Animated progress state - initialize with current progress
-  const [animatedProgress, setAnimatedProgress] = useState(progress);
-  const [currentSketchIndex, setCurrentSketchIndex] = useState(0);
-  const [localElapsed, setLocalElapsed] = useState(elapsedTime);
 
-  // Use refs to track animation state without causing re-renders
-  const targetProgressRef = useRef(progress);
-  const animatedProgressRef = useRef(progress);
-  const lastTimeRef = useRef(Date.now());
-  const animationIdRef = useRef<number | null>(null);
-  const isComponentVisibleRef = useRef(true);
+  const [animatedProgress, setAnimatedProgress] = useState(0);
+  const [currentSketchIndex, setCurrentSketchIndex] = useState(0);
+  const [localElapsed, setLocalElapsed] = useState(0);
   const startTimeRef = useRef(Date.now());
-  
-  // Update target when progress prop changes
-  useEffect(() => {
-    targetProgressRef.current = progress;
-    // If this is the first time setting progress, also update animated progress
-    if (animatedProgressRef.current === 0 && progress > 0) {
-      animatedProgressRef.current = progress;
-      setAnimatedProgress(progress);
-    }
-  }, [progress]);
-  
+  const isComponentVisibleRef = useRef(true);
+
   // Clean up on unmount
   useEffect(() => {
     isComponentVisibleRef.current = true;
-    
     return () => {
       isComponentVisibleRef.current = false;
-      if (animationIdRef.current) {
-        cancelAnimationFrame(animationIdRef.current);
-        animationIdRef.current = null;
-      }
     };
   }, []);
-  
-  // Smooth progress animation with continuous creeping
+
+  // Simple linear progress: 0 to 100% over 95 seconds
   useEffect(() => {
-    let frameCount = 0;
-    const updateInterval = 30; // Update state less frequently to reduce re-renders
-    
-    const animate = () => {
-      // Stop animation if component is unmounted or hidden
-      if (!isComponentVisibleRef.current) {
-        return;
-      }
-      
-      const now = Date.now();
-      const deltaTime = (now - lastTimeRef.current) / 1000; // Convert to seconds
-      lastTimeRef.current = now;
-      
-      const current = animatedProgressRef.current;
-      const target = targetProgressRef.current;
-      let newProgress = current;
-      
-      // If we've reached the target, creep slowly forward
-      if (current >= target) {
-        // Determine creep speed based on current progress
-        let creepSpeed = 0.5; // % per second
-        
-        if (current < 30) {
-          // Faster during theme generation (0-30%)
-          creepSpeed = 1.5;
-        } else if (current < 60) {
-          // Medium speed during slide creation
-          creepSpeed = 0.8;
-        } else {
-          // Slower as we approach completion
-          creepSpeed = 0.4;
-        }
-        
-        // Don't exceed 100% or go too far past target
-        const maxProgress = Math.min(target + 10, 99);
-        newProgress = Math.min(current + creepSpeed * deltaTime, maxProgress);
-      } else {
-        // Animate quickly to catch up to target
-        const catchUpSpeed = 15; // % per second
-        const diff = target - current;
-        const step = Math.min(diff, catchUpSpeed * deltaTime);
-        newProgress = current + step;
-      }
-      
-      // Update ref immediately
-      animatedProgressRef.current = newProgress;
-      
-      // Only update state periodically to reduce re-renders
-      frameCount++;
-      if (frameCount >= updateInterval) {
-        frameCount = 0;
-        setAnimatedProgress(newProgress);
-      }
-      
-      // Continue animation only if component is still visible
-      if (isComponentVisibleRef.current) {
-        animationIdRef.current = requestAnimationFrame(animate);
-      }
-    };
-    
-    // Start animation only if component is visible
-    if (isComponentVisibleRef.current) {
-      animate();
-    }
-    
-    return () => {
-      if (animationIdRef.current) {
-        cancelAnimationFrame(animationIdRef.current);
-        animationIdRef.current = null;
-      }
-    };
-  }, []); // Empty dependency array since we're using refs
+    const interval = setInterval(() => {
+      if (!isComponentVisibleRef.current) return;
+
+      const elapsed = Date.now() - startTimeRef.current;
+      const progress = Math.min((elapsed / TOTAL_DURATION_MS) * 100, 99);
+      setAnimatedProgress(progress);
+      setLocalElapsed(elapsed);
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Cycle through sketches while generating
   useEffect(() => {
-    const cycleTime = 4000; // Increased time to show each sketch
+    const cycleTime = 4000;
     const interval = setInterval(() => {
       if (isComponentVisibleRef.current) {
         setCurrentSketchIndex((prev) => (prev + 1) % slideSketchLayouts.length);
       }
     }, cycleTime);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Track elapsed time locally for smooth updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (isComponentVisibleRef.current) {
-        setLocalElapsed(Date.now() - startTimeRef.current);
-      }
-    }, 1000);
 
     return () => clearInterval(interval);
   }, []);
