@@ -29,6 +29,12 @@ interface OutlineThemeBlocksProps {
   onBrandNameChange: (name: string) => void;
 }
 
+// Helper to determine if any slides are currently being updated
+const hasUpdatingSlides = (outlineBlock: OutlinePreviewData | null): boolean => {
+  if (!outlineBlock?.slides) return false;
+  return outlineBlock.slides.some(slide => slide.isUpdating);
+};
+
 const OutlineThemeBlocks: React.FC<OutlineThemeBlocksProps> = ({
   outlineBlock,
   themeBlock,
@@ -52,10 +58,22 @@ const OutlineThemeBlocks: React.FC<OutlineThemeBlocksProps> = ({
   if (!outlineBlock && !themeBlock) return null;
 
   const stackedBlocks = Boolean(outlineBlock && themeBlock);
-  const outlineLoadingLabel = isOutlinePrefetching ? 'Generating your outline...' : 'Creating your structure...';
-  const isOutlineEditable = !isProcessing && !isOutlinePrefetching;
-  const isThemeEditable = !isThemeLoading;
-  const themeLoadingLabel = themeBlock?.loadingMessage || (isThemeLoading ? 'Updating theme...' : undefined);
+
+  // Determine if outline is fully loading vs per-slide updates
+  const isFullOutlineLoading = isProcessing || isOutlinePrefetching || outlineBlock?.isLoading === true;
+  const slidesAreUpdating = hasUpdatingSlides(outlineBlock);
+
+  // Only show the overlay if full outline is loading (not for per-slide updates)
+  const outlineLoadingLabel = outlineBlock?.loadingMessage ||
+    (isOutlinePrefetching ? 'Generating your outline...' : 'Creating your structure...');
+
+  // Outline is editable unless fully loading (per-slide updates keep other slides editable)
+  const isOutlineEditable = !isFullOutlineLoading;
+
+  // Theme editability
+  const isThemeUpdating = outlineBlock?.isThemeUpdating || isThemeLoading;
+  const isThemeEditable = !isThemeUpdating;
+  const themeLoadingLabel = themeBlock?.loadingMessage || (isThemeUpdating ? 'Updating theme...' : undefined);
 
   return (
     <div
@@ -86,8 +104,8 @@ const OutlineThemeBlocks: React.FC<OutlineThemeBlocksProps> = ({
                 </span>
               )}
             </div>
-            {isThemeLoading && (
-              <span className="text-[10px] text-orange-500 animate-pulse">Loading...</span>
+            {isThemeUpdating && (
+              <span className="text-[10px] text-orange-500 animate-pulse">{themeLoadingLabel || 'Loading...'}</span>
             )}
           </div>
 
@@ -133,7 +151,8 @@ const OutlineThemeBlocks: React.FC<OutlineThemeBlocksProps> = ({
           onSlideReorder={onSlideReorder}
           onLoadContent={onLoadContent}
           isEditable={isOutlineEditable}
-          isLoading={isProcessing || isOutlinePrefetching}
+          // Only show full loading overlay when entire outline is loading, not for per-slide updates
+          isLoading={isFullOutlineLoading}
           loadingLabel={outlineLoadingLabel}
         />
       )}

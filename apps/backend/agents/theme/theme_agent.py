@@ -15,13 +15,64 @@ import logging
 import os
 import json
 import re
+import sys
 import aiohttp
+from contextlib import asynccontextmanager
 from difflib import SequenceMatcher
 from typing import Dict, Any, Optional, List, Tuple, Literal
 
 from pydantic import BaseModel, Field
 
+from agents.application import get_event_bus, AGENT_EVENT
+
 logger = logging.getLogger(__name__)
+
+# Event bus for streaming status events
+_event_bus = None
+
+def _get_event_bus():
+    global _event_bus
+    if _event_bus is None:
+        _event_bus = get_event_bus()
+    return _event_bus
+
+async def _emit_theme_status(phase: str, message: str, detail: Optional[str] = None) -> None:
+    """Emit a status event for theme generation progress."""
+    try:
+        event_bus = _get_event_bus()
+        await event_bus.emit(AGENT_EVENT, {
+            "agent": "ThemeAgent",
+            "phase": phase,
+            "summary": message,
+            "detail": detail,
+            "type": "status",
+            "status": phase,
+            "message": message,
+        })
+    except Exception as e:
+        logger.debug(f"[ThemeAgent] Failed to emit status event: {e}")
+
+
+# Python 3.11+ has asyncio.timeout, but we need to support 3.9+
+if sys.version_info >= (3, 11):
+    from asyncio import timeout as async_timeout
+else:
+    @asynccontextmanager
+    async def async_timeout(delay: float):
+        """Compatibility wrapper for asyncio.timeout (Python 3.9+)."""
+        async def _timeout_coro():
+            await asyncio.sleep(delay)
+            raise asyncio.TimeoutError(f"Operation timed out after {delay}s")
+
+        timeout_task = asyncio.create_task(_timeout_coro())
+        try:
+            yield
+        finally:
+            timeout_task.cancel()
+            try:
+                await timeout_task
+            except asyncio.CancelledError:
+                pass
 
 _font_service = None
 
@@ -131,24 +182,49 @@ def _model_to_dict(value: Any) -> Dict[str, Any]:
 def _extract_json_object(text: str) -> Optional[Dict[str, Any]]:
     if not text:
         return None
-    cleaned = text
+    cleaned = text.strip()
+
+    # Handle markdown code fences (```json ... ``` or ``` ... ```)
     if "```" in cleaned:
-        cleaned = cleaned.replace("```json", "```")
+        # Remove language specifier variations
+        for lang in ["```json", "```JSON", "```Javascript", "```javascript"]:
+            cleaned = cleaned.replace(lang, "```")
         parts = cleaned.split("```")
-        if len(parts) >= 2:
-            cleaned = parts[1]
+        # Take the first non-empty code block content
+        for i, part in enumerate(parts):
+            if i > 0 and part.strip():  # Skip the part before the first ```
+                cleaned = part.strip()
+                break
+
+    # Find JSON object in the cleaned text
     match = re.search(r"\{[\s\S]*\}", cleaned)
-    if not match:
+    if match:
+        json_str = match.group(0)
+    elif "{" in cleaned:
+        # Handle truncated JSON - find the opening brace and try to repair
+        start_idx = cleaned.find("{")
+        json_str = cleaned[start_idx:]
+        # Count braces to determine how many closing braces we need
+        open_braces = json_str.count("{") - json_str.count("}")
+        open_brackets = json_str.count("[") - json_str.count("]")
+        # Remove trailing comma if present
+        json_str = json_str.rstrip().rstrip(",")
+        # Close any open brackets/braces
+        json_str += "]" * open_brackets + "}" * open_braces
+        logger.info(f"[ThemeAgent] Attempting to repair truncated JSON (added {open_braces} braces, {open_brackets} brackets)")
+    else:
         return None
-    json_str = match.group(0)
+
     try:
         return json.loads(json_str)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        logger.debug(f"[ThemeAgent] Initial JSON parse failed: {e}")
         # Best-effort cleanup of trailing commas
         fixed = re.sub(r",\s*([}\]])", r"\1", json_str)
         try:
             return json.loads(fixed)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e2:
+            logger.warning(f"[ThemeAgent] JSON parse failed after repair attempt: {e2}, json preview: {json_str[:200]}")
             return None
 
 
@@ -412,6 +488,7 @@ class ThemeAgent:
             Dict with: colors, background, text, accent, accent2, fonts, logo_url, source
         """
         logger.info(f"[ThemeAgent] Starting for: {title[:50]}...")
+        await _emit_theme_status("analyzing_theme", "Analyzing your presentation topic...")
 
         # Default result
         result = {
@@ -498,8 +575,25 @@ class ThemeAgent:
 
             # Step 1: Ask AI to analyze what kind of theme we need
             logger.info(f"[ThemeAgent] Step 1: Analyzing theme needs...")
+            await _emit_theme_status("detecting_brand", f"Analyzing: {title[:60]}...")
             theme_analysis = await self._analyze_theme_needs(title, prompt, context)
             logger.info(f"[ThemeAgent] Analysis result: {theme_analysis}")
+
+            # Emit the analysis result
+            theme_type = theme_analysis.get("type", "generic") if theme_analysis else "generic"
+            inspiration = theme_analysis.get("inspiration", "") if theme_analysis else ""
+            mood = theme_analysis.get("mood", "") if theme_analysis else ""
+            detail_parts = []
+            if theme_type == "real_brand":
+                detail_parts.append(f"Detected brand: {theme_analysis.get('brand', 'unknown')}")
+            elif theme_type == "inspired_by" and inspiration:
+                detail_parts.append(f"Style: {inspiration[:50]}")
+            elif theme_type == "topic_based":
+                detail_parts.append(f"Topic-based theme")
+            if mood:
+                detail_parts.append(f"Mood: {mood[:40]}")
+            if detail_parts:
+                await _emit_theme_status("analyzed", " | ".join(detail_parts))
 
             if not theme_analysis:
                 logger.warning("[ThemeAgent] Analysis failed, using defaults")
@@ -594,6 +688,7 @@ class ThemeAgent:
                 # Real brand - try Brandfetch
                 domain = resolved_domain
                 logger.info(f"[ThemeAgent] Real brand detected: {brand_name} → {domain} (score={domain_score:.2f})")
+                await _emit_theme_status("fetching_brand_colors", f"Fetching brand colors from {domain}...")
                 brand_data = await self._fetch_brandfetch(domain, brand_name=brand_name)
 
                 if brand_data and brand_data.get("colors"):
@@ -624,18 +719,31 @@ class ThemeAgent:
                         result["accent"] = brand_data["colors"][0] if brand_data["colors"] else None
                         result["accent2"] = brand_data["colors"][1] if len(brand_data["colors"]) > 1 else None
 
-                    # Determine text color: use categorized text or appropriate contrast
+                    # Determine text color: use categorized text WITH contrast validation
+                    bg_rgb = _hex_to_rgb(result["background"])
+                    bg_brightness = (bg_rgb[0] * 299 + bg_rgb[1] * 587 + bg_rgb[2] * 114) / 1000 if bg_rgb else 255
+
+                    selected_text = None
                     if text_colors:
-                        result["text"] = text_colors[0]
-                        logger.info(f"[ThemeAgent] Using categorized text: {result['text']}")
+                        # Find a text color with sufficient contrast against the background
+                        for txt_color in text_colors:
+                            txt_rgb = _hex_to_rgb(txt_color)
+                            if txt_rgb:
+                                txt_brightness = (txt_rgb[0] * 299 + txt_rgb[1] * 587 + txt_rgb[2] * 114) / 1000
+                                # Need significant brightness difference (at least 100) for readability
+                                if abs(bg_brightness - txt_brightness) > 100:
+                                    selected_text = txt_color
+                                    logger.info(f"[ThemeAgent] Using categorized text with good contrast: {selected_text}")
+                                    break
+                        if not selected_text:
+                            logger.info(f"[ThemeAgent] Categorized text colors {text_colors} have poor contrast with background {result['background']}")
+
+                    if selected_text:
+                        result["text"] = selected_text
                     else:
-                        # If we have a light background, use dark text; else use light text
-                        bg_rgb = _hex_to_rgb(result["background"])
-                        if bg_rgb:
-                            brightness = (bg_rgb[0] * 299 + bg_rgb[1] * 587 + bg_rgb[2] * 114) / 1000
-                            result["text"] = "#1A1A1A" if brightness > 128 else "#FFFFFF"
-                        else:
-                            result["text"] = "#1A1A1A"
+                        # Fallback: pick appropriate contrast based on background brightness
+                        result["text"] = "#1A1A1A" if bg_brightness > 128 else "#FFFFFF"
+                        logger.info(f"[ThemeAgent] Using computed text color for contrast: {result['text']}")
 
                     result["logo_url"] = brand_data.get("logo_url")
                     if not result["logo_url"]:
@@ -798,6 +906,8 @@ class ThemeAgent:
             # Step 3: Generate contextual colors based on the theme
             # This handles: inspired_by, fictional_brand, topic_based, generic
             logger.info(f"[ThemeAgent] Step 3: Generating contextual theme (type={theme_type}, inspiration={theme_analysis.get('inspiration')})")
+            inspiration_hint = theme_analysis.get('inspiration', '')[:40] if theme_analysis else ''
+            await _emit_theme_status("generating_theme", f"Generating colors{' for ' + inspiration_hint if inspiration_hint else ''}...")
             contextual_theme = await self._generate_contextual_theme(
                 title=title,
                 prompt=prompt,
@@ -816,7 +926,17 @@ class ThemeAgent:
                 result["fonts"] = contextual_theme.get("fonts", result["fonts"])
                 result["source"] = contextual_theme.get("source", "ai_generated")
 
-                logger.info(f"[ThemeAgent] ✅ Contextual theme: {result['colors'][:3]}, source={result['source']}")
+                logger.info(f"[ThemeAgent] Contextual theme: {result['colors'][:3]}, source={result['source']}")
+                # Emit completion with actual color info
+                bg = result.get('background', '#FFFFFF')
+                accent = result.get('accent', '')
+                fonts = result.get('fonts', {})
+                hero_font = fonts.get('hero', 'Default')
+                completion_msg = f"Colors: {bg}"
+                if accent:
+                    completion_msg += f", {accent}"
+                completion_msg += f" | Font: {hero_font}"
+                await _emit_theme_status("theme_complete", completion_msg)
 
             return result
 
@@ -1055,7 +1175,7 @@ IMPORTANT:
             categorized_colors: Dict[str, Any] = {}
 
             try:
-                async with asyncio.timeout(15):
+                async with async_timeout(15):
                     async with SimpleBrandfetchCache(db_url) as cache:
                         brand_data = await cache.get_brand_data(domain)
                         if brand_data and not brand_data.get("error"):
@@ -1222,7 +1342,7 @@ IMPORTANT:
 
             # Set timeout for video fetching (longer for browser-based scraping)
             try:
-                async with asyncio.timeout(30):
+                async with async_timeout(30):
                     videos = await get_brand_videos(domain, max_videos, use_browser=True)
                     if videos:
                         logger.info(f"[ThemeAgent] 🎬 Found {len(videos)} videos from {domain}")
@@ -1256,7 +1376,7 @@ IMPORTANT:
             # Run in executor since it's a blocking HTTP call
             loop = asyncio.get_event_loop()
             try:
-                async with asyncio.timeout(30):
+                async with async_timeout(30):
                     result = await loop.run_in_executor(
                         None,
                         lambda: firecrawl.extract_brand_design(url, include_screenshot=include_screenshot)
@@ -1405,28 +1525,14 @@ IMPORTANT:
             from agents.config import THEME_MODEL
 
             # Build context for color generation
-            color_context = f"""Generate a color palette for this presentation.
-
-Title: {title}
-Inspiration: {inspiration or 'None specified'}
+            color_context = f"""Generate a color palette for: {title}
+Inspiration: {inspiration or 'None'}
 Mood: {mood or 'professional'}
-Theme type: {theme_type}
 
-You know the official/iconic colors for brands, games, movies, TV shows, and cultural properties.
-Use that knowledge - if this is inspired by Sonic, use Sonic's blue/red/gold. If it's Star Wars, use black/gold/white. Etc.
+Return ONLY this JSON (no explanation):
+{{"background":"#HEX","text":"#HEX","accent":"#HEX","accent2":"#HEX","colors":["#HEX","#HEX"],"hero_font":"FontName","body_font":"FontName"}}
 
-Return JSON with EXACTLY this format:
-{{
-    "background": "#FFFFFF or appropriate background color",
-    "text": "#1A1A1A or appropriate text color",
-    "accent": "primary accent color hex",
-    "accent2": "secondary accent color hex",
-    "colors": ["all colors as hex array"],
-    "hero_font": "suggested hero font name",
-    "body_font": "suggested body font name"
-}}
-
-Use the REAL colors you know for the inspiration. Return ONLY the JSON."""
+Use iconic colors for the inspiration (Sonic=blue/red, Star Wars=black/gold, etc). All values must be valid hex colors."""
 
             client, actual_model = get_client(THEME_MODEL)
             if not client or not actual_model:
@@ -1437,13 +1543,32 @@ Use the REAL colors you know for the inspiration. Return ONLY the JSON."""
                 client=client,
                 model=actual_model,
                 messages=[{"role": "user", "content": color_context}],
-                max_tokens=300,
+                max_tokens=800,
                 temperature=0.3,
                 theme_generation=True
             )
-            logger.info(f"[ThemeAgent] Contextual response type: {type(response)}, preview: {str(response)[:200]}")
+            response_str = str(response) if response else ""
+            logger.info(f"[ThemeAgent] Contextual response (len={len(response_str)}): {response_str[:400]}")
 
             theme_data = _extract_json_object(_coerce_response_text(response))
+            if not isinstance(theme_data, dict):
+                # Fallback: try to extract any colors from the raw response
+                logger.warning("[ThemeAgent] JSON extraction failed, attempting color extraction from raw response")
+                response_str = str(response)
+                hex_colors = re.findall(r'#[0-9A-Fa-f]{6}', response_str)
+                if hex_colors:
+                    theme_data = {
+                        "background": hex_colors[0] if len(hex_colors) > 0 else "#FFFFFF",
+                        "text": "#1A1A1A",
+                        "accent": hex_colors[1] if len(hex_colors) > 1 else hex_colors[0],
+                        "accent2": hex_colors[2] if len(hex_colors) > 2 else None,
+                        "colors": hex_colors[:5],
+                    }
+                    logger.info(f"[ThemeAgent] Extracted {len(hex_colors)} colors from raw response: {hex_colors[:5]}")
+                else:
+                    logger.warning("[ThemeAgent] No colors found in response, using defaults")
+                    return None
+
             if isinstance(theme_data, dict):
                 # Validate and extract fonts
                 hero_font_raw = theme_data.get("hero_font")
@@ -1482,7 +1607,7 @@ Use the REAL colors you know for the inspiration. Return ONLY the JSON."""
                     },
                     "source": "ai_contextual"
                 }
-            logger.warning("[ThemeAgent] Failed to parse theme: %s", str(response)[:200])
+            logger.warning("[ThemeAgent] Failed to parse theme JSON. Response preview: %s", str(response)[:400])
 
             return None
 

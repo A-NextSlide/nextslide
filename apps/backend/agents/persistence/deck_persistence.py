@@ -304,6 +304,13 @@ class DeckPersistence:
                     (texts[0].get('props') if len(texts)>0 and isinstance(texts[0], dict) else None),
                     (texts[1].get('props') if len(texts)>1 and isinstance(texts[1], dict) else None),
                 )
+                # Log font override props on CustomComponents
+                custom_comp = next((c for c in (slide_data.get('components') or []) if c.get('type') == 'CustomComponent'), None)
+                if custom_comp:
+                    cc_props = custom_comp.get('props') or {}
+                    font_keys = [k for k in cc_props.keys() if 'Font' in k or 'font' in k]
+                    if font_keys:
+                        _logging.getLogger(__name__).info(f"[PERSISTENCE] 🎨 SAVING CustomComponent with font props: {font_keys} = {[cc_props.get(k) for k in font_keys]}")
             except Exception:
                 pass
             logger.debug(f"[PERSISTENCE] Updated slide {slide_index} in deck, now has {len(slide_data.get('components', []))} components")

@@ -27,7 +27,17 @@ def is_placeholder_src(src: str) -> bool:
     if not src:
         return True
 
-    lowered = src.strip().lower()
+    stripped = src.strip()
+    lowered = stripped.lower()
+
+    # Single character or very short values are placeholders (AI generates "Z", "X", etc.)
+    if len(stripped) <= 2 and stripped.isalpha():
+        return True
+
+    # Common invalid values AI generates
+    invalid_values = {'none', 'null', 'undefined', 'n/a', 'tbd', 'todo', 'image', 'z', 'x'}
+    if lowered in invalid_values:
+        return True
 
     # Exact placeholder match
     if lowered == 'placeholder':
@@ -66,6 +76,7 @@ def needs_image_search(html: str) -> bool:
     - Contains "placeholder" (case-insensitive)
     - Contains template variables (${)
     - Contains empty src attributes
+    - Contains short invalid values like "Z", "None", etc.
     - Contains external URLs not from our bucket
     """
     if not html:
@@ -83,6 +94,13 @@ def needs_image_search(html: str) -> bool:
 
     # Check for empty src
     if 'src=""' in html or "src=''" in html:
+        return True
+
+    # Check for short invalid src values (single letters, "None", "Z", etc.)
+    # These are common AI-generated placeholder values
+    import re
+    invalid_src_pattern = r'src=["\']([A-Za-z]{1,2}|None|null|undefined|N/A|TBD|TODO)["\']'
+    if re.search(invalid_src_pattern, html, re.IGNORECASE):
         return True
 
     # Check for external image URLs

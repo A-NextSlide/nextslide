@@ -66,6 +66,8 @@ export interface ThemeEditorData {
  */
 export interface OutlineSlidePreview {
   id: string;
+  /** Stable backend ID for tracking across updates (if available) */
+  backendId?: string;
   title: string;
   subtitle?: string;
   keyPoints?: string[];
@@ -73,9 +75,25 @@ export interface OutlineSlidePreview {
   generationContext?: string;
   isContentLoaded?: boolean;
   isContentEdited?: boolean;
+  /** True while this specific slide is being updated/regenerated */
+  isUpdating?: boolean;
+  /** Loading message for this slide (e.g., "Updating content...") */
+  updateMessage?: string;
+  /** Timestamp of last update from backend */
+  lastUpdatedAt?: number;
   assignedVideo?: AssignedVideo;
   taggedMedia?: TaggedMedia[];
 }
+
+/**
+ * Update action type for tracking what's being changed
+ */
+export type OutlineUpdateAction =
+  | 'generate_outline'
+  | 'update_outline'
+  | 'update_slides'
+  | 'update_theme'
+  | 'regenerate_slide';
 
 /**
  * Outline preview data for inline display
@@ -85,7 +103,16 @@ export interface OutlinePreviewData {
   title: string;
   slides: OutlineSlidePreview[];
   isEditable?: boolean;
+  /** True when entire outline is loading */
   isLoading?: boolean;
+  /** True when only theme is being updated (slides stay interactive) */
+  isThemeUpdating?: boolean;
+  /** Indices of slides currently being updated */
+  updatingSlideIndices?: number[];
+  /** Current update action for UI feedback */
+  currentAction?: OutlineUpdateAction;
+  /** Loading message for the current action */
+  loadingMessage?: string;
 }
 
 /**

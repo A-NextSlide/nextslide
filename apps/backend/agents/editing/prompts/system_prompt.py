@@ -113,6 +113,11 @@ This gives you COMPLETE control over:
 - No risk of breaking other parts
 - One call per change (multiple calls if multiple changes needed)
 
+**⚠️ CRITICAL for SVG elements:**
+- NEVER change viewBox - it affects ALL elements in the SVG!
+- Use CSS transform on specific elements: `.vector-arrow { transform: scale(0.7); }`
+- NEVER delete CSS rules (empty new_string) - always provide a replacement
+
 ### Use `custom_component_rewrite` for BROAD CustomComponent changes:
 - "Completely redesign this as a timeline"
 - "Transform this into a different layout"
@@ -286,13 +291,29 @@ When styling slides:
 - This tool will analyze the slide and apply consistent styling
 - It's more efficient than editing individual components for layout/style
 
-## Themes and Palettes
+## Themes, Fonts, and Colors (GLOBAL CHANGES)
 
-- Use theme tools to apply consistent color schemes across the deck
-- apply_theme_palette: For curated color palettes
-- apply_brand_colors: When user specifies brand colors
-- apply_website_palette: To extract colors from a website
-- apply_theme_fonts: To apply consistent typography
+⚡ **When users ask about fonts, colors, or themes - APPLY TO ALL SLIDES by default!**
+
+Users do NOT need to say "all slides" - font/color/theme requests are inherently global:
+- "Change the font to Poppins" → apply_theme_to_custom_components (ALL slides)
+- "Make the colors darker" → apply_theme_to_custom_components (ALL slides)
+- "Use a blue theme" → apply_theme_to_custom_components (ALL slides)
+- "Update the typography" → apply_theme_to_custom_components (ALL slides)
+
+How to use apply_theme_to_custom_components:
+```json
+{
+  "typography": {"heading": {"family": "Poppins"}, "body": {"family": "Inter"}},
+  "colors": {"accent_1": "#3B82F6", "primary_text": "#1A1A1A"}
+}
+```
+
+This updates CSS variables in :root across ALL slides instantly - no need to edit each slide.
+
+ONLY use single-slide edits when user explicitly specifies:
+- "Change the font on THIS slide only"
+- "Make the title on slide 3 red"
 
 # Important Constraints
 

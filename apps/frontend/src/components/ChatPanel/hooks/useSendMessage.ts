@@ -897,10 +897,14 @@ export function useSendMessage({
       const deckScope = isDeckWideRequest(messageText);
       let filteredSelections = selectionContext;
       if (slideId && selectionContext.length > 0) {
-        const selectionsOnCurrentSlide = selectionContext.filter(sel => !sel.slideId || sel.slideId === slideId);
+        // STRICT filter: only allow selections that EXPLICITLY match the current slide
+        // Selections with null/undefined slideId are filtered out to prevent stale selections
+        // from other slides leaking through when user changes slides
+        const selectionsOnCurrentSlide = selectionContext.filter(sel => sel.slideId === slideId);
         if (selectionsOnCurrentSlide.length > 0) {
           filteredSelections = selectionsOnCurrentSlide;
         } else {
+          // No selections on current slide - clear all selections so implicit targeting is used
           filteredSelections = [];
         }
       }
@@ -915,6 +919,19 @@ export function useSendMessage({
           domPath: `#slide_${slideId}`,
           implicit: true
         } as any];
+
+      // Debug: Log slide targeting to help diagnose issues
+      console.log('[SendMessage] 🎯 Slide targeting:', {
+        currentSlideIndex,
+        currentSlideId: slideId,
+        slidesCount: slides.length,
+        explicitSelectionsCount: selectionContext.length,
+        filteredSelectionsCount: filteredSelections.length,
+        effectiveSelectionsCount: effectiveSelections.length,
+        effectiveSlideIds: effectiveSelections.map((s: any) => s.slideId),
+        deckScope,
+        isImplicit: effectiveSelections[0]?.implicit || false
+      });
 
       const pending = currentAttachments.filter((a: any) => (a as any).file && !(a as any).url) as PendingAttachment[];
       if (pending.length > 0) {
@@ -943,10 +960,16 @@ export function useSendMessage({
           if (slideViewport) {
             const screenshotDataUrl = await captureTinySlideScreenshot(slideViewport);
             if (screenshotDataUrl) {
+              // Detect actual image format from data URL
+              const isPng = screenshotDataUrl.startsWith('data:image/png');
+              const mimeType = isPng ? 'image/png' : 'image/jpeg';
+              const extension = isPng ? 'png' : 'jpg';
+              const headerLength = isPng ? 'data:image/png;base64,'.length : 'data:image/jpeg;base64,'.length;
+
               attachmentMeta.push({
-                name: '_slide_context.jpg',
-                mimeType: 'image/jpeg',
-                size: Math.ceil((screenshotDataUrl.length - 'data:image/jpeg;base64,'.length) * 0.75),
+                name: `_slide_context.${extension}`,
+                mimeType,
+                size: Math.ceil((screenshotDataUrl.length - headerLength) * 0.75),
                 url: screenshotDataUrl,
                 attachmentId: `screenshot-${Date.now()}`
               });
@@ -1007,7 +1030,7 @@ export function useSendMessage({
           context: {
             preferredInsertAfterSlideId: slideId || undefined,
             styleFromSlideId: slideId || undefined,
-            slide_id: slideId || undefined,
+            slide_id: slideId,  // Always send, even if null - backend needs to know current slide
             current_slide_index: currentSlideIndex,
             deck_data: deckData,
             scope: deckScope ? 'deck' : 'slide',

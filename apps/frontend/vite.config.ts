@@ -72,6 +72,7 @@ export default defineConfig(({ mode }) => ({
       '/api': {
         target: process.env.API_TARGET || 'http://127.0.0.1:9090',
         changeOrigin: true,
+        ws: true, // Enable WebSocket proxying for speech-to-text
         // Extend proxy/socket timeouts for long-running SSE requests
         // http-proxy options: timeout is for incoming request, proxyTimeout is for outgoing to target
         timeout: 600000, // 10 minutes

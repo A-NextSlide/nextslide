@@ -80,6 +80,39 @@ async def _fetch_logo_from_logodev(company_name: str, cache: Optional[ImageSearc
     return await unified_fetch_logo(company_name, cache)
 
 
+async def _fetch_image_dimensions(image_url: str) -> Optional[Tuple[int, int]]:
+    """Fetch image dimensions by downloading and reading the image header.
+
+    Uses PIL to read just enough of the image to get dimensions without loading full image.
+    Returns (width, height) or None if unable to determine.
+    """
+    if not image_url or not image_url.startswith('http'):
+        return None
+
+    try:
+        import aiohttp
+        from PIL import Image
+        from io import BytesIO
+
+        async with aiohttp.ClientSession() as session:
+            # Only fetch first 64KB - enough for most image headers
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (compatible; ImageBot/1.0)',
+                'Range': 'bytes=0-65535'
+            }
+            async with session.get(image_url, headers=headers, timeout=10) as response:
+                if response.status in (200, 206):
+                    content = await response.read()
+                    img = Image.open(BytesIO(content))
+                    width, height = img.size
+                    logger.debug(f"[IMAGE_DIMS] Got dimensions for {image_url[:50]}...: {width}x{height}")
+                    return (width, height)
+    except Exception as e:
+        logger.debug(f"[IMAGE_DIMS] Failed to get dimensions: {e}")
+
+    return None
+
+
 def _extract_search_query_from_prop_name(prop_name: str) -> str:
     """Convert a camelCase prop name to a search query."""
     if not prop_name:
@@ -162,9 +195,31 @@ def _iter_js_objects(text: str) -> List[Tuple[int, int, str]]:
 
 
 def _object_is_image_like(obj_text: str) -> bool:
+    """Check if a JS object should be treated as having image properties.
+
+    Returns True if:
+    - The object has no 'type' property (default case)
+    - The object has a type related to images (img, image, photo, picture)
+    - The object has image-related properties (image, src, img, photo, etc.) regardless of type
+    - The object has properties containing 'image' in the name (imageStage, stageImage, etc.)
+    """
+    # If the object has image-related properties, treat it as image-like regardless of type
+    # This handles cases like { type: 'event', image: 'placeholder', imageAlt: '...' }
+    # Match property names CONTAINING 'image' like imageStage, stageImage, backgroundImage
+    image_prop_pattern = r'\b\w*(?:image|img|photo|picture|thumbnail|src)\w*\s*:\s*["\']'
+    if re.search(image_prop_pattern, obj_text, re.IGNORECASE):
+        return True
+
+    # Also check for placeholder values directly
+    if re.search(r':\s*["\']placeholder["\']', obj_text, re.IGNORECASE):
+        return True
+
+    # If no type property, assume it could be image-like
     type_match = re.search(r'\btype\s*:\s*([\'"])([^\'"]+)\1', obj_text, re.IGNORECASE)
     if not type_match:
         return True
+
+    # Check if type is explicitly image-related
     type_value = type_match.group(2).strip().lower()
     return type_value in ("img", "image", "photo", "picture")
 
@@ -255,10 +310,11 @@ def _extract_js_object_image_queries(html: str) -> List[str]:
         return []
     queries: List[str] = []
     seen = set()
-    # Match src, image, img, photo, picture, thumbnail, background properties
-    image_prop_pattern = r'\b(?:src|image|img|photo|picture|thumbnail|background)\s*:'
+    # Match property names CONTAINING src, image, img, photo, picture, thumbnail, background
+    # This catches names like imageStage, stageImage, backgroundImage, etc.
+    image_prop_pattern = r'\b\w*(?:src|image|img|photo|picture|thumbnail|background)\w*\s*:'
     # Also match alt-related properties that indicate image search queries
-    alt_prop_pattern = r'\b(?:thumbAlt|imgAlt|imageAlt|photoAlt|pictureAlt|bgAlt|backgroundAlt)\s*:'
+    alt_prop_pattern = r'\b\w*(?:thumbAlt|imgAlt|imageAlt|photoAlt|pictureAlt|bgAlt|backgroundAlt)\w*\s*:'
 
     for script_content in re.findall(r'<script[^>]*>([\s\S]*?)</script>', html, re.IGNORECASE):
         for _, _, obj_text in _iter_js_objects(script_content):
@@ -475,36 +531,75 @@ def _match_available_images_to_props(
     return matches, remaining
 
 
+def _extract_topic_from_context(slide_context: str) -> str:
+    """Extract the main topic/brand from slide context for image search."""
+    if not slide_context:
+        return ""
+
+    # Priority order: BRAND > Topic > Deck > Slide
+    topic = ""
+    if "BRAND:" in slide_context:
+        brand_search = re.search(r'BRAND:\s*([^\|]+)', slide_context)
+        if brand_search:
+            topic = brand_search.group(1).strip()
+    if not topic and "Topic:" in slide_context:
+        topic_search = re.search(r'Topic:\s*([^\|]+)', slide_context)
+        if topic_search:
+            t = topic_search.group(1).strip()
+            # Clean up URL-like topics
+            if '.com' in t or '.ai' in t or '.io' in t:
+                topic = t.split('.')[0].title()
+            else:
+                topic = t[:50]  # Truncate long topics
+    if not topic and "Deck:" in slide_context:
+        deck_search = re.search(r'Deck:\s*([^\|]+)', slide_context)
+        if deck_search:
+            topic = deck_search.group(1).strip()[:50]
+    if not topic and "Slide:" in slide_context:
+        slide_search = re.search(r'Slide:\s*([^\|]+)', slide_context)
+        if slide_search:
+            topic = slide_search.group(1).strip()[:30]
+
+    return topic
+
+
 async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> str:
-    """Use AI to refine a search query into a specific, concrete image search term."""
+    """Use AI to refine a search query into a visually striking image search term."""
+    topic = _extract_topic_from_context(slide_context)
+
     try:
         client, model_name = get_client(IMAGE_SEARCH_MODEL)
 
-        brand_match = ""
-        if "BRAND:" in slide_context:
-            brand_search = re.search(r'BRAND:\s*([^\|]+)', slide_context)
-            if brand_search:
-                brand_match = brand_search.group(1).strip()
-        if not brand_match and "Topic:" in slide_context:
-            topic_search = re.search(r'Topic:\s*([^\|]+)', slide_context)
-            if topic_search:
-                topic = topic_search.group(1).strip()
-                if '.com' in topic or '.ai' in topic or '.io' in topic:
-                    brand_match = topic.split('.')[0].title()
-                else:
-                    brand_match = topic
-        if not brand_match and "Deck:" in slide_context:
-            deck_search = re.search(r'Deck:\s*([^\|]+)', slide_context)
-            if deck_search:
-                brand_match = deck_search.group(1).strip()
+        prompt = f"""Create a specific Google Image search query for a presentation slide.
 
-        prompt = f"""Write a short Google Images search query for this slide image.
+ORIGINAL QUERY: {query}
+SLIDE CONTEXT: {slide_context[:500] if slide_context else 'Presentation slide'}
+{f"TOPIC/BRAND: {topic}" if topic else ""}
 
-CURRENT QUERY: {query}
-SLIDE CONTEXT: {slide_context[:400] if slide_context else 'Presentation slide'}
-{f"BRAND: {brand_match}" if brand_match else ""}
+CRITICAL RULES:
+1. **ALWAYS COMBINE** the original query concept WITH the topic/context
+   - NEVER return just the topic name alone (e.g., don't just say "Zelda")
+   - The result must be MORE SPECIFIC than the original query
 
-Based on the context, what specific image should appear here? Use names, brands, or specific things mentioned in the context. Keep it 2-5 words.
+2. **FOR GENERIC QUERIES** (main, boss, phase, content, visual, image, etc.):
+   - Extract what the slide is ABOUT from the context
+   - "main" + Zelda Ocarina context → "Zelda Ocarina of Time Link artwork"
+   - "boss" + Zelda context → "Zelda Ganondorf boss battle screenshot"
+   - "phase" + Zelda context → "Zelda final boss phase transformation"
+   - "content visual" + Zelda → "Zelda Ocarina of Time gameplay screenshot"
+
+3. **FOR VIDEO GAMES/ENTERTAINMENT**:
+   - ALWAYS include franchise + specific subject
+   - "Zora" + Zelda → "Zelda Zora Domain underwater kingdom"
+   - "forest" + Zelda → "Zelda Kokiri Forest Lost Woods"
+   - "temple" + Zelda → "Zelda Forest Temple dungeon interior"
+   - "castle" + Zelda → "Zelda Hyrule Castle Ocarina of Time"
+
+4. **FOR CORPORATE/BUSINESS**:
+   - "server" + NVIDIA → "NVIDIA AI data center GPU servers"
+   - "factory" + Tesla → "Tesla Gigafactory interior production line"
+
+5. Keep it 3-7 words, be SPECIFIC and VISUAL
 
 Return ONLY the search query, nothing else."""
 
@@ -520,16 +615,34 @@ Return ONLY the search query, nothing else."""
             0.3,
         )
 
-        enhanced = str(response).strip().strip('"\'')
-        # Reject if too long (more than ~5 words) or contains refusal language
-        word_count = len(enhanced.split())
-        if enhanced and word_count <= 6 and len(enhanced) < 50 and "cannot" not in enhanced.lower() and "I " not in enhanced:
-            logger.debug("[POST_SEARCH] AI optimized query: '%s' -> '%s'", query, enhanced)
-            return enhanced
+        if response is None:
+            logger.debug("[POST_SEARCH] AI returned None for query: '%s'", query)
+        else:
+            enhanced = str(response).strip().strip('"\'')
+            # Reject if too long (more than ~6 words), contains refusal language, or is literal "None"
+            word_count = len(enhanced.split())
+            is_valid = (
+                enhanced
+                and enhanced.lower() != "none"
+                and word_count <= 7
+                and len(enhanced) < 60
+                and "cannot" not in enhanced.lower()
+                and "I " not in enhanced
+            )
+            if is_valid:
+                logger.info("[POST_SEARCH] AI optimized query: '%s' -> '%s'", query, enhanced)
+                return enhanced
     except Exception as e:
         logger.debug("[POST_SEARCH] AI enhancement failed: %s", e)
 
+    # Fallback: If we have a topic and the query is generic, prepend the topic
     cleaned = query.strip()
+    if topic and _is_generic_query(cleaned):
+        # Prepend topic to make the query more specific
+        enhanced_fallback = f"{topic} {cleaned}"
+        logger.info("[POST_SEARCH] Fallback: prepended topic: '%s' -> '%s'", query, enhanced_fallback)
+        return enhanced_fallback
+
     logger.debug("[POST_SEARCH] Fallback cleaned query: '%s' -> '%s'", query, cleaned)
     return cleaned if cleaned else query
 
@@ -641,7 +754,8 @@ async def _search_images_for_props(
 
     async with ImageStorageService() as storage:
 
-        async def search_and_pick_best(prop_name: str, query: str) -> Tuple[str, str, Optional[str]]:
+        async def search_and_pick_best(prop_name: str, query: str) -> Tuple[str, str, Optional[str], Optional[int], Optional[int]]:
+            """Returns (prop_name, query, url, width, height) - dimensions may be None for cache hits."""
             try:
                 original_query = query
 
@@ -649,7 +763,7 @@ async def _search_images_for_props(
                     cached = cache.get(original_query)
                     if cached:
                         logger.debug("[POST_SEARCH] Cache hit for '%s'", original_query)
-                        return (prop_name, original_query, cached)
+                        return (prop_name, original_query, cached, None, None)
 
                 search_query = query
                 logger.info(f"[POST_SEARCH] Processing query for '{prop_name}': '{query[:60]}...'")
@@ -664,18 +778,22 @@ async def _search_images_for_props(
                     generic_word_count >= len(words) // 2  # Half or more words are generic
                 )
                 if needs_enhancement:
-                    logger.info(f"[POST_SEARCH] Query needs enhancement (generic={is_entirely_generic}, words={len(words)}, generic_count={generic_word_count})")
+                    logger.info(f"[POST_SEARCH] Query '{query}' needs enhancement (generic={is_entirely_generic}, words={len(words)})")
                     # For completely generic queries, rely entirely on slide context
                     context_for_enhancement = slide_context
                     if is_entirely_generic and slide_context:
                         # Prepend a hint that we need to generate a query from scratch
                         context_for_enhancement = f"Generate image query from context (original was too generic: '{query}'). {slide_context}"
                     search_query = await _enhance_image_query_with_ai(query, context_for_enhancement)
-                    logger.info(f"[POST_SEARCH] Enhanced query: '{query[:40]}' -> '{search_query[:40]}'")
+                    # Reject "None" or empty enhanced queries
+                    if not search_query or search_query.lower() == "none":
+                        logger.warning(f"[POST_SEARCH] AI returned invalid query for '{query}', skipping")
+                        return (prop_name, original_query, None, None, None)
+                    logger.info(f"[POST_SEARCH] ✓ Enhanced: '{query}' -> '{search_query}'")
                     # If enhancement didn't help for a generic query, skip it
                     if is_entirely_generic and _is_generic_query(search_query):
-                        logger.warning(f"[POST_SEARCH] Could not enhance generic query '{query}' -> '{search_query}', skipping")
-                        return (prop_name, original_query, None)
+                        logger.warning(f"[POST_SEARCH] Enhancement didn't help: '{query}' -> '{search_query}', skipping")
+                        return (prop_name, original_query, None, None, None)
 
                 # Ensure query is concise
                 words = search_query.split()
@@ -687,59 +805,78 @@ async def _search_images_for_props(
                     results = await results
                 if not isinstance(results, (dict, list)):
                     logger.warning("[POST_SEARCH] Unexpected results type for '%s': %s", search_query, type(results))
-                    return (prop_name, original_query, None)
+                    return (prop_name, original_query, None, None, None)
                 if not results:
                     logger.warning("[POST_SEARCH] No results for: %s", search_query)
-                    return (prop_name, original_query, None)
+                    return (prop_name, original_query, None, None, None)
 
                 photos = results.get('photos', []) if isinstance(results, dict) else results
                 if not isinstance(photos, list):
                     logger.warning("[POST_SEARCH] Unexpected photos type for '%s': %s", search_query, type(photos))
-                    return (prop_name, original_query, None)
+                    return (prop_name, original_query, None, None, None)
                 if not photos:
                     logger.warning("[POST_SEARCH] No image candidates for: %s", search_query)
-                    return (prop_name, original_query, None)
+                    return (prop_name, original_query, None, None, None)
 
-                valid_urls = [
-                    r.get('url') or r.get('original') or r.get('thumbnail')
-                    for r in photos
-                    if isinstance(r, dict)
+                # Keep full photo objects to preserve width/height metadata
+                valid_photos = [
+                    r for r in photos
+                    if isinstance(r, dict) and (r.get('url') or r.get('original') or r.get('thumbnail'))
                 ]
-                valid_urls = [u for u in valid_urls if u]
-                if not valid_urls:
+                if not valid_photos:
                     logger.warning("[POST_SEARCH] No valid URLs for: %s", search_query)
-                    return (prop_name, original_query, None)
+                    return (prop_name, original_query, None, None, None)
 
-                for url in valid_urls:
+                for photo in valid_photos:
+                    url = photo.get('url') or photo.get('original') or photo.get('thumbnail')
+                    width = photo.get('width') or photo.get('original_width')
+                    height = photo.get('height') or photo.get('original_height')
                     try:
                         upload_result = await storage.upload_image_from_url(url)
                         if 'error' not in upload_result and upload_result.get('url'):
                             our_url = upload_result['url']
-                            logger.debug("[POST_SEARCH] Uploaded image for %s (%s)", prop_name, search_query)
+
+                            # If SerpAPI didn't provide dimensions, try to fetch them
+                            if width is None or height is None:
+                                fetched_dims = await _fetch_image_dimensions(our_url)
+                                if fetched_dims:
+                                    width, height = fetched_dims
+                                    logger.info(f"[POST_SEARCH] Fetched dimensions for {prop_name}: {width}x{height}")
+
+                            logger.debug("[POST_SEARCH] Uploaded image for %s (%s) - dimensions: %sx%s", prop_name, search_query, width, height)
                             if cache:
                                 cache.set(original_query, our_url)
-                            return (prop_name, original_query, our_url)
+                            return (prop_name, original_query, our_url, width, height)
                     except Exception as e:
                         logger.debug(f"[POST_SEARCH] Upload failed: {e}")
                         continue
 
                 logger.warning("[POST_SEARCH] All uploads failed for: %s", search_query)
-                return (prop_name, original_query, None)
+                return (prop_name, original_query, None, None, None)
 
             except Exception as e:
                 logger.warning("[POST_SEARCH] Error for '%s': %s", query, e)
-                return (prop_name, original_query, None)
+                return (prop_name, original_query, None, None, None)
 
         tasks = [search_and_pick_best(prop, query) for prop, query in regular_queries[:8]]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for result in results:
-        if isinstance(result, tuple) and len(result) == 3 and result[2]:
-            prop_name, query, url = result
+        if isinstance(result, tuple) and len(result) == 5 and result[2]:
+            prop_name, query, url, width, height = result
             prefetched[prop_name] = url
             prefetched[f"{prop_name}_query"] = query
+            if width is not None and height is not None:
+                prefetched[f"{prop_name}_width"] = width
+                prefetched[f"{prop_name}_height"] = height
+                aspect = width / height if height > 0 else 0
+                logger.info(f"[POST_SEARCH] Stored dimensions for {prop_name}: {width}x{height} (aspect={aspect:.2f})")
+            elif width is not None:
+                prefetched[f"{prop_name}_width"] = width
+            elif height is not None:
+                prefetched[f"{prop_name}_height"] = height
 
-    image_count = len([k for k in prefetched if not k.endswith('_query') and not k.startswith('logo')])
+    image_count = len([k for k in prefetched if not k.endswith('_query') and not k.endswith('_width') and not k.endswith('_height') and not k.startswith('logo')])
     logger.info("[POST_SEARCH] Total images found: %s", image_count)
     return prefetched
 

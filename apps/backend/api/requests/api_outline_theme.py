@@ -92,6 +92,16 @@ async def _select_brand_fonts_ai(brand_name: str, brand_domain: Optional[str] = 
     Leverages EnhancedFontService metadata + typography pairing rules.
     """
     try:
+        # Check for brand font overrides first (e.g., Rivian)
+        try:
+            from services.font_characteristics import get_brand_font_override
+            font_override = get_brand_font_override(brand_domain or brand_name)
+            if font_override:
+                logger.info(f"[OutlineTheme] Using font override for {brand_domain or brand_name}: {font_override}")
+                return font_override
+        except ImportError:
+            pass
+
         from agents.tools.theme.font_intelligence import select_fonts_for_brand
 
         result = await select_fonts_for_brand(
@@ -428,14 +438,19 @@ async def apply_theme_changes(request: ApplyThemeChangesRequest) -> ApplyThemeCh
 
             # If no specific font provided, intelligently select based on outline context
             if not font_family:
-                # Get outline to check for fun topics
-                from models.registry import ComponentRegistry
-                registry = ComponentRegistry()
-                outline = registry.get_outline(request.outline_id)
+                # Try to get outline from registry (may not exist during onboarding)
+                outline = None
+                title = ''
+                try:
+                    from models.registry import ComponentRegistry
+                    registry = ComponentRegistry()
+                    outline = registry.get_outline(request.outline_id)
+                    if outline:
+                        title = getattr(outline, 'title', '') or ''
+                except Exception:
+                    pass
 
-                if outline:
-                    title = getattr(outline, 'title', '') or ''
-
+                if title:
                     # Check if this is a fun/playful topic (like Pikachu, Mario, etc.)
                     # Use word boundary matching to avoid false positives like "fun" in "fundraising"
                     import re
@@ -479,6 +494,27 @@ async def apply_theme_changes(request: ApplyThemeChangesRequest) -> ApplyThemeCh
                         }
                         messages.append(f"Applied playful fonts: {font_family} / {body_font_preset}")
                         font_family = None  # Skip the general font_family handling below
+
+                # Fallback: AI-selected professional fonts when no specific font requested
+                if not font_family and 'font' not in style_preferences:
+                    import random
+                    professional_combos = [
+                        {'hero': 'Poppins', 'body': 'Inter'},
+                        {'hero': 'Montserrat', 'body': 'Open Sans'},
+                        {'hero': 'Raleway', 'body': 'Lato'},
+                        {'hero': 'DM Sans', 'body': 'Work Sans'},
+                        {'hero': 'Space Grotesk', 'body': 'Source Sans Pro'},
+                        {'hero': 'Outfit', 'body': 'Nunito'},
+                    ]
+                    selected = random.choice(professional_combos)
+                    style_preferences['font'] = selected['hero']
+                    style_preferences['bodyFont'] = selected['body']
+                    theme_updates['typography'] = {
+                        'hero_title': {'family': selected['hero']},
+                        'body_text': {'family': selected['body']}
+                    }
+                    messages.append(f"Applied fonts: {selected['hero']} / {selected['body']}")
+                    logger.info(f"[OutlineTheme] No font specified, using professional fonts: {selected['hero']} / {selected['body']}")
 
             if font_family:
                 # CRITICAL: hero and body MUST be different fonts!

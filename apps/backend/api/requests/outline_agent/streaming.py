@@ -42,6 +42,21 @@ OUTLINE_AGENT_SYSTEM_PROMPT = (
     "When style or theme is unclear, include an open-text clarification question about the visual vibe and how it will be presented (e.g., live talk with minimal text, detailed analysis doc, or interactive web experience). Avoid jargon like slideMode. "
     "When a CURRENT OUTLINE is provided, do not use generate_outline unless the user explicitly asks to regenerate or start over. "
     "Use update_outline for structure/content changes, update_slides for specific slide tweaks, and update_theme for style/brand changes. "
+    "\n\n"
+    "CRITICAL - update_theme FORMAT: When user asks to change fonts, colors, logo, or brand styling, use action=update_theme with a theme_changes object. "
+    "DO NOT include slides array in update_theme responses - this avoids unnecessary reloading. "
+    "Format: {\"action\": \"update_theme\", \"message\": \"I'll update the theme...\", \"theme_changes\": {...}} "
+    "theme_changes options: "
+    "- fonts: {\"family\": \"Font Name\"} - for font changes like 'change font to Roboto' or 'use a more playful font' "
+    "- colors: {\"search_query\": \"blue professional\"} - for color changes like 'make it blue' or 'use warmer colors' "
+    "- brand: {\"name\": \"CompanyName\", \"url\": \"company.com\"} - for brand styling like 'use Tesla branding' "
+    "- logo: {\"action\": \"remove\"} or {\"action\": \"add\", \"brand_names\": [\"CompanyName\"]} "
+    "Examples: "
+    "'Change the font' → {\"action\": \"update_theme\", \"message\": \"I'll update the fonts.\", \"theme_changes\": {\"fonts\": {\"family\": null}}} "
+    "'Make it look more professional' → {\"action\": \"update_theme\", \"message\": \"Making it more professional.\", \"theme_changes\": {\"colors\": {\"search_query\": \"professional corporate\"}}} "
+    "'Use Nike branding' → {\"action\": \"update_theme\", \"message\": \"Applying Nike brand styling.\", \"theme_changes\": {\"brand\": {\"name\": \"Nike\", \"url\": \"nike.com\"}}} "
+    "'Remove the logo' → {\"action\": \"update_theme\", \"message\": \"Removing the logo.\", \"theme_changes\": {\"logo\": {\"action\": \"remove\"}}} "
+    "\n\n"
     "When a CLARIFICATION_ANSWERED hint is provided, proceed to generate/update the outline unless a critical detail is still missing. "
     "If a brand or company is mentioned and no domain is confirmed, ask to confirm the brand domain. "
     "For generate_outline include title, topic, slide_count, detail_level, tone, slides[{title, content, key_points}], "
@@ -328,9 +343,9 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
     Now also analyzes uploaded files (images, PDFs, Excel, PPTX, etc.)
     """
     try:
-        # Send immediate thinking status to confirm streaming works
-        yield sse_event({'type': 'status', 'status': 'thinking', 'message': 'Processing your request...'})
-        logger.info("[OutlineAgent] Sent initial thinking status")
+        # Simple status to confirm streaming started - no fake details
+        yield sse_event({'type': 'status', 'status': 'thinking'})
+        logger.info("[OutlineAgent] Started streaming")
 
         # Get the outline agent client from config
         from agents.config import OUTLINE_AGENT_MODEL
@@ -592,16 +607,14 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         logger.info(f"[OutlineAgent] Processing message with {len(messages)} messages in history")
 
         # Call Anthropic API with tool support - model decides when to search
-        # Run the model and collect response
         full_response = ""
         in_json_block = False
+        last_status_text = ""
 
         def contains_json_start(text: str) -> bool:
             """Check if text contains the start of JSON (fenced or raw)."""
-            # Check for fenced code block
             if '```json' in text or '```' in text:
                 return True
-            # Check for JSON object with action key (handles whitespace/newlines)
             if '"action"' in text and '{' in text:
                 return True
             return False
@@ -618,20 +631,27 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
             extra_context_tasks=extra_tasks,
         ):
             if isinstance(result, str) and result.startswith("data:"):
-                # This is a status event, yield it directly
-                logger.info(f"[OutlineAgent] Yielding status event: {result[:100]}...")
+                # This is a status event from tool calls - yield it directly
+                logger.info(f"[OutlineAgent] Yielding tool status: {result[:100]}...")
                 yield result
             elif isinstance(result, tuple) and result[0] == "text":
                 text = result[1]
                 full_response += text
-                logger.info(f"[OutlineAgent] 📝 Received text chunk: {len(text)} chars (total: {len(full_response)} chars)")
+                logger.info(f"[OutlineAgent] Received text: {len(text)} chars (total: {len(full_response)} chars)")
 
-                # Detect JSON blocks (fenced or raw)
+                # Detect JSON blocks
                 if contains_json_start(full_response) and not in_json_block:
                     in_json_block = True
-                    # Don't stream text before JSON - it's usually "thinking" text
-                    logger.info(f"[OutlineAgent] Detected JSON block, suppressing pre-JSON text")
+                    logger.info(f"[OutlineAgent] JSON block detected")
+                    yield sse_event({'type': 'status', 'status': 'compiling'})
                 elif not in_json_block and text and not contains_json_start(text):
+                    # Stream actual model text as both text event and status
+                    clean_text = text.strip()
+                    if clean_text and clean_text != last_status_text:
+                        last_status_text = clean_text
+                        # Send as status so it shows in the status bubble
+                        yield sse_event({'type': 'status', 'status': 'thinking', 'message': clean_text[:200]})
+                    # Also send as text for chat display
                     yield f"data: {json.dumps({'type': 'text', 'content': text})}\n\n"
 
         logger.info(f"[OutlineAgent] 🏁 Model loop complete. Total response: {len(full_response)} chars")
@@ -731,6 +751,15 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 text_after_json = ""
 
         if outline_data:
+            # Send status phase - no hardcoded messages
+            action = outline_data.get('action', 'generate_outline')
+            if action == 'generate_outline':
+                yield sse_event({'type': 'status', 'status': 'enriching'})
+            elif action == 'update_theme':
+                yield sse_event({'type': 'status', 'status': 'updating_theme'})
+            elif action == 'update_slides':
+                yield sse_event({'type': 'status', 'status': 'updating_slides'})
+
             outline_data, enrichment_events, text_after_json, videos_applied = await _enrich_outline_data(
                 outline_data,
                 request=request,
@@ -751,6 +780,10 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
             )
             for event in enrichment_events:
                 yield sse_event(event)
+
+            # Send completion status
+            if action == 'generate_outline':
+                yield sse_event({'type': 'status', 'status': 'outline_complete'})
 
             yield f"data: {json.dumps({'type': 'outline', 'data': outline_data})}\n\n"
 

@@ -578,7 +578,7 @@ def search_images(
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
     # Strip frontend scripts
-    from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
+    from agents.editing.tools.html_utils import strip_frontend_editing_scripts
     html = strip_frontend_editing_scripts(html)
 
     # Extract all images
@@ -652,6 +652,15 @@ def search_images(
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
     logger.info(f"[IMAGES] Replaced image [{selected_idx}]: {old_url[:40]}... -> {new_url[:40]}...")
+
+    # Resolve any remaining placeholder images (src="placeholder" with alt text)
+    # This handles cases where the HTML has other placeholders that need resolution
+    try:
+        from agents.generation.custom_component_image_pipeline import resolve_remaining_placeholders
+        new_html = loop.run_until_complete(resolve_remaining_placeholders(new_html))
+        logger.info("[IMAGES] Resolved remaining placeholders in HTML")
+    except Exception as e:
+        logger.warning(f"[IMAGES] Failed to resolve remaining placeholders: {e}")
 
     return DeckDiff(DeckDiffBase(
         slides_to_update=[

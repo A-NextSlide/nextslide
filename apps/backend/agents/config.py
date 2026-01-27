@@ -43,7 +43,8 @@ PERPLEXITY_SONAR_PRO = "perplexity-sonar-pro"
 # HARD should be the highest-quality model for creative + reasoning work.
 # We want Gemini 3 Pro for slide/design generation & editing.
 MODEL_HARD = GEMINI_3_PRO
-MODEL_EASY = CLAUDE_HAIKU      # Fast/simple tasks
+MODEL_SMART = CLAUDE_SONNET    # Smart reasoning (orchestration, planning)
+MODEL_EASY = GEMINI_3_FLASH    # Fast/simple tasks (was CLAUDE_HAIKU)
 MODEL_FALLBACK = CLAUDE_OPUS   # Rate limit fallback
 MODEL_RESEARCH = PERPLEXITY_SONAR_PRO  # Web search
 
@@ -51,15 +52,71 @@ def get_model(task: str) -> str:
     """Get model for a task. Single source of truth."""
     return TASK_MODELS.get(task, MODEL_EASY)
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EDIT CLASSIFICATION TYPES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class EditType:
+    """Classification of edit requests for routing."""
+    # Simple edits - single targeted change
+    TEXT_EDIT = "text_edit"           # Change text, fix typo
+    COLOR_EDIT = "color_edit"         # Change a color
+    IMAGE_REPLACE = "image_replace"   # Replace/search for image
+
+    # Theme/style edits - affect multiple slides
+    THEME_CHANGE = "theme_change"     # Change fonts/colors globally
+
+    # Content edits - may need research
+    CONTENT_UPDATE = "content_update" # Update content with real data
+
+    # Complex edits - need smart orchestration
+    COMPLEX_EDIT = "complex_edit"     # Redesign, multi-step, ambiguous
+    SLIDE_CREATE = "slide_create"     # Create new slide
+
+    # Research-first edits
+    RESEARCH_EDIT = "research_edit"   # Research then edit (charts, data)
+
+    # Chat only
+    CHAT_ONLY = "chat_only"           # Question, thanks, greeting
+
+
+# Model selection by edit type
+EDIT_TYPE_MODELS = {
+    EditType.TEXT_EDIT: GEMINI_3_FLASH,
+    EditType.COLOR_EDIT: GEMINI_3_FLASH,
+    EditType.IMAGE_REPLACE: GEMINI_3_FLASH,
+    EditType.THEME_CHANGE: GEMINI_3_FLASH,
+    EditType.CONTENT_UPDATE: MODEL_SMART,      # Needs reasoning
+    EditType.COMPLEX_EDIT: MODEL_SMART,        # Needs planning
+    EditType.SLIDE_CREATE: GEMINI_3_PRO,       # Creative generation
+    EditType.RESEARCH_EDIT: MODEL_SMART,       # Multi-step reasoning
+    EditType.CHAT_ONLY: MODEL_EASY,
+}
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TASK → MODEL MAPPING
 # ═══════════════════════════════════════════════════════════════════════════════
 
 TASK_MODELS = {
-    # Orchestration (tool routing) - Gemini 3 Flash for speed + reliability
+    # ─────────────────────────────────────────────────────────────────────────
+    # ORCHESTRATION (Router + Skills pattern)
+    # ─────────────────────────────────────────────────────────────────────────
+    # Router: Fast classification of user intent (cheap model)
+    "orchestrator_router": MODEL_EASY,
+
+    # Orchestrator: Tool selection and execution
+    # - Simple edits use Flash (fast)
+    # - Complex edits use Sonnet (smart)
+    "orchestrator_simple": GEMINI_3_FLASH,
+    "orchestrator_complex": MODEL_SMART,
+
+    # Legacy - routes to appropriate model based on classification
     "orchestrator": GEMINI_3_FLASH,
 
-    # Generation (creative) - Pro for creation, Flash for single edits
+    # ─────────────────────────────────────────────────────────────────────────
+    # GENERATION (Creative work)
+    # ─────────────────────────────────────────────────────────────────────────
     "slide_generate": MODEL_HARD,
     "slide_edit": GEMINI_3_FLASH,
     "slide_edit_batch": MODEL_HARD,  # edit_all_slides uses Pro
@@ -69,7 +126,9 @@ TASK_MODELS = {
     "theme_generate": MODEL_HARD,
     "slide_style": MODEL_HARD,
 
-    # Simple tasks - Haiku (except validation/brand which use Flash for JSON reliability)
+    # ─────────────────────────────────────────────────────────────────────────
+    # SIMPLE TASKS (Haiku - fast/cheap)
+    # ─────────────────────────────────────────────────────────────────────────
     "composer_route": MODEL_EASY,
     "validation": GEMINI_3_FLASH,
     "context_build": MODEL_EASY,
@@ -80,10 +139,14 @@ TASK_MODELS = {
     "file_analysis_fast": MODEL_EASY,
     "vision_import": GEMINI_FLASH_LITE,
 
-    # Research - Perplexity
+    # ─────────────────────────────────────────────────────────────────────────
+    # RESEARCH
+    # ─────────────────────────────────────────────────────────────────────────
     "outline_research": MODEL_RESEARCH,
 
-    # Fallback
+    # ─────────────────────────────────────────────────────────────────────────
+    # FALLBACK
+    # ─────────────────────────────────────────────────────────────────────────
     "fallback": MODEL_FALLBACK,
 }
 
@@ -100,7 +163,7 @@ VISUAL_ANALYZER_MODEL = MODEL_EASY
 OUTLINE_MODEL = MODEL_RESEARCH
 OUTLINE_PRESENTATION_MODEL = MODEL_EASY
 OUTLINE_RESEARCH_MODEL = MODEL_EASY
-OUTLINE_AGENT_MODEL = GEMINI_3_PRO  # Pro Gemini model with function calling
+OUTLINE_AGENT_MODEL = GEMINI_3_FLASH  # Fast flash model for outline agent
 
 # Deck Editing
 ORCHESTRATOR_MODEL = MODEL_EASY  # Changed from Opus to Haiku

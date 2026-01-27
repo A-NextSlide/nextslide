@@ -150,13 +150,19 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
     sess = sb.table("agent_sessions").select("deck_id, slide_id").eq("id", session_id).single().execute().data
     deck_id = sess.get("deck_id")
     slide_id = sess.get("slide_id")
+    session_slide_id = slide_id  # Track for logging
+    context_slide_id = None
     try:
         if isinstance(context, dict):
             context_slide_id = context.get("slide_id") or context.get("targetSlideId")
+            logger.info(f"[AgentChat] Context slide_id={context_slide_id}, session slide_id={session_slide_id}")
             if context_slide_id:
                 slide_id = context_slide_id
-    except Exception:
-        pass
+                logger.info(f"[AgentChat] Using context slide_id: {context_slide_id}")
+            else:
+                logger.info(f"[AgentChat] No context slide_id, using session: {session_slide_id}")
+    except Exception as e:
+        logger.warning(f"[AgentChat] Error getting context slide_id: {e}")
     from utils.supabase import get_deck
     deck_data = get_deck(deck_id)
     import api.chat_server as server
@@ -220,6 +226,7 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
     # Fall back to session slide_id if no selection provided
     if not selected_slide_id:
         selected_slide_id = slide_id
+        logger.info(f"[AgentChat] Slide resolution: no selection, using slide_id={slide_id}")
 
     current_slide = None
     for s in (deck_data.get("slides") or []):
@@ -228,6 +235,9 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
             break
     if not current_slide and (deck_data.get("slides")):
         current_slide = deck_data["slides"][0]
+        logger.warning(f"[AgentChat] Slide {selected_slide_id} not found, falling back to first slide: {current_slide.get('id')}")
+    else:
+        logger.info(f"[AgentChat] Final slide selection: {selected_slide_id}")
 
     # Chat history (persisted messages in this session)
     # Order ascending by created_at so oldest messages come first, newest last (chronological)
@@ -417,6 +427,14 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
     normalized_attachments = []
     slide_screenshot_data = None  # Will hold base64 screenshot if present
 
+    # Log all attachments for debugging
+    logger.info(f"[AgentChat] Processing {len(attachments or [])} attachments")
+    for i, att in enumerate(attachments or []):
+        if isinstance(att, dict):
+            att_name = att.get('name') or att.get('fileName') or 'unknown'
+            att_url_len = len(att.get('url') or '')
+            logger.info(f"[AgentChat] Attachment {i}: name={att_name}, url_len={att_url_len}")
+
     for att in (attachments or []):
         if not isinstance(att, dict):
             continue
@@ -429,14 +447,24 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
             # Extract base64 data from data URL
             if att_url.startswith('data:image'):
                 try:
-                    # Format: data:image/jpeg;base64,/9j/4AAQ...
+                    # Format: data:image/jpeg;base64,/9j/4AAQ... or data:image/png;base64,...
+                    # Extract media type from the data URL header
+                    header_part = att_url.split(',', 1)[0] if ',' in att_url else ''
                     base64_part = att_url.split(',', 1)[1] if ',' in att_url else ''
+
+                    # Parse media type from header (e.g., "data:image/png;base64")
+                    media_type = 'image/jpeg'  # default
+                    if header_part:
+                        # Extract between "data:" and ";base64"
+                        if header_part.startswith('data:') and ';' in header_part:
+                            media_type = header_part[5:header_part.index(';')]
+
                     if base64_part:
                         slide_screenshot_data = {
                             'data': base64_part,
-                            'media_type': 'image/jpeg'
+                            'media_type': media_type
                         }
-                        logger.info(f"[AgentChat] Extracted slide screenshot: {len(base64_part)} chars base64")
+                        logger.info(f"[AgentChat] Extracted slide screenshot: {len(base64_part)} chars base64, type: {media_type}")
                 except Exception as e:
                     logger.warning(f"[AgentChat] Failed to extract screenshot data: {e}")
             # Don't add to normalized_attachments - we handle it separately
@@ -521,7 +549,11 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
             classification = None
 
     # Determine screenshot inclusion based on classification (or fallback to keyword-based)
-    if classification:
+    # DEBUG: Force include screenshot when available to verify capture is working
+    if slide_screenshot_data:
+        include_screenshot = True
+        logger.info(f"[AgentChat] DEBUG: Forcing screenshot inclusion ({len(slide_screenshot_data.get('data', ''))} chars)")
+    elif classification:
         include_screenshot = slide_screenshot_data and should_include_screenshot(classification)
         if slide_screenshot_data and not include_screenshot:
             logger.info(f"[AgentChat] Skipping screenshot - classification: {classification.type}")
@@ -675,8 +707,11 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
         logger.warning(f"[DEBUG] No deck_diff_plain! This will prevent auto-apply from working")
     summary = result.get("edit_summary") or "Proposed edit"
     agent_message = result.get("message") or ""
+    theme_updates = result.get("theme_updates")  # Extract theme_updates from orchestrator
     logger.info(f"[DEBUG] agent_message from result: '{agent_message[:200] if agent_message else 'EMPTY'}'")
     logger.info(f"[DEBUG] edit_summary from result: '{summary[:200] if summary else 'EMPTY'}'")
+    if theme_updates:
+        logger.info(f"[DEBUG] theme_updates from result: {list(theme_updates.keys())}")
 
     # ALWAYS persist an assistant message - use edit summary as fallback if no conversational message
     # Prefer the actual conversational message from the LLM
@@ -776,16 +811,21 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                         })
             except Exception:
                 updated_slides_payload = []
+            preview_data = {
+                # editId will be attached on the subsequent proposed/apply event
+                "diff": deck_diff_plain,
+                "slides": updated_slides_payload
+            }
+            # Include theme_updates if present (for font/color changes)
+            if theme_updates:
+                preview_data["theme_updates"] = theme_updates
+                logger.info(f"[DEBUG] Including theme_updates in preview payload: {list(theme_updates.keys())}")
             preview_payload = {
                 "type": "deck.preview.diff",
                 "sessionId": session_id,
                 "messageId": message_id,
                 "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                "data": {
-                    # editId will be attached on the subsequent proposed/apply event
-                    "diff": deck_diff_plain,
-                    "slides": updated_slides_payload
-                }
+                "data": preview_data
             }
             await agent_stream_bus.publish(session_id, ensure_json_serializable(preview_payload))
             # Persist to agent_events timeline as well
@@ -813,12 +853,14 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
         )
 
     has_actual_changes = _diff_has_changes(deck_diff_plain)
-    if deck_id and deck_diff_plain and has_actual_changes:
+    # Also consider theme_updates as a valid change (font/color updates)
+    has_theme_changes = bool(theme_updates)
+    if deck_id and (has_actual_changes or has_theme_changes):
         # Respect explicit request flag; disable auto-apply under pytest
         auto_apply_request = bool(body.get("autoApply", False))
         is_pytest = bool(os.getenv("PYTEST_CURRENT_TEST"))
         should_auto_apply = (ALWAYS_AUTO_APPLY or auto_apply_request) and not is_pytest
-        logger.info(f"[DEBUG] Auto-apply check: deck_id={deck_id}, deck_diff_plain={bool(deck_diff_plain)}, has_actual_changes={has_actual_changes}, ALWAYS_AUTO_APPLY={ALWAYS_AUTO_APPLY}, auto_apply_request={auto_apply_request}, is_pytest={is_pytest}, should_auto_apply={should_auto_apply}")
+        logger.info(f"[DEBUG] Auto-apply check: deck_id={deck_id}, deck_diff_plain={bool(deck_diff_plain)}, has_actual_changes={has_actual_changes}, has_theme_changes={has_theme_changes}, ALWAYS_AUTO_APPLY={ALWAYS_AUTO_APPLY}, auto_apply_request={auto_apply_request}, is_pytest={is_pytest}, should_auto_apply={should_auto_apply}")
         if should_auto_apply:
             try:
                 logger.info(f"[DEBUG] Starting auto-apply process for deck_id={deck_id}")
@@ -858,6 +900,41 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                 if deck_revision:
                     sb_apply.table("agent_edits").update({"deck_revision": str(deck_revision)}).eq("id", e["id"]).execute()
 
+                # CRITICAL: Apply theme_updates to deck's theme in database
+                # Theme is stored in deck.data.theme, not a top-level theme column
+                if theme_updates and deck_id:
+                    try:
+                        logger.info(f"[DEBUG] Applying theme_updates to deck: {list(theme_updates.keys())}")
+                        # Get current deck data field (theme is inside data.theme)
+                        deck_result = sb_apply.table("decks").select("data").eq("uuid", deck_id).execute()
+                        if deck_result.data and len(deck_result.data) > 0:
+                            current_data = deck_result.data[0].get("data") or {}
+                            current_theme = current_data.get("theme") or {}
+
+                            # Merge theme_updates into current theme
+                            updated_theme = {**current_theme}
+                            if theme_updates.get("typography"):
+                                updated_theme["typography"] = {
+                                    **(updated_theme.get("typography") or {}),
+                                    **theme_updates["typography"]
+                                }
+                                logger.info(f"[DEBUG] Updated typography: {updated_theme['typography']}")
+                            if theme_updates.get("color_palette"):
+                                updated_theme["color_palette"] = {
+                                    **(updated_theme.get("color_palette") or {}),
+                                    **theme_updates["color_palette"]
+                                }
+                                logger.info(f"[DEBUG] Updated color_palette: {list(updated_theme['color_palette'].keys())}")
+
+                            # Update data.theme in the deck
+                            updated_data = {**current_data, "theme": updated_theme}
+                            sb_apply.table("decks").update({"data": updated_data}).eq("uuid", deck_id).execute()
+                            logger.info(f"[DEBUG] Theme updates persisted to deck {deck_id}")
+                        else:
+                            logger.warning(f"[DEBUG] Could not find deck {deck_id} to update theme")
+                    except Exception as theme_err:
+                        logger.warning(f"[DEBUG] Failed to apply theme_updates: {theme_err}")
+
                 # Build optional updated slide payloads for immediate UI patch on applied event
                 updated_slides_payload = []
                 try:
@@ -878,20 +955,24 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                     updated_slides_payload = []
 
                 # Stream applied event
+                applied_data = {
+                    "editId": e["id"],
+                    "deckRevision": deck_revision,
+                    "updatedSlideIds": updated_slide_ids,
+                    "slides": updated_slides_payload,
+                    "deck_diff": deck_diff_plain,  # CRITICAL: Include deck_diff for frontend to apply changes locally
+                    "summary": summary  # Include summary for frontend message display
+                }
+                # Include theme_updates so frontend can update deck theme immediately
+                if theme_updates:
+                    applied_data["theme_updates"] = theme_updates
                 await agent_stream_bus.publish(session_id, {
                     "type": "deck.edit.applied",
                     "sessionId": session_id,
                     "messageId": message_id,
                     "timestamp": int(datetime.utcnow().timestamp() * 1000),
                     # Include updatedSlideIds and compact slide payloads for instant UI patch
-                    "data": {
-                        "editId": e["id"],
-                        "deckRevision": deck_revision,
-                        "updatedSlideIds": updated_slide_ids,
-                        "slides": updated_slides_payload,
-                        "deck_diff": deck_diff_plain,  # CRITICAL: Include deck_diff for frontend to apply changes locally
-                        "summary": summary  # Include summary for frontend message display
-                    }
+                    "data": applied_data
                 })
                 sb_apply.table("agent_events").insert({
                     "session_id": session_id,

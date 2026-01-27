@@ -50,9 +50,31 @@ def _iter_js_objects(text: str):
 
 
 def _object_is_image_like(obj_text: str) -> bool:
+    """Check if a JS object should be treated as having image properties.
+
+    Returns True if:
+    - The object has no 'type' property (default case)
+    - The object has a type related to images (img, image, photo, picture)
+    - The object has image-related properties (image, src, img, photo, etc.) regardless of type
+    - The object has properties containing 'image' in the name (imageStage, stageImage, etc.)
+    """
+    # If the object has image-related properties, treat it as image-like regardless of type
+    # This handles cases like { type: 'event', image: 'placeholder', imageAlt: '...' }
+    # Also match property names CONTAINING 'image' like imageStage, stageImage, backgroundImage
+    image_prop_pattern = r'\b\w*(?:image|img|photo|picture|thumbnail|src)\w*\s*:\s*["\']'
+    if re.search(image_prop_pattern, obj_text, re.IGNORECASE):
+        return True
+
+    # Also check for placeholder values directly - if object has 'placeholder' or 'placeholder?q=...' it needs replacement
+    if re.search(r':\s*["\']placeholder(?:\?[^"\']*)?["\']', obj_text, re.IGNORECASE):
+        return True
+
+    # If no type property, assume it could be image-like
     type_match = re.search(r'\btype\s*:\s*([\'"])([^\'"]+)\1', obj_text, re.IGNORECASE)
     if not type_match:
         return True
+
+    # Check if type is explicitly image-related
     type_value = type_match.group(2).strip().lower()
     return type_value in ("img", "image", "photo", "picture")
 
@@ -87,6 +109,9 @@ def _extract_js_object_label(obj_text: str) -> str:
 
 def _is_placeholder_src(value: str) -> bool:
     """Check if a src value is a placeholder. Uses unified service implementation."""
+    # Also treat "None" (string) as a placeholder - AI sometimes generates this
+    if value and value.strip().lower() == "none":
+        return True
     return unified_is_placeholder_src(value)
 
 
@@ -144,542 +169,228 @@ class CustomComponentHtmlProcessor:
         return html_content
 
     def inject_prefetched_images(self, html: str, prefetched_images: Dict[str, str]) -> str:
-        """Replace placeholder/variable image sources with real URLs."""
+        """Replace placeholder/variable image sources with real URLs.
+
+        Simplified approach: We have image URLs and placeholder images.
+        Just inject the URLs into the placeholders, cycling through if needed.
+        """
         if not html:
             return html
 
         prefetched_images = prefetched_images or {}
 
-        # Build list of non-logo images for fallback use (logos should only be used for logo props)
-        image_urls = [
-            v for k, v in prefetched_images.items()
-            if not k.endswith('_query') and v.startswith('http') and 'logo' not in k.lower()
-        ]
+        def is_url_key(k: str) -> bool:
+            """Check if key is a URL key (not metadata like _query, _width, _height)."""
+            return not (k.endswith('_query') or k.endswith('_width') or k.endswith('_height'))
 
-        # Check if we have ANY prefetched images (including logos)
-        all_urls = [v for k, v in prefetched_images.items() if not k.endswith('_query') and v.startswith('http')]
+        def is_url_value(v) -> bool:
+            """Check if value is a URL string."""
+            return isinstance(v, str) and v.startswith('http')
+
+        # Build list of all available image URLs (excluding query/dimension metadata)
+        # Keep logos separate for logo-specific properties
+        logo_urls = {k: v for k, v in prefetched_images.items()
+                     if is_url_key(k) and is_url_value(v) and 'logo' in k.lower()}
+        image_urls = [v for k, v in prefetched_images.items()
+                      if is_url_key(k) and is_url_value(v) and 'logo' not in k.lower()]
+        all_urls = [v for k, v in prefetched_images.items()
+                    if is_url_key(k) and is_url_value(v)]
 
         if not all_urls:
-            # Check if we have placeholder images that need replacement
-            has_placeholders = (
-                'src="placeholder"' in html.lower() or
-                "src='placeholder'" in html.lower() or
-                'src=""' in html or
-                "src=''" in html
-            )
-
-            if has_placeholders:
-                logger.warning("[IMAGE_INJECT] No prefetched images but found placeholders - attempting inline search")
-                # Extract alt texts from placeholder images for searching
-                placeholder_alts = []
-                for match in re.finditer(r'<img[^>]*src=["\']?(?:placeholder)?["\']?[^>]*alt=["\']([^"\']+)["\']', html, re.IGNORECASE):
-                    alt_text = match.group(1).strip()
-                    if alt_text and len(alt_text) > 3:
-                        placeholder_alts.append(alt_text)
-                # Also check reverse order (alt before src)
-                for match in re.finditer(r'<img[^>]*alt=["\']([^"\']+)["\'][^>]*src=["\']?(?:placeholder)?["\']?', html, re.IGNORECASE):
-                    alt_text = match.group(1).strip()
-                    if alt_text and len(alt_text) > 3 and alt_text not in placeholder_alts:
-                        placeholder_alts.append(alt_text)
-
-                if placeholder_alts:
-                    logger.info(f"[IMAGE_INJECT] Found {len(placeholder_alts)} placeholder images with alt text to search")
-                    # Try to search for these images synchronously (this is a fallback)
-                    try:
-                        import asyncio
-                        from services.combined_image_service import CombinedImageService
-
-                        async def search_fallback_images():
-                            service = CombinedImageService()
-                            found_images = []
-                            for alt in placeholder_alts[:5]:  # Limit to 5 searches
-                                try:
-                                    result = await service.search_images(query=alt, per_page=1, page=1)
-                                    photos = result.get("photos", []) or result.get("results", [])
-                                    if photos:
-                                        img_url = (
-                                            photos[0].get("url") or
-                                            photos[0].get("src", {}).get("large") or
-                                            photos[0].get("src", {}).get("original")
-                                        )
-                                        if img_url:
-                                            found_images.append((alt, img_url))
-                                            logger.info(f"[IMAGE_INJECT] Fallback search found image for: {alt[:40]}...")
-                                except Exception as e:
-                                    logger.debug(f"[IMAGE_INJECT] Fallback search failed for '{alt[:30]}': {e}")
-                            return found_images
-
-                        # Run the async search
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            # We're already in an async context, create a task
-                            import concurrent.futures
-                            with concurrent.futures.ThreadPoolExecutor() as pool:
-                                fallback_images = pool.submit(
-                                    lambda: asyncio.run(search_fallback_images())
-                                ).result(timeout=30)
-                        else:
-                            fallback_images = loop.run_until_complete(search_fallback_images())
-
-                        # Replace placeholders with found images
-                        if fallback_images:
-                            for alt, img_url in fallback_images:
-                                # Replace the placeholder src with the found image URL
-                                escaped_alt = re.escape(alt)
-                                # Pattern for alt before src
-                                pattern1 = rf'(<img[^>]*alt=["\']){escaped_alt}(["\'][^>]*src=["\'])(?:placeholder)?(["\'][^>]*>)'
-                                html = re.sub(pattern1, rf'\g<1>{alt}\g<2>{img_url}\g<3>', html, flags=re.IGNORECASE)
-                                # Pattern for src before alt
-                                pattern2 = rf'(<img[^>]*src=["\'])(?:placeholder)?(["\'][^>]*alt=["\']){escaped_alt}(["\'][^>]*>)'
-                                html = re.sub(pattern2, rf'\g<1>{img_url}\g<2>{alt}\g<3>', html, flags=re.IGNORECASE)
-                            logger.info(f"[IMAGE_INJECT] Fallback replaced {len(fallback_images)} placeholder images")
-                    except Exception as e:
-                        logger.warning(f"[IMAGE_INJECT] Fallback image search failed: {e}")
-
-            external_matches = re.findall(r'<img[^>]+src=["\']?(https?://[^\s"\'>]+)["\']?', html, flags=re.IGNORECASE)
-            if external_matches:
-                external_to_replace = [url for url in external_matches if not any(d in url.lower() for d in BUCKET_DOMAINS)]
-                if external_to_replace:
-                    logger.warning(f"[IMAGE_INJECT] No prefetched images but found {len(external_to_replace)} external URLs")
-                    for url in external_to_replace[:3]:
-                        logger.warning(f"[IMAGE_INJECT]   - UNREPLACED: {url[:70]}...")
+            logger.warning("[IMAGE_INJECT] No prefetched images available")
             return html
 
-        # Log what we have for debugging
-        logo_urls = [k for k in prefetched_images.keys() if 'logo' in k.lower() and not k.endswith('_query')]
-        if logo_urls:
-            logger.info(f"[IMAGE_INJECT] Found {len(logo_urls)} logo URLs to inject: {logo_urls}")
-
-        logger.info(f"[IMAGE_INJECT] Starting guaranteed injection with {len(image_urls)} images")
+        logger.info(f"[IMAGE_INJECT] Starting injection with {len(image_urls)} images, {len(logo_urls)} logos")
 
         result = html
         images_injected = 0
         image_index = 0
-        has_js_objects = False
 
         def is_our_url(url: str) -> bool:
             return any(domain in url.lower() for domain in BUCKET_DOMAINS)
 
-        for key, url in prefetched_images.items():
-            if not key.startswith('alt_') or not url.startswith('http'):
-                continue
-            alt_text = prefetched_images.get(f"{key}_query", key[4:].replace('_', ' '))
-            if not alt_text:
-                continue
-            escaped_alt = re.escape(alt_text)
+        def get_next_image() -> str:
+            """Get the next image URL, cycling through available images."""
+            nonlocal image_index, images_injected
+            if not image_urls:
+                return all_urls[0] if all_urls else ""
+            url = image_urls[image_index % len(image_urls)]
+            image_index += 1
+            images_injected += 1
+            return url
 
-            logger.info("[IMAGE_INJECT] Attempting to match alt text: '%s' (key=%s)", alt_text[:60], key)
-
-            def replace_by_alt_first(match, url=url, alt_text=alt_text):
-                nonlocal images_injected
-                full_tag = match.group(0)
-                if is_our_url(full_tag):
-                    logger.debug("[IMAGE_INJECT] Skipping already-replaced tag")
-                    return full_tag
-                new_tag = re.sub(r'src=["\'][^"\']*["\']', f'src="{url}"', full_tag)
-                if new_tag != full_tag:
-                    images_injected += 1
-                    logger.info("[IMAGE_INJECT] ALT match SUCCESS: '%s' -> %s", alt_text[:40], url[:60])
-                return new_tag
-
-            alt_pattern = rf'<img[^>]*alt=["\']({escaped_alt}[^"\']*)["\'][^>]*>'
-            old_result = result
-            result = re.sub(alt_pattern, replace_by_alt_first, result, flags=re.IGNORECASE)
-            if result == old_result:
-                logger.debug("[IMAGE_INJECT] No match found for alt pattern: %s...", alt_pattern[:80])
-
-        alt_url_map = {}
-        for key, url in prefetched_images.items():
-            if not key.startswith('alt_') or not url.startswith('http'):
-                continue
-            query = prefetched_images.get(f"{key}_query") or key[4:].replace('_', ' ')
-            if query:
-                alt_url_map[query.strip().lower()] = url
-
-        # Track URLs that have been used to ensure each image is only used once
-        used_alt_urls = set()
-
-        def _match_alt_url(alt_text: str) -> Optional[str]:
-            if not alt_text:
-                return None
-            alt_norm = alt_text.strip().lower()
-            # Exact match first
-            if alt_norm in alt_url_map:
-                url = alt_url_map[alt_norm]
-                if url not in used_alt_urls:
-                    used_alt_urls.add(url)
-                    return url
-            # Substring match
-            for query, url in alt_url_map.items():
-                if url in used_alt_urls:
-                    continue  # Skip already used URLs
-                if query and (query in alt_norm or alt_norm in query):
-                    used_alt_urls.add(url)
-                    return url
-            return None
-
-        def _replace_src_in_object(obj_text: str, url: str) -> Tuple[str, bool]:
-            # Match src, image, img, photo, picture, thumbnail, background properties
-            src_pattern = r'(\b(?:src|image|img|photo|picture|thumbnail|background)\s*:\s*)(?:(["\'])(?P<src>.*?)\2|(?P<src_unquoted>[^,\n}]+))'
-
-            def replace_src(match):
-                prefix = match.group(1)
-                quote = match.group(2) or '"'
-                return f"{prefix}{quote}{url}{quote}"
-
-            new_obj, count = re.subn(src_pattern, replace_src, obj_text, count=1, flags=re.IGNORECASE | re.DOTALL)
-            return new_obj, count > 0
-
-        def _replace_js_objects(script_content: str) -> Tuple[str, bool, bool]:
+        # PHASE 1: Replace JS object image properties (for dynamic content like tabs)
+        def _replace_js_objects(script_content: str) -> str:
             nonlocal images_injected, image_index
             objects = _iter_js_objects(script_content)
             if not objects:
-                return script_content, False, False
+                return script_content
 
-            updated = False
-            found_images = False
             parts = []
             cursor = 0
 
-            # Match src, image, img, photo, picture, thumbnail, background properties
-            image_prop_pattern = r'\b(?:src|image|img|photo|picture|thumbnail|background)\s*:'
+            # Pattern for image SOURCE properties (excluding alt/label properties)
+            src_pattern = r'(\b\w*(?:src|image|img|photo|picture|thumbnail|background)(?!Alt|Label|Text|Title|Name|Description|Caption)\w*\s*:\s*)(["\'])([^"\']*)\2'
+
             for start, end, obj_text in objects:
-                new_obj = obj_text
-                if _object_is_image_like(obj_text) and re.search(image_prop_pattern, obj_text, re.IGNORECASE):
-                    label_text = _extract_js_object_label(obj_text)
-                    src_match = re.search(r'\b(?:src|image|img|photo|picture|thumbnail|background)\s*:\s*(?:(["\'])(?P<src>.*?)\1|(?P<src_unquoted>[^,\n}]+))', obj_text, re.IGNORECASE | re.DOTALL)
-                    if src_match and label_text:
-                        found_images = True
-                        src_value = (src_match.group('src') or src_match.group('src_unquoted') or "").strip()
-                        # Only replace if the current src is a placeholder (not a valid URL)
-                        if _is_placeholder_src(src_value):
-                            target_url = _match_alt_url(label_text)
-                            if not target_url and image_urls:
-                                target_url = image_urls[image_index % len(image_urls)]
-                                image_index += 1
-                            if target_url:
-                                new_obj, replaced = _replace_src_in_object(obj_text, target_url)
-                                if replaced:
-                                    images_injected += 1
-                                    updated = True
+                if not _object_is_image_like(obj_text):
+                    parts.append(script_content[cursor:end])
+                    cursor = end
+                    continue
+
+                def replace_obj_src(match):
+                    prefix = match.group(1)
+                    quote = match.group(2)
+                    current_src = match.group(3)
+
+                    # Skip if already a valid URL
+                    if current_src.startswith('http') and is_our_url(current_src):
+                        return match.group(0)
+                    if current_src.startswith('data:') or current_src.startswith('blob:'):
+                        return match.group(0)
+
+                    # Replace placeholder
+                    if _is_placeholder_src(current_src):
+                        url = get_next_image()
+                        if url:
+                            logger.info(f"[IMAGE_INJECT] JS object: replaced '{current_src[:30]}' with {url[:50]}...")
+                            return f"{prefix}{quote}{url}{quote}"
+                    return match.group(0)
+
+                new_obj = re.sub(src_pattern, replace_obj_src, obj_text, flags=re.IGNORECASE)
                 parts.append(script_content[cursor:start])
                 parts.append(new_obj)
                 cursor = end
 
             parts.append(script_content[cursor:])
-            return "".join(parts), updated, found_images
+            return "".join(parts)
 
+        # Process all script blocks
         script_pattern = re.compile(r'(<script[^>]*>)([\s\S]*?)(</script>)', re.IGNORECASE)
 
         def replace_script_block(match):
-            nonlocal has_js_objects
             start_tag, script_content, end_tag = match.groups()
-            new_content, updated, found_any = _replace_js_objects(script_content)
-            if found_any:
-                has_js_objects = True
+            new_content = _replace_js_objects(script_content)
             return f"{start_tag}{new_content}{end_tag}"
 
         result = re.sub(script_pattern, replace_script_block, result)
 
-        def replace_js_prop_default(match):
-            nonlocal images_injected, image_index
-            decl = match.group(1)
-            var_name = match.group(2)
-            prop_name = match.group(3)
+        # PHASE 2: Replace all placeholder img src attributes in HTML
+        # This is the simplified approach - find any placeholder src and replace it
+        def replace_any_placeholder_img(match):
+            full_tag = match.group(0)
 
-            if prop_name in prefetched_images and prefetched_images[prop_name].startswith('http'):
-                url = prefetched_images[prop_name]
-            elif image_index < len(image_urls):
-                url = image_urls[image_index]
-                image_index += 1
+            # Skip if already has our URL
+            if is_our_url(full_tag):
+                return full_tag
+
+            # Extract current src
+            src_match = re.search(r'src=(["\'])([^"\']*)\1', full_tag, re.IGNORECASE)
+            if not src_match:
+                src_match = re.search(r'src=([^\s>]+)', full_tag, re.IGNORECASE)
+
+            if src_match:
+                current_src = src_match.group(2) if len(src_match.groups()) > 1 else src_match.group(1)
+                # Skip valid URLs (already has real image)
+                if current_src.startswith('http') and not 'placeholder' in current_src.lower():
+                    if is_our_url(current_src):
+                        return full_tag
+                    # External URL - replace it
+                if current_src.startswith('data:') or current_src.startswith('blob:'):
+                    return full_tag
+                # Skip template variables like ${item.image} - these are handled by JS
+                if '${' in current_src and '.' in current_src:
+                    return full_tag
+
+            # This is a placeholder - replace it
+            url = get_next_image()
+            if not url:
+                return full_tag
+
+            # Replace the src attribute
+            new_tag = re.sub(r'src=(["\'])[^"\']*\1', f'src="{url}"', full_tag, count=1, flags=re.IGNORECASE)
+            if new_tag == full_tag:
+                # Try unquoted src
+                new_tag = re.sub(r'src=[^\s>]+', f'src="{url}"', full_tag, count=1, flags=re.IGNORECASE)
+            if new_tag == full_tag:
+                # No src at all - add one
+                new_tag = full_tag.replace('<img', f'<img src="{url}"', 1)
+
+            if new_tag != full_tag:
+                logger.info(f"[IMAGE_INJECT] Replaced placeholder img with {url[:50]}...")
+            return new_tag
+
+        # Match all img tags that need replacement
+        # Criteria: placeholder, empty, local file, template var, or external URL
+        img_pattern = r'<img[^>]*>'
+
+        def should_replace_img(match):
+            tag = match.group(0)
+            # Already ours - skip
+            if is_our_url(tag):
+                return tag
+            # Check src
+            src_match = re.search(r'src=(["\'])([^"\']*)\1', tag, re.IGNORECASE)
+            if not src_match:
+                src_match = re.search(r'src=([^\s>]+)', tag, re.IGNORECASE)
+
+            if src_match:
+                src = src_match.group(2) if len(src_match.groups()) > 1 else src_match.group(1).strip('"\'')
+                # Data/blob URLs - keep
+                if src.startswith('data:') or src.startswith('blob:'):
+                    return tag
+                # Template variables with dots (e.g., ${item.image}) - keep, JS handles these
+                if '${' in src and '.' in src:
+                    return tag
+                # Our URLs - keep
+                if src.startswith('http') and is_our_url(src):
+                    return tag
+                # External URLs - replace
+                if src.startswith('http') and not is_our_url(src):
+                    return replace_any_placeholder_img(match)
+                # Placeholder or local file - replace
+                if _is_placeholder_src(src):
+                    return replace_any_placeholder_img(match)
+                # Simple template var like ${image} - replace
+                if '${' in src:
+                    return replace_any_placeholder_img(match)
+                # Local file reference - replace
+                if re.match(r'^[a-zA-Z0-9_\-\.]+\.(jpg|jpeg|png|gif|webp|svg|avif)$', src, re.IGNORECASE):
+                    return replace_any_placeholder_img(match)
             else:
-                url = image_urls[images_injected % len(image_urls)]
+                # No src at all - add one
+                return replace_any_placeholder_img(match)
 
-            images_injected += 1
-            logger.info(f"[IMAGE_INJECT] Replaced JS props.{prop_name} with {url[:50]}...")
-            return f"{decl} {var_name} = '{url}';"
+            return tag
 
-        js_prop_default_pattern = r'(const|let|var)\s+(\w+)\s*=\s*props\.(\w+)\s*(?:\|\||\?\?)\s*[\'"][^\'"]*[\'"]\s*;'
-        result = re.sub(js_prop_default_pattern, replace_js_prop_default, result, flags=re.IGNORECASE)
+        result = re.sub(img_pattern, should_replace_img, result, flags=re.IGNORECASE)
 
-        def replace_variable_src(match):
-            nonlocal images_injected, image_index
+        # PHASE 3: Replace background-image URLs
+        def replace_bg_url(match):
             before = match.group(1)
-            var_name = match.group(2)
+            url_value = match.group(2)
             after = match.group(3)
 
-            if has_js_objects and var_name.lower() in GENERIC_JS_VARS:
+            # Skip valid URLs
+            if is_our_url(url_value):
+                return match.group(0)
+            if url_value.startswith('data:') or url_value.startswith('linear') or url_value.startswith('radial'):
                 return match.group(0)
 
-            prop_key = var_name
-            if prop_key in prefetched_images and prefetched_images[prop_key].startswith('http'):
-                url = prefetched_images[prop_key]
-            elif image_index < len(image_urls):
-                url = image_urls[image_index]
-                image_index += 1
-            else:
-                url = image_urls[images_injected % len(image_urls)]
+            # Replace placeholder or external URL
+            new_url = get_next_image()
+            if new_url:
+                logger.info(f"[IMAGE_INJECT] Replaced background-image with {new_url[:50]}...")
+                return f'{before}{new_url}{after}'
+            return match.group(0)
 
-            images_injected += 1
-            logger.info(f"[IMAGE_INJECT] Replaced ${{{var_name}}} with {url[:50]}...")
-            return f'<img {before}src="{url}"{after}>'
+        # CSS background-image
+        bg_pattern = r'(background-image:\s*url\([\'"]?)([^\'")\s]+)([\'"]?\))'
+        result = re.sub(bg_pattern, replace_bg_url, result, flags=re.IGNORECASE)
 
-        # Pattern handles both <img src=... and <img alt="..." src=...
-        var_pattern = r'<img\s*([^>]*?)src=["\']?\$\{+\s*(\w+)\s*\}+["\']?([^>]*?)>'
-        result = re.sub(var_pattern, replace_variable_src, result, flags=re.IGNORECASE)
-
-        def replace_props_reference(match):
-            nonlocal images_injected, image_index
-            before = match.group(1)
-            prop_name = match.group(2)
-            after = match.group(3)
-
-            if prop_name in prefetched_images and prefetched_images[prop_name].startswith('http'):
-                url = prefetched_images[prop_name]
-            elif image_index < len(image_urls):
-                url = image_urls[image_index]
-                image_index += 1
-            else:
-                url = image_urls[images_injected % len(image_urls)]
-
-            images_injected += 1
-            logger.info(f"[IMAGE_INJECT] Replaced props.{prop_name} with {url[:50]}...")
-            return f'<img {before}src="{url}"{after}>'
-
-        props_ref_pattern = r'<img\s*([^>]*?)src=["\']props\.(\w+)["\']([^>]*?)>'
-        result = re.sub(props_ref_pattern, replace_props_reference, result, flags=re.IGNORECASE)
-
-        def replace_placeholder_src_quoted(match):
-            nonlocal images_injected, image_index
-            before = match.group(1)
-            after = match.group(3)
-
-            if image_index < len(image_urls):
-                url = image_urls[image_index]
-                image_index += 1
-            else:
-                url = image_urls[images_injected % len(image_urls)]
-
-            images_injected += 1
-            logger.info(f"[IMAGE_INJECT] Replaced placeholder with {url[:50]}...")
-            return f'<img {before}src="{url}"{after}>'
-
-        # Match exact src="" or src="placeholder"
-        quoted_placeholder_pattern = r'<img\s*([^>]*?)src=(["\'])(?:placeholder)?\2([^>]*?)>'
-        result = re.sub(
-            quoted_placeholder_pattern,
-            replace_placeholder_src_quoted,
-            result,
-            flags=re.IGNORECASE,
-        )
-
-        # Match any src containing "placeholder" in the path (e.g., src="/deck/placeholder")
-        def replace_placeholder_path_src(match):
-            nonlocal images_injected, image_index
-            before = match.group(1)
-            src_value = match.group(3)
-            after = match.group(4)
-
-            # Skip if it's already one of our bucket URLs
-            if is_our_url(src_value):
-                return match.group(0)
-
-            if image_index < len(image_urls):
-                url = image_urls[image_index]
-                image_index += 1
-            else:
-                url = image_urls[images_injected % len(image_urls)]
-
-            images_injected += 1
-            logger.info(f"[IMAGE_INJECT] Replaced placeholder path '{src_value}' with {url[:50]}...")
-            return f'<img {before}src="{url}"{after}>'
-
-        placeholder_path_pattern = r'<img\s*([^>]*?)src=(["\'])([^"\']*placeholder[^"\']*)\2([^>]*?)>'
-        result = re.sub(
-            placeholder_path_pattern,
-            replace_placeholder_path_src,
-            result,
-            flags=re.IGNORECASE,
-        )
-
-        def replace_placeholder_src_unquoted(match):
-            nonlocal images_injected, image_index
-            before = match.group(1)
-            after = match.group(2)
-
-            if image_index < len(image_urls):
-                url = image_urls[image_index]
-                image_index += 1
-            else:
-                url = image_urls[images_injected % len(image_urls)]
-
-            images_injected += 1
-            logger.info(f"[IMAGE_INJECT] Replaced placeholder with {url[:50]}...")
-            return f'<img {before}src="{url}"{after}>'
-
-        unquoted_placeholder_pattern = r'<img\s*([^>]*?)src=(?:placeholder)?(?=[\s>])([^>]*?)>'
-        result = re.sub(
-            unquoted_placeholder_pattern,
-            replace_placeholder_src_unquoted,
-            result,
-            flags=re.IGNORECASE,
-        )
-
-        # Match unquoted src containing "placeholder" path (e.g., src=/deck/placeholder)
-        def replace_unquoted_placeholder_path(match):
-            nonlocal images_injected, image_index
-            before = match.group(1)
-            src_value = match.group(2)
-            after = match.group(3)
-
-            if is_our_url(src_value):
-                return match.group(0)
-
-            if image_index < len(image_urls):
-                url = image_urls[image_index]
-                image_index += 1
-            else:
-                url = image_urls[images_injected % len(image_urls)]
-
-            images_injected += 1
-            logger.info(f"[IMAGE_INJECT] Replaced unquoted placeholder path '{src_value}' with {url[:50]}...")
-            return f'<img {before}src="{url}"{after}>'
-
-        unquoted_placeholder_path_pattern = r'<img\s*([^>]*?)src=([^\s"\'<>]*placeholder[^\s"\'<>]*)(?=[\s>])([^>]*?)>'
-        result = re.sub(
-            unquoted_placeholder_path_pattern,
-            replace_unquoted_placeholder_path,
-            result,
-            flags=re.IGNORECASE,
-        )
-
-        def replace_local_file_src(match):
-            nonlocal images_injected, image_index
-            before = match.group(1)
-            local_path = match.group(2)
-            after = match.group(3)
-
-            if image_index < len(image_urls):
-                url = image_urls[image_index]
-                image_index += 1
-            else:
-                url = image_urls[images_injected % len(image_urls)]
-
-            images_injected += 1
-            logger.info(f"[IMAGE_INJECT] Replaced local file '{local_path}' with {url[:50]}...")
-            return f'<img {before}src="{url}"{after}>'
-
-        local_file_pattern = r'<img\s*([^>]*?)src=["\']([a-zA-Z0-9_\-\.]+\.(?:jpg|jpeg|png|gif|webp|svg|avif))["\']([^>]*?)>'
-        result = re.sub(local_file_pattern, replace_local_file_src, result, flags=re.IGNORECASE)
-
-        def replace_local_bg_image(match):
-            nonlocal images_injected, image_index
-            before = match.group(1)
-            local_path = match.group(2)
-            after = match.group(3)
-
-            if image_index < len(image_urls):
-                url = image_urls[image_index]
-                image_index += 1
-            else:
-                url = image_urls[images_injected % len(image_urls)]
-
-            images_injected += 1
-            logger.info(f"[IMAGE_INJECT] Replaced local BG file '{local_path}' with {url[:50]}...")
-            return f'{before}{url}{after}'
-
-        local_bg_pattern = r'(background-image:\s*url\([\'\"]?)([a-zA-Z0-9_\-\.]+\.(?:jpg|jpeg|png|gif|webp|svg|avif))([\'\"]?\))'
-        result = re.sub(local_bg_pattern, replace_local_bg_image, result, flags=re.IGNORECASE)
-
-        inline_local_bg_pattern = r'(style=["\'][^"\']*background-image:\s*url\([\'\"]?)([a-zA-Z0-9_\-\.]+\.(?:jpg|jpeg|png|gif|webp|svg|avif))([\'\"]?\)[^"\']*["\'])'
-        result = re.sub(inline_local_bg_pattern, replace_local_bg_image, result, flags=re.IGNORECASE)
-
-        def replace_props_bg_image(match):
-            nonlocal images_injected, image_index
-            before = match.group(1)
-            prop_name = match.group(2)
-            after = match.group(3)
-
-            if prop_name in prefetched_images and prefetched_images[prop_name].startswith('http'):
-                url = prefetched_images[prop_name]
-            elif image_index < len(image_urls):
-                url = image_urls[image_index]
-                image_index += 1
-            else:
-                url = image_urls[images_injected % len(image_urls)]
-
-            images_injected += 1
-            logger.info(f"[IMAGE_INJECT] Replaced BG props.{prop_name} with {url[:50]}...")
-            return f'{before}{url}{after}'
-
-        props_bg_pattern = r'(background-image:\s*url\([\'\"]?)props\.(\w+)([\'\"]?\))'
-        result = re.sub(props_bg_pattern, replace_props_bg_image, result, flags=re.IGNORECASE)
-
-        inline_props_bg_pattern = r'(style=["\'][^"\']*background-image:\s*url\([\'\"]?)props\.(\w+)([\'\"]?\)[^"\']*["\'])'
-        result = re.sub(inline_props_bg_pattern, replace_props_bg_image, result, flags=re.IGNORECASE)
-
-        def replace_external_img_src(match):
-            nonlocal images_injected, image_index
-            before = match.group(1)
-            external_url = match.group(2)
-            after = match.group(3)
-
-            if is_our_url(external_url) or external_url.startswith('data:') or external_url in image_urls:
-                return match.group(0)
-
-            if not image_urls:
-                logger.warning(f"[IMAGE_INJECT] No images to replace external URL: {external_url[:50]}...")
-                return match.group(0)
-
-            if image_index < len(image_urls):
-                url = image_urls[image_index]
-                image_index += 1
-            else:
-                url = image_urls[images_injected % len(image_urls)]
-
-            images_injected += 1
-            logger.info(f"[IMAGE_INJECT] Replaced external URL {external_url[:40]}... with {url[:40]}...")
-            return f'<img {before}src="{url}"{after}>'
-
-        external_url_pattern = r'<img\s*([^>]*?)src=["\'](https?://[^"\']+)["\']([^>]*?)>'
-        result = re.sub(external_url_pattern, replace_external_img_src, result, flags=re.IGNORECASE)
-
-        def replace_background_image_url(match):
-            nonlocal images_injected, image_index
-            before = match.group(1)
-            external_url = match.group(2)
-            after = match.group(3)
-
-            if is_our_url(external_url):
-                return match.group(0)
-            if external_url.startswith('data:') or external_url.startswith('linear') or external_url.startswith('radial'):
-                return match.group(0)
-            if not image_urls:
-                return match.group(0)
-
-            if image_index < len(image_urls):
-                url = image_urls[image_index]
-                image_index += 1
-            else:
-                url = image_urls[images_injected % len(image_urls)]
-
-            images_injected += 1
-            logger.info("[IMAGE_INJECT] Replaced background-image URL %s... with %s...", external_url[:40], url[:40])
-            return f'{before}{url}{after}'
-
-        bg_image_pattern = r'(background-image:\s*url\([\'"]?)(https?://[^\'")\s]+)([\'"]?\))'
-        result = re.sub(bg_image_pattern, replace_background_image_url, result, flags=re.IGNORECASE)
-
-        inline_bg_pattern = r'(style=["\'][^"\']*background-image:\s*url\([\'"]?)(https?://[^\'")\s]+)([\'"]?\)[^"\']*["\'])'
-        result = re.sub(inline_bg_pattern, replace_background_image_url, result, flags=re.IGNORECASE)
-
-        external_matches = re.findall(r'<img[^>]+src=["\']?(https?://[^\s"\'>]+)["\']?', result, flags=re.IGNORECASE)
-        # Filter out our bucket URLs - those are successfully replaced images
-        truly_external = [url for url in external_matches if not is_our_url(url)]
-        if truly_external:
-            logger.warning(f"[IMAGE_INJECT] {len(truly_external)} external URLs remain after replacement")
-            for url in truly_external[:3]:
-                logger.warning(f"[IMAGE_INJECT]   - {url[:80]}...")
+        # Inline style background-image
+        inline_bg_pattern = r'(style=["\'][^"\']*background-image:\s*url\([\'"]?)([^\'")\s]+)([\'"]?\)[^"\']*["\'])'
+        result = re.sub(inline_bg_pattern, replace_bg_url, result, flags=re.IGNORECASE)
 
         logger.info(f"[IMAGE_INJECT] Finished with {images_injected} injections")
         return result
@@ -708,14 +419,23 @@ class CustomComponentHtmlProcessor:
     def _inject_base_styles(self, html: str) -> str:
         if not html:
             return html
-        if re.search(r'html\s*,\s*body\s*\{[^}]*margin\s*:\s*0', html, re.IGNORECASE):
-            return html
+
+        # ALWAYS inject height constraint styles - this is critical for ensuring
+        # content doesn't exceed the 1080px slide height. The !important flags
+        # override any conflicting styles from AI-generated code.
         base_style = (
-            "<style>"
-            "html, body { margin: 0 !important; padding: 0 !important; width: 1920px; height: 1080px; overflow: hidden; }"
+            "<style id='slide-constraints'>"
+            "html, body { margin: 0 !important; padding: 0 !important; "
+            "width: 1920px !important; height: 1080px !important; "
+            "max-height: 1080px !important; overflow: hidden !important; }"
             "*, *::before, *::after { box-sizing: border-box; }"
             "</style>"
         )
+
+        # Check if we already injected our constraint styles
+        if "id='slide-constraints'" in html:
+            return html
+
         if re.search(r'<head[^>]*>', html, re.IGNORECASE):
             return re.sub(r'(<head[^>]*>)', r'\1\n' + base_style, html, count=1, flags=re.IGNORECASE)
         if re.search(r'<html[^>]*>', html, re.IGNORECASE):

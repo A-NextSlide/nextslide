@@ -284,17 +284,20 @@ export class GenerationCoordinator extends EventTarget {
   async generateFromOutline(
     outline: any,
     stylePreferences?: any,
-    onProgress?: (event: any) => void
+    onProgress?: (event: any) => void,
+    options?: { confirmOverage?: boolean }
   ): Promise<{ deckId: string; deckUrl: string }> {
-    // Check global rate limit for outline generation
-    const lastOutlineGen = this.lastOutlineGeneration;
-    if (lastOutlineGen) {
-      const timeSinceLastGen = Date.now() - lastOutlineGen;
-      if (timeSinceLastGen < 5000) { // 5 seconds between outline generations
-        throw new Error('Please wait a moment before generating another presentation');
+    // Check global rate limit for outline generation (skip for overage confirmation retries)
+    if (!options?.confirmOverage) {
+      const lastOutlineGen = this.lastOutlineGeneration;
+      if (lastOutlineGen) {
+        const timeSinceLastGen = Date.now() - lastOutlineGen;
+        if (timeSinceLastGen < 5000) { // 5 seconds between outline generations
+          throw new Error('Please wait a moment before generating another presentation');
+        }
       }
     }
-    
+
     // Update last generation time
     this.lastOutlineGeneration = Date.now();
 
@@ -333,7 +336,9 @@ export class GenerationCoordinator extends EventTarget {
         style_preferences: stylePreferences,
         async_images: true,  // Images load in background - backend doesn't support sync mode
         // Include the deck name from outline title
-        deck_name: validatedOutline.title || 'New Presentation'
+        deck_name: validatedOutline.title || 'New Presentation',
+        // Pass overage confirmation for Pro users who confirmed
+        confirm_overage: options?.confirmOverage || false
       })
     });
 
@@ -487,7 +492,8 @@ export class GenerationCoordinator extends EventTarget {
                 const remaining = errorPayload?.remaining ?? 0;
                 const required = errorPayload?.required ?? 0;
                 const plan = errorPayload?.plan ?? 'free';
-                const error = new Error(`INSUFFICIENT_CREDITS:${JSON.stringify({ remaining, required, plan })}`);
+                const canUseOverage = errorPayload?.can_use_overage ?? false;
+                const error = new Error(`INSUFFICIENT_CREDITS:${JSON.stringify({ remaining, required, plan, canUseOverage })}`);
                 throw error;
               }
 
@@ -514,6 +520,15 @@ export class GenerationCoordinator extends EventTarget {
               continue;
             }
           } catch (e) {
+            // Re-throw intentional errors (INSUFFICIENT_CREDITS, BILLING_ERROR, etc.)
+            if (e instanceof Error && (
+              e.message.startsWith('INSUFFICIENT_CREDITS:') ||
+              e.message.startsWith('BILLING_ERROR:') ||
+              e.message.startsWith('Validation Error:') ||
+              e.message === 'Generation failed'
+            )) {
+              throw e;
+            }
             // Ignore benign parse errors from keep-alive/comments; only log real JSON issues
             if (line.startsWith('data: ') && line.slice(6).trim().length > 0) {
               console.error('[GenerationCoordinator] Error parsing SSE data:', e);

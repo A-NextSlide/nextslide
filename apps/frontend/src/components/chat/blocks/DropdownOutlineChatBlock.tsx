@@ -133,7 +133,8 @@ const DropdownOutlineChatBlock: React.FC<DropdownOutlineChatBlockProps> = ({
       >
         {normalizedSlides.map((slide, index) => {
           const isExpanded = state.expandedSlides.has(slide.id);
-          const isLoading = state.loadingSlides.has(slide.id);
+          // Combine internal loading state with slide's own isUpdating property
+          const isSlideLoading = state.loadingSlides.has(slide.id) || slide.isUpdating === true;
 
           return (
             <DropdownOutlineSlideRow
@@ -141,8 +142,8 @@ const DropdownOutlineChatBlock: React.FC<DropdownOutlineChatBlockProps> = ({
               slide={slide}
               index={index}
               isExpanded={isExpanded}
-              isLoading={isLoading}
-              isEditable={isEditable}
+              isLoading={isSlideLoading}
+              isEditable={isEditable && !isSlideLoading}
               canDelete={canDeleteSlides}
               editingField={state.editingField}
               editValue={state.editValue}

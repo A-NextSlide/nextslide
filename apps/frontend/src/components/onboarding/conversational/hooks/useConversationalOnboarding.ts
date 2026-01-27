@@ -370,20 +370,59 @@ export const useConversationalOnboarding = ({
     stage,
   ]);
 
+  // Brand domain confirmation - merge into existing clarification or show as separate message
   useEffect(() => {
     if (brandConfirmationPromptedRef.current) return;
     const needsConfirm = themeState.themeBlock?.branding?.needsBrandDomainConfirmation;
     if (!needsConfirm) return;
+
     const candidate = themeState.themeBlock?.branding?.brandDomain ||
       themeState.themeBlock?.branding?.brandDomainCandidates?.[0];
-    const fields = [{
+    const brandDomainField = {
       key: 'brand_domain',
       label: 'What is the brand domain?',
-      type: 'text',
-      value: candidate || 'yourdomain.com',
-    }];
+      type: 'text' as const,
+      value: candidate || '',
+    };
+
+    // Check if there's already a clarification card showing
+    const lastMessage = chatMessages.messages[chatMessages.messages.length - 1];
+    const hasPendingClarification = lastMessage?.role === 'assistant' &&
+      lastMessage?.metadata?.clarification?.fields?.length > 0;
+
+    if (hasPendingClarification) {
+      // Check if brand domain is already in the clarification
+      const existingFields = lastMessage.metadata?.clarification?.fields || [];
+      const brandAlreadyInFields = existingFields.some(
+        (f: { key: string }) => f.key === 'brand_domain' || f.key === 'brandDomain'
+      );
+
+      if (!brandAlreadyInFields) {
+        // Append brand domain to existing clarification by updating the message
+        chatMessages.setMessages((prev) =>
+          prev.map((msg, idx) =>
+            idx === prev.length - 1 && msg.id === lastMessage.id
+              ? {
+                  ...msg,
+                  metadata: {
+                    ...msg.metadata,
+                    clarification: {
+                      ...msg.metadata?.clarification,
+                      fields: [...existingFields, brandDomainField],
+                    },
+                  },
+                }
+              : msg
+          )
+        );
+      }
+      brandConfirmationPromptedRef.current = true;
+      return;
+    }
+
+    // No clarification showing - add brand domain as separate message
     chatMessages.addAgentMessage('Confirm the brand domain to fetch the logo and colors.', {
-      metadata: { clarification: { fields } },
+      metadata: { clarification: { fields: [brandDomainField] } },
     });
     brandConfirmationPromptedRef.current = true;
   }, [chatMessages, themeState.themeBlock]);
@@ -419,13 +458,18 @@ export const useConversationalOnboarding = ({
   }, [outlineState]);
 
   const applyThemeChangesFromAgent = useCallback(async (themeChanges?: OutlineData['theme_changes']) => {
-    if (!themeChanges) return;
+    console.log('[ConvOnboarding] applyThemeChangesFromAgent called with:', themeChanges);
+    if (!themeChanges) {
+      console.log('[ConvOnboarding] No theme_changes provided, skipping');
+      return;
+    }
     const outlineId = outlineState.outlineFlow?.id || outlineState.outlineBlock?.outlineId || 'onboarding';
 
     themeState.setIsThemeLoading(true);
     themeState.setThemeBlock((prev) => (prev ? { ...prev, loadingMessage: 'Updating theme...' } : prev));
 
     try {
+      console.log('[ConvOnboarding] Calling /api/outline-theme/apply with:', { outline_id: outlineId, theme_changes: themeChanges });
       const response = await fetch(`${API_CONFIG.AGENT_BASE_URL}/api/outline-theme/apply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -436,12 +480,16 @@ export const useConversationalOnboarding = ({
       });
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[ConvOnboarding] Theme update failed:', response.status, errorText);
         throw new Error(`Theme update failed: ${response.statusText}`);
       }
 
       const result = await response.json();
+      console.log('[ConvOnboarding] Theme update response:', result);
 
       if (result.style_preferences) {
+        console.log('[ConvOnboarding] Applying style_preferences:', result.style_preferences);
         outlineState.setOutlineFlow((prev) => {
           if (!prev) return prev;
           return {
@@ -455,6 +503,7 @@ export const useConversationalOnboarding = ({
       }
 
       if (result.theme_updates) {
+        console.log('[ConvOnboarding] Applying theme_updates:', result.theme_updates);
         themeState.setThemeBlock((prev) => {
           if (!prev) return prev;
 
@@ -479,6 +528,8 @@ export const useConversationalOnboarding = ({
             loadingMessage: undefined,
           };
         });
+      } else {
+        console.log('[ConvOnboarding] No theme_updates in response');
       }
     } catch (error) {
       console.error('[ConversationalOnboarding] Failed to apply theme changes:', error);
@@ -610,20 +661,18 @@ export const useConversationalOnboarding = ({
           agentStatus.actions.setStatusMessage(event.message || 'Research failed');
         } else if (event.type === 'status') {
           const status = (event as any).status;
-          const message = (event as any).message || (event as any).query;
+          const message = (event as any).message;
+          const query = (event as any).query;
 
-          agentStatus.actions.addThinkingStep(status, message, (event as any).query);
+          // Add thinking step with actual message from backend
+          agentStatus.actions.addThinkingStep(status, message || query, query);
 
-          if (status === 'thinking') {
-            agentStatus.actions.setStatusPhase('thinking');
-            agentStatus.actions.setStatusMessage('Processing your request...');
-          } else if (status === 'analyzing_file') {
-            agentStatus.actions.setStatusPhase('analyzing');
-            agentStatus.actions.setStatusMessage(`Analyzing ${(event as any).file_name || 'file'}...`);
-          } else if (status === 'files_analyzed') {
-            agentStatus.actions.setStatusPhase('analyzed');
-            agentStatus.actions.setStatusMessage(`Analyzed ${(event as any).analyses?.length || 1} file(s)`);
+          // Set phase and pass through actual message (or null for phase-only display)
+          agentStatus.actions.setStatusPhase(status);
+          agentStatus.actions.setStatusMessage(message || null);
 
+          // Handle file analysis state updates
+          if (status === 'files_analyzed') {
             const analyses = (event as any).analyses || [];
             const analyzedNames = analyses
               .map((analysis: any) => analysis.name || analysis.filename)
@@ -641,22 +690,15 @@ export const useConversationalOnboarding = ({
                 .join('\n');
               fileUploads.setFileAnalysisContext(summaries);
             }
-          } else if (status === 'file_analysis_error') {
-            agentStatus.actions.setStatusPhase('error');
-            agentStatus.actions.setStatusMessage(message || 'Could not analyze file');
-          } else if (status === 'researching') {
-            agentStatus.actions.setStatusPhase('researching');
-            agentStatus.actions.setStatusMessage(`Searching: ${(event as any).query || 'web'}...`);
-          } else if (status === 'scraping') {
-            agentStatus.actions.setStatusPhase('scraping');
-            agentStatus.actions.setStatusMessage(message || 'Reading content...');
-          } else if (status === 'scraped') {
-            agentStatus.actions.setStatusPhase('scraped');
-            agentStatus.actions.setStatusMessage(message || 'Content extracted');
-          } else {
-            agentStatus.actions.setStatusMessage(message || status);
           }
         } else if (event.type === 'outline') {
+          console.log('[ConvOnboarding] Received outline event:', {
+            action: event.data?.action,
+            hasSlides: Boolean(event.data?.slides?.length),
+            hasThemeChanges: Boolean(event.data?.theme_changes),
+            currentOutlineAction: outlineData?.action,
+          });
+
           if (!outlineData || outlineData.action !== 'generate_outline') {
             outlineData = event.data;
           } else if (event.data?.action === 'update_theme' && outlineData.action === 'generate_outline') {
@@ -665,9 +707,41 @@ export const useConversationalOnboarding = ({
           agentStatus.actions.setStatusMessage(null);
           agentStatus.actions.setStatusPhase(null);
 
-          // Check for outline actions OR direct slides array (backend sometimes sends slides without action)
-          const hasOutlineAction = event.data?.action === 'generate_outline' || event.data?.action === 'update_outline' || event.data?.action === 'update_slides';
+          // Route by action type for granular updates
+          const action = event.data?.action as string | undefined;
+          const isGenerateOutline = action === 'generate_outline';
+          const isUpdateOutline = action === 'update_outline';
+          const isUpdateSlides = action === 'update_slides';
+          const isUpdateTheme = action === 'update_theme';
           const hasDirectSlides = Array.isArray(event.data?.slides) && event.data.slides.length > 0;
+          const hasOutlineAction = isGenerateOutline || isUpdateOutline || isUpdateSlides;
+
+          // Handle theme-only updates separately (keep slides interactive)
+          if (isUpdateTheme && !hasDirectSlides) {
+            console.log('[ConvOnboarding] Handling update_theme action (theme only)');
+            outlineState.setOutlineAction('update_theme', 'Updating theme...');
+            // Theme application is handled separately after stream ends
+            // Store for later processing
+            outlineData = event.data;
+            continue; // Don't treat as outline update
+          }
+
+          // Handle update_slides action - granular slide updates
+          if (isUpdateSlides && event.data?.updated_slides?.length > 0) {
+            console.log('[ConvOnboarding] Handling update_slides action (granular)');
+            const slideUpdates = event.data.updated_slides.map((s: any) => ({
+              index: s.index,
+              title: s.title,
+              subtitle: s.subtitle,
+              content: s.content,
+              key_points: s.key_points || s.keyPoints,
+            }));
+            const indices = slideUpdates.map((s: any) => s.index).filter((i: any) => typeof i === 'number');
+            outlineState.setOutlineAction('update_slides', 'Updating slides...', indices);
+            outlineState.updateSpecificSlides(slideUpdates);
+            outlineState.clearLoadingStates();
+            continue; // Don't fall through to full outline handling
+          }
 
           if (hasOutlineAction || hasDirectSlides) {
             const pendingContext = pendingContextRef.current;
@@ -770,7 +844,30 @@ export const useConversationalOnboarding = ({
         const clarificationMessage = toText(outlineData.message) ||
           toText(outlineData.clarification?.message) ||
           'Quick check before I build the deck.';
-        const clarificationFields = outlineData.clarification?.fields;
+        let clarificationFields = outlineData.clarification?.fields ? [...outlineData.clarification.fields] : [];
+
+        // Check if brand domain confirmation is also needed - merge it as the last question
+        // Check both theme state AND outline response stylePreferences (theme state may not be ready yet)
+        const needsBrandConfirm = themeState.themeBlock?.branding?.needsBrandDomainConfirmation ||
+          outlineData.stylePreferences?.needsBrandDomainConfirmation;
+        const brandAlreadyInFields = clarificationFields.some(
+          (f) => f.key === 'brand_domain' || f.key === 'brandDomain'
+        );
+        if (needsBrandConfirm && !brandAlreadyInFields && !brandConfirmationPromptedRef.current) {
+          const candidate = themeState.themeBlock?.branding?.brandDomain ||
+            themeState.themeBlock?.branding?.brandDomainCandidates?.[0] ||
+            outlineData.stylePreferences?.brandDomain ||
+            outlineData.stylePreferences?.brandDomainCandidates?.[0];
+          clarificationFields.push({
+            key: 'brand_domain',
+            label: 'What is the brand domain?',
+            type: 'text',
+            value: candidate || '',
+          });
+          // Mark as prompted so the separate useEffect doesn't trigger
+          brandConfirmationPromptedRef.current = true;
+        }
+
         const hasClarificationFields = Boolean(clarificationFields && clarificationFields.length > 0);
         const normalizeClarificationText = (value: string) => (
           value
@@ -864,27 +961,15 @@ export const useConversationalOnboarding = ({
         const detailLevel = enrichedOutline.detail_level || 'standard';
         setCollectedData((prev) => ({ ...prev, presentationType: 'simple', detailLevel }));
 
-        // Check if user already confirmed domain locally - don't re-prompt from backend response
-        const userAlreadyConfirmed = outlineState.outlineFlow?.stylePreferences?.needsBrandDomainConfirmation === false ||
-          themeState.themeBlock?.branding?.needsBrandDomainConfirmation === false;
-        const needsDomainConfirmation = !userAlreadyConfirmed &&
-          !brandConfirmationPromptedRef.current &&
-          Boolean(enrichedOutline.stylePreferences?.needsBrandDomainConfirmation);
-        if (needsDomainConfirmation) {
-          const candidate = enrichedOutline.stylePreferences?.brandDomain ||
-            enrichedOutline.stylePreferences?.brandDomainCandidates?.[0];
-          const fields = [{
-            key: 'brand_domain',
-            label: 'What is the brand domain?',
-            type: 'text',
-            value: candidate || 'yourdomain.com',
-          }];
-          chatMessages.addAgentMessage('Confirm the brand domain to fetch the logo and colors.', {
-            metadata: { clarification: { fields } },
-          });
-          brandConfirmationPromptedRef.current = true;
-        }
+        // Brand domain confirmation is now merged into clarification fields in the clarify handler
+        // No separate prompt needed here - if we're at generate_outline, proceed with the theme
       } else if (outlineData && outlineData.action === 'update_theme') {
+        console.log('[ConvOnboarding] Detected update_theme action:', {
+          action: outlineData.action,
+          theme_changes: outlineData.theme_changes,
+          hasThemeChanges: Boolean(outlineData.theme_changes),
+        });
+
         setCollectedData((prev) => ({
           ...prev,
           themeChanges: outlineData?.theme_changes,
@@ -892,6 +977,8 @@ export const useConversationalOnboarding = ({
 
         if (outlineData.theme_changes) {
           await applyThemeChangesFromAgent(outlineData.theme_changes);
+        } else {
+          console.log('[ConvOnboarding] update_theme action but no theme_changes object');
         }
 
         const cleanedMessage = stripAssistantMarkup(assistantMessage);
@@ -1033,22 +1120,9 @@ export const useConversationalOnboarding = ({
       const requiredCredits = numSlides * 5; // 5 credits per slide
 
       if (isPaidPlan) {
-        // Paid user: check if they have enough credits
-        if (remainingCredits < requiredCredits) {
-          // Show overage/insufficient credits dialog
-          setCreditWarningData({
-            remaining: remainingCredits,
-            required: requiredCredits,
-            slideCount: numSlides,
-            planName,
-            mode: remainingCredits === 0 ? 'free_no_credits' : 'paid_overage',
-            pendingSlideMode: slideMode,
-          });
-          setShowCreditWarning(true);
-          setIsProcessing(false);
-          return;
-        }
-        // Paid user with enough credits - proceed
+        // Paid user: proceed regardless of credits
+        // Backend will check credits and return INSUFFICIENT_CREDITS error if needed
+        // DeckList's CreditWarningDialog will handle the overage confirmation flow
         proceedWithGeneration(slideMode);
       } else {
         // Free user: block only if 0 credits

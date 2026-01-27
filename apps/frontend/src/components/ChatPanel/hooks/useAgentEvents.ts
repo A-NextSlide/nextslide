@@ -8,7 +8,7 @@ import { isValidDeckDiff } from '@/utils/deckDiffUtils';
 import type AgentChatClient from '@/services/agentChat';
 import type { ExtendedChatMessageProps } from '@/components/chat';
 import { formatSelectionLabel, humanizeSystemPhrases } from '../utils/selectionLabelFormatter';
-import { getFunToolName } from '../utils/toolNameFormatter';
+import { getFunToolName, formatSkillName, formatModelName } from '../utils/toolNameFormatter';
 
 interface UseAgentEventsOptions {
   setMessages: Dispatch<SetStateAction<ExtendedChatMessageProps[]>>;
@@ -440,6 +440,29 @@ export function useAgentEvents({
     return true;
   }, [setMessages]);
 
+  // Append inline thinking/action step (brown text, no bubble)
+  const appendInlineStep = useCallback((step: string, type: 'thinking' | 'action') => {
+    const now = Date.now();
+    // Deduplicate rapid events
+    const key = `${type}:${step}`;
+    const last = toolDedupRef.current.get(key) || 0;
+    if (now - last < 1000) return; // 1s dedup
+    toolDedupRef.current.set(key, now);
+
+    setMessages(prev => [...prev, {
+      id: `${type}-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      type: 'system',
+      message: step,
+      timestamp: new Date(),
+      feedback: null,
+      metadata: {
+        type: `agent_${type}` as const,
+        compactRow: true,
+        inlineStep: true
+      }
+    }]);
+  }, [setMessages]);
+
   const handleCommonAgentEvent = useCallback((
     evt: any,
     source: 'primary' | 'secondary',
@@ -449,9 +472,51 @@ export function useAgentEvents({
     if (handleAssistantMessageDelta(evt)) return true;
     if (handleAssistantMessageComplete(evt)) return true;
     if (handleLinkedInProfiles(evt, source)) return true;
+
+    // Helper to clean raw context patterns from displayed text
+    const cleanRawContext = (text: string): string => {
+      if (!text) return text;
+      return text
+        .replace(/\[USER_SELECTIONS?\]?[^\n]*/gi, '')  // Remove [USER_SELECTION] and everything after
+        .replace(/\[SLIDE_CONTEXT[^\]]*\]?/gi, '')
+        .replace(/\[CONTEXT[^\]]*\]?/gi, '')
+        .replace(/@slide-[a-zA-Z0-9-]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    // Handle new inline events (agent.thinking, agent.action)
+    if (evt.type === 'agent.thinking') {
+      const data = (evt as any).data || {};
+      const step = cleanRawContext(data.step || '');
+      // Simplified display - just show step or "Processing"
+      // (removed skill/model display for cleaner UI)
+      const displayStep = step || 'Processing';
+      appendInlineStep(displayStep, 'thinking');
+      return true;
+    }
+    if (evt.type === 'agent.action') {
+      const data = (evt as any).data || {};
+      const action = cleanRawContext(data.action || 'Processing');
+      const tool = data.tool;
+      // Skip if action is empty after cleaning
+      if (!action) return true;
+      // Include tool info if available
+      let displayAction = action;
+      if (tool) {
+        displayAction = `${getFunToolName(tool)}: ${action}`;
+      }
+      appendInlineStep(displayAction, 'action');
+      return true;
+    }
+
+    // Legacy plan update - still supported but can be replaced with inline steps
     if (evt.type === 'agent.plan.update') {
       const steps: string[] = (evt as any).data?.plan?.map((s: any) => s.title) || [];
-      animatePlanMessage(steps);
+      // Instead of animatePlanMessage (bubble), emit as inline steps
+      steps.forEach((step, i) => {
+        setTimeout(() => appendInlineStep(step, 'action'), i * 200);
+      });
       return true;
     }
     if (evt.type === 'agent.selection.using' || evt.type === 'agent.selection') {
@@ -467,7 +532,7 @@ export function useAgentEvents({
       return true;
     }
     return false;
-  }, [appendSelectionRow, animatePlanMessage, handleAssistantMessageComplete, handleAssistantMessageDelta, handleLinkedInProfiles, handleToolEvent, handleAgentStatusEvent, upsertAgentProgressRow]);
+  }, [appendInlineStep, appendSelectionRow, handleAssistantMessageComplete, handleAssistantMessageDelta, handleLinkedInProfiles, handleToolEvent, handleAgentStatusEvent, upsertAgentProgressRow]);
 
   const normalizeSlidesPayload = useCallback((payloadSlides: any[]): any[] => {
     if (!Array.isArray(payloadSlides) || payloadSlides.length === 0) return [];
@@ -606,10 +671,82 @@ export function useAgentEvents({
       let normalizedAppliedSlides = normalizeSlidesPayload((evt as any).data?.slides);
 
       const deckDiff = (evt as any).data?.deck_diff;
+      // DEBUG: Log font props in incoming deck_diff
+      if (deckDiff) {
+        try {
+          const slidesToUpdate = deckDiff.slides_to_update || [];
+          slidesToUpdate.forEach((slideDiff: any) => {
+            const compUpdates = slideDiff.components_to_update || [];
+            compUpdates.forEach((compDiff: any) => {
+              const allProps = compDiff.props || {};
+              const fontKeys = Object.keys(allProps).filter((k: string) => k.toLowerCase().includes('font'));
+              if (fontKeys.length > 0) {
+                console.log('[DeckEditApplied] 📨 SSE deck_diff has font props:', {
+                  slideId: slideDiff.slide_id,
+                  componentId: compDiff.id?.slice(0, 12),
+                  fontProps: fontKeys.map((k: string) => `${k}=${allProps[k]}`),
+                });
+              }
+            });
+          });
+        } catch (e) {
+          console.warn('[DeckEditApplied] DEBUG log failed:', e);
+        }
+      }
       if (deckDiff && isValidDeckDiff(deckDiff)) {
         appliedDiff = deckDiff;
         applyDeckDiffRespectingEditMode(deckDiff, true);
       }
+
+      // Handle theme_updates (for font/color changes) - same logic as in handleDeckPreviewDiff
+      const themeUpdates = (evt as any).data?.theme_updates;
+      if (themeUpdates) {
+        console.log('[DeckEditApplied] Applying theme_updates:', themeUpdates);
+        try {
+          const deckStore = useDeckStore.getState();
+          const currentDeck = deckStore.deckData;
+          if (currentDeck) {
+            const currentTheme = currentDeck.theme || {};
+            const updatedTheme = { ...currentTheme };
+
+            if (themeUpdates.typography) {
+              updatedTheme.typography = {
+                ...(updatedTheme.typography || {}),
+                ...themeUpdates.typography
+              };
+              console.log('[DeckEditApplied] Updated typography:', updatedTheme.typography);
+            }
+
+            if (themeUpdates.color_palette) {
+              updatedTheme.color_palette = {
+                ...(updatedTheme.color_palette || {}),
+                ...themeUpdates.color_palette
+              };
+            }
+
+            const updatedDeck = { ...currentDeck, theme: updatedTheme };
+
+            // Also update palette at deck level for consistency
+            if (themeUpdates.typography) {
+              const currentPalette = currentDeck.palette || {};
+              const fonts = [
+                themeUpdates.typography.hero_font,
+                themeUpdates.typography.body_font
+              ].filter(Boolean);
+              if (fonts.length > 0) {
+                (updatedDeck as any).palette = { ...currentPalette, fonts };
+              }
+            }
+
+            // Update deck data (skipBackend: true since backend already saved)
+            deckStore.updateDeckData(updatedDeck, { skipBackend: true });
+            console.log('[DeckEditApplied] Theme update applied successfully');
+          }
+        } catch (e) {
+          console.error('[DeckEditApplied] Failed to apply theme_updates:', e);
+        }
+      }
+
       if (appliedMessageId) {
         pendingDiffsByMessageIdRef.current.delete(appliedMessageId);
         if (normalizedAppliedSlides.length === 0) {
@@ -971,6 +1108,72 @@ export function useAgentEvents({
     const editId = payloadData.editId || payloadData.edit?.id;
     const previewSlidesPayload = payloadData.slides;
     const previewMessageId = (evt as any).messageId;
+    const themeUpdates = payloadData.theme_updates;
+
+    // Handle theme_updates (for font/color changes)
+    if (themeUpdates) {
+      console.log('[DeckDiff] Applying theme_updates:', themeUpdates);
+      try {
+        const deckStore = useDeckStore.getState();
+        const currentDeck = deckStore.deckData;
+        if (currentDeck) {
+          const currentTheme = currentDeck.theme || {};
+          const updatedTheme = { ...currentTheme };
+
+          // Apply typography updates (hero_font, body_font)
+          if (themeUpdates.typography) {
+            updatedTheme.typography = {
+              ...(updatedTheme.typography || {}),
+              ...themeUpdates.typography
+            };
+            console.log('[DeckDiff] Updated typography:', updatedTheme.typography);
+          }
+
+          // Apply color_palette updates
+          if (themeUpdates.color_palette) {
+            updatedTheme.color_palette = {
+              ...(updatedTheme.color_palette || {}),
+              ...themeUpdates.color_palette
+            };
+            console.log('[DeckDiff] Updated color_palette:', updatedTheme.color_palette);
+          }
+
+          // Update the deck with new theme
+          const updatedDeck = {
+            ...currentDeck,
+            theme: updatedTheme
+          };
+
+          // Also update palette at deck level for consistency
+          if (themeUpdates.typography) {
+            const currentPalette = currentDeck.palette || {};
+            const fonts = [
+              themeUpdates.typography.hero_font,
+              themeUpdates.typography.body_font
+            ].filter(Boolean);
+            if (fonts.length > 0) {
+              (updatedDeck as any).palette = {
+                ...currentPalette,
+                fonts: fonts
+              };
+            }
+          }
+
+          // Use updateDeckData to update local state only (skipBackend: true)
+          // Backend already saves the theme_updates along with the deck_diff, so we don't want
+          // the frontend to save prematurely and overwrite the backend's HTML changes
+          deckStore.updateDeckData(updatedDeck, { skipBackend: true });
+          console.log('[DeckDiff] Theme update applied to local state (backend saves separately)');
+          // DEBUG: Verify the update was applied
+          setTimeout(() => {
+            const verifyDeck = useDeckStore.getState().deckData;
+            console.log('[DeckDiff] VERIFY after update - typography:', verifyDeck?.theme?.typography);
+          }, 100);
+        }
+      } catch (e) {
+        console.error('[DeckDiff] Failed to apply theme_updates:', e);
+      }
+    }
 
     if (source === 'secondary') {
       const diffSecondary = (evt as any).data?.diff;
@@ -1073,6 +1276,26 @@ export function useAgentEvents({
       }
 
       if (diff) {
+        // DEBUG: Log font props in handleDeckPreviewDiff
+        try {
+          const slidesToUpdate = diff.slides_to_update || [];
+          slidesToUpdate.forEach((slideDiff: any) => {
+            const compUpdates = slideDiff.components_to_update || [];
+            compUpdates.forEach((compDiff: any) => {
+              const allProps = compDiff.props || {};
+              const fontKeys = Object.keys(allProps).filter((k: string) => k.toLowerCase().includes('font'));
+              if (fontKeys.length > 0) {
+                console.log('[handleDeckPreviewDiff] 📨 diff has font props:', {
+                  slideId: slideDiff.slide_id,
+                  componentId: compDiff.id?.slice(0, 12),
+                  fontProps: fontKeys.map((k: string) => `${k}=${allProps[k]}`),
+                });
+              }
+            });
+          });
+        } catch (e) {
+          console.warn('[handleDeckPreviewDiff] DEBUG log failed:', e);
+        }
         applyDeckDiffRespectingEditMode(diff, true);
       } else {
         console.warn('[Realtime][preview.diff] No diff or slides in payload', { editId });

@@ -319,7 +319,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
       // Create WebSocket connection
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${API_CONFIG.AGENT_BASE_URL.replace(/^https?:/, wsProtocol)}/api/speech/stream`;
+      // Build absolute WebSocket URL - in dev mode AGENT_BASE_URL is empty so use current host
+      const wsUrl = API_CONFIG.AGENT_BASE_URL
+        ? `${API_CONFIG.AGENT_BASE_URL.replace(/^https?:/, wsProtocol)}/api/speech/stream`
+        : `${wsProtocol}//${window.location.host}/api/speech/stream`;
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;

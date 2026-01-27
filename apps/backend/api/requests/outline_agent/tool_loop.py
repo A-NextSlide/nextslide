@@ -341,7 +341,8 @@ async def call_model_with_tools(
 
             if search_tasks:
                 for task in search_tasks:
-                    yield f"data: {json.dumps({'type': 'status', 'status': 'researching', 'query': task['query']})}\n\n"
+                    query_preview = task['query'][:80] + '...' if len(task['query']) > 80 else task['query']
+                    yield f"data: {json.dumps({'type': 'status', 'status': 'researching', 'message': f'Searching: {query_preview}', 'query': task['query']})}\n\n"
 
                 async def search_with_id(task):
                     result = await research_with_perplexity(task["query"])
@@ -354,10 +355,18 @@ async def call_model_with_tools(
                         tool_result = sr["result"]["content"]
                         if len(tool_result) > 2500:
                             tool_result = tool_result[:2500] + "\n\n[Truncated for brevity - use key facts above]"
-                        yield f"data: {json.dumps({'type': 'research', 'content': tool_result, 'citations': sr['result']['citations'][:5], 'query': sr['query']})}\n\n"
+                        # Extract a preview of the actual content found
+                        content_preview = tool_result[:120].replace('\n', ' ').strip()
+                        if len(tool_result) > 120:
+                            content_preview += '...'
+                        citations = sr['result'].get('citations', [])[:5]
+                        cite_count = len(citations)
+                        yield f"data: {json.dumps({'type': 'status', 'status': 'research_complete', 'message': f'Found {cite_count} sources: {content_preview}', 'query': sr['query']})}\n\n"
+                        yield f"data: {json.dumps({'type': 'research', 'content': tool_result, 'citations': citations, 'query': sr['query']})}\n\n"
                     else:
-                        tool_result = f"Search failed: {sr['result'].get('error', 'Unknown error')}"
-                        yield f"data: {json.dumps({'type': 'status', 'status': 'research_failed', 'message': sr['result'].get('error'), 'query': sr['query']})}\n\n"
+                        error_msg = sr['result'].get('error', 'Unknown error')
+                        tool_result = f"Search failed: {error_msg}"
+                        yield f"data: {json.dumps({'type': 'status', 'status': 'research_failed', 'message': f'Search failed: {error_msg}', 'query': sr['query']})}\n\n"
 
                     tool_results.append({
                         "type": "tool_result",
@@ -367,7 +376,12 @@ async def call_model_with_tools(
 
             if extract_tasks:
                 for task in extract_tasks:
-                    yield f"data: {json.dumps({'type': 'status', 'status': 'extracting', 'query': task.get('query') or task.get('url') or ''})}\n\n"
+                    url = task.get('url') or (task.get('urls', [None])[0] if task.get('urls') else None)
+                    query = task.get('query') or ''
+                    extract_target = url or query or 'content'
+                    if len(extract_target) > 60:
+                        extract_target = extract_target[:60] + '...'
+                    yield f"data: {json.dumps({'type': 'status', 'status': 'extracting', 'message': f'Extracting from {extract_target}', 'query': task.get('query') or task.get('url') or ''})}\n\n"
 
                 svc = get_firecrawl_agent_service()
 
@@ -387,7 +401,7 @@ async def call_model_with_tools(
                         max_chars=2500,
                     )
                     result = await svc.extract(req)
-                    return {"block_id": task["block_id"], "query": query, "result": result}
+                    return {"block_id": task["block_id"], "query": query, "url": url, "result": result}
 
                 extract_results = await asyncio.gather(*[extract_with_id(t) for t in extract_tasks])
 
@@ -399,10 +413,18 @@ async def call_model_with_tools(
                             tool_result = (tool_result + "\n\nSources:\n" + "\n".join(res.citations[:5])).strip()
                         if len(tool_result) > 2500:
                             tool_result = tool_result[:2500] + "\n\n[Truncated for brevity - use key facts above]"
-                        yield f"data: {json.dumps({'type': 'status', 'status': 'extracted', 'query': er['query']})}\n\n"
+                        # Extract preview of actual content
+                        content_preview = tool_result[:100].replace('\n', ' ').strip()
+                        if len(tool_result) > 100:
+                            content_preview += '...'
+                        source_info = er.get('url') or er['query']
+                        if len(source_info) > 40:
+                            source_info = source_info[:40] + '...'
+                        yield f"data: {json.dumps({'type': 'status', 'status': 'extracted', 'message': f'Extracted from {source_info}: {content_preview}', 'query': er['query']})}\n\n"
                     else:
-                        tool_result = f"Extraction failed: {res.error or 'Unknown error'}"
-                        yield f"data: {json.dumps({'type': 'status', 'status': 'extract_failed', 'message': res.error, 'query': er['query']})}\n\n"
+                        error_msg = res.error or 'Unknown error'
+                        tool_result = f"Extraction failed: {error_msg}"
+                        yield f"data: {json.dumps({'type': 'status', 'status': 'extract_failed', 'message': f'Extraction failed: {error_msg}', 'query': er['query']})}\n\n"
 
                     tool_results.append({
                         "type": "tool_result",

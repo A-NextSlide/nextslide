@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useRef } from 'react';
 import type { OutlineData } from '@/services/outlineAgentService';
-import type { OutlinePreviewData, OutlineSlidePreview } from '@/types/chatBlocks';
+import type { OutlinePreviewData, OutlineSlidePreview, OutlineUpdateAction } from '@/types/chatBlocks';
 import type { OutlineFlowState } from '../types';
 import {
   buildOutlinePreview,
@@ -10,9 +10,23 @@ import {
   mergeOutlinePreview,
 } from '../utils/outline';
 
+export interface SlideUpdate {
+  index?: number;
+  id?: string;
+  backendId?: string;
+  title?: string;
+  subtitle?: string;
+  content?: string;
+  key_points?: string[];
+  keyPoints?: string[];
+}
+
 export const useOutlineState = () => {
   const [outlineFlow, setOutlineFlow] = useState<OutlineFlowState | null>(null);
   const [outlineBlock, setOutlineBlock] = useState<OutlinePreviewData | null>(null);
+
+  // Track current action for UI feedback
+  const currentActionRef = useRef<OutlineUpdateAction | null>(null);
 
   const initializeOutline = useCallback((outlineData: OutlineData) => {
     console.log('[OutlineState] initializeOutline called with:', {
@@ -250,6 +264,192 @@ export const useOutlineState = () => {
     });
   }, []);
 
+  /**
+   * Update specific slides by index or ID - for granular update_slides action
+   * Only updates the specified slides, preserves everything else
+   */
+  const updateSpecificSlides = useCallback((updates: SlideUpdate[]) => {
+    console.log('[OutlineState] updateSpecificSlides called with:', updates);
+
+    setOutlineBlock((prev) => {
+      if (!prev) return prev;
+
+      const updatedSlides = prev.slides.map((slide, index) => {
+        // Find matching update by index, id, or backendId
+        const update = updates.find(u =>
+          (u.index !== undefined && u.index === index) ||
+          (u.id && u.id === slide.id) ||
+          (u.backendId && u.backendId === slide.backendId)
+        );
+
+        if (!update) return slide;
+
+        // Apply update, preserving existing values if not provided
+        return {
+          ...slide,
+          title: update.title ?? slide.title,
+          subtitle: update.subtitle ?? slide.subtitle,
+          content: update.content ?? slide.content,
+          keyPoints: update.keyPoints ?? update.key_points ?? slide.keyPoints,
+          isContentLoaded: true,
+          isUpdating: false,
+          updateMessage: undefined,
+          lastUpdatedAt: Date.now(),
+        };
+      });
+
+      return {
+        ...prev,
+        slides: updatedSlides,
+        updatingSlideIndices: [],
+        currentAction: undefined,
+        loadingMessage: undefined,
+      };
+    });
+
+    // Also update outlineFlow
+    setOutlineFlow((prev) => {
+      if (!prev?.slides) return prev;
+
+      const updatedFlowSlides = prev.slides.map((slide, index) => {
+        const update = updates.find(u =>
+          (u.index !== undefined && u.index === index)
+        );
+
+        if (!update) return slide;
+
+        return {
+          ...slide,
+          title: update.title ?? slide.title,
+          subtitle: update.subtitle ?? slide.subtitle,
+          content: update.content ?? slide.content,
+          key_points: update.keyPoints ?? update.key_points ?? slide.key_points,
+        };
+      });
+
+      return { ...prev, slides: updatedFlowSlides };
+    });
+  }, []);
+
+  /**
+   * Set specific slides as updating (shows loading state on those slides only)
+   */
+  const setSlideUpdating = useCallback((
+    indices: number[],
+    isUpdating: boolean,
+    message?: string
+  ) => {
+    setOutlineBlock((prev) => {
+      if (!prev) return prev;
+
+      const updatedSlides = prev.slides.map((slide, index) => {
+        if (!indices.includes(index)) return slide;
+        return {
+          ...slide,
+          isUpdating,
+          updateMessage: isUpdating ? message : undefined,
+        };
+      });
+
+      return {
+        ...prev,
+        slides: updatedSlides,
+        updatingSlideIndices: isUpdating ? indices : [],
+      };
+    });
+  }, []);
+
+  /**
+   * Set the current outline action (for UI feedback)
+   */
+  const setOutlineAction = useCallback((
+    action: OutlineUpdateAction | null,
+    loadingMessage?: string,
+    slideIndices?: number[]
+  ) => {
+    currentActionRef.current = action;
+
+    setOutlineBlock((prev) => {
+      if (!prev) return prev;
+
+      // If action is theme-only, don't touch slide loading states
+      if (action === 'update_theme') {
+        return {
+          ...prev,
+          isThemeUpdating: true,
+          currentAction: action,
+          loadingMessage,
+          // Keep slides interactive
+          isLoading: false,
+        };
+      }
+
+      // If action is null, clear all loading states
+      if (!action) {
+        return {
+          ...prev,
+          isLoading: false,
+          isThemeUpdating: false,
+          updatingSlideIndices: [],
+          currentAction: undefined,
+          loadingMessage: undefined,
+          slides: prev.slides.map(slide => ({
+            ...slide,
+            isUpdating: false,
+            updateMessage: undefined,
+          })),
+        };
+      }
+
+      // For slide-specific actions, only mark those slides as updating
+      if (action === 'update_slides' && slideIndices?.length) {
+        return {
+          ...prev,
+          currentAction: action,
+          loadingMessage,
+          updatingSlideIndices: slideIndices,
+          isLoading: false, // Keep other slides interactive
+          slides: prev.slides.map((slide, index) => ({
+            ...slide,
+            isUpdating: slideIndices.includes(index),
+            updateMessage: slideIndices.includes(index) ? loadingMessage : undefined,
+          })),
+        };
+      }
+
+      // For full outline actions, set global loading
+      return {
+        ...prev,
+        isLoading: action === 'generate_outline' || action === 'update_outline',
+        currentAction: action,
+        loadingMessage,
+      };
+    });
+  }, []);
+
+  /**
+   * Clear all loading states (call after any action completes)
+   */
+  const clearLoadingStates = useCallback(() => {
+    currentActionRef.current = null;
+    setOutlineBlock((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        isLoading: false,
+        isThemeUpdating: false,
+        updatingSlideIndices: [],
+        currentAction: undefined,
+        loadingMessage: undefined,
+        slides: prev.slides.map(slide => ({
+          ...slide,
+          isUpdating: false,
+          updateMessage: undefined,
+        })),
+      };
+    });
+  }, []);
+
   return {
     outlineFlow,
     outlineBlock,
@@ -261,5 +461,11 @@ export const useOutlineState = () => {
     handleSlideAdd,
     handleSlideDelete,
     handleSlideReorder,
+    // New granular update methods
+    updateSpecificSlides,
+    setSlideUpdating,
+    setOutlineAction,
+    clearLoadingStates,
+    currentActionRef,
   };
 };

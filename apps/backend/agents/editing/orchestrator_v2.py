@@ -10,6 +10,7 @@ Philosophy:
 
 from typing import Dict, List, Optional, Any, Union
 import json
+import os
 from pydantic import BaseModel, Field, create_model
 import logging
 import uuid
@@ -17,212 +18,38 @@ from datetime import datetime, timezone
 
 import re
 
+# Debug mode - set to True to save HTML/screenshots to /tmp for debugging
+DEBUG_SAVE_FILES = os.environ.get("DEBUG_SLIDE_EDIT", "").lower() == "true"
+
 from models.deck import DeckDiff, DeckDiffBase
 from models.registry import ComponentRegistry
 from agents.ai.clients import get_client, invoke
 from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_rate_limited
-from agents.config import get_model, MODEL_FALLBACK, GEMINI_3_FLASH, GEMINI_3_PRO
+from agents.config import get_model, MODEL_FALLBACK, GEMINI_3_FLASH, GEMINI_3_PRO, MODEL_SMART, EDIT_TYPE_MODELS
 from services.context_cache import get_deck_context_snapshot
 from utils.summaries import summarize_chat_history
 from agents.editing.tools.code_verifier import verify_interactive_code, create_verification_context
+from agents.editing.skill_prompts import get_skill_prompt, get_skill_tools, BASE_SYSTEM_PROMPT
+from agents.editing.tool_descriptions import TOOL_DESCRIPTIONS_MAP
 
 logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# HTML CLEANUP - Strip frontend editing scripts before saving
+# HTML UTILITIES - Imported from tools/html_utils.py
+# Re-exported here for backwards compatibility
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def apply_theme_to_custom_component_html(
-    html: str,
-    colors: Dict[str, str] = None,
-    typography: Dict[str, Any] = None
-) -> str:
-    """
-    Apply theme colors and fonts to CustomComponent HTML.
-
-    This updates CSS custom properties in :root blocks and font-family declarations.
-    Safe for "hotswapping" since it's just CSS value replacement.
-
-    Args:
-        html: The CustomComponent HTML
-        colors: Dict with keys like 'accent_1', 'primary_text', 'primary_background', etc.
-        typography: Dict with keys like 'heading', 'body' containing font info
-
-    Returns:
-        Updated HTML with theme applied
-    """
-    if not html or not isinstance(html, str):
-        return html
-
-    updated = html
-
-    # Apply color updates to CSS custom properties
-    if colors:
-        # Common CSS variable name mappings
-        color_var_mappings = {
-            'accent_1': ['--accent', '--accent-1', '--primary', '--accent-color'],
-            'accent_2': ['--secondary', '--accent-2', '--secondary-color'],
-            'primary_text': ['--text', '--text-color', '--primary-text', '--foreground'],
-            'primary_background': ['--bg', '--background', '--bg-color', '--primary-background'],
-            'accent_3': ['--accent-3', '--highlight'],
-        }
-
-        for color_key, css_vars in color_var_mappings.items():
-            color_value = colors.get(color_key)
-            if not color_value:
-                continue
-
-            for css_var in css_vars:
-                # Match CSS variable declaration like: --accent: #007354;
-                pattern = rf'({re.escape(css_var)}\s*:\s*)([^;]+)(;)'
-                updated = re.sub(pattern, rf'\g<1>{color_value}\g<3>', updated)
-
-    # Apply typography updates
-    if typography:
-        # Get font families from typography config
-        # Support multiple key formats: heading/body (LLM), hero_title/body_text (deck theme)
-        heading_font = None
-        body_font = None
-
-        # Try heading keys (LLM format)
-        if isinstance(typography.get('heading'), dict):
-            heading_font = typography['heading'].get('family')
-        elif isinstance(typography.get('heading'), str):
-            heading_font = typography['heading']
-        # Fallback to deck theme format (hero_title/hero_font)
-        if not heading_font:
-            if isinstance(typography.get('hero_title'), dict):
-                heading_font = typography['hero_title'].get('family')
-            elif isinstance(typography.get('hero_font'), str):
-                heading_font = typography['hero_font']
-
-        # Try body keys (LLM format)
-        if isinstance(typography.get('body'), dict):
-            body_font = typography['body'].get('family')
-        elif isinstance(typography.get('body'), str):
-            body_font = typography['body']
-        # Fallback to deck theme format (body_text/body_font)
-        if not body_font:
-            if isinstance(typography.get('body_text'), dict):
-                body_font = typography['body_text'].get('family')
-            elif isinstance(typography.get('body_font'), str):
-                body_font = typography['body_font']
-
-        # Update Google Fonts import if present
-        if heading_font or body_font:
-            fonts_to_import = []
-            if heading_font:
-                fonts_to_import.append(heading_font.replace(' ', '+'))
-            if body_font and body_font != heading_font:
-                fonts_to_import.append(body_font.replace(' ', '+'))
-
-            if fonts_to_import:
-                new_font_import = f'https://fonts.googleapis.com/css2?family={":wght@300;400;500;600;700&family=".join(fonts_to_import)}:wght@300;400;500;600;700&display=swap'
-                # Replace existing Google Fonts import
-                updated = re.sub(
-                    r'https://fonts\.googleapis\.com/css2\?[^"\'>\s]+',
-                    new_font_import,
-                    updated
-                )
-
-        # Update font-family declarations for headings (h1-h6)
-        if heading_font:
-            # Match h1, h2, etc. selectors and their font-family
-            for tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', '.title', '.heading', '.company-name']:
-                pattern = rf'({re.escape(tag)}[^{{]*{{[^}}]*font-family\s*:\s*)([^;]+)(;)'
-                replacement = rf"\g<1>'{heading_font}', sans-serif\g<3>"
-                updated = re.sub(pattern, replacement, updated, flags=re.IGNORECASE)
-
-        # Update body font-family
-        if body_font:
-            # Update body selector
-            pattern = r'(body[^{]*{[^}]*font-family\s*:\s*)([^;]+)(;)'
-            replacement = rf"\g<1>'{body_font}', sans-serif\g<3>"
-            updated = re.sub(pattern, replacement, updated, flags=re.IGNORECASE)
-
-    return updated
-
-
-def strip_frontend_editing_scripts(html: str) -> str:
-    """
-    Remove frontend editing scripts that get injected during live editing.
-    These should NOT be saved to the database - they're runtime-only.
-
-    Strips:
-    - <!-- NEXTSLIDE EDIT MODE V2 --> markers
-    - .ns-image-processing-overlay styles and scripts
-    - .ns-placeholder-wrapper styles and scripts
-    """
-    if not html or not isinstance(html, str):
-        return html
-
-    original_len = len(html)
-    cleaned = html
-
-    # Remove NEXTSLIDE EDIT MODE markers
-    cleaned = cleaned.replace('<!-- NEXTSLIDE EDIT MODE V2 -->', '')
-
-    # Remove ns-image-processing-overlay style+script blocks
-    # Pattern: <style>.ns-image-processing-overlay...styles...</style> followed by <script>...overlay code...</script>
-    overlay_pattern = re.compile(
-        r'<style>\s*\.ns-image-processing-overlay[\s\S]*?</style>\s*'
-        r'<script>\s*\(function\s*\(\)\s*\{\s*["\']use strict["\'];?\s*'
-        r'[\s\S]*?ns-image-processing-overlay[\s\S]*?</script>',
-        re.IGNORECASE
-    )
-    cleaned = overlay_pattern.sub('', cleaned)
-
-    # Remove ns-placeholder-wrapper style+script blocks
-    placeholder_pattern = re.compile(
-        r'<style>\s*\.ns-placeholder-wrapper[\s\S]*?</style>\s*'
-        r'<script>\s*\(function\s*\(\)\s*\{\s*["\']use strict["\'];?\s*'
-        r'[\s\S]*?ns-placeholder-wrapper[\s\S]*?</script>',
-        re.IGNORECASE
-    )
-    cleaned = placeholder_pattern.sub('', cleaned)
-
-    # Also catch any stray individual blocks that might be duplicated
-    # Individual overlay script pattern
-    single_overlay_script = re.compile(
-        r'<script>\s*\(function\s*\(\)\s*\{\s*["\']use strict["\'];?\s*'
-        r'[\s\S]*?ns-image-processing-overlay[\s\S]*?</script>',
-        re.IGNORECASE
-    )
-    cleaned = single_overlay_script.sub('', cleaned)
-
-    # Individual placeholder script pattern
-    single_placeholder_script = re.compile(
-        r'<script>\s*\(function\s*\(\)\s*\{\s*["\']use strict["\'];?\s*'
-        r'[\s\S]*?ns-placeholder-wrapper[\s\S]*?</script>',
-        re.IGNORECASE
-    )
-    cleaned = single_placeholder_script.sub('', cleaned)
-
-    # Clean up any leftover orphaned style blocks
-    orphan_overlay_style = re.compile(
-        r'<style>\s*\.ns-image-processing-overlay[\s\S]*?</style>',
-        re.IGNORECASE
-    )
-    cleaned = orphan_overlay_style.sub('', cleaned)
-
-    orphan_placeholder_style = re.compile(
-        r'<style>\s*\.ns-placeholder-wrapper[\s\S]*?</style>',
-        re.IGNORECASE
-    )
-    cleaned = orphan_placeholder_style.sub('', cleaned)
-
-    # Clean up multiple consecutive newlines that might result
-    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
-    cleaned = cleaned.strip()
-
-    if len(cleaned) < original_len:
-        logger.info(f"[ORCHESTRATOR] Stripped frontend scripts: {original_len} -> {len(cleaned)} chars (saved {original_len - len(cleaned)} bytes)")
-
-    return cleaned
+from agents.editing.tools.html_utils import (
+    apply_theme_to_custom_component_html,
+    strip_frontend_editing_scripts,
+)
 
 # region agent log
 def _dbg(hypothesisId: str, location: str, message: str, data: Dict[str, Any], runId: str = "pre-fix") -> None:
+    """Debug logger - only writes if DEBUG_SAVE_FILES is enabled."""
+    if not DEBUG_SAVE_FILES:
+        return
     try:
         import json, time
         payload = {
@@ -234,7 +61,7 @@ def _dbg(hypothesisId: str, location: str, message: str, data: Dict[str, Any], r
             "data": data,
             "timestamp": int(time.time() * 1000),
         }
-        with open("/Users/ahmed/Documents/Dev/nextslide/.cursor/debug.log", "a", encoding="utf-8") as f:
+        with open("/tmp/orchestrator_debug.log", "a", encoding="utf-8") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
     except Exception:
         pass
@@ -332,15 +159,10 @@ When user says something "doesn't work" or "isn't working":
 5. When fixing, be SPECIFIC about what you're changing - don't just say "fixed it"
    - Say: "I added click handlers to the Temperance and Generosity sections that now reveal their descriptions when clicked"
 
-VISUAL CONTEXT (screenshot):
+VISUAL CONTEXT (screenshot + HTML):
 - For complex/visual requests, a screenshot of the current slide is included as an image
 - USE THIS to see what the slide ACTUALLY looks like before making changes
 - You can SEE: colors, layout, spacing, text rendering, images, icons, positioning
-- Especially useful for:
-  * Fixing visual issues - see what's actually wrong
-  * Redesigns - understand current layout before changing
-  * Color/style edits - see current colors
-  * Layout adjustments - see element positions
 - The screenshot shows the REAL rendered state (not just code/data)
 
 UPLOADED FILES (attachments):
@@ -355,17 +177,58 @@ IMAGE REPLACEMENT (search_images):
 - DON'T call view_component first - you can see the slide from the screenshot (if included)
 - Call search_images ONCE per image you need to replace
 
+⚠️ JAVASCRIPT-MANAGED IMAGES - DO NOT USE search_images:
+If the HTML contains template variables like `${item.imageAlt}`, `${item.image}`, or JavaScript arrays with image data:
+- This means images are DYNAMICALLY MANAGED by JavaScript, not static img tags
+- search_images will only find ONE img element and replace it repeatedly (wrong!)
+- USE custom_component_rewrite instead with instruction like "fix the images for each section"
+- The rewrite will properly search for ALL needed images and wire them into the JavaScript
+
+⚠️ EXCEPTION for multi-image interactive scenarios:
+When MULTIPLE sections/tabs/buttons each need their own image:
+  → DO NOT use search_images multiple times (it just replaces the same element)
+  → USE custom_component_rewrite with a clear instruction about what each element needs
+
+⚠️ AMBIGUOUS ELEMENT REFERENCES - ASK FOR CLARIFICATION:
+When the user says "this button", "this one", "add image here", or similar vague references:
+1. LOOK at the screenshot to count how many similar elements exist
+2. If there are MULTIPLE similar elements (e.g., 4 buttons, 3 image placeholders):
+   → DO NOT guess which one they mean
+   → ASK the user: "I see [N] similar [elements] on this slide. Could you describe which one you mean? For example: the first one on the left, the one with [specific text], or the one at the bottom."
+3. Only proceed when the user's description uniquely identifies ONE element:
+   - Position: "top left", "first one", "third from left"
+   - Content: "the one that says 'Subscribe'", "the button with the arrow"
+   - Context: "the one next to the logo", "under the title"
+
 🎯 HOW TO IDENTIFY WHICH IMAGE (use screenshot!):
-- LOOK at the screenshot to COUNT images left-to-right, top-to-bottom (0-indexed)
-- If user describes image VISUALLY ("the older woman", "guy in blue shirt", "the smiling one"):
-  → USE THE SCREENSHOT to identify which image they mean
-  → Count its position: first=0, second=1, third=2, etc.
-  → Pass image_index=N to target that specific image
-- If user says ordinal ("1st image", "third photo"): → Use image_index directly
-- If user describes by CONTENT ("the logo", "hero image"): → Use target_image
-- Example: User sees 6 headshots and says "replace the older woman's photo"
-  → Look at screenshot, identify she's the FIRST image (position 0)
+- LOOK at the screenshot to COUNT images/buttons/elements in READING ORDER (left-to-right, top-to-bottom)
+- Images are 0-indexed: first=0, second=1, third=2, etc.
+
+COUNTING EXAMPLES from screenshot:
+  [Image 0] [Image 1] [Image 2]   ← Row 1: positions 0, 1, 2
+  [Image 3] [Image 4] [Image 5]   ← Row 2: positions 3, 4, 5
+
+HOW TO TARGET SPECIFIC IMAGES:
+1. User provides POSITION ("first image", "third button", "2nd from left"):
+   → Convert to 0-indexed: 1st=0, 2nd=1, 3rd=2
+   → Use image_index=N
+
+2. User provides VISUAL description ("the older woman", "guy in blue shirt"):
+   → LOOK at screenshot, identify the element visually
+   → COUNT its position (0-indexed)
+   → Use image_index=N
+
+3. User provides CONTENT description ("the logo", "hero image", "the Costco one"):
+   → Use target_image="description" - let LLM match by content
+
+EXAMPLE: Slide has 6 headshots in 2 rows:
+- User: "replace the older woman's photo" (she's top-left)
+  → You see her in position 0 on screenshot
   → Use: {"query": "professional headshot", "image_index": 0}
+
+- User: "change the third image"
+  → 3rd = position 2
+  → Use: {"query": "...", "image_index": 2}
 
 AI IMAGE EDITING (edit_image_with_ai) - VERY SPECIFIC USE CASE:
 ⚠️ ONLY use edit_image_with_ai when user explicitly asks to MODIFY/EDIT an EXISTING IMAGE with AI:
@@ -484,9 +347,29 @@ WHEN TO USE EACH TOOL:
 
 custom_component_str_replace (SURGICAL - PREFERRED for single changes):
 - ONE text change, ONE color, ONE URL, ONE image
-- Pass the EXACT instruction to fix just that element
-- Example: "Fix the logo" → instruction: "Replace the logo with [new logo URL]"
-- Example: "Update stats" → After web_search, instruction: "Replace 'XX%' with '42%'"
+- Pass a clear instruction describing what to change
+- The tool will find and replace the right CSS/HTML automatically
+
+⚠️ DO NOT use custom_component_str_replace for:
+- JavaScript logic changes (use custom_component_rewrite instead)
+- Changes affecting multiple elements at once (use edit_slide or custom_component_rewrite)
+- Interactive behavior fixes ("make buttons work", "fix click handlers")
+- Structural changes to HTML layout
+
+custom_component_rewrite (FOR COMPLEX CHANGES):
+- JavaScript/interactive behavior fixes
+- Changes affecting multiple elements
+- Complex logic updates ("each button shows different image")
+- Restructuring HTML layout
+- Full slide redesigns
+
+⚠️ MULTI-IMAGE INTERACTIVE SCENARIOS - USE custom_component_rewrite, NOT search_images:
+When the user wants MULTIPLE images to be associated with buttons/tabs (e.g., "each button shows its own image"):
+- ❌ DO NOT call search_images multiple times - this just replaces the SAME image element repeatedly
+- ✅ USE custom_component_rewrite with instruction explaining the requirement
+- The rewrite will pre-search all needed images and wire them up correctly in JavaScript
+- Example: "fix the buttons so each club (lob wedge, driver, etc.) shows its own image when clicked"
+  → custom_component_rewrite(instruction="Fix buttons so each golf club shows its respective image when clicked")
 
 edit_slide (FULL REWRITE - only when necessary):
 - User explicitly wants redesign/rebrand/overhaul
@@ -508,7 +391,28 @@ STAY ON THEME (CRITICAL):
 - Only change theme colors if user EXPLICITLY asks to change them
 - If user says "make it red", apply red while keeping other theme elements
 
+⚡ GLOBAL STYLE CHANGES (FONTS, COLORS, THEME) - AUTO-APPLY TO ALL SLIDES:
+
+When user asks about fonts, colors, or theme changes WITHOUT specifying a single slide, ALWAYS apply to ALL slides:
+- "Change the font" / "Use Poppins" / "Make the fonts bigger" → apply_theme_to_custom_components (ALL slides)
+- "Change the colors" / "Use blue theme" / "Make it darker" → apply_theme_to_custom_components (ALL slides)
+- "Update the theme" / "Change the style" / "Make it more professional" → apply_theme_to_custom_components (ALL slides)
+
+⚠️ CRITICAL: User does NOT need to say "all slides" - font/color/theme requests are GLOBAL by default!
+
+How to use apply_theme_to_custom_components:
+- For font changes: {"typography": {"heading": {"family": "Poppins"}, "body": {"family": "Inter"}}}
+- For color changes: {"colors": {"accent_1": "#FF5733", "primary_text": "#1A1A1A", "primary_background": "#FFFFFF"}}
+- For both: include both typography and colors in the args
+
+This tool updates CSS variables in :root across ALL slides, making changes instant and consistent.
+
+ONLY use custom_component_str_replace for font/color when user explicitly targets ONE element:
+- "Make THIS title red" → str_replace on current slide
+- "Change the font on slide 3 only" → str_replace on that slide
+
 TOOL SELECTION:
+- apply_theme_to_custom_components: 🎨 GLOBAL STYLE - For font/color/theme changes across entire deck
 - custom_component_str_replace: ⭐ PREFERRED - Targeted edit for single changes (logo, color, text, image URL)
 - edit_slide: Full rewrite (ONLY for major redesigns, NOT for single fixes)
 - create_slide: Create a NEW slide
@@ -516,7 +420,7 @@ TOOL SELECTION:
 - edit_component: Edit a specific component by ID
 - create_component: Add a component to a slide
 - delete_component: Remove a component
-- apply_theme: Change colors/fonts across deck
+- apply_theme: Change colors/fonts across deck (alternative to apply_theme_to_custom_components)
 - component_prop_update: Mechanical prop update for an existing component
 - view_component: Inspect a component BEFORE complex edits
 - search_images: Find and REPLACE images with different ones from the web
@@ -834,7 +738,7 @@ def build_context(
                     preview = f" ({len(full_html)} chars)"
                     # Include full HTML so model can make targeted edits
                     if full_html:
-                        full_html_str = f"\n\n📄 SELECTED COMPONENT FULL HTML (component_id={cid}):\n```html\n{full_html}\n```\n⚠️ For targeted edits, use custom_component_str_replace with specific instruction."
+                        full_html_str = f"\n\n📄 SELECTED COMPONENT FULL HTML (component_id={cid}):\n```html\n{full_html}\n```\n⚠️ For targeted edits, use custom_component_str_replace with EXACT old_string/new_string from this HTML."
                 elif ctype2 == "TiptapTextBlock":
                     t = props.get("text") if isinstance(props, dict) else getattr(props, "text", "")
                     preview = f" (text preview: {str(t)[:120]}...)"
@@ -843,6 +747,20 @@ def build_context(
                 sel_lines.append(f"  - Selection: {cid} ({ctype or 'Unknown'})@{sid or slide_id}")
         if sel_lines:
             sel_str = "\n\n🎯 SELECTED (user refers to this as 'this'):\n" + "\n".join(sel_lines) + full_html_str
+
+    # If no selection but slide has CustomComponent, still include full HTML for targeted edits
+    if not full_html_str and has_custom:
+        for c in components:
+            if _get_attr(c, 'type') == 'CustomComponent':
+                cid = _get_attr(c, 'id', 'no-id')
+                props = _get_attr(c, 'props', {}) or {}
+                if isinstance(props, dict):
+                    full_html = str(props.get("render", ""))
+                else:
+                    full_html = str(getattr(props, "render", ""))
+                if full_html:
+                    full_html_str = f"\n\n📄 CUSTOMCOMPONENT HTML (component_id={cid}):\n```html\n{full_html}\n```\n⚠️ For targeted edits, use custom_component_str_replace with EXACT old_string/new_string from this HTML."
+                    break  # Only include first CustomComponent's HTML
 
     # Attachments
     att_str = ""
@@ -864,6 +782,9 @@ def build_context(
         history_lines = [f"  {get_msg_field(m, 'role', 'user')}: {str(get_msg_field(m, 'content', ''))[:250]}" for m in recent]
         history_str = f"\n\nRECENT CHAT:\n" + "\n".join(history_lines)
 
+    # If we have full HTML but no selection string to attach it to, add it separately
+    html_context_str = full_html_str if (full_html_str and not sel_str) else ""
+
     context = f"""{presentation_overview}{theme_str}{current_date_line}
 
 ═══════════════════════════════════════════════════════════════════════
@@ -872,7 +793,7 @@ CURRENT SLIDE DETAILS (slide_id: {slide_id})
 STATUS: {slide_status}
 
 COMPONENTS:
-{components_str}{sel_str}{att_str}{history_str}"""
+{components_str}{sel_str}{html_context_str}{att_str}{history_str}"""
     _dbg("A", "orchestrator_v2.py:build_context", "built_context", {"slide_id": slide_id, "has_selections": bool(selections), "selection_count": len(selections or []), "context_len": len(context)}, runId="pre-fix")
     return context
 
@@ -890,15 +811,20 @@ SCOPE:
 - If [CONTEXT] indicates scope=deck or apply_to_all_slides=true, apply the change across all slides
 - Use view_slide to inspect other slides, then edit each relevant slide
 
-1. custom_component_str_replace ⭐ PREFERRED FOR TARGETED EDITS
+1. custom_component_str_replace ⭐ PREFERRED FOR SIMPLE TARGETED EDITS
    - Make a SINGLE targeted edit to a CustomComponent
-   - ✅ USE FOR: fix logo, change one color, update one text, fix one image, adjust one element
-   - Pass a clear instruction describing ONLY what to change
+   - ✅ USE FOR: fix logo, change one color, update one text, fix one image, adjust font size
+   - ❌ DO NOT use for: JavaScript logic, multi-element changes, interactive behavior
    - ⚠️ slide_id MUST match the CURRENT SLIDE from context
    - Args: { "slide_id": str, "component_id": str, "instruction": str }
-   - Example: {"instruction": "Replace the logo with the Geisslers logo"}
-   - Example: {"instruction": "Change the title color to red"}
-   - Example: {"instruction": "Fix the cropped image by adjusting its size"}
+   - Example: {"instruction": "make the D smaller"} or {"instruction": "change title to red"}
+
+1b. custom_component_rewrite 🔧 FOR COMPLEX/LOGIC CHANGES
+   - Regenerate entire CustomComponent HTML
+   - ✅ USE FOR: JavaScript fixes, button behavior, interactive elements, multi-element changes
+   - ✅ USE FOR: "each button should show different image", "fix click handlers", "make X work when clicked"
+   - Args: { "slide_id": str, "component_id": str, "instruction": str }
+   - Example: {"instruction": "fix the buttons so each one displays its own club image when clicked"}
 
 2. edit_slide (FULL REWRITE - use sparingly)
    - Completely rewrites the slide content (AI regenerates everything)
@@ -996,6 +922,12 @@ SCOPE:
    - The tool's AI will match "ingest" to the correct image based on alt text
 
    ⚠️ For VISUAL descriptions, use the screenshot to determine image_index!
+
+   ⚠️ MULTIPLE IMAGE REPLACEMENTS - DO NOT use image_index for batch operations!
+   When replacing multiple images, indices SHIFT after each replacement.
+   Instead, use `target_image` to identify images by their content/role:
+   - WRONG: {"image_index": 0}, {"image_index": 1}  // Indices shift!
+   - RIGHT: {"target_image": "hero"}, {"target_image": "logo"}  // Stable identifiers
 
    🎯 KEEP QUERIES SHORT (2-4 words):
    - For companies: "Tesla car", "Microsoft logo", "Amazon warehouse"
@@ -1124,6 +1056,38 @@ def orchestrate(
     """
     from agents.editing.tools.tool_executor import execute_tool
 
+    # Log which slide we're processing for debugging slide mismatch issues
+    slide_id = _get_attr(current_slide, "id", "unknown")
+    slide_title = ""
+    comps = _get_attr(current_slide, "components", [])
+    for c in (comps or []):
+        if _get_attr(c, "type") == "CustomComponent":
+            html = (_get_attr(_get_attr(c, "props", {}), "render", "") or "")[:300]
+            if "<title>" in html:
+                import re
+                m = re.search(r"<title>([^<]+)</title>", html)
+                if m:
+                    slide_title = m.group(1)[:50]
+                    break
+    logger.info(f"[ORCHESTRATE] Processing slide_id={slide_id}, title_hint={slide_title!r}, message={user_message[:100]!r}")
+
+    # Save screenshot to temp file for debugging (only if DEBUG_SAVE_FILES is enabled)
+    if DEBUG_SAVE_FILES and slide_screenshot and slide_screenshot.get("data"):
+        import base64
+        try:
+            img_data = base64.b64decode(slide_screenshot["data"])
+            with open("/tmp/orchestrator_screenshot.jpg", "wb") as f:
+                f.write(img_data)
+            logger.info(f"[ORCHESTRATE] Saved screenshot ({len(img_data)} bytes) to /tmp/orchestrator_screenshot.jpg")
+        except Exception as e:
+            logger.warning(f"[ORCHESTRATE] Failed to save screenshot: {e}")
+
+    # Log screenshot status
+    if slide_screenshot and slide_screenshot.get("data"):
+        logger.info(f"[ORCHESTRATE] Screenshot provided ({len(slide_screenshot.get('data', ''))} base64 chars)")
+    else:
+        logger.info(f"[ORCHESTRATE] No screenshot provided")
+
     def _is_empty_deckdiff(dd: DeckDiff) -> bool:
         try:
             base = dd.deck_diff if hasattr(dd, "deck_diff") else dd
@@ -1161,30 +1125,71 @@ def orchestrate(
             "- Then embed the video in the slide (prefer embed_url if available)\n"
         )
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SKILL-BASED ROUTING
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # Get skill and scope from classification for model selection and prompt
+    skill = "complex_edit"  # Default
+    scope = "slide"  # Default to current slide only
+    if classification:
+        skill = getattr(classification, 'skill', None) or getattr(classification, 'type', 'complex_edit')
+        scope = getattr(classification, 'scope', 'slide')
+        if skill == "simple_edit":
+            skill = "text_edit"  # Map legacy type to skill
+
+    # SCOPE-BASED ROUTING: If scope is "slide" but skill is "theme_change", use color_edit instead
+    # This ensures slide-specific font/color changes don't affect the whole deck
+    if scope == "slide" and skill == "theme_change":
+        logger.info(f"[ORCHESTRATOR] Rerouting theme_change to color_edit (scope=slide)")
+        skill = "color_edit"
+
+    # Get model based on skill
+    model = EDIT_TYPE_MODELS.get(skill, GEMINI_3_FLASH)
+
+    # Log the routing decision
+    logger.info(f"[ORCHESTRATOR] Skill: {skill}, Scope: {scope} -> Model: {model}")
+
+    # Emit thinking step - just skill info, don't repeat user message (they can see it already)
+    if event_cb:
+        try:
+            event_cb("agent.thinking", {"skill": skill, "scope": scope, "model": model})
+        except Exception:
+            pass
+
+    # Get skill-specific tool descriptions
+    skill_tools = get_skill_tools(skill)
+    skill_tool_descriptions = "\n\n".join(
+        f"- {TOOL_DESCRIPTIONS_MAP[t]}" for t in skill_tools if t in TOOL_DESCRIPTIONS_MAP
+    )
+
+    # Use skill-specific system prompt for simple skills, full prompt for complex
+    if skill in ["text_edit", "color_edit", "image_search", "theme_change", "slide_delete"]:
+        # Simple skills - use focused prompt
+        system_prompt = get_skill_prompt(skill)
+        tool_section = f"TOOLS:\n{skill_tool_descriptions}" if skill_tool_descriptions else ""
+    else:
+        # Complex skills - use full prompt
+        system_prompt = SYSTEM_PROMPT
+        tool_section = TOOL_DESCRIPTIONS
+
+    # Scope hint for the LLM
+    scope_hint = ""
+    if scope == "slide":
+        scope_hint = "SCOPE: Current slide only. Do NOT apply changes to all slides."
+    elif scope == "deck":
+        scope_hint = "SCOPE: All slides. Apply changes globally across the entire deck."
+
     # Full prompt
     prompt = f"""{context}
 
 {video_hint}
-{TOOL_DESCRIPTIONS}
+{scope_hint}
+{tool_section}
 
 USER REQUEST: {clean_message}
 
 Respond with the tool_calls to execute."""
-
-    # Get client based on classification (if available) or default
-    if classification:
-        # Use classification-based model selection
-        classification_type = getattr(classification, 'type', 'complex_edit')
-        if classification_type == "simple_edit":
-            model = GEMINI_3_FLASH  # Fast for simple edits
-            logger.info(f"[ORCHESTRATOR] Using Flash for simple_edit classification")
-        elif classification_type == "complex_edit":
-            model = GEMINI_3_PRO  # Pro for complex edits
-            logger.info(f"[ORCHESTRATOR] Using Pro for complex_edit classification")
-        else:
-            model = get_model("orchestrator")  # Default
-    else:
-        model = get_model("orchestrator")
 
     # Check for rate limits
     if "gemini" in model and is_provider_in_cooldown("gemini"):
@@ -1211,13 +1216,13 @@ Respond with the tool_calls to execute."""
     else:
         user_content = prompt
 
-    # Single LLM call
+    # Single LLM call with skill-specific system prompt
     try:
         response = invoke(
             client=client,
             model=actual_model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ],
             response_model=OrchestratorResponse,
@@ -1244,7 +1249,7 @@ Respond with the tool_calls to execute."""
                 client=fallback_client,
                 model=fallback_model,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content}
                 ],
                 response_model=OrchestratorResponse,
@@ -1262,29 +1267,51 @@ Respond with the tool_calls to execute."""
     if response.message:
         logger.info(f"[ORCHESTRATOR] 💬 LLM message: {response.message[:100]}...")
 
-    # Emit plan if callback provided (with user-friendly titles)
+    # Emit actions as individual inline steps (not a bubble)
     if event_cb and response.tool_calls:
-        def _user_friendly_summary(summary: str, tool_name: str) -> str:
-            """Convert technical summaries to user-friendly descriptions."""
-            s = summary.lower()
-            # Hide technical terms from users
-            if "view_component" in tool_name or "view" in s and "component" in s:
-                return "Analyzing the component"
-            if "customcomponent" in s or "custom component" in s:
-                return summary.replace("CustomComponent", "component").replace("customcomponent", "component")
-            if "html" in s and ("div" in s or "element" in s):
-                return "Updating the component"
-            # Clean up common technical patterns
-            cleaned = summary
-            for tech_term in ["HTML", "div element", "div", "DOM", "props", "str_replace"]:
-                cleaned = cleaned.replace(tech_term, "content")
-            return cleaned
+        def _user_friendly_action(summary: str, tool_name: str) -> str:
+            """Convert tool calls to user-friendly action descriptions."""
+            # Clean up technical terms in summary to make it user-friendly
+            cleaned = summary if summary else ""
 
-        plan = [{"title": _user_friendly_summary(tc.summary, tc.tool_name)} for tc in response.tool_calls]
-        try:
-            event_cb("agent.plan.update", {"plan": plan})
-        except Exception:
-            pass
+            # Remove raw context patterns that shouldn't be shown to users
+            import re
+            cleaned = re.sub(r'\[USER_SELECTIONS?\]?[^\n]*', '', cleaned)  # Match [USER_SELECTION] or [USER_SELECTIONS] and everything after
+            cleaned = re.sub(r'\[SLIDE_CONTEXT[^\]]*\]?', '', cleaned)
+            cleaned = re.sub(r'\[CONTEXT[^\]]*\]?', '', cleaned)
+            cleaned = re.sub(r'@slide-[a-zA-Z0-9-]+', '', cleaned)
+
+            for tech_term in ["CustomComponent", "HTML", "div", "DOM", "props", "str_replace", "component", "custom_component"]:
+                cleaned = cleaned.replace(tech_term, "").replace(tech_term.lower(), "")
+            cleaned = " ".join(cleaned.split()).strip()  # Collapse whitespace
+
+            # Only use the summary if it has meaningful content after cleaning
+            if cleaned and len(cleaned) > 3:
+                return cleaned
+
+            # Fallback to tool-friendly names only if summary is empty
+            tool_labels = {
+                "web_search": "Searching the web",
+                "search_images": "Finding images",
+                "edit_slide": "Updating slide",
+                "create_slide": "Creating slide",
+                "delete_slide": "Removing slide",
+                "custom_component_str_replace": "Editing",
+                "apply_theme_to_custom_components": "Applying theme",
+                "edit_image_with_ai": "Editing image",
+                "view_component": "Analyzing",
+                "deep_extract": "Extracting data",
+                "linkedin_lookup": "Looking up profile",
+            }
+            return tool_labels.get(tool_name, tool_name.replace("_", " ").title())
+
+        # Emit each action as an inline step
+        for tc in response.tool_calls:
+            action = _user_friendly_action(tc.summary, tc.tool_name)
+            try:
+                event_cb("agent.action", {"action": action, "tool": tc.tool_name})
+            except Exception:
+                pass
 
     # Track integration data from lookup tools to inject into subsequent slide creation
     # IMPORTANT: This is OUTSIDE _execute_tool_calls so it persists across all passes (initial + follow-ups)
@@ -1514,7 +1541,8 @@ Respond with the tool_calls to execute."""
                     registry=registry,
                     attachments=attachments,
                     event_cb=event_cb,
-                    chat_history=chat_history,  # Pass full chat for context-aware tools
+                    chat_history=chat_history,
+                    slide_screenshot=slide_screenshot,
                 )
 
                 # Collect read-only observation payloads (e.g., view_component, integration lookups)
@@ -1565,6 +1593,18 @@ Respond with the tool_calls to execute."""
                     pass
 
                 if tool_diff:
+                    # Handle ThemeUpdateResult which contains both DeckDiff and theme_updates
+                    from agents.editing.tools.slide_tool_theme import ThemeUpdateResult
+                    if isinstance(tool_diff, ThemeUpdateResult):
+                        logger.info(f"[ORCHESTRATOR] 🎨 Tool {tool_name} returned ThemeUpdateResult with theme_updates: {list(tool_diff.theme_updates.keys()) if tool_diff.theme_updates else 'None'}")
+                        # Extract theme_updates for inclusion in final result
+                        if not hasattr(dd, '_theme_updates'):
+                            dd._theme_updates = {}
+                        if tool_diff.theme_updates:
+                            dd._theme_updates.update(tool_diff.theme_updates)
+                        # Use the inner deck_diff for merging
+                        tool_diff = tool_diff.deck_diff
+
                     # Ensure tool_diff is a DeckDiff object, not a dict
                     if isinstance(tool_diff, dict):
                         logger.warning(f"[ORCHESTRATOR] Tool {tool_name} returned dict instead of DeckDiff, skipping merge")
@@ -1911,8 +1951,17 @@ Respond with the tool_calls to execute."""
     else:
         logger.warning(f"[ORCHESTRATOR] ⚠️ No message emitted - event_cb={bool(event_cb)}, agent_message='{agent_message[:50] if agent_message else 'EMPTY'}'")
 
+    # Extract theme_updates if they were set by ThemeUpdateResult tools
+    theme_updates = getattr(deck_diff, '_theme_updates', None)
+    if theme_updates:
+        logger.info(f"[ORCHESTRATOR] 🎨 Including theme_updates in result: {list(theme_updates.keys())}")
+
     logger.info(f"[ORCHESTRATOR] ✅ Returning result with message: '{agent_message[:100]}...' (len={len(agent_message)})" if agent_message else "[ORCHESTRATOR] ⚠️ Returning with EMPTY message")
-    return {"deck_diff": deck_diff, "edit_summary": "\n".join(edit_summaries), "message": agent_message}
+
+    result = {"deck_diff": deck_diff, "edit_summary": "\n".join(edit_summaries), "message": agent_message}
+    if theme_updates:
+        result["theme_updates"] = theme_updates
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1981,11 +2030,15 @@ def edit_deck(
     # This catches any HTML that bypassed the accumulation path
     deck_diff_data = _clean_deckdiff_html(deck_diff_data)
 
-    return {
+    # Build return dict, preserving theme_updates if present
+    return_data = {
         "deck_diff": deck_diff_data,
         "edit_summary": result.get('edit_summary', ''),
         "message": result.get('message', '')
     }
+    if result.get('theme_updates'):
+        return_data['theme_updates'] = result['theme_updates']
+    return return_data
 
 
 def _clean_deckdiff_html(deck_diff_data) -> Any:

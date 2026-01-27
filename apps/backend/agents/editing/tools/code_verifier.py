@@ -650,8 +650,9 @@ def _check_image_issues(html: str) -> Tuple[List[str], List[str]]:
 
         # Check for JS objects with src/image set to "placeholder" - this is the #1 cause of broken images
         # Pattern matches: src: "placeholder", image: 'placeholder', imgSrc: "placeholder", etc.
+        # Also matches placeholder with query string like 'placeholder?q=...'
         placeholder_in_js = re.findall(
-            r'(\b(?:src|image|img|imgSrc|photo|picture|thumbnail|background)\s*:\s*)["\']placeholder["\']',
+            r'(\b(?:src|image|img|imgSrc|photo|picture|thumbnail|background)\s*:\s*)["\']placeholder(?:\?[^"\']*)?["\']',
             script,
             re.IGNORECASE
         )

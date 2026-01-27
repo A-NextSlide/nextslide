@@ -380,13 +380,17 @@ const DeckList: React.FC = () => {
     remaining: number;
     required: number;
     slideCount: number;
-  }>({ remaining: 0, required: 0, slideCount: 0 });
+    plan: string;
+    canUseOverage: boolean;
+  }>({ remaining: 0, required: 0, slideCount: 0, plan: 'free', canUseOverage: false });
+  // Store pending generation data for overage retry (outline and stylePrefs)
+  const pendingOverageDataRef = useRef<{ outline: any; stylePrefs: any } | null>(null);
+  // Track if overage confirmation is in progress (to prevent outline flash)
+  const isOverageInProgressRef = useRef(false);
 
   // Onboarding state from context
   const {
     shouldShowAiHints,
-    shouldAskOverageConfirmation,
-    markOverageConfirmed,
     loading: onboardingLoading,
   } = useOnboarding();
 
@@ -647,6 +651,87 @@ const DeckList: React.FC = () => {
     reference_sources?: Array<{ url?: string; title?: string }>;
     research_citations?: string[];
   } | null>(null);
+
+  // Handle overage confirmation - retry generation with confirmOverage flag
+  const handleOverageConfirm = useCallback(async () => {
+    console.log('[DeckList] handleOverageConfirm called');
+    // Set flag to prevent handleCreditWarningClose from showing outline view
+    isOverageInProgressRef.current = true;
+
+    const pendingData = pendingOverageDataRef.current;
+    console.log('[DeckList] pendingData:', pendingData);
+    if (!pendingData || !pendingData.outline || !pendingData.stylePrefs) {
+      console.error('[DeckList] No pending overage data to retry');
+      isOverageInProgressRef.current = false;
+      return;
+    }
+
+    console.log('[DeckList] Retrying generation with overage confirmation');
+    setShowCreditWarning(false);
+    setIsDeckGenerating(true);
+
+    try {
+      const coordinator = GenerationCoordinator.getInstance();
+      let hasNavigated = false;
+
+      const result = await coordinator.generateFromOutline(
+        pendingData.outline,
+        pendingData.stylePrefs,
+        (event) => {
+          if (hasNavigated) return;
+          const emittedDeckId = (event as any).deck_id || (event as any).deck_uuid || (event as any).deckId;
+          if (emittedDeckId) {
+            hasNavigated = true;
+            console.log('[DeckList] 🚀 Navigating to deck (overage retry):', emittedDeckId);
+            localStorage.removeItem('nextslide_pending_outline');
+            navigate(`/deck/${emittedDeckId}?new=true`);
+          }
+        },
+        { confirmOverage: true }
+      );
+
+      if (result.deckId && !hasNavigated) {
+        localStorage.removeItem('nextslide_pending_outline');
+        navigate(`/deck/${result.deckId}?new=true`);
+      }
+    } catch (error: any) {
+      console.error('[DeckList] Overage retry failed:', error);
+      setIsDeckGenerating(false);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to generate presentation",
+      });
+    } finally {
+      pendingOverageDataRef.current = null;
+      isOverageInProgressRef.current = false;
+    }
+  }, [navigate, toast]);
+
+  // Handle credit warning close/cancel - show outline view so user can retry later
+  const handleCreditWarningClose = useCallback(() => {
+    console.log('[DeckList] handleCreditWarningClose called');
+    setShowCreditWarning(false);
+
+    // If overage confirmation is in progress, don't show outline (we're navigating to deck)
+    if (isOverageInProgressRef.current) {
+      console.log('[DeckList] Overage in progress, skipping outline setup');
+      return;
+    }
+
+    // Get the pending outline data
+    const pendingData = pendingOverageDataRef.current;
+    if (pendingData?.outline) {
+      console.log('[DeckList] Setting currentOutline from pending data:', pendingData.outline.title);
+      // Set the outline so user can see it and retry generation later
+      setCurrentOutline(pendingData.outline);
+      setShowOutlineView(true);
+    }
+
+    // Hide conversational onboarding to show the outline view
+    setShowConversationalOnboarding(false);
+    setIsDeckGenerating(false);
+  }, []);
 
   // Handle "Create with AI" - show conversational onboarding
   const handleCreateWithAI = useCallback(() => {
@@ -932,6 +1017,9 @@ const DeckList: React.FC = () => {
         console.log('[DeckList] 🎨 genStylePrefs fonts:', genStylePrefs.font, genStylePrefs.bodyFont);
         console.log('[DeckList] 🎨 genStylePrefs logoUrl:', genStylePrefs.logoUrl);
 
+        // Store outline and stylePrefs for potential overage retry
+        pendingOverageDataRef.current = { outline: newOutline, stylePrefs: genStylePrefs };
+
         // Track if we've already navigated to prevent duplicate navigation
         let hasNavigated = false;
 
@@ -962,21 +1050,29 @@ const DeckList: React.FC = () => {
       } catch (error: any) {
         console.error('[DeckList] Generation error:', error);
         setIsDeckGenerating(false);
-        setShowConversationalOnboarding(false); // Hide on error so user can see error toast
 
         // Check if this is an insufficient credits error
         const errorMessage = error?.message || '';
+        console.log('[DeckList] Error message:', errorMessage);
         if (errorMessage.includes('INSUFFICIENT_CREDITS')) {
+          // Don't hide conversational onboarding for credit errors - show dialog on top
           try {
             // Parse the credit info from the error message
             const match = errorMessage.match(/INSUFFICIENT_CREDITS:(.+)/);
+            console.log('[DeckList] INSUFFICIENT_CREDITS match:', match);
             if (match) {
               const creditInfo = JSON.parse(match[1]);
+              console.log('[DeckList] Parsed credit info:', creditInfo);
+              console.log('[DeckList] canUseOverage:', creditInfo.canUseOverage);
               setCreditWarningData({
                 remaining: creditInfo.remaining || 0,
                 required: creditInfo.required || 0,
                 slideCount: data.slides?.length || 0,
+                plan: creditInfo.plan || 'free',
+                canUseOverage: creditInfo.canUseOverage || false,
               });
+              // pendingOverageDataRef was already set with outline and stylePrefs before generation
+              console.log('[DeckList] Setting showCreditWarning to true');
               setShowCreditWarning(true);
               return;
             }
@@ -988,10 +1084,16 @@ const DeckList: React.FC = () => {
             remaining: 0,
             required: (data.slides?.length || 6) * 5,
             slideCount: data.slides?.length || 6,
+            plan: 'free',
+            canUseOverage: false,
           });
+          // pendingOverageDataRef was already set with outline and stylePrefs before generation
           setShowCreditWarning(true);
           return;
         }
+
+        // For non-credit errors, hide conversational onboarding so user can see the error toast
+        setShowConversationalOnboarding(false);
 
         toast({
           variant: "destructive",
@@ -2952,17 +3054,6 @@ const DeckList: React.FC = () => {
 
                     <GoogleSlidesImportModal open={showGoogleImport} onOpenChange={setShowGoogleImport} />
 
-                    {/* Credit Warning Dialog - shows when user has insufficient credits */}
-                    <CreditWarningDialog
-                      open={showCreditWarning}
-                      onClose={() => setShowCreditWarning(false)}
-                      remainingCredits={creditWarningData.remaining}
-                      requiredCredits={creditWarningData.required}
-                      slideCount={creditWarningData.slideCount}
-                      planName="free"
-                      onProceed={markOverageConfirmed}
-                    />
-
                     <AlertDialog open={deckToDelete !== null} onOpenChange={(open) => !open && handleCancelDelete()}>
                       <AlertDialogContent>
                         <AlertDialogHeader>
@@ -2999,6 +3090,18 @@ const DeckList: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Credit Warning Dialog - shows when user has insufficient credits */}
+      {/* Rendered outside main conditionals so it shows over conversational onboarding */}
+      <CreditWarningDialog
+        open={showCreditWarning}
+        onClose={handleCreditWarningClose}
+        remainingCredits={creditWarningData.remaining}
+        requiredCredits={creditWarningData.required}
+        slideCount={creditWarningData.slideCount}
+        planName={creditWarningData.plan}
+        onProceed={creditWarningData.canUseOverage ? handleOverageConfirm : undefined}
+      />
 
       {/* Mobile Community Button - sits above the bottom sheet */}
       {isMobileView && !showConversationalOnboarding && !currentOutline && (

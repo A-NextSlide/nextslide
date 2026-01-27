@@ -33,8 +33,9 @@ PREFERRED_DOMAINS = frozenset({
 BUCKET_DOMAINS = ('nextslide.ai', 'supabase.co', 'supabase.com')
 
 # Generic terms that produce poor image search results
-# AI handles query quality, so we only need minimal filtering
+# These get flagged for AI enhancement with slide context
 GENERIC_IMAGE_TERMS = frozenset({
+    # Image-related terms
     'image', 'images', 'photo', 'photos', 'picture', 'pictures',
     'pic', 'pics', 'illustration', 'illustrations', 'graphic', 'graphics',
     'icon', 'icons', 'placeholder', 'placeholders',
@@ -42,6 +43,11 @@ GENERIC_IMAGE_TERMS = frozenset({
     'hero', 'visual', 'visuals', 'concept', 'abstract',
     'decorative', 'default', 'sample', 'samples',
     'stock', 'generic', 'filler', 'random', 'img', 'imgs',
+    # Common generic prop names from LLM-generated code
+    'main', 'primary', 'secondary', 'featured', 'cover',
+    'content', 'item', 'card', 'thumbnail', 'thumb',
+    'boss', 'phase', 'stage', 'level', 'scene',
+    'avatar', 'profile', 'logo', 'frame',
 })
 
 # Prop name tokens that indicate an image field

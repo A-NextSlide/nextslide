@@ -228,17 +228,37 @@ class ImageStorageService:
 
             # Generate file path
             file_path = self._generate_file_path(image_url, content_type)
-            
+
             # Check if file already exists in storage
-            existing = self.supabase.storage.from_(self.bucket_name).list(path=os.path.dirname(file_path))
-            file_name = os.path.basename(file_path)
-            
-            if any(f['name'] == file_name for f in existing):
-                logger.debug(f"Image already exists in storage: {file_path}")
-                public_url = self._get_clean_public_url(file_path)
-                result = {'url': public_url, 'path': file_path, 'cached': True}
-                self._cache[image_url] = result
-                return result
+            try:
+                existing = self.supabase.storage.from_(self.bucket_name).list(path=os.path.dirname(file_path))
+                file_name = os.path.basename(file_path)
+
+                # Find the file in the listing if it exists
+                existing_file = next((f for f in existing if f.get('name') == file_name), None)
+
+                if existing_file:
+                    # Verify file has actual content (not just a stub)
+                    file_size = existing_file.get('metadata', {}).get('size', 0) if isinstance(existing_file.get('metadata'), dict) else 0
+                    if not file_size:
+                        file_size = existing_file.get('size', 0)
+
+                    # If file exists and has content (> 1KB), use it
+                    if file_size and file_size > 1000:
+                        logger.debug(f"Image already exists in storage: {file_path} ({file_size} bytes)")
+                        public_url = self._get_clean_public_url(file_path)
+                        result = {'url': public_url, 'path': file_path, 'cached': True}
+                        self._cache[image_url] = result
+                        return result
+                    else:
+                        # File exists but is too small/empty - delete and re-upload
+                        logger.warning(f"Existing file too small ({file_size} bytes), will re-upload: {file_path}")
+                        try:
+                            self.supabase.storage.from_(self.bucket_name).remove([file_path])
+                        except Exception as del_err:
+                            logger.debug(f"Failed to delete small file: {del_err}")
+            except Exception as list_err:
+                logger.debug(f"Error checking existing file: {list_err}")
             
             # Upload to Supabase
             response = self.supabase.storage.from_(self.bucket_name).upload(
@@ -247,19 +267,60 @@ class ImageStorageService:
                 file_options={"content-type": content_type}
             )
 
+            # Validate upload response - Supabase returns different structures
+            # Success: response.path or response.full_path is set
+            # Error: response.error or response contains error info
+            upload_failed = False
+            error_message = None
+
+            if hasattr(response, 'error') and response.error:
+                upload_failed = True
+                error_message = str(response.error)
+            elif hasattr(response, 'json') and callable(response.json):
+                try:
+                    resp_data = response.json()
+                    if isinstance(resp_data, dict) and resp_data.get('error'):
+                        upload_failed = True
+                        error_message = resp_data.get('error') or resp_data.get('message', 'Unknown error')
+                except Exception:
+                    pass
+            elif isinstance(response, dict):
+                if response.get('error'):
+                    upload_failed = True
+                    error_message = response.get('error') or response.get('message', 'Unknown error')
+
+            if upload_failed:
+                logger.error(f"Supabase upload failed for {self._truncate_data_url(image_url)}: {error_message}")
+                return {'url': image_url, 'error': f"Upload failed: {error_message}"}
+
+            # Verify the upload actually succeeded by checking if file exists
+            try:
+                verify_list = self.supabase.storage.from_(self.bucket_name).list(path=os.path.dirname(file_path))
+                verify_file = next((f for f in verify_list if f.get('name') == os.path.basename(file_path)), None)
+                if not verify_file:
+                    logger.error(f"Upload verification failed - file not found after upload: {file_path}")
+                    return {'url': image_url, 'error': "Upload verification failed - file not found"}
+                verify_size = verify_file.get('metadata', {}).get('size', 0) if isinstance(verify_file.get('metadata'), dict) else verify_file.get('size', 0)
+                if verify_size and verify_size < 1000:
+                    logger.error(f"Upload verification failed - file too small ({verify_size} bytes): {file_path}")
+                    return {'url': image_url, 'error': f"Upload verification failed - file too small ({verify_size} bytes)"}
+                logger.debug(f"Upload verified: {file_path} ({verify_size} bytes)")
+            except Exception as verify_err:
+                logger.warning(f"Could not verify upload (proceeding anyway): {verify_err}")
+
             # Get public URL (cleaned of trailing ?)
             public_url = self._get_clean_public_url(file_path)
-            
+
             result = {
                 'url': public_url,
                 'path': file_path,
                 'original_url': image_url,
                 'metadata': metadata
             }
-            
+
             # Cache the result
             self._cache[image_url] = result
-            
+
             # Truncate data URLs for logging
             display_url = self._truncate_data_url(image_url)
             logger.info(f"Successfully uploaded image: {display_url} -> {public_url}")
@@ -324,16 +385,40 @@ class ImageStorageService:
                 file_options={"content-type": content_type}
             )
 
+            # Validate upload response
+            upload_failed = False
+            error_message = None
+
+            if hasattr(response, 'error') and response.error:
+                upload_failed = True
+                error_message = str(response.error)
+            elif hasattr(response, 'json') and callable(response.json):
+                try:
+                    resp_data = response.json()
+                    if isinstance(resp_data, dict) and resp_data.get('error'):
+                        upload_failed = True
+                        error_message = resp_data.get('error') or resp_data.get('message', 'Unknown error')
+                except Exception:
+                    pass
+            elif isinstance(response, dict):
+                if response.get('error'):
+                    upload_failed = True
+                    error_message = response.get('error') or response.get('message', 'Unknown error')
+
+            if upload_failed:
+                logger.error(f"Supabase upload failed for base64 image {filename}: {error_message}")
+                raise Exception(f"Upload failed: {error_message}")
+
             # Get public URL (cleaned of trailing ?)
             public_url = self._get_clean_public_url(file_path)
-            
+
             result = {
                 'url': public_url,
                 'path': file_path,
                 'ai_generated': True,
                 'original_filename': filename
             }
-            
+
             logger.info(f"Successfully uploaded AI-generated image: {public_url}")
             return result
             

@@ -152,9 +152,15 @@ export const injectIframeFonts = (html: string, options: InjectFontsOptions): st
   --ns-body-font: ${bodyFallback};
   --ns-hero-font: ${heroFallback};
 }
-body { font-family: var(--ns-body-font); }
-h1, h2, h3, h4, h5, h6, .hero, .heading, .title {
-  font-family: var(--ns-hero-font);
+/* Use !important to override inline styles from generated HTML */
+/* Body text elements */
+body, p, span, div, li, td, th, label, a, blockquote, figcaption,
+article, section, aside, nav, main, footer, header {
+  font-family: var(--ns-body-font) !important;
+}
+/* Heading elements - must come after body rules to take precedence */
+h1, h2, h3, h4, h5, h6, .hero, .heading, .title, [class*="heading"], [class*="title"] {
+  font-family: var(--ns-hero-font) !important;
 }
 `;
 

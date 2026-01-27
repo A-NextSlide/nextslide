@@ -20,19 +20,8 @@ interface ThinkingIndicatorProps {
   rotationInterval?: number;
 }
 
-// Fun thinking words that rotate
-const THINKING_WORDS = [
-  'Thinking',
-  'Pondering',
-  'Mulling it over',
-  'Contemplating',
-  'Cogitating',
-  'Ruminating',
-  'Deliberating',
-  'Processing',
-  'Musing',
-  'Considering',
-];
+// Simple status words - no more random "fun" phrases
+const THINKING_WORDS = ['Processing'];
 
 // Mini dancing star SVG component
 const DancingStar: React.FC<{ size: 'sm' | 'md' }> = ({ size }) => {

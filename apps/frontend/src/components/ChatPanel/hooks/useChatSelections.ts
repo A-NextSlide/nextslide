@@ -274,6 +274,12 @@ export function useChatSelections(): UseChatSelectionsReturn {
   useEffect(() => {
     const prev = lastSlideIdRef.current;
     if (prev && currentSlideId && prev !== currentSlideId) {
+      console.log('[ChatSelections] Slide changed, clearing selections:', {
+        from: prev,
+        to: currentSlideId,
+        hadSelections: selectedElements.length > 0,
+        wasSelecting: isSelecting
+      });
       if (isSelecting) {
         setIsSelecting(false);
       }

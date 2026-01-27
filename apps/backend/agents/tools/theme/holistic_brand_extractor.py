@@ -125,6 +125,16 @@ class HolisticBrandExtractor:
                             fonts = service.get_brand_fonts(brand_data)
                             logo_url = service.get_best_logo(brand_data, prefer_theme="light")
                             logo_url_dark = service.get_best_logo(brand_data, prefer_theme="dark")
+
+                            # Check for brand font overrides (e.g., Rivian)
+                            try:
+                                from services.font_characteristics import get_brand_font_override
+                                font_override = get_brand_font_override(identifier)
+                                if font_override:
+                                    fonts = [font_override.get("hero", "Inter"), font_override.get("body", "Inter")]
+                                    print(f"   🎨 Applied font override for {identifier}: {fonts}")
+                            except ImportError:
+                                pass
                             
                             # Generate optimal text colors based on primary background
                             if backgrounds:

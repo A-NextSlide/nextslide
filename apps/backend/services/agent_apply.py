@@ -810,6 +810,12 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
                     )
                 except Exception:
                     pass
+            # Log font override updates specifically (always, not just in DEBUG mode)
+            diff_props = cdiff.get("props") or {}
+            font_keys = [k for k in diff_props.keys() if 'Font' in k or 'font' in k]
+            if font_keys:
+                logger.info(f"[APPLY_DIFF] 🎨 FONT PROPS IN DIFF: {font_keys} = {[diff_props.get(k) for k in font_keys]}")
+                logger.info(f"[APPLY_DIFF] 🎨 Component props BEFORE merge: {[k for k in (comp.get('props') or {}).keys() if 'Font' in k or 'font' in k]}")
             # Log render prop specifically for CustomComponent
             if comp.get('type') == 'CustomComponent' and 'render' in (cdiff.get('props') or {}):
                 new_render = cdiff.get('props', {}).get('render', '')
@@ -883,6 +889,10 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
             if comp.get('type') == 'CustomComponent':
                 final_render = props.get('render', '')
                 logger.debug("[APPLY_DIFF] CustomComponent after merge: render=%s chars", len(final_render or ""))
+                # Log font override props AFTER merge (always, not just DEBUG mode)
+                font_keys_after = [k for k in props.keys() if 'Font' in k or 'font' in k]
+                if font_keys_after:
+                    logger.info(f"[APPLY_DIFF] 🎨 Component props AFTER merge: {font_keys_after} = {[props.get(k) for k in font_keys_after]}")
         # slide_properties
         for k, v in (sd.get("slide_properties") or {}).items():
             slide[k] = v

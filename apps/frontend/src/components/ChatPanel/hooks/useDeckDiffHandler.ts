@@ -30,6 +30,28 @@ export function useDeckDiffHandler({ setIsGenerating }: UseDeckDiffHandlerOption
       return;
     }
 
+    // DEBUG: Log the incoming diff structure to trace font prop handling
+    try {
+      const slidesToUpdate = (deckDiff as any).slides_to_update || [];
+      slidesToUpdate.forEach((slideDiff: any) => {
+        const compUpdates = slideDiff.components_to_update || [];
+        compUpdates.forEach((compDiff: any) => {
+          const allProps = compDiff.props || {};
+          const fontKeys = Object.keys(allProps).filter(k => k.toLowerCase().includes('font'));
+          if (fontKeys.length > 0) {
+            console.log('[DeckDiffHandler] 🔑 INCOMING diff has font props:', {
+              slideId: slideDiff.slide_id,
+              componentId: compDiff.id?.slice(0, 12),
+              fontProps: fontKeys.map(k => `${k}=${allProps[k]}`),
+              isEditDiff,
+            });
+          }
+        });
+      });
+    } catch (e) {
+      console.warn('[DeckDiffHandler] DEBUG log failed:', e);
+    }
+
     try {
       const deckData = (useDeckStore as any).getState().deckData;
       const allCompleted = Array.isArray(deckData?.slides) && deckData.slides.length > 0 && deckData.slides.every((s: any) => s.status === 'completed');
@@ -40,17 +62,38 @@ export function useDeckDiffHandler({ setIsGenerating }: UseDeckDiffHandlerOption
     } catch { }
 
     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
+    console.log('[DeckDiffHandler] isEditing:', isEditing, 'isEditDiff:', isEditDiff);
 
-    if (isEditing) {
+    // CRITICAL: For agent edits, we should update drafts even if __isEditMode is false
+    // because the user might be viewing in the editor context but the flag isn't set correctly
+    const shouldUpdateDrafts = isEditing || isEditDiff;
+
+    if (shouldUpdateDrafts) {
+      console.log('[DeckDiffHandler] 🔧 DRAFT UPDATE BRANCH - processing diff (isEditing:', isEditing, 'isEditDiff:', isEditDiff, ')');
       try {
         const editorStore = useEditorStore.getState();
         const slidesToUpdate = (deckDiff as any).slides_to_update || [];
         const slidesToAdd = (deckDiff as any).slides_to_add || [];
         const slidesToRemove = (deckDiff as any).slides_to_remove || [];
+        console.log('[DeckDiffHandler] slidesToUpdate count:', slidesToUpdate.length);
 
         slidesToUpdate.forEach((slideDiff: any) => {
           const slideId = slideDiff?.slide_id;
           if (!slideId) return;
+          const compUpdates = slideDiff.components_to_update || [];
+          console.log('[DeckDiffHandler] Processing slide:', slideId, 'components_to_update:', compUpdates.length);
+
+          // DEBUG: Log all component updates with their props
+          compUpdates.forEach((cu: any, idx: number) => {
+            const propKeys = Object.keys(cu.props || {});
+            console.log(`[DeckDiffHandler] Component update ${idx}:`, {
+              id: cu.id?.slice(0, 12),
+              type: cu.type,
+              propCount: propKeys.length,
+              propKeys: propKeys.slice(0, 10).join(', '),
+              hasFontProps: propKeys.some((k: string) => k.toLowerCase().includes('font'))
+            });
+          });
 
           (slideDiff.components_to_remove || []).forEach((compId: string) => {
             editorStore.removeDraftComponent(slideId, compId, true);
@@ -79,6 +122,15 @@ export function useDeckDiffHandler({ setIsGenerating }: UseDeckDiffHandlerOption
               needsDraftResync = true;
             }
 
+            // Debug: Log font-related props being applied
+            const fontProps = Object.keys(compDiff.props || {}).filter(k => k.toLowerCase().includes('font'));
+            if (fontProps.length > 0) {
+              console.log('[DeckDiff] Applying font props to component:', {
+                componentId: compDiff.id?.slice(0, 12),
+                fontProps: fontProps.map(k => `${k}=${(compDiff.props || {})[k]}`)
+              });
+            }
+
             editorStore.updateDraftComponent(
               slideId,
               compDiff.id,
@@ -88,6 +140,17 @@ export function useDeckDiffHandler({ setIsGenerating }: UseDeckDiffHandlerOption
               },
               true
             );
+
+            // DEBUG: Verify the update was applied
+            const draftAfter = editorStore.getDraftComponents(slideId);
+            const updatedComp = draftAfter?.find((c: any) => c.id === compDiff.id);
+            const fontPropsAfter = Object.keys(updatedComp?.props || {}).filter(k => k.toLowerCase().includes('font'));
+            if (fontPropsAfter.length > 0) {
+              console.log('[DeckDiffHandler] ✅ VERIFIED font props in draft after update:', {
+                componentId: compDiff.id?.slice(0, 12),
+                fontProps: fontPropsAfter.map(k => `${k}=${updatedComp?.props?.[k]}`)
+              });
+            }
           });
 
           if (needsDraftResync) {
@@ -167,7 +230,11 @@ export function useDeckDiffHandler({ setIsGenerating }: UseDeckDiffHandlerOption
       }
     } catch { }
     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
-    if (!isEditing) {
+
+    // For agent edits, we should update drafts even if __isEditMode is false
+    const shouldUpdateDrafts = isEditing || isAgentEdit;
+
+    if (!shouldUpdateDrafts) {
       try {
         const s = (useDeckStore as any).getState();
         const curr = s.deckData;

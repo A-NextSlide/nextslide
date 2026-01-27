@@ -88,9 +88,9 @@ const getSlideContext = (html: string) => {
     const titleMatch = html.match(/<(?:h1|h2|h3)[^>]*>([^<]+)</i);
     const htmlTitle = titleMatch ? titleMatch[1].trim() : '';
 
-    return slideTitle || htmlTitle || 'professional business';
+    return slideTitle || htmlTitle || 'presentation visual';
   } catch {
-    return 'professional business';
+    return 'presentation visual';
   }
 };
 
@@ -114,17 +114,28 @@ export const useCustomComponentImageAutoApply = ({
     if (!trimmedHtml.startsWith('<!doctype html') && !trimmedHtml.startsWith('<html')) return;
 
     // Skip auto-apply if HTML already has real images (backend already injected them)
-    // Check for common image hosting domains that indicate real images
-    // Also check for any valid HTTPS URLs in src attributes
-    const hasRealImages = /src=["']https?:\/\/[^"']*(?:supabase|nextslide|unsplash|pexels|cloudinary|images\.|storage\.googleapis)/i.test(html) || /src=["']data:/i.test(html);
+    // Check for ANY valid HTTPS URL in src attributes (not just specific domains)
+    // A real image URL is any https URL that's reasonably long (>20 chars suggests a real URL, not a placeholder)
+    const hasRealImages = /src=["']https?:\/\/[^"']{20,}["']/i.test(html) || /src=["']data:/i.test(html);
 
     // Check if JavaScript arrays/objects contain real image URLs
     // This indicates the backend has already injected images into the data, so we shouldn't try to "fix" template variables
     // Pattern: image: "https://..." or src: "https://..." or similar in JS objects
-    const jsArrayHasRealImages = /(?:image|src|img|photo|thumbnail|picture)\s*:\s*["']https?:\/\/[^"']*(?:supabase|nextslide|storage\.googleapis)/i.test(html);
+    // Match ANY https URL in image-related properties (not just specific domains)
+    const jsArrayHasRealImages = /(?:image|src|img|photo|thumbnail|picture|thumb)\s*:\s*["']https?:\/\/[^"']{10,}["']/i.test(html);
 
     if (jsArrayHasRealImages) {
       DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Skipping auto-apply - JS arrays already have real image URLs from backend');
+      return;
+    }
+
+    // Also skip if we detect template variables with corresponding real URLs in the same script block
+    // This catches cases like: items = [{ image: "https://...", thumbAlt: "..." }] with <img src="${item.image}">
+    const hasTemplateVarsWithData = /\$\{[^}]+\.(?:image|src|img|photo|thumbnail|picture|thumb)[^}]*\}/i.test(html) &&
+      /(?:image|src|img|photo|thumbnail|picture|thumb)\s*:\s*["']https?:\/\//i.test(html);
+
+    if (hasTemplateVarsWithData) {
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Skipping auto-apply - template variables have corresponding real URLs in data');
       return;
     }
 
@@ -229,7 +240,9 @@ export const useCustomComponentImageAutoApply = ({
 
           if (!searchQuery || BAD_SEARCH_TERMS.includes(searchQuery)) {
             const slideContext = getSlideContext(html);
-            searchQuery = `${slideContext} professional photo`;
+            // Don't add "professional photo" - it biases toward stock imagery and hurts
+            // entertainment/gaming content where we want concept art or screenshots
+            searchQuery = slideContext;
             DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Bad alt text detected, using slide context:', { original: alt, fallback: searchQuery });
           }
         }

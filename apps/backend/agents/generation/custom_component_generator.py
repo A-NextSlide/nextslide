@@ -94,7 +94,11 @@ def _build_image_metadata(prefetched_images: Dict[str, str], logo_url: str = Non
                 "url": "https://...",
                 "role": "hero|logo|content|...",
                 "label": "human readable description",
-                "query": "original search query"
+                "query": "original search query",
+                "width": 1920,  # if available
+                "height": 1080,  # if available
+                "aspectRatio": 1.78,  # if dimensions available
+                "suggestedObjectFit": "cover" | "contain"  # based on aspect ratio
             }
         }
     """
@@ -105,10 +109,12 @@ def _build_image_metadata(prefetched_images: Dict[str, str], logo_url: str = Non
 
     # Process prefetched images
     for key, value in prefetched_images.items():
-        if key.endswith('_query'):
-            continue  # Skip query keys, we'll use them below
+        if key.endswith('_query') or key.endswith('_width') or key.endswith('_height'):
+            continue  # Skip metadata keys, we'll use them below
 
         query = prefetched_images.get(f"{key}_query", "")
+        width = prefetched_images.get(f"{key}_width")
+        height = prefetched_images.get(f"{key}_height")
         role = _infer_image_role(key, query)
 
         # Create human-readable label from prop name
@@ -116,12 +122,39 @@ def _build_image_metadata(prefetched_images: Dict[str, str], logo_url: str = Non
         if query:
             label = query  # Query is usually more descriptive
 
-        metadata[key] = {
+        entry = {
             "url": value,
             "role": role,
             "label": label,
             "query": query,
         }
+
+        # Add dimensions and compute aspect ratio if available
+        if width is not None and height is not None:
+            try:
+                # Ensure width/height are integers (SerpAPI may return strings)
+                w = int(width) if not isinstance(width, int) else width
+                h = int(height) if not isinstance(height, int) else height
+                entry["width"] = w
+                entry["height"] = h
+                if h > 0:
+                    aspect_ratio = w / h
+                    entry["aspectRatio"] = round(aspect_ratio, 2)
+                    # Suggest objectFit based on aspect ratio:
+                    # - Portrait images (tall, aspect < 0.8) often look better with "contain"
+                    # - Very wide panoramic images (aspect > 2.5) may benefit from "contain"
+                    # - Standard landscape/square images work well with "cover"
+                    if aspect_ratio < 0.8:
+                        entry["suggestedObjectFit"] = "contain"
+                    elif aspect_ratio > 2.5:
+                        entry["suggestedObjectFit"] = "contain"
+                    else:
+                        entry["suggestedObjectFit"] = "cover"
+            except (ValueError, TypeError):
+                # If conversion fails, skip dimensions
+                pass
+
+        metadata[key] = entry
 
     # Add logo if present
     if logo_url:
@@ -130,6 +163,7 @@ def _build_image_metadata(prefetched_images: Dict[str, str], logo_url: str = Non
             "role": "logo",
             "label": "Company logo",
             "query": "",
+            "suggestedObjectFit": "contain",  # Logos should always be contained
         }
 
     return metadata
@@ -320,7 +354,8 @@ class CustomComponentGenerator:
             image_props = {
                 k: v
                 for k, v in (prefetched_images or {}).items()
-                if not k.endswith('_query')
+                if not k.endswith('_query') and not k.endswith('_width') and not k.endswith('_height')
+                and isinstance(v, str)
             }
 
             if logo_url:

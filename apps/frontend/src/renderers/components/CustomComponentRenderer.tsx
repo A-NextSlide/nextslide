@@ -5,6 +5,7 @@ import { useNavigation } from '../../context/NavigationContext';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useActiveSlide } from '../../context/ActiveSlideContext';
 import { useEditorStore } from '@/stores/editorStore';
+import { useDeckStore } from '@/stores/deckStore';
 import { useEditorState } from '@/context/EditorStateContext';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { CustomComponentEditOverlay, DetectedElement, injectEditMode } from '@/components/custom-component-editor';
@@ -208,16 +209,65 @@ export const CustomComponentRenderer: React.FC<{
     };
   }, []);
 
+  // Get deck theme fonts as fallback
+  const deckData = useDeckStore((state) => state.deckData);
+  const deckThemeFonts = useMemo(() => {
+    const theme = deckData?.theme || {};
+    const typography = theme.typography || {};
+    return {
+      // Check new flat format first, then old nested format
+      bodyFont: typography.body_font || typography.bodyFont || typography.body_text?.family,
+      heroFont: typography.hero_font || typography.heroFont || typography.hero_title?.family
+    };
+  }, [deckData?.theme]);
+
+  // Debug: Log when component re-renders with font-related props
+  const fontOverrideBody = component.props?.overrideBodyFont;
+  const fontOverrideHero = component.props?.overrideHeroFont;
+  if (fontOverrideBody || fontOverrideHero) {
+    console.log('[CustomComponent] RENDER with font overrides:', {
+      componentId: component.id?.slice(0, 12),
+      overrideBodyFont: fontOverrideBody,
+      overrideHeroFont: fontOverrideHero,
+    });
+  }
+
   const resolvedFonts = useMemo(() => {
     const props = component.props || {};
     const nested = (props.props && typeof props.props === 'object') ? props.props as Record<string, any> : {};
-    const bodyFont = props.fontFamily || props.bodyFont || nested.fontFamily || nested.bodyFont;
-    const heroFont = props.heroFont || props.headingFont || nested.heroFont || nested.headingFont;
-    return {
+
+    // Font priority order:
+    // 1. Explicit slide-level overrides (overrideBodyFont/overrideHeroFont) - highest priority
+    // 2. Deck theme fonts - normal priority for global consistency
+    // 3. Component defaults (fontFamily, etc.) - lowest priority (often hardcoded 'Inter')
+    const bodyFont =
+      props.overrideBodyFont ||      // Slide-specific override (user explicitly set)
+      nested.overrideBodyFont ||
+      deckThemeFonts.bodyFont ||     // Deck theme (global font)
+      props.fontFamily ||            // Component default
+      props.bodyFont ||
+      nested.fontFamily ||
+      nested.bodyFont;
+
+    const heroFont =
+      props.overrideHeroFont ||      // Slide-specific override
+      nested.overrideHeroFont ||
+      deckThemeFonts.heroFont ||     // Deck theme (global font)
+      props.heroFont ||
+      props.headingFont ||
+      nested.heroFont ||
+      nested.headingFont;
+
+    const result = {
       bodyFont: typeof bodyFont === 'string' ? bodyFont : undefined,
       heroFont: typeof heroFont === 'string' ? heroFont : undefined
     };
-  }, [component.props]);
+    // Debug: Log resolved fonts when they include overrides
+    if (props.overrideBodyFont || props.overrideHeroFont) {
+      console.log('[CustomComponent] resolvedFonts with override:', result);
+    }
+    return result;
+  }, [component.props, deckThemeFonts]);
 
   // Keep last successful compiled render to avoid flicker during recompilation
   const compiledRenderRef = useRef<Function | null>(null);
@@ -1615,10 +1665,17 @@ export const CustomComponentRenderer: React.FC<{
         >
           {/* IFRAME RENDERING - Simple 100% fill, HTML handles responsive layout */}
           {/* On iOS thumbnails: strip scripts for memory safety, full view keeps scripts */}
-          {isIframeComponent && stableIframeSrcDoc && (
+          {isIframeComponent && stableIframeSrcDoc && (() => {
+            // Debug: Log iframe key when font overrides are present
+            if (resolvedFonts.bodyFont || resolvedFonts.heroFont) {
+              const iframeKey = `${component.id?.slice(0, 12)}-${renderCodeHash?.slice(0, 8)}-${propsKey.length}-${resolvedFonts.bodyFont || 'none'}-${resolvedFonts.heroFont || 'none'}`;
+              console.log('[CustomComponent] Iframe key (with fonts):', iframeKey);
+            }
+            return true;
+          })() && (
             <iframe
               ref={iframeRef}
-              key={`${component.id}-${renderCodeHash}-${propsKey.length}-${propsKey.slice(-20)}`}
+              key={`${component.id}-${renderCodeHash}-${propsKey.length}-${propsKey.slice(-20)}-${resolvedFonts.bodyFont || ''}-${resolvedFonts.heroFont || ''}`}
               srcDoc={shouldUseStaticHtml
                 ? stableIframeSrcDoc.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
                 : stableIframeSrcDoc

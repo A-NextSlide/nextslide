@@ -1,10 +1,10 @@
 """
 Fast message classifier using Gemini Flash.
 
-Routes messages to appropriate handlers:
-- chat: Conversational messages (greetings, questions, feedback)
-- simple_edit: Single, obvious operations
-- complex_edit: Multi-step, creative, or ambiguous requests
+Routes messages to appropriate handlers with skill-based architecture:
+- Classifies into specific edit types for optimal tool/prompt selection
+- Determines what context is needed (screenshot, history, research)
+- Enables model selection based on complexity
 
 Note: Doesn't use Gemini context caching because the system prompt is only ~900 tokens,
 below Gemini's 4096 token minimum. Direct Gemini Flash calls are fast enough (~300-500ms).
@@ -15,18 +15,64 @@ import json
 import logging
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
+from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EDIT TYPES (Skills)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class EditSkill(str, Enum):
+    """Specific edit types for skill-based routing."""
+    # Chat - no edits needed
+    CHAT = "chat"
+
+    # Simple edits - single operation, fast model
+    TEXT_EDIT = "text_edit"           # Change text, fix typo
+    COLOR_EDIT = "color_edit"         # Change a color
+    IMAGE_SEARCH = "image_search"     # Replace/find image
+    IMAGE_AI_EDIT = "image_ai_edit"   # AI modify existing image
+
+    # Theme edits - affect multiple slides
+    THEME_CHANGE = "theme_change"     # Change fonts/colors globally
+
+    # Content edits - may need research first
+    CONTENT_UPDATE = "content_update" # Update with real data (needs research)
+
+    # Slide operations
+    SLIDE_CREATE = "slide_create"     # Create new slide
+    SLIDE_DELETE = "slide_delete"     # Delete slide
+
+    # Complex edits - need smart model
+    COMPLEX_EDIT = "complex_edit"     # Redesign, multi-step, ambiguous
+    RESEARCH_EDIT = "research_edit"   # Research then edit (charts, data)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CLASSIFICATION MODELS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+class EditScope(str, Enum):
+    """Scope of the edit - slide-specific or whole deck."""
+    SLIDE = "slide"      # Affects only current slide
+    DECK = "deck"        # Affects all slides (theme change)
+
+
 class MessageClassification(BaseModel):
     """Classification result from the classifier agent."""
 
     type: str = Field(
-        description="Message type: 'chat', 'simple_edit', or 'complex_edit'"
+        description="Message type: 'chat', 'simple_edit', or 'complex_edit' (legacy)"
+    )
+    skill: str = Field(
+        default="complex_edit",
+        description="Specific edit skill for routing"
+    )
+    scope: str = Field(
+        default="slide",
+        description="Edit scope: 'slide' (current only) or 'deck' (all slides)"
     )
     needs_deck: bool = Field(
         default=True,
@@ -40,6 +86,10 @@ class MessageClassification(BaseModel):
         default=False,
         description="Whether this request needs conversation history for context"
     )
+    needs_research: bool = Field(
+        default=False,
+        description="Whether this request needs web research first"
+    )
     confidence: float = Field(
         default=0.9,
         description="Confidence in classification (0-1)"
@@ -49,6 +99,28 @@ class MessageClassification(BaseModel):
         description="Brief explanation of classification decision"
     )
 
+    @property
+    def is_simple(self) -> bool:
+        """Check if this is a simple edit (fast model)."""
+        return self.skill in [
+            EditSkill.TEXT_EDIT, EditSkill.COLOR_EDIT,
+            EditSkill.IMAGE_SEARCH, EditSkill.THEME_CHANGE,
+            EditSkill.SLIDE_DELETE
+        ]
+
+    @property
+    def is_complex(self) -> bool:
+        """Check if this is a complex edit (smart model)."""
+        return self.skill in [
+            EditSkill.COMPLEX_EDIT, EditSkill.RESEARCH_EDIT,
+            EditSkill.CONTENT_UPDATE, EditSkill.IMAGE_AI_EDIT
+        ]
+
+    @property
+    def is_creative(self) -> bool:
+        """Check if this needs creative generation (Pro model)."""
+        return self.skill == EditSkill.SLIDE_CREATE
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CLASSIFIER SYSTEM PROMPT (cached)
@@ -56,72 +128,86 @@ class MessageClassification(BaseModel):
 
 CLASSIFIER_SYSTEM_PROMPT = """You are a fast message router for a presentation editor assistant.
 
-Your job is to classify user messages into categories so we can route them efficiently.
+Classify user messages into SKILLS (specific operations), determine SCOPE (slide vs deck), and context needs.
 
-CATEGORIES:
+SKILLS (pick the most specific one):
 
-1. "chat" - Conversational messages that don't require deck changes:
-   - Greetings: "hey", "hi", "hello", "good morning"
-   - Thanks/feedback: "thanks!", "perfect", "looks good", "nice"
-   - Questions seeking advice: "what do you think?", "how should I...", "should I...", "any suggestions?"
-   - Clarifications: "what did you mean?", "can you explain?"
-   - General chat: "tell me about...", "I'm not sure..."
-   - Acknowledgments: "ok", "got it", "I see"
+CHAT:
+- "chat" - Greetings, thanks, questions, acknowledgments (no edit needed)
 
-2. "simple_edit" - Clear, single operations:
-   - Text changes: "change the title to X", "fix the typo", "update the text"
-   - Color changes: "make it red", "change the background to blue"
-   - Single deletions: "delete this slide", "remove the image"
-   - Single additions: "add a new slide", "duplicate this"
-   - Direct commands: "make the font bigger", "center the text"
+SIMPLE EDITS (fast, single operation):
+- "text_edit" - Change/fix text: "change title to X", "fix typo", "update the text"
+- "color_edit" - Change colors/fonts on CURRENT SLIDE: "make it red", "change the font here", "use Comic Sans on this slide"
+- "image_search" - Replace/find images: "replace the image", "find a better photo", "use a dog image"
+- "theme_change" - Global changes across ALL SLIDES: "change all fonts", "fix fonts everywhere", "update the theme", "make all slides use Inter"
+- "slide_delete" - Remove slides: "delete this slide", "remove slide 3"
 
-3. "complex_edit" - Multi-step, creative, or ambiguous:
-   - Redesigns: "redesign this slide", "make it look better", "improve the layout"
-   - Creative requests: "create a slide about X", "make this more professional"
-   - Research needed: "add latest stats about X", "update with current data"
-   - Multiple changes: "fix the images and update the text"
-   - Vague requests: "fix this", "something's wrong", "make it pop"
-   - Visual analysis needed: "why does this look weird?", "the alignment is off"
+COMPLEX EDITS (smart model needed):
+- "slide_create" - Create new slide: "add a slide about X", "create an intro slide"
+- "content_update" - Update with real data: "update the stats", "add current revenue numbers"
+- "research_edit" - Research then edit: "research Tesla and update the slide", "add a chart with latest data"
+- "image_ai_edit" - AI modify image: "make the image greener", "remove the background"
+- "complex_edit" - Redesigns, multi-step, ambiguous: "redesign this", "make it better", "fix everything"
+
+SCOPE DETECTION (critical for font/color changes):
+- "slide" - Current slide only. DEFAULT for most edits. Use when:
+  * No mention of "all", "every", "everywhere", "whole deck", "entire presentation"
+  * Ambiguous requests like "change the font" (assume current slide)
+  * Specific element references: "the title", "this text", "the background here"
+- "deck" - All slides. Use ONLY when user explicitly says:
+  * "all slides", "every slide", "everywhere", "whole deck", "entire presentation"
+  * "fix the theme", "update typography globally"
+  * Clear global intent: "change all fonts to X", "make everything use Y"
 
 CONTEXT REQUIREMENTS:
-
-- needs_deck: Does this need current slide/component data? (false for pure chat)
-- needs_screenshot: Does this need to SEE the slide? Set TRUE for:
-  * Visual issues, layout, design feedback
-  * Image replacement when user describes the image visually ("the older woman", "guy in blue")
-  * ANY image-related edit ("replace the image", "change the photo", "fix the picture")
-  * Multiple similar images where position matters ("3rd image", "first photo")
-- needs_history: Does this need prior messages? (references like "make it bigger", "do that again", "the previous one")
+- needs_deck: Does this need current slide data? (false only for pure chat)
+- needs_screenshot: Does this need to SEE the slide visually? Be CONSERVATIVE - set TRUE ONLY for:
+  * Visual descriptions of images: "the older woman", "guy in blue shirt", "the smiling one"
+  * Layout changes: "move it left", "make it centered", "rearrange the layout"
+  * Ambiguous visual references: "that image", "the big one", "the thing on the right"
+  * Full redesigns: "redesign this", "make it look better"
+  Set FALSE for (HTML context is sufficient):
+  * Specific text changes: "change 'Hello' to 'Hi'", "fix the typo"
+  * Specific colors: "make it red", "use #FF0000", "change to blue"
+  * Named elements: "the title", "the subtitle", "the heading"
+  * Size changes with clear targets: "make the title smaller", "bigger font"
+- needs_history: Does this reference prior context? ("make it bigger", "do that again")
+- needs_research: Does this need web data? ("latest stats", "current revenue", "2024 data")
 
 RESPOND WITH JSON:
 {
   "type": "chat|simple_edit|complex_edit",
+  "skill": "<skill_name>",
+  "scope": "slide|deck",
   "needs_deck": true/false,
   "needs_screenshot": true/false,
   "needs_history": true/false,
+  "needs_research": true/false,
   "confidence": 0.0-1.0,
-  "reasoning": "brief explanation"
+  "reasoning": "brief"
 }
 
 EXAMPLES:
 
-"hey" → {"type": "chat", "needs_deck": false, "needs_screenshot": false, "needs_history": false, "confidence": 1.0, "reasoning": "greeting"}
+"hey" → {"type": "chat", "skill": "chat", "scope": "slide", "needs_deck": false, "needs_screenshot": false, "needs_history": false, "needs_research": false, "confidence": 1.0, "reasoning": "greeting"}
 
-"make the title red" → {"type": "simple_edit", "needs_deck": true, "needs_screenshot": false, "needs_history": false, "confidence": 0.95, "reasoning": "single color change"}
+"make the title red" → {"type": "simple_edit", "skill": "color_edit", "scope": "slide", "needs_deck": true, "needs_screenshot": false, "needs_history": false, "needs_research": false, "confidence": 0.95, "reasoning": "single color change on current slide"}
 
-"make it bigger" → {"type": "simple_edit", "needs_deck": true, "needs_screenshot": false, "needs_history": true, "confidence": 0.9, "reasoning": "needs history to know what 'it' refers to"}
+"change the font to Comic Sans" → {"type": "simple_edit", "skill": "color_edit", "scope": "slide", "needs_deck": true, "needs_screenshot": false, "needs_history": false, "needs_research": false, "confidence": 0.9, "reasoning": "font change - no 'all' mentioned, assume current slide"}
 
-"how should I present this slide?" → {"type": "chat", "needs_deck": true, "needs_screenshot": true, "needs_history": false, "confidence": 0.95, "reasoning": "advice question, needs to see slide"}
+"change all fonts to Poppins" → {"type": "simple_edit", "skill": "theme_change", "scope": "deck", "needs_deck": true, "needs_screenshot": false, "needs_history": false, "needs_research": false, "confidence": 0.95, "reasoning": "global font change - 'all' specified"}
 
-"redesign this with our brand colors" → {"type": "complex_edit", "needs_deck": true, "needs_screenshot": true, "needs_history": false, "confidence": 0.95, "reasoning": "full redesign requires visual context"}
+"fix the ugly font everywhere" → {"type": "simple_edit", "skill": "theme_change", "scope": "deck", "needs_deck": true, "needs_screenshot": false, "needs_history": false, "needs_research": false, "confidence": 0.95, "reasoning": "font fix across all slides - 'everywhere' specified"}
 
-"something looks off" → {"type": "complex_edit", "needs_deck": true, "needs_screenshot": true, "needs_history": false, "confidence": 0.9, "reasoning": "vague visual issue needs screenshot"}
+"fix the font on this slide" → {"type": "simple_edit", "skill": "color_edit", "scope": "slide", "needs_deck": true, "needs_screenshot": false, "needs_history": false, "needs_research": false, "confidence": 0.95, "reasoning": "font fix - 'this slide' specified"}
 
-"replace the older woman's photo" → {"type": "simple_edit", "needs_deck": true, "needs_screenshot": true, "needs_history": false, "confidence": 0.95, "reasoning": "visual image reference needs screenshot to identify which image"}
+"replace the logo with Tesla" → {"type": "simple_edit", "skill": "image_search", "scope": "slide", "needs_deck": true, "needs_screenshot": true, "needs_history": false, "needs_research": false, "confidence": 0.95, "reasoning": "image replacement"}
 
-"replace all the images" → {"type": "complex_edit", "needs_deck": true, "needs_screenshot": true, "needs_history": false, "confidence": 0.9, "reasoning": "multiple images need visual context"}
+"update with latest Tesla revenue" → {"type": "complex_edit", "skill": "content_update", "scope": "slide", "needs_deck": true, "needs_screenshot": false, "needs_history": false, "needs_research": true, "confidence": 0.95, "reasoning": "needs current data"}
 
-BE FAST. Default to the simpler category when uncertain."""
+"redesign this slide" → {"type": "complex_edit", "skill": "complex_edit", "scope": "slide", "needs_deck": true, "needs_screenshot": true, "needs_history": false, "needs_research": false, "confidence": 0.9, "reasoning": "full redesign"}
+
+BE FAST. Pick the most specific skill. Default scope to "slide" unless user explicitly mentions "all"."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -273,16 +359,44 @@ def _parse_classification(text: str) -> Optional[MessageClassification]:
 
         data = json.loads(text)
 
-        # Validate type
+        # Validate type (legacy field)
         msg_type = data.get("type", "complex_edit")
         if msg_type not in ["chat", "simple_edit", "complex_edit"]:
             msg_type = "complex_edit"
 
+        # Get skill (new field) - default based on type if not provided
+        skill = data.get("skill", "")
+        if not skill:
+            # Infer skill from legacy type
+            if msg_type == "chat":
+                skill = "chat"
+            elif msg_type == "simple_edit":
+                skill = "text_edit"  # Default simple skill
+            else:
+                skill = "complex_edit"
+
+        # Validate skill is a known value
+        valid_skills = [
+            "chat", "text_edit", "color_edit", "image_search", "image_ai_edit",
+            "theme_change", "content_update", "slide_create", "slide_delete",
+            "complex_edit", "research_edit"
+        ]
+        if skill not in valid_skills:
+            skill = "complex_edit"
+
+        # Get scope - default to "slide" (current slide only)
+        scope = data.get("scope", "slide")
+        if scope not in ["slide", "deck"]:
+            scope = "slide"
+
         return MessageClassification(
             type=msg_type,
+            skill=skill,
+            scope=scope,
             needs_deck=data.get("needs_deck", True),
             needs_screenshot=data.get("needs_screenshot", False),
             needs_history=data.get("needs_history", False),
+            needs_research=data.get("needs_research", False),
             confidence=data.get("confidence", 0.8),
             reasoning=data.get("reasoning", ""),
         )
@@ -294,45 +408,25 @@ def _parse_classification(text: str) -> Optional[MessageClassification]:
 
 def _classify_fallback(message: str) -> MessageClassification:
     """
-    Rule-based fallback classification when LLM is unavailable.
+    Simple fallback when LLM classifier is unavailable.
 
-    This is NOT the primary path - it's a safety net.
-    The LLM classifier is preferred for accuracy.
+    Just defaults to complex_edit with full context - let the orchestrator handle it.
+    This is a last resort safety net, not the primary classification path.
     """
-    msg_lower = message.lower().strip()
+    # Check if message suggests deck-wide scope
+    message_lower = message.lower()
+    scope = "deck" if any(kw in message_lower for kw in ["all slides", "every slide", "everywhere", "whole deck", "entire", "all fonts"]) else "slide"
 
-    # Very short messages are usually chat
-    if len(msg_lower) < 10:
-        if msg_lower in ["hey", "hi", "hello", "thanks", "ok", "yes", "no", "sure", "cool"]:
-            return MessageClassification(
-                type="chat",
-                needs_deck=False,
-                needs_screenshot=False,
-                needs_history=False,
-                confidence=0.7,
-                reasoning="fallback: short greeting/acknowledgment"
-            )
-
-    # Questions are usually chat
-    if msg_lower.startswith(("how ", "what ", "why ", "should ", "can you ", "could you ")):
-        if "change" not in msg_lower and "make" not in msg_lower and "edit" not in msg_lower:
-            return MessageClassification(
-                type="chat",
-                needs_deck=True,
-                needs_screenshot=True,  # Questions often need visual context
-                needs_history=True,
-                confidence=0.6,
-                reasoning="fallback: question without edit keywords"
-            )
-
-    # Default to complex_edit (safest - loads all context)
     return MessageClassification(
         type="complex_edit",
+        skill="complex_edit",
+        scope=scope,
         needs_deck=True,
         needs_screenshot=True,
         needs_history=True,
+        needs_research=False,
         confidence=0.5,
-        reasoning="fallback: defaulting to complex_edit"
+        reasoning="fallback: LLM unavailable, defaulting to full context"
     )
 
 

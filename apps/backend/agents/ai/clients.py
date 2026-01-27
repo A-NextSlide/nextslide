@@ -512,6 +512,47 @@ def _invoke_freeform(client, model: str, messages: List[Dict], system: str, kwar
 
     # Gemini-style
     if hasattr(raw_client, 'models'):
+        def _extract_gemini_text(result) -> str:
+            """Extract text from Gemini response with robust error handling."""
+            text = None
+            finish_reason = None
+
+            # Try to get finish_reason for debugging
+            try:
+                if hasattr(result, 'candidates') and result.candidates:
+                    candidate = result.candidates[0]
+                    finish_reason = getattr(candidate, 'finish_reason', None)
+                    if finish_reason and str(finish_reason) not in ['STOP', 'FinishReason.STOP', '1']:
+                        logger.warning(f"Gemini finish_reason: {finish_reason}")
+            except Exception:
+                pass
+
+            # Try primary accessor
+            try:
+                text = result.text
+                if text:
+                    return text
+            except Exception as e:
+                logger.debug(f"Gemini result.text failed: {e}")
+
+            # Fallback: extract from candidates
+            try:
+                if hasattr(result, 'candidates') and result.candidates:
+                    candidate = result.candidates[0]
+                    if hasattr(candidate, 'content') and candidate.content:
+                        parts = getattr(candidate.content, 'parts', [])
+                        if parts:
+                            text_parts = []
+                            for part in parts:
+                                if hasattr(part, 'text') and part.text:
+                                    text_parts.append(part.text)
+                            if text_parts:
+                                return "".join(text_parts)
+            except Exception as e:
+                logger.debug(f"Gemini candidate extraction failed: {e}")
+
+            return text or ""
+
         # If any message content is multimodal (list of parts), convert to Gemini inline_data parts
         try:
             has_parts = any(isinstance(m.get("content"), list) for m in messages)
@@ -546,21 +587,21 @@ def _invoke_freeform(client, model: str, messages: List[Dict], system: str, kwar
                             parts.append({"text": f"{role}: {content}"})
 
                 result = raw_client.models.generate_content(model=model, contents=parts, **kwargs)
-                return result.text
+                return _extract_gemini_text(result)
 
             # Text-only
             prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
             if system:
                 prompt = f"System: {system}\n{prompt}"
             result = raw_client.models.generate_content(model=model, contents=prompt, **kwargs)
-            return result.text
+            return _extract_gemini_text(result)
         except Exception:
             # Last-resort fallback: stringify everything
             prompt = "\n".join([f"{m.get('role')}: {m.get('content')}" for m in messages])
             if system:
                 prompt = f"System: {system}\n{prompt}"
             result = raw_client.models.generate_content(model=model, contents=prompt, **kwargs)
-            return result.text
+            return _extract_gemini_text(result)
 
     raise ValueError(f"Unknown client type: {type(raw_client)}")
 
@@ -782,7 +823,21 @@ def _invoke_structured(client, model: str, messages: List[Dict], system: str, re
         for _attempt in range(max_retries):
             try:
                 result = raw_client.models.generate_content(model=model, contents=prompt, **gk)
-                text = getattr(result, "text", None) or str(result)
+                # Properly extract text from Gemini response
+                text = None
+                try:
+                    text = result.text  # Primary accessor
+                except Exception:
+                    # Fallback: try to get text from candidates
+                    if hasattr(result, 'candidates') and result.candidates:
+                        candidate = result.candidates[0]
+                        if hasattr(candidate, 'content') and candidate.content:
+                            parts = getattr(candidate.content, 'parts', [])
+                            if parts and hasattr(parts[0], 'text'):
+                                text = parts[0].text
+                if not text:
+                    logger.warning(f"Gemini attempt {_attempt + 1}: No text in response")
+                    continue
                 last_raw_text = text
                 payload = _extract_json(text)
                 # Validate/parse into response_model

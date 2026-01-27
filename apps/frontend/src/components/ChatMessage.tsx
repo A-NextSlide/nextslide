@@ -242,6 +242,23 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     }
   }
 
+  // Hide short AI messages that are just status phrases (these show in bubbles and are noise)
+  // The actual status is shown via the amber text inline steps
+  if (type === 'ai' && !isLoading && !editAppliedData?.slideSnapshot) {
+    const trimmed = safeMessage.trim();
+    // Hide if it's a short status-like phrase (< 60 chars, no punctuation except period)
+    const isStatusPhrase = trimmed.length > 0 && trimmed.length < 60 &&
+      !trimmed.includes('?') && !trimmed.includes('!') &&
+      !trimmed.includes('\n') && !trimmed.includes(':') &&
+      // Common status patterns to hide
+      (/^(Making|Editing|Updating|Creating|Deleting|Applying|Verifying|Processing|Working|Checking|Adding|Removing|Changing|Touching|Fixing|Cleaning|Adjusting|Tweaking)\s/i.test(trimmed) ||
+       /^(I'm |I am |I'll |Let me )/i.test(trimmed) ||
+       /\b(changes?|edit|update|slide|component|text|image|theme)\b/i.test(trimmed));
+    if (isStatusPhrase && !metadata?.forceShow) {
+      return null;
+    }
+  }
+
   // Handle credits exhausted message with upgrade CTA
   if (metadata?.isCreditsExhausted) {
     return (
@@ -382,7 +399,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
           type === 'user'
             ? 'bg-transparent text-foreground border border-zinc-700/70 dark:border-[#929292]/80 max-w-[80%]'
             : type === 'system'
-            ? (metadata?.type === 'agent_plan' || metadata?.type === 'agent_tool' || metadata?.type === 'agent_selection' || metadata?.type === 'edit_applied' || metadata?.type === 'generation_complete' || metadata?.type === 'linkedin_profiles' || metadata?.stage === 'generation_complete')
+            ? (metadata?.type === 'agent_plan' || metadata?.type === 'agent_tool' || metadata?.type === 'agent_selection' || metadata?.type === 'edit_applied' || metadata?.type === 'generation_complete' || metadata?.type === 'linkedin_profiles' || metadata?.type === 'agent_thinking' || metadata?.type === 'agent_action' || metadata?.type === 'agent_status' || metadata?.stage === 'generation_complete')
               ? 'bg-transparent max-w-[80%]'
               : isStreamingMessage && !isCompleted
               ? 'glass-panel border border-[#929292] w-full shadow-none'
@@ -514,42 +531,49 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
               <div
                 className="whitespace-pre-wrap break-words text-[12px] leading-snug"
               >
-                {/* Compact, styled agent rows */}
-                {metadata?.type === 'agent_plan' ? (
-                  <div className="flex flex-col gap-1 max-w-full text-[10px] whitespace-normal break-words min-w-0" style={planStyle}>
-                    <span className="inline-flex items-center gap-1 text-muted-foreground text-[9px]">
-                      <span className="w-1 h-1 rounded-full bg-orange-500 animate-pulse" />
-                      <span>Reviewing slide</span>
-                    </span>
-                    {/* Show full planning text for each step */}
-                    <motion.div layout className="flex flex-col gap-0.5 min-w-0">
-                      {(() => {
-                        const rawSteps: string[] = (metadata?.steps || []) as string[];
-                        return rawSteps.map((s, i) => (
-                          <motion.div
-                            layout
-                            key={`${s}-${i}`}
-                            initial={{ opacity: 0, y: -5 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ type: 'spring', stiffness: 300, damping: 22, mass: 0.6, delay: i * 0.05 }}
-                            className="break-words whitespace-normal text-[10px] text-foreground/70 pl-2 border-l border-orange-500/30"
-                          >
-                            {s}
-                          </motion.div>
-                        ));
-                      })()}
-                    </motion.div>
-                  </div>
+                {/* Inline thinking/action steps - brown text, no bubble */}
+                {(metadata?.type === 'agent_thinking' || metadata?.type === 'agent_action') ? (
+                  <motion.div
+                    initial={{ opacity: 0, x: -5 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                    className="flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-500"
+                    style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif', fontWeight: 500 }}
+                  >
+                    <span className="w-1 h-1 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
+                    <span>{message}</span>
+                  </motion.div>
+                ) : metadata?.type === 'agent_plan' ? (
+                  /* Legacy plan format - simplified to match inline style */
+                  <motion.div
+                    initial={{ opacity: 0, x: -5 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-500"
+                    style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif', fontWeight: 500 }}
+                  >
+                    <span className="w-1 h-1 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
+                    <span>{(metadata?.steps as string[] || [])[0] || 'Planning'}</span>
+                  </motion.div>
                  ) : metadata?.type === 'agent_tool' ? (
                   <motion.div
-                    initial={{ opacity: 0, y: -5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 22, mass: 0.6 }}
-                    className="flex items-center gap-1 max-w-full text-[10px] whitespace-normal break-words min-w-0 pl-2 border-l border-orange-500/30"
-                    style={planStyle}
+                    initial={{ opacity: 0, x: -5 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                    className="flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-500"
+                    style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif', fontWeight: 500 }}
                   >
-                    <span className="w-1 h-1 rounded-full bg-orange-500 animate-pulse flex-shrink-0" />
-                    <span className="text-foreground/70">{message}</span>
+                    <span className="w-1 h-1 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
+                    <span>{message}</span>
+                  </motion.div>
+                 ) : metadata?.type === 'agent_status' ? (
+                  <motion.div
+                    initial={{ opacity: 0, x: -5 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-500"
+                    style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif', fontWeight: 500 }}
+                  >
+                    <span className="w-1 h-1 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
+                    <span>{message}</span>
                   </motion.div>
                  ) : metadata?.type === 'agent_selection' ? (
                   <div className="inline-flex items-center max-w-full text-[11px] gap-2">

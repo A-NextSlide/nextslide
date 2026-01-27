@@ -17,6 +17,22 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# BRAND FONT OVERRIDES - Specify exact fonts for specific brands
+# ══════════════════════════════════════════════════════════════════════════════
+# These override any fonts returned from Brandfetch API to ensure brand-appropriate
+# typography when we know the brand's actual fonts aren't available in our registry.
+# Format: "brand_domain_or_name": {"hero": "Font Name", "body": "Font Name"}
+
+BRAND_FONT_OVERRIDES: Dict[str, Dict[str, str]] = {
+    # Rivian - uses custom "Adventure" typeface: geometric, slightly condensed, modern automotive
+    # Barlow Condensed for headlines captures the condensed, technical-yet-approachable feel
+    # Barlow for body text maintains the clean, modern geometric aesthetic
+    "rivian.com": {"hero": "Barlow Condensed", "body": "Barlow"},
+    "rivian": {"hero": "Barlow Condensed", "body": "Barlow"},
+}
+
+
 class FontStyle(Enum):
     """Primary font style classification."""
     GEOMETRIC = "geometric"           # Based on geometric shapes (circles, squares)
@@ -561,6 +577,13 @@ BRAND_FONT_SUBSTITUTIONS: Dict[str, List[str]] = {
 
     # Didot
     "didot": ["Playfair Display", "Cormorant Garamond"],
+
+    # Rivian fonts (custom "Adventure" typeface - geometric, slightly condensed, modern automotive)
+    "rivian": ["Barlow Condensed", "Barlow", "Outfit", "Space Grotesk"],
+    "adventure": ["Barlow Condensed", "Barlow", "Outfit", "Space Grotesk"],
+    "söhne": ["Barlow Condensed", "Barlow", "Outfit", "Space Grotesk"],
+    "sohne": ["Barlow Condensed", "Barlow", "Outfit", "Space Grotesk"],
+    "rivian adventure": ["Barlow Condensed", "Barlow", "Outfit", "Space Grotesk"],
 }
 
 
@@ -598,6 +621,37 @@ def get_font_substitute(brand_font: str, available_fonts: List[str]) -> Optional
             for sub in substitutes:
                 if sub.lower() in available_lower:
                     return available_lower[sub.lower()]
+
+    return None
+
+
+def get_brand_font_override(brand_identifier: str) -> Optional[Dict[str, str]]:
+    """
+    Get font override for a specific brand if one exists.
+
+    Args:
+        brand_identifier: Brand domain (e.g., "rivian.com") or name (e.g., "rivian")
+
+    Returns:
+        Dict with "hero" and "body" font names, or None if no override exists
+    """
+    if not brand_identifier:
+        return None
+
+    # Normalize the identifier
+    normalized = brand_identifier.lower().strip()
+    normalized = normalized.replace('https://', '').replace('http://', '').replace('www.', '')
+    if '/' in normalized:
+        normalized = normalized.split('/')[0]
+
+    # Check direct match
+    if normalized in BRAND_FONT_OVERRIDES:
+        return BRAND_FONT_OVERRIDES[normalized]
+
+    # Check without TLD
+    base_name = normalized.split('.')[0] if '.' in normalized else normalized
+    if base_name in BRAND_FONT_OVERRIDES:
+        return BRAND_FONT_OVERRIDES[base_name]
 
     return None
 

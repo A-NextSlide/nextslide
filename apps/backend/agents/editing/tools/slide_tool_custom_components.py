@@ -1,5 +1,6 @@
 """Custom component edit helpers for slide tools."""
 
+import os
 from typing import Any, Dict, List, Optional
 import asyncio
 import logging
@@ -26,6 +27,125 @@ from agents.editing.tools.struct_utils import get_attr as _get_attr
 from agents.editing.tools.fuzzy_matcher import apply_replacement
 
 logger = logging.getLogger(__name__)
+
+# Debug mode - set to True to save HTML/screenshots to /tmp for debugging
+DEBUG_SAVE_FILES = os.environ.get("DEBUG_SLIDE_EDIT", "").lower() == "true"
+
+
+def _extract_relevant_context(html: str, instruction: str, max_chars: int = 8000) -> str:
+    """
+    Extract relevant portions of HTML based on the instruction type.
+
+    Instead of sending 20k+ chars to the LLM, extract only the relevant sections:
+    - For color edits: CSS and inline styles
+    - For text edits: Text nodes with context
+    - For size edits: Size-related CSS
+    - Default: Truncate smartly (head + key sections)
+
+    Returns ~2-8k chars of relevant context.
+    """
+    import re
+
+    instruction_lower = instruction.lower()
+
+    # Always extract :root CSS variables (small, critical for theming)
+    root_match = re.search(r':root\s*\{[^}]+\}', html, re.DOTALL)
+    root_css = root_match.group(0) if root_match else ""
+
+    # Extract all style blocks
+    style_matches = re.findall(r'<style[^>]*>(.*?)</style>', html, re.DOTALL | re.IGNORECASE)
+    all_styles = "\n".join(style_matches)
+
+    # Detect edit type from instruction
+    is_color_edit = any(word in instruction_lower for word in [
+        'color', 'red', 'blue', 'green', 'yellow', 'purple', 'pink', 'orange',
+        'black', 'white', 'grey', 'gray', '#', 'rgb', 'hsl', 'background', 'bg'
+    ])
+
+    is_size_edit = any(word in instruction_lower for word in [
+        'size', 'bigger', 'smaller', 'large', 'small', 'font', 'scale',
+        'width', 'height', 'padding', 'margin', 'massive', 'huge', 'tiny'
+    ])
+
+    is_text_edit = any(word in instruction_lower for word in [
+        'text', 'title', 'change to', 'update', 'rename', 'heading',
+        'subtitle', 'label', 'word', 'typo', 'fix the'
+    ])
+
+    is_svg_edit = any(word in instruction_lower for word in [
+        'svg', 'path', 'arrow', 'icon', 'shape', 'vector', 'curve'
+    ])
+
+    context_parts = []
+
+    # Always include root CSS if present
+    if root_css:
+        context_parts.append(f"/* :root CSS */\n{root_css}")
+
+    if is_color_edit:
+        # For color edits, include all CSS (usually smaller) + relevant HTML snippets
+        context_parts.append(f"/* All Styles ({len(all_styles)} chars) */\n{all_styles[:6000]}")
+        # Find inline styles
+        inline_styles = re.findall(r'style="[^"]*(?:color|background|fill|stroke)[^"]*"', html, re.IGNORECASE)
+        if inline_styles:
+            context_parts.append(f"/* Inline Styles */\n{chr(10).join(inline_styles[:20])}")
+
+    elif is_size_edit or is_svg_edit:
+        # For size/SVG edits, include styles and SVG elements
+        context_parts.append(f"/* All Styles */\n{all_styles[:4000]}")
+        # Find SVG elements
+        svg_matches = re.findall(r'<svg[^>]*>.*?</svg>', html, re.DOTALL | re.IGNORECASE)
+        if svg_matches:
+            for i, svg in enumerate(svg_matches[:3]):  # Max 3 SVGs
+                context_parts.append(f"/* SVG {i+1} */\n{svg[:2000]}")
+        # Find size-related inline styles
+        size_styles = re.findall(r'(?:class|style)="[^"]*(?:font-size|width|height|scale|transform)[^"]*"', html, re.IGNORECASE)
+        if size_styles:
+            context_parts.append(f"/* Size Styles */\n{chr(10).join(size_styles[:15])}")
+
+    elif is_text_edit:
+        # For text edits, extract text content with surrounding context
+        context_parts.append(f"/* Styles (truncated) */\n{all_styles[:2000]}")
+        # Find text elements: headings, paragraphs, spans with text
+        text_patterns = [
+            r'<h[1-6][^>]*>.*?</h[1-6]>',
+            r'<p[^>]*>.*?</p>',
+            r'<span[^>]*>[^<]{3,}</span>',
+            r'<div[^>]*class="[^"]*(?:title|heading|text)[^"]*"[^>]*>.*?</div>',
+        ]
+        text_elements = []
+        for pattern in text_patterns:
+            text_elements.extend(re.findall(pattern, html, re.DOTALL | re.IGNORECASE)[:10])
+        if text_elements:
+            context_parts.append(f"/* Text Elements */\n{chr(10).join(text_elements[:15])}")
+
+    # Combine context parts
+    context = "\n\n".join(context_parts)
+
+    # If we got good context, use it; otherwise fall back to smart truncation
+    if len(context) > 500:
+        # Ensure we don't exceed max
+        if len(context) > max_chars:
+            context = context[:max_chars] + "\n/* ... truncated ... */"
+        return context
+
+    # Fallback: Smart truncation - keep head and relevant body sections
+    # Extract head (usually contains styles)
+    head_match = re.search(r'<head[^>]*>.*?</head>', html, re.DOTALL | re.IGNORECASE)
+    head = head_match.group(0) if head_match else ""
+
+    # Get body content
+    body_match = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL | re.IGNORECASE)
+    body = body_match.group(1) if body_match else html
+
+    # Combine with smart truncation
+    if len(head) + len(body) <= max_chars:
+        return html
+
+    # Keep head and truncate body
+    remaining = max_chars - len(head) - 200
+    return f"{head}\n<body>\n{body[:remaining]}\n/* ... body truncated ... */\n</body>"
+
 
 # Logo.dev service for company logos
 try:
@@ -157,6 +277,198 @@ async def _prefetch_company_logos(company_names: List[str]) -> Dict[str, str]:
     return prefetched
 
 
+async def _extract_multi_image_requirements(instruction: str, current_html: str) -> List[str]:
+    """
+    Use AI to extract multiple image requirements for interactive scenarios.
+
+    For example, if the instruction says "fix the buttons so each shows its own club image"
+    and the HTML has buttons for "lob wedge", "driver", "7 iron", etc., this will
+    return ["lob wedge golf club", "driver golf club", "7 iron golf club", ...].
+    """
+    if not instruction or len(instruction.strip()) < 5:
+        return []
+
+    # Quick heuristic: check if this looks like a multi-image interactive fix
+    instruction_lower = instruction.lower()
+    multi_image_keywords = [
+        "each button", "each one", "different image", "own image", "respective",
+        "fix the button", "fix click", "each shows", "each display", "when clicked"
+    ]
+    if not any(kw in instruction_lower for kw in multi_image_keywords):
+        return []
+
+    try:
+        from agents.ai.clients import get_client, invoke
+
+        client, model_name = get_client(IMAGE_SEARCH_MODEL)
+
+        # Extract button/tab labels from HTML
+        import re
+        button_texts = []
+
+        # Invalid/placeholder text to skip
+        skip_texts = {
+            "none", "n/a", "na", "null", "undefined", "placeholder", "click", "button",
+            "submit", "cancel", "close", "ok", "yes", "no", "true", "false", "image",
+            "loading", "...", "→", "←", "×", "x", "+", "-"
+        }
+
+        def is_valid_label(text: str) -> bool:
+            """Check if text is a valid button label worth searching for."""
+            if not text or len(text) < 2 or len(text) > 50:
+                return False
+            text_lower = text.lower().strip()
+            if text_lower in skip_texts:
+                return False
+            # Skip if it's just numbers or punctuation
+            if text.isdigit() or not any(c.isalpha() for c in text):
+                return False
+            return True
+
+        # Find button text content
+        for match in re.findall(r'<button[^>]*>([^<]+)</button>', current_html, re.IGNORECASE):
+            text = match.strip()
+            if is_valid_label(text):
+                button_texts.append(text)
+
+        # Find data-label or data-club type attributes
+        for match in re.findall(r'data-(?:label|club|item|name)=["\']([^"\']+)["\']', current_html, re.IGNORECASE):
+            text = match.strip()
+            if is_valid_label(text):
+                button_texts.append(text)
+
+        # Find tab labels
+        for match in re.findall(r'<(?:span|div)[^>]*class=["\'][^"\']*(?:tab|label|name)[^"\']*["\'][^>]*>([^<]+)<', current_html, re.IGNORECASE):
+            text = match.strip()
+            if is_valid_label(text):
+                button_texts.append(text)
+
+        button_texts = list(dict.fromkeys(button_texts))  # Remove duplicates, preserve order
+
+        if not button_texts:
+            return []
+
+        logger.info(f"[SLIDE_TOOLS] Found button/tab labels in HTML: {button_texts}")
+
+        prompt = f"""The user wants to fix interactive buttons so each shows its own image.
+
+INSTRUCTION: "{instruction}"
+
+BUTTON/TAB LABELS FOUND IN HTML:
+{chr(10).join(f'- {t}' for t in button_texts[:10])}
+
+For EACH label, generate a SHORT image search query (2-5 words) that would find a good image.
+Focus on the item being shown, not "button" or "icon".
+
+Examples:
+- "Lob Wedge" → "lob wedge golf club"
+- "Driver" → "golf driver club"
+- "7 Iron" → "7 iron golf club"
+- "Tesla" → "Tesla electric car"
+- "iPhone" → "iPhone smartphone"
+
+Respond with ONLY a comma-separated list of search queries, one per button label.
+If some labels don't need images, skip them."""
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            invoke,
+            client,
+            model_name,
+            [{"role": "user", "content": prompt}],
+            None,
+            200,
+            0.0
+        )
+
+        result = str(response).strip()
+
+        if not result or result.upper() == "NONE":
+            return []
+
+        # Parse comma-separated list
+        queries = [q.strip() for q in result.split(",") if q.strip()]
+
+        # Filter out invalid queries
+        invalid_terms = {"none", "n/a", "na", "skip", "null", "undefined", "placeholder", "image", "photo", "picture"}
+        queries = [
+            q for q in queries
+            if len(q) > 2 and len(q) < 60 and q.lower() not in invalid_terms
+        ]
+
+        if queries:
+            logger.info(f"[SLIDE_TOOLS] AI extracted {len(queries)} image queries: {queries}")
+
+        return queries[:10]  # Limit to 10 images
+
+    except Exception as e:
+        logger.warning(f"[SLIDE_TOOLS] AI multi-image extraction failed: {e}")
+        return []
+
+
+async def _prefetch_multi_images(queries: List[str], context: str = "") -> Dict[str, str]:
+    """
+    Pre-fetch images for multiple search queries.
+    Returns a dict of {propName: url} for use in HTML generation.
+    """
+    if not queries:
+        return {}
+
+    prefetched: Dict[str, str] = {}
+
+    async def fetch_one(query: str, index: int) -> Optional[tuple]:
+        try:
+            from services.serpapi_service import SerpAPIService
+            from services.image_storage_service import ImageStorageService
+
+            # Add context to query if provided
+            search_query = f"{query} {context}".strip() if context else query
+
+            async with SerpAPIService() as serpapi:
+                results = await serpapi.search_images(search_query, num_results=1)
+
+                if not results:
+                    logger.debug(f"[SLIDE_TOOLS] No image found for: {query}")
+                    return None
+
+                image_url = results[0].get("original") or results[0].get("thumbnail")
+                if not image_url:
+                    return None
+
+                # Upload to our storage
+                async with ImageStorageService() as storage:
+                    upload_result = await storage.upload_image_from_url(
+                        image_url,
+                        metadata={"source": "multi_image_prefetch", "query": query}
+                    )
+                    if upload_result and upload_result.get('url'):
+                        # Create a prop name from query
+                        prop_name = f"image_{index}_{query.lower().replace(' ', '_')[:20]}"
+                        return (prop_name, upload_result['url'], query)
+
+        except Exception as e:
+            logger.warning(f"[SLIDE_TOOLS] Multi-image fetch failed for {query}: {e}")
+        return None
+
+    # Fetch all images in parallel
+    tasks = [fetch_one(query, i) for i, query in enumerate(queries)]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for result in results:
+        if isinstance(result, tuple) and len(result) == 3:
+            prop_name, url, query = result
+            prefetched[prop_name] = url
+            prefetched[f"{prop_name}_query"] = query
+            logger.info(f"[SLIDE_TOOLS] Pre-fetched image for '{query}'")
+
+    if prefetched:
+        image_count = len([k for k in prefetched if not k.endswith("_query")])
+        logger.info(f"[SLIDE_TOOLS] Pre-fetched {image_count} images for interactive elements")
+
+    return prefetched
+
+
 def _current_date_note() -> str:
     """Return a short current-date note for prompt grounding."""
     return f"CURRENT DATE (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
@@ -268,6 +580,7 @@ def _targeted_custom_component_edit(
     deck_data: Dict,
     attachments: List[Dict] = None,
     task: str = "validation",
+    slide_screenshot: Dict = None,
 ) -> DeckDiff:
     """
     Perform a surgical edit on CustomComponent HTML:
@@ -283,36 +596,67 @@ def _targeted_custom_component_edit(
     from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
     current_html = strip_frontend_editing_scripts(current_html)
 
-    # Theme context
-    theme = (deck_data or {}).get("theme") or {}
-    colors = theme.get("color_palette") or theme.get("colors") or {}
-    typography = theme.get("typography") or {}
-    att_hint = _build_attachment_context(attachments, "FILES AVAILABLE:") if attachments else ""
+    # Log which slide/component we're editing for debugging
+    logger.info(f"[TARGETED_EDIT] slide_id={slide_id}, component_id={comp_id}, html_len={len(current_html)}")
 
-    prompt = f"""{_current_date_note()}
+    # Save files for debugging (only if DEBUG_SAVE_FILES is enabled)
+    if DEBUG_SAVE_FILES:
+        try:
+            with open("/tmp/slide_html_debug.html", "w") as f:
+                f.write(current_html)
+            logger.info(f"[TARGETED_EDIT] Saved HTML to /tmp/slide_html_debug.html")
+        except Exception as e:
+            logger.warning(f"[TARGETED_EDIT] Failed to save HTML: {e}")
 
-You are a precise HTML editor. Make a SMALL, TARGETED change without redesigning.
+    # Extract only relevant HTML context based on instruction (reduces from 20k to 2-8k)
+    relevant_html = _extract_relevant_context(current_html, instruction, max_chars=8000)
+    logger.info(f"[TARGETED_EDIT] Context: {len(current_html)} -> {len(relevant_html)} chars ({instruction[:50]})")
+
+    # Build a concise, focused prompt
+    prompt = f"""User request: "{instruction}"
 
 RULES:
-- Do NOT rewrite the whole HTML.
-- Propose 1-3 exact search/replace operations.
-- old_string MUST exist verbatim in the provided HTML (copy-paste exactly).
-- Keep changes minimal and localized.
+1. Find the EXACT string in HTML that needs to change
+2. NEVER use empty new_string - always provide a replacement
+3. For SVG sizing: use CSS transform (scale), NOT viewBox changes
+4. For large visuals: they're usually SVG paths, not small text labels
+5. Copy old_string EXACTLY (including quotes, whitespace)
+6. KEEP REPLACEMENTS SMALL - find the SMALLEST string that needs to change
+   - Instead of replacing entire <button>...</button>, replace just the specific attribute or text
+   - For image src changes: replace just the src="..." part
+   - For text changes: replace just the text content
+   - For attribute changes: replace just the attribute="value" part
+7. MAX 500 chars per old_string/new_string - if larger, break into multiple smaller ops
 
-THEME (for color/font consistency):
-- accent_1: {colors.get('accent_1')}
-- accent_2: {colors.get('accent_2')}
-- primary_text: {colors.get('primary_text')}
-- primary_background: {colors.get('primary_background')}
+HTML CONTEXT:
+{relevant_html}
 
-CURRENT HTML (truncated to 25k):
-{current_html[:25000]}
+FULL HTML AVAILABLE FOR EXACT MATCHING:
+{current_html[:12000]}
 
-USER REQUEST:
-{instruction}{att_hint}
+Return JSON: {{"ops":[{{"old_string":"exact","new_string":"replacement"}}],"note":"what changed"}}"""
 
-IMPORTANT: You MUST respond with ONLY a JSON object. No explanations, no markdown, no commentary.
-Example format: {{"ops":[{{"old_string":"exact text to find","new_string":"replacement text"}}],"note":"brief note"}}"""
+    # Build message with screenshot if available
+    screenshot_data = None
+    if slide_screenshot and slide_screenshot.get("data"):
+        screenshot_data = f"data:{slide_screenshot.get('media_type', 'image/jpeg')};base64,{slide_screenshot['data']}"
+        logger.info("[TARGETED_EDIT] Using slide_screenshot for visual context")
+
+        # Save screenshot for debugging (only if DEBUG_SAVE_FILES is enabled)
+        if DEBUG_SAVE_FILES:
+            import base64
+            try:
+                img_data = base64.b64decode(slide_screenshot['data'])
+                with open("/tmp/slide_screenshot_debug.jpg", "wb") as f:
+                    f.write(img_data)
+                logger.info("[TARGETED_EDIT] Saved screenshot to /tmp/slide_screenshot_debug.jpg")
+            except Exception as e:
+                logger.warning(f"[TARGETED_EDIT] Failed to save screenshot: {e}")
+
+    user_content = []
+    if screenshot_data:
+        user_content.append({"type": "image_url", "image_url": {"url": screenshot_data}})
+    user_content.append({"type": "text", "text": prompt})
 
     client, model = get_model_and_client(task, log_prefix="SLIDE_TOOLS")
     try:
@@ -320,11 +664,11 @@ Example format: {{"ops":[{{"old_string":"exact text to find","new_string":"repla
             client=client,
             model=model,
             messages=[
-                {"role": "system", "content": "You are an HTML editor that ONLY outputs JSON. Never output code, explanations, or markdown - only valid JSON objects."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": "You are an HTML editor that ONLY outputs JSON. Look at the image to understand what element the user is referring to."},
+                {"role": "user", "content": user_content if screenshot_data else prompt}
             ],
             response_model=_ReplacePlan,
-            max_tokens=8000,
+            max_tokens=16000,  # Increased from 8000 to handle larger HTML replacements
             temperature=0.1,  # Very low temperature for reliable structured output
             log_prefix="SLIDE_TOOLS",
         )
@@ -332,6 +676,10 @@ Example format: {{"ops":[{{"old_string":"exact text to find","new_string":"repla
         # SLIDE-BACKEND-28B: Handle LLM failures gracefully
         logger.warning(f"[SLIDE_TOOLS] LLM failed to generate edit plan: {e}")
         plan = _ReplacePlan(ops=[], note=f"LLM error: {str(e)[:100]}")
+
+    # Log what the LLM proposed
+    for i, op in enumerate(plan.ops or []):
+        logger.info(f"[TARGETED_EDIT] Proposed: '{op.old_string[:80]}' -> '{(op.new_string or '')[:80]}'")
 
     _dbg(
         "B",
@@ -341,6 +689,59 @@ Example format: {{"ops":[{{"old_string":"exact text to find","new_string":"repla
         runId="pre-fix",
     )
 
+    # Safeguard: Reject dangerous changes
+    def _is_dangerous_change(old_str: str, new_str: str, instruction_text: str = "") -> tuple[bool, str]:
+        """Check if a change is likely to break the slide or be wrong."""
+        import re
+        old_lower = old_str.lower()
+        instruction_lower = instruction_text.lower()
+
+        # CRITICAL: Block empty string deletions (model was deleting CSS rules!)
+        if new_str == "" or new_str.strip() == "":
+            # Check if this is a CSS block deletion
+            if re.search(r'\{[^}]*\}', old_str):
+                return True, "Rejecting deletion of CSS rule - use replacement not deletion"
+            # Block large deletions without replacement
+            if len(old_str) > 50:
+                return True, f"Rejecting large deletion ({len(old_str)} chars) without replacement"
+
+        # Block viewBox changes (they affect ALL SVG elements, not just the target)
+        if 'viewbox' in old_lower:
+            return True, "Rejecting viewBox change - use CSS transform on specific element instead"
+
+        # Reject changes to very large font-sizes (decorative text)
+        font_match = re.search(r'font-size:\s*(\d+)px', old_lower)
+        if font_match:
+            size = int(font_match.group(1))
+            if size >= 100:
+                return True, f"Rejecting change to decorative font-size ({size}px)"
+            # If user says "massive", "huge", "big" - don't change small fonts (they're labels!)
+            if size < 50 and any(word in instruction_lower for word in ['massive', 'huge', 'big', 'giant', 'enormous']):
+                return True, f"Rejecting change to small label font-size ({size}px) - user said element is 'massive' so it's not this"
+
+        # Reject changes to body/html dimensions
+        if '1920px' in old_str or '1080px' in old_str:
+            return True, "Rejecting change to slide dimensions"
+
+        # Reject changes to :root CSS variable definitions (not CSS rules that USE variables)
+        # Only block if actually changing the :root block or replacing var(--x) with var(--y)
+        if ':root' in old_str and ':root' in new_str:
+            # Actually modifying :root block - block this
+            return True, "Rejecting change to :root CSS variables"
+
+        # Block replacing var(--x) with var(--y) (changing which variable is used)
+        # But allow changes to other properties in the same CSS rule
+        old_vars = re.findall(r'var\(--[^)]+\)', old_str)
+        new_vars = re.findall(r'var\(--[^)]+\)', new_str)
+        if old_vars != new_vars:
+            # Check if ALL other content is the same (i.e., ONLY the var() changed)
+            old_without_vars = re.sub(r'var\(--[^)]+\)', '', old_str)
+            new_without_vars = re.sub(r'var\(--[^)]+\)', '', new_str)
+            if old_without_vars.strip() == new_without_vars.strip():
+                return True, "Rejecting change to CSS variable references"
+
+        return False, ""
+
     # Apply ops
     new_html = current_html
     applied = 0
@@ -348,8 +749,17 @@ Example format: {{"ops":[{{"old_string":"exact text to find","new_string":"repla
     for op in (plan.ops or [])[:3]:
         if not op.old_string:
             continue
+
+        # Safety check
+        is_dangerous, danger_reason = _is_dangerous_change(op.old_string, op.new_string or "", instruction)
+        if is_dangerous:
+            logger.warning(f"[TARGETED_EDIT] BLOCKED: {danger_reason}")
+            logger.warning(f"[TARGETED_EDIT] Would have changed: '{op.old_string[:80]}'")
+            continue
+
         success, updated_html, note = apply_replacement(new_html, op.old_string, op.new_string or "")
         if not success:
+            logger.warning(f"[TARGETED_EDIT] NOT FOUND: '{op.old_string[:100]}'")
             _dbg(
                 "B",
                 "slide_tools.py:_targeted_custom_component_edit",
@@ -359,31 +769,22 @@ Example format: {{"ops":[{{"old_string":"exact text to find","new_string":"repla
             )
             failed_ops.append(op)
             continue  # Try remaining ops instead of breaking
+        logger.info(f"[TARGETED_EDIT] SUCCESS: applied replacement")
         new_html = updated_html
         applied += 1
 
     if applied == 0 and failed_ops:
-        # RETRY: Ask AI for exact strings with more context about what failed
-        retry_prompt = f"""{_current_date_note()}
+        # RETRY with raw HTML
+        retry_prompt = f"""Previous old_string NOT found. Copy EXACTLY from HTML.
 
-You are a precise HTML editor. Your previous replacement suggestions did not match the HTML exactly.
+REQUEST: {instruction}
 
-RULES:
-- old_string MUST be an EXACT substring from the HTML (copy-paste, including whitespace)
-- Look for the specific text/element mentioned in the user request
-- Keep changes minimal - just the specific edit requested
+FAILED: {failed_ops[0].old_string[:150] if failed_ops else ''}
 
-CURRENT HTML (truncated to 25k):
-{current_html[:25000]}
+HTML:
+{current_html[:15000]}
 
-USER REQUEST:
-{instruction}
-
-PREVIOUS FAILED ATTEMPTS (these strings were NOT found verbatim):
-{chr(10).join(f'- "{op.old_string[:200]}"' for op in failed_ops[:3])}
-
-IMPORTANT: You MUST respond with ONLY a JSON object. No explanations, no markdown, no commentary.
-Example format: {{"ops":[{{"old_string":"exact text from HTML","new_string":"replacement"}}],"note":"brief note"}}"""
+JSON: {{"ops":[{{"old_string":"exact from HTML","new_string":"replacement"}}],"note":"what"}}"""
 
         try:
             retry_plan = invoke_with_fallback(
@@ -394,7 +795,7 @@ Example format: {{"ops":[{{"old_string":"exact text from HTML","new_string":"rep
                     {"role": "user", "content": retry_prompt}
                 ],
                 response_model=_ReplacePlan,
-                max_tokens=8000,
+                max_tokens=16000,  # Increased from 8000 to handle larger HTML replacements
                 temperature=0.1,  # Very low temperature for reliable structured output
                 log_prefix="SLIDE_TOOLS",
             )
@@ -423,9 +824,12 @@ Example format: {{"ops":[{{"old_string":"exact text from HTML","new_string":"rep
     if applied == 0:
         # Still no matches - return observation so the orchestrator can retry or pick a rewrite tool
         logger.warning(
-            "Targeted CustomComponent edit failed; no matching text found for instruction: %s",
+            "[TARGETED_EDIT] ⚠️ NO CHANGES APPLIED for instruction: %s",
             instruction[:120],
         )
+        logger.warning("[TARGETED_EDIT] ⚠️ Proposed %d ops, all failed or were blocked", len(plan.ops or []))
+        for i, op in enumerate((plan.ops or [])[:3]):
+            logger.warning("[TARGETED_EDIT] ⚠️ Op %d: old='%s...' new='%s...'", i, op.old_string[:80], (op.new_string or '')[:80])
         dd = DeckDiff(DeckDiffBase())
         obs = {
             "error": "custom_component_str_replace_failed",
@@ -439,6 +843,14 @@ Example format: {{"ops":[{{"old_string":"exact text from HTML","new_string":"rep
         except Exception:
             pass
         return dd
+
+    # Resolve any remaining placeholder images (src="placeholder" with alt text)
+    try:
+        from agents.generation.custom_component_image_pipeline import resolve_remaining_placeholders
+        new_html = run_async(resolve_remaining_placeholders(new_html))
+        logger.info("[TARGETED_EDIT] Resolved remaining placeholders in HTML")
+    except Exception as e:
+        logger.warning(f"[TARGETED_EDIT] Failed to resolve remaining placeholders: {e}")
 
     deck_diff = DeckDiff(DeckDiffBase())
     deck_diff.update_component(
@@ -562,6 +974,23 @@ def custom_component_rewrite(
             except Exception as e:
                 logger.warning(f"[custom_component_rewrite] Logo pre-fetch failed: {e}")
 
+        # Pre-fetch images for multi-image interactive scenarios (e.g., buttons that show different images)
+        prefetched_multi_images: Dict[str, str] = {}
+        try:
+            multi_image_queries = run_async(_extract_multi_image_requirements(instruction, current_html))
+            if multi_image_queries:
+                # Get context from slide title or deck name
+                search_context = _get_attr(current_slide, "title", "") or (deck_data or {}).get("name", "")
+                prefetched_multi_images = run_async(_prefetch_multi_images(multi_image_queries, search_context))
+                if prefetched_multi_images:
+                    image_count = len([k for k in prefetched_multi_images if not k.endswith("_query")])
+                    logger.info(f"[custom_component_rewrite] Pre-fetched {image_count} images for interactive elements")
+        except Exception as e:
+            logger.warning(f"[custom_component_rewrite] Multi-image pre-fetch failed: {e}")
+
+        # Merge all prefetched assets
+        all_prefetched = {**prefetched_logos, **prefetched_multi_images}
+
         # Build logo context for the prompt if we have pre-fetched logos
         logo_context = ""
         if prefetched_logos:
@@ -573,9 +1002,21 @@ def custom_component_rewrite(
             if logo_entries:
                 logo_context = "\n\nAVAILABLE COMPANY LOGOS (use these exact URLs):\n" + "\n".join(logo_entries)
 
+        # Build multi-image context for interactive elements
+        multi_image_context = ""
+        if prefetched_multi_images:
+            image_entries = []
+            for key, url in prefetched_multi_images.items():
+                if not key.endswith("_query"):
+                    query = prefetched_multi_images.get(f"{key}_query", key)
+                    image_entries.append(f"- {query}: {url}")
+            if image_entries:
+                multi_image_context = "\n\nAVAILABLE IMAGES FOR INTERACTIVE ELEMENTS (use these exact URLs in your JavaScript):\n" + "\n".join(image_entries)
+                multi_image_context += "\n\nCRITICAL: Create a JavaScript object/map that associates each button with its corresponding image URL from the list above. When a button is clicked, update the main image src to show the matching image."
+
         generated = run_async(
             gen.generate(
-                content=f"""REDESIGN REQUEST: {instruction}{attachment_context}{chat_context}{uploads_note}{logo_context}
+                content=f"""REDESIGN REQUEST: {instruction}{attachment_context}{chat_context}{uploads_note}{logo_context}{multi_image_context}
 
 EXISTING SLIDE CONTENT TO REDESIGN:
 {actual_content}
@@ -586,7 +1027,8 @@ IMPORTANT:
 - Use the conversation context above to understand what the user wants and any preferences they discussed.
 - DO NOT display the redesign request text in the slide. Use it only to guide your design approach.
 - Base the slide content on the EXISTING SLIDE CONTENT above, but DO honor explicit user requests to add/remove elements (e.g., add a video, remove cards).
-- If company logos are listed above, use the EXACT URLs provided - do not use placeholder URLs for those logos.""",
+- If company logos are listed above, use the EXACT URLs provided - do not use placeholder URLs for those logos.
+- If interactive element images are listed above, create a JavaScript object mapping each element to its image URL, and wire up click handlers to swap the displayed image.""",
                 theme=theme_for_gen,
                 slide_context=slide_context,
                 component_purpose="visualize",
@@ -596,7 +1038,7 @@ IMPORTANT:
                 reference_images=reference_images or None,
                 uploaded_media=uploaded_media,
                 available_videos=available_videos,
-                prefetched_images=prefetched_logos if prefetched_logos else None,
+                prefetched_images=all_prefetched if all_prefetched else None,
             )
         )
         new_html = ((generated or {}).get("props") or {}).get("render") or ""
@@ -719,6 +1161,7 @@ def custom_component_str_replace(
     current_slide: Dict,
     registry: ComponentRegistry = None,
     attachments: List[Dict] = None,
+    slide_screenshot: Dict = None,
 ) -> DeckDiff:
     """
     Make a targeted edit to a CustomComponent.
@@ -749,7 +1192,7 @@ def custom_component_str_replace(
     # If we have instruction but no old_string, use AI to figure out the replacement
     if instruction and not old_string:
         logger.info(f"[custom_component_str_replace] Using AI to determine replacement for: {instruction[:50]}...")
-        return _targeted_custom_component_edit(slide_id, comp, instruction, deck_data, attachments)
+        return _targeted_custom_component_edit(slide_id, comp, instruction, deck_data, attachments, slide_screenshot=slide_screenshot)
 
     # Otherwise do direct replacement
     if not old_string:
@@ -806,12 +1249,24 @@ def component_prop_update(
     """
     Mechanical prop merge for a component. No AI.
     Args: {"slide_id": str, "component_id": str, "updates": { ... }}
+
+    For font overrides on CustomComponents, use:
+    {"updates": {"overrideBodyFont": "Font Name", "overrideHeroFont": "Font Name"}}
     """
     slide_id = args.get("slide_id") or _get_attr(current_slide, "id")
     component_id = args.get("component_id")
     updates = args.get("updates") or {}
+
+    # If no component_id provided, find the CustomComponent on the slide
     if not component_id:
-        raise ValueError("component_id is required")
+        components = _get_attr(current_slide, "components", []) or []
+        custom_comp = next((c for c in components if _get_attr(c, "type") == "CustomComponent"), None)
+        if custom_comp:
+            component_id = _get_attr(custom_comp, "id")
+            logger.info(f"[component_prop_update] Auto-selected CustomComponent: {component_id}")
+
+    if not component_id:
+        raise ValueError("component_id is required (no CustomComponent found on slide)")
     if not isinstance(updates, dict):
         raise ValueError("updates must be an object")
 
@@ -826,6 +1281,14 @@ def component_prop_update(
         props = dict(props) if hasattr(props, "__iter__") else {}
     new_props = {**props, **updates}
 
+    # Log font override updates specifically
+    font_updates = {k: v for k, v in updates.items() if 'Font' in k or 'font' in k}
+    if font_updates:
+        logger.info(f"[component_prop_update] 🎨 FONT UPDATE: {font_updates} for component {component_id}")
+        # Debug: Log the full new_props to verify font overrides are included
+        font_props_in_new = {k: v for k, v in new_props.items() if 'Font' in k or 'font' in k}
+        logger.info(f"[component_prop_update] 📦 FULL DIFF PROPS (font keys): {font_props_in_new}")
+
     deck_diff = DeckDiff(DeckDiffBase())
     deck_diff.update_component(
         slide_id,
@@ -839,6 +1302,7 @@ def component_prop_update(
         {"slide_id": slide_id, "component_id": component_id, "type": ctype, "keys": list(updates.keys())[:30]},
         runId="pre-fix",
     )
+    logger.info(f"[component_prop_update] ✅ Updated {len(updates)} props for component {component_id}")
     return deck_diff
 
 

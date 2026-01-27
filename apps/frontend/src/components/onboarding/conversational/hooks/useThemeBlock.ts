@@ -180,6 +180,15 @@ export const useThemeBlock = (options: UseThemeBlockOptions = {}) => {
         themeOutline as any,
         tempOutlineId,
         (evt) => {
+          // Handle theme status events from the backend
+          if ((evt as any).type === 'agent_event' || (evt as any).status) {
+            const status = (evt as any).status || (evt as any).phase;
+            const message = (evt as any).message || (evt as any).summary;
+            if (status && message) {
+              onThinkingStart?.(status, message);
+            }
+          }
+          // Handle completed theme
           if ((evt as any).type === 'theme_generated' || (evt as any).type === 'theme_preview_update') {
             const theme = (evt as any).theme || evt;
             applyTheme(theme);

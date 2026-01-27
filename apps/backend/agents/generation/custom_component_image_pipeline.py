@@ -51,6 +51,10 @@ async def resolve_images(
     """Populate prefetched images and inject them into HTML when needed."""
     prefetched_images = dict(prefetched_images or {})
 
+    # First, clean up any invalid values ("Z", "None", etc.) so they become "placeholder"
+    # This ensures needs_image_search correctly detects them
+    html = _cleanup_invalid_image_values(html)
+
     if not _needs_image_search(html):
         if prefetched_images:
             html = html_processor.inject_prefetched_images(html, prefetched_images)
@@ -156,19 +160,236 @@ async def resolve_images(
         logger.info(f"[IMAGE_PIPELINE] SERP search returned {len(serp_results) if serp_results else 0} results")
         if serp_results:
             for k, v in list(serp_results.items())[:3]:
-                if not k.endswith('_query'):
+                if not k.endswith('_query') and not k.endswith('_width') and not k.endswith('_height') and isinstance(v, str):
                     logger.info(f"[IMAGE_PIPELINE]   - {k}: {v[:60]}...")
         prefetched_images.update(serp_results or {})
 
-    image_count = len([k for k in prefetched_images.keys() if not k.endswith('_query') and prefetched_images[k].startswith('http')])
+    image_count = len([k for k in prefetched_images.keys() if not k.endswith('_query') and not k.endswith('_width') and not k.endswith('_height') and isinstance(prefetched_images[k], str) and prefetched_images[k].startswith('http')])
     logger.info(f"[IMAGE_PIPELINE] Total prefetched images before injection: {image_count}")
 
     if prefetched_images:
         html = html_processor.inject_prefetched_images(html, prefetched_images)
+        # Apply correct object-fit based on image dimensions
+        html = _apply_object_fit_from_dimensions(html, prefetched_images)
     else:
         logger.warning("[IMAGE_PIPELINE] No prefetched images available for injection - placeholders will remain")
 
     return html, prefetched_images
+
+
+def _cleanup_invalid_image_values(html: str) -> str:
+    """Clean up invalid placeholder values that AI might have generated for images.
+
+    This handles cases where the AI generates:
+    - image: "None" or image: 'None' in JS objects
+    - image: "Z" or single-letter placeholders
+    - src="None" or src="Z" in img tags
+    - Other invalid image property values
+
+    Replaces them with "placeholder" so they get caught by normal placeholder detection.
+    """
+    if not html:
+        return html
+
+    # Count replacements for logging
+    replacements = 0
+
+    # Invalid values that AI sometimes generates as placeholders
+    # These are single letters, "None", or other non-URL values
+    invalid_values = ['None', 'Z', 'X', 'null', 'undefined', 'N/A', 'TBD', 'TODO', 'IMAGE', 'PLACEHOLDER']
+
+    # Replace invalid values in JS object image properties
+    def replace_invalid_in_js(match):
+        nonlocal replacements
+        prefix = match.group(1)
+        quote = match.group(2)
+        value = match.group(3)
+        # Check if it's an invalid value (case-insensitive)
+        if value.upper() in [v.upper() for v in invalid_values] or (len(value) == 1 and value.isalpha()):
+            replacements += 1
+            logger.debug(f"[IMAGE_PIPELINE] Replacing invalid JS value: {value}")
+            return f'{prefix}{quote}placeholder{quote}'
+        return match.group(0)
+
+    # Pattern for image-related properties with any short/invalid value
+    js_pattern = r'(\b\w*(?:src|image|img|photo|picture|thumbnail|background)\w*\s*:\s*)(["\'])([^"\']{1,15})\2'
+    html = re.sub(js_pattern, replace_invalid_in_js, html, flags=re.IGNORECASE)
+
+    # Replace invalid src values in img tags
+    def replace_invalid_src(match):
+        nonlocal replacements
+        value = match.group(1)
+        if value.upper() in [v.upper() for v in invalid_values] or (len(value) == 1 and value.isalpha()):
+            replacements += 1
+            logger.debug(f"[IMAGE_PIPELINE] Replacing invalid src: {value}")
+            return 'src="placeholder"'
+        return match.group(0)
+
+    # Match src with short/invalid values (not URLs)
+    html = re.sub(r'src=["\']([^"\']{1,15})["\'](?![^<]*(?:http|data:|blob:))', replace_invalid_src, html, flags=re.IGNORECASE)
+
+    if replacements > 0:
+        logger.info(f"[IMAGE_PIPELINE] Cleaned up {replacements} invalid image values in HTML")
+
+    return html
+
+
+def _apply_object_fit_from_dimensions(html: str, prefetched_images: Dict[str, Any]) -> str:
+    """Post-process HTML to apply correct object-fit based on image dimensions.
+
+    Portrait images (aspect < 0.8) and panoramic images (aspect > 2.5) use 'contain'.
+    Standard landscape/square images use 'cover'.
+    """
+    if not html or not prefetched_images:
+        return html
+
+    # Build URL -> (width, height) mapping
+    url_to_dimensions: Dict[str, Tuple[int, int]] = {}
+    for key, value in prefetched_images.items():
+        if key.endswith('_query') or key.endswith('_width') or key.endswith('_height'):
+            continue
+        if not isinstance(value, str) or not value.startswith('http'):
+            continue
+
+        width = prefetched_images.get(f"{key}_width")
+        height = prefetched_images.get(f"{key}_height")
+        if width is not None and height is not None:
+            try:
+                w = int(width) if not isinstance(width, int) else width
+                h = int(height) if not isinstance(height, int) else height
+                if w > 0 and h > 0:
+                    url_to_dimensions[value] = (w, h)
+            except (ValueError, TypeError):
+                pass
+
+    if not url_to_dimensions:
+        logger.info("[IMAGE_PIPELINE] No images with dimensions to apply object-fit")
+        return html
+
+    logger.info(f"[IMAGE_PIPELINE] Applying object-fit for {len(url_to_dimensions)} images with dimensions")
+    for url, (w, h) in list(url_to_dimensions.items())[:3]:
+        logger.info(f"[IMAGE_PIPELINE]   URL: {url[:60]}... dims: {w}x{h}")
+
+    # Find all img tags and update object-fit where needed
+    def replace_object_fit(match: re.Match) -> str:
+        full_tag = match.group(0)
+
+        # Find the src URL
+        src_match = re.search(r'src=["\']([^"\']+)["\']', full_tag, re.IGNORECASE)
+        if not src_match:
+            return full_tag
+
+        url = src_match.group(1)
+
+        # Try exact match first, then try without query params
+        if url not in url_to_dimensions:
+            # Try matching base URL without query params
+            base_url = url.split('?')[0]
+            matching_url = None
+            for stored_url in url_to_dimensions:
+                if stored_url.split('?')[0] == base_url:
+                    matching_url = stored_url
+                    break
+            if not matching_url:
+                return full_tag
+            url = matching_url
+
+        width, height = url_to_dimensions[url]
+        aspect_ratio = width / height
+
+        # Determine suggested object-fit
+        if aspect_ratio < 0.8 or aspect_ratio > 2.5:
+            suggested_fit = "contain"
+        else:
+            suggested_fit = "cover"
+
+        # If already has object-fit in the tag
+        if 'object-fit' in full_tag.lower():
+            # Only change if currently cover and we want contain
+            if suggested_fit == "contain" and 'object-fit:cover' in full_tag.replace(' ', '').lower():
+                new_tag = re.sub(
+                    r'object-fit\s*:\s*cover',
+                    'object-fit:contain',
+                    full_tag,
+                    flags=re.IGNORECASE
+                )
+                logger.info(f"[IMAGE_PIPELINE] Changed object-fit to contain for {url[:60]}... (aspect={aspect_ratio:.2f})")
+                return new_tag
+            return full_tag
+
+        # No object-fit in tag - add it if we want contain (images default to cover anyway)
+        if suggested_fit == "contain":
+            # Check if tag has style attribute
+            if 'style=' in full_tag.lower():
+                # Append to existing style
+                new_tag = re.sub(
+                    r'(style=["\'])([^"\']*)',
+                    rf'\1object-fit:contain; \2',
+                    full_tag,
+                    count=1,
+                    flags=re.IGNORECASE
+                )
+            else:
+                # Add style attribute
+                new_tag = full_tag.replace('<img', '<img style="object-fit:contain;"', 1)
+            logger.info(f"[IMAGE_PIPELINE] Added object-fit:contain for portrait/panoramic image {url[:60]}... (aspect={aspect_ratio:.2f})")
+            return new_tag
+
+        return full_tag
+
+    # Match img tags (with or without space after <img)
+    result = re.sub(r'<img\s*[^>]+>', replace_object_fit, html, flags=re.IGNORECASE)
+
+    # Also handle CSS background-image - replace background-size: cover with contain for portrait images
+    def replace_bg_size(match: re.Match) -> str:
+        full_style = match.group(0)
+
+        # Find the URL in background-image
+        url_match = re.search(r'background-image\s*:\s*url\(["\']?([^"\')\s]+)["\']?\)', full_style, re.IGNORECASE)
+        if not url_match:
+            return full_style
+
+        url = url_match.group(1)
+
+        # Try to find matching URL
+        if url not in url_to_dimensions:
+            base_url = url.split('?')[0]
+            matching_url = None
+            for stored_url in url_to_dimensions:
+                if stored_url.split('?')[0] == base_url:
+                    matching_url = stored_url
+                    break
+            if not matching_url:
+                return full_style
+            url = matching_url
+
+        width, height = url_to_dimensions[url]
+        aspect_ratio = width / height
+
+        # If portrait/panoramic, change background-size to contain
+        if aspect_ratio < 0.8 or aspect_ratio > 2.5:
+            if 'background-size' in full_style.lower():
+                new_style = re.sub(
+                    r'background-size\s*:\s*cover',
+                    'background-size:contain',
+                    full_style,
+                    flags=re.IGNORECASE
+                )
+                if new_style != full_style:
+                    logger.info(f"[IMAGE_PIPELINE] Changed background-size to contain for {url[:60]}... (aspect={aspect_ratio:.2f})")
+                    return new_style
+            else:
+                # Add background-size: contain
+                new_style = full_style.rstrip(';') + '; background-size:contain;'
+                logger.info(f"[IMAGE_PIPELINE] Added background-size:contain for {url[:60]}... (aspect={aspect_ratio:.2f})")
+                return new_style
+
+        return full_style
+
+    # Find style attributes with background-image
+    result = re.sub(r'style=["\'][^"\']*background-image[^"\']*["\']', replace_bg_size, result, flags=re.IGNORECASE)
+
+    return result
 
 
 def _extract_alt_for_url(html_content: str, url: str) -> str | None:
@@ -290,14 +511,23 @@ def _find_placeholder_images(html_content: str) -> List[Tuple[str, str]]:
     Skips images with template variable alt text (e.g., alt="${item.thumbAlt}") since those
     can't be used as search queries - they should have been resolved earlier in the pipeline.
     """
+    from urllib.parse import unquote
     placeholders = []
-    # Match img tags with src="placeholder" (case insensitive, with or without quotes)
-    pattern = r'<img\s*[^>]*src\s*=\s*["\']?placeholder["\']?[^>]*>'
+    # Match img tags with src="placeholder" or "placeholder?q=..." (case insensitive)
+    pattern = r'<img\s*[^>]*src\s*=\s*["\']?placeholder(?:\?[^"\'>\s]*)?["\']?[^>]*>'
     for match in re.finditer(pattern, html_content, re.IGNORECASE):
         img_tag = match.group(0)
         # Extract alt text from the img tag
         alt_match = re.search(r'alt\s*=\s*["\']([^"\']+)["\']', img_tag, re.IGNORECASE)
         alt_text = alt_match.group(1) if alt_match else None
+
+        # If no alt text, try to extract query from placeholder?q=... URL
+        if not alt_text or len(alt_text) <= 5:
+            src_match = re.search(r'src\s*=\s*["\']?placeholder\?q=([^"\'>\s]+)', img_tag, re.IGNORECASE)
+            if src_match:
+                alt_text = unquote(src_match.group(1))
+                logger.info("[PLACEHOLDER_CLEANUP] Extracted query from placeholder URL: '%s'", alt_text[:50])
+
         if alt_text and len(alt_text) > 5:
             # Skip template variable alt text - these can't be used as search queries
             # They should have been resolved by _extract_template_variable_alt_queries earlier
@@ -312,8 +542,10 @@ def _find_js_placeholder_images(html_content: str) -> List[Tuple[str, str, str]]
     """Find JS objects with image/src: 'placeholder' and return (obj_text, prop_name, label) tuples."""
     placeholders = []
 
-    # Match src, image, img, photo, picture, thumbnail, background properties with placeholder value
-    placeholder_pattern = r'\b(src|image|img|photo|picture|thumbnail|background)\s*:\s*["\']placeholder["\']'
+    # Match property names CONTAINING src, image, img, photo, picture, thumbnail, background
+    # This catches names like imageStage, stageImage, backgroundImage, etc.
+    # Also matches placeholder with query string like 'placeholder?q=...'
+    placeholder_pattern = r'\b(\w*(?:src|image|img|photo|picture|thumbnail|background)\w*)\s*:\s*["\']placeholder(?:\?[^"\']*)?["\']'
 
     for script_match in re.finditer(r'<script[^>]*>([\s\S]*?)</script>', html_content, re.IGNORECASE):
         script_content = script_match.group(1)
@@ -381,8 +613,9 @@ async def resolve_remaining_placeholders(html_content: str) -> str:
 
             if bucket_url and any(domain in bucket_url for domain in BUCKET_DOMAINS):
                 # Create new img tag with the bucket URL
+                # Handle placeholder with optional query string like placeholder?q=...
                 new_img_tag = re.sub(
-                    r'src\s*=\s*["\']?placeholder["\']?',
+                    r'src\s*=\s*["\']?placeholder(?:\?[^"\'>\s]*)?["\']?',
                     f'src="{bucket_url}"',
                     img_tag,
                     flags=re.IGNORECASE
@@ -390,7 +623,15 @@ async def resolve_remaining_placeholders(html_content: str) -> str:
                 html_content = html_content.replace(img_tag, new_img_tag)
                 logger.info("[PLACEHOLDER_CLEANUP] SUCCESS: Replaced HTML placeholder -> %s", bucket_url[:80])
             else:
-                logger.warning("[PLACEHOLDER_CLEANUP] Could not find image for HTML: '%s'", alt_text[:50])
+                logger.warning("[PLACEHOLDER_CLEANUP] Could not find image for HTML: '%s' - removing placeholder", alt_text[:50])
+                # Remove the broken placeholder - replace img tag with empty string or a subtle gradient div
+                # Use a subtle gradient placeholder that won't look broken
+                fallback_div = (
+                    '<div style="width:100%;height:100%;background:linear-gradient(135deg,rgba(99,102,241,0.1) 0%,rgba(139,92,246,0.1) 100%);'
+                    'border-radius:8px;"></div>'
+                )
+                html_content = html_content.replace(img_tag, fallback_div)
+                logger.info("[PLACEHOLDER_CLEANUP] Replaced unresolved placeholder with gradient fallback")
 
         # Handle JavaScript object placeholders
         for obj_text, prop_name, label in js_placeholders:
@@ -401,13 +642,33 @@ async def resolve_remaining_placeholders(html_content: str) -> str:
 
             if bucket_url and any(domain in bucket_url for domain in BUCKET_DOMAINS):
                 # Replace the placeholder value in the JS object
-                # Match: image: "placeholder" or image: 'placeholder'
-                pattern = rf'(\b{re.escape(prop_name)}\s*:\s*)(["\'])placeholder\2'
-                new_obj_text = re.sub(pattern, rf'\1\2{bucket_url}\2', obj_text, flags=re.IGNORECASE)
+                # Match: image: "placeholder" or image: 'placeholder' or 'placeholder?q=...'
+                pattern = rf'(\b{re.escape(prop_name)}\s*:\s*)(["\'])placeholder(?:\?[^"\']*)?(\2)'
+                new_obj_text = re.sub(pattern, rf'\1\2{bucket_url}\3', obj_text, flags=re.IGNORECASE)
                 if new_obj_text != obj_text:
                     html_content = html_content.replace(obj_text, new_obj_text)
                     logger.info("[PLACEHOLDER_CLEANUP] SUCCESS: Replaced JS %s placeholder -> %s", prop_name, bucket_url[:80])
             else:
-                logger.warning("[PLACEHOLDER_CLEANUP] Could not find image for JS %s: '%s'", prop_name, label[:50])
+                logger.warning("[PLACEHOLDER_CLEANUP] Could not find image for JS %s: '%s' - using transparent fallback", prop_name, label[:50])
+                # Replace with transparent 1x1 pixel to prevent broken image display
+                transparent_pixel = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+                pattern = rf'(\b{re.escape(prop_name)}\s*:\s*)(["\'])placeholder(?:\?[^"\']*)?(\2)'
+                new_obj_text = re.sub(pattern, rf'\1\2{transparent_pixel}\3', obj_text, flags=re.IGNORECASE)
+                if new_obj_text != obj_text:
+                    html_content = html_content.replace(obj_text, new_obj_text)
+                    logger.info("[PLACEHOLDER_CLEANUP] Replaced JS placeholder with transparent fallback")
+
+    # Final pass: catch any remaining src="placeholder" that slipped through
+    # This handles edge cases where the regex patterns above didn't match
+    remaining_placeholder_pattern = r'src\s*=\s*["\']placeholder(?:\?[^"\']*)?["\']'
+    if re.search(remaining_placeholder_pattern, html_content, re.IGNORECASE):
+        logger.warning("[PLACEHOLDER_CLEANUP] Found remaining placeholders after cleanup - replacing with transparent pixel")
+        transparent_pixel = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+        html_content = re.sub(
+            remaining_placeholder_pattern,
+            f'src="{transparent_pixel}"',
+            html_content,
+            flags=re.IGNORECASE
+        )
 
     return html_content

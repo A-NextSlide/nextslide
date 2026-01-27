@@ -349,11 +349,16 @@ export function extractFontsFromTheme(theme: any): {
   // Handle typography format
   if (theme?.typography) {
     return {
-      headingFont: theme.typography.hero_title?.family ||
+      // Check new flat format first (hero_font, body_font), then old nested format
+      headingFont: theme.typography.hero_font ||
+                   theme.typography.heroFont ||
+                   theme.typography.hero_title?.family ||
                    theme.typography.hero_title?.font_family ||
                    theme.typography.heading?.fontFamily ||
                    'Inter',
-      bodyFont: theme.typography.body_text?.family ||
+      bodyFont: theme.typography.body_font ||
+                theme.typography.bodyFont ||
+                theme.typography.body_text?.family ||
                 theme.typography.body_text?.font_family ||
                 theme.typography.paragraph?.fontFamily ||
                 'Inter',

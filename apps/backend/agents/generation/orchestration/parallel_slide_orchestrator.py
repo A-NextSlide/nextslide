@@ -3,10 +3,34 @@ Orchestrator for parallel slide generation.
 """
 
 import asyncio
+import sys
+from contextlib import asynccontextmanager
 from typing import Dict, Any, List, AsyncIterator, Tuple, Optional
 from datetime import datetime
 
 from agents.core import ISlideGenerator, IPersistence
+
+
+# Python 3.11+ has asyncio.timeout, but we need to support 3.9+
+if sys.version_info >= (3, 11):
+    from asyncio import timeout as async_timeout
+else:
+    @asynccontextmanager
+    async def async_timeout(delay: float):
+        """Compatibility wrapper for asyncio.timeout (Python 3.9+)."""
+        async def _timeout_coro():
+            await asyncio.sleep(delay)
+            raise asyncio.TimeoutError(f"Operation timed out after {delay}s")
+
+        timeout_task = asyncio.create_task(_timeout_coro())
+        try:
+            yield
+        finally:
+            timeout_task.cancel()
+            try:
+                await timeout_task
+            except asyncio.CancelledError:
+                pass
 from agents.domain.models import (
     DeckState, CompositionOptions, SlideGenerationContext,
     SlideStatus, ThemeSpec
@@ -343,6 +367,33 @@ class ParallelSlideOrchestrator:
                 logger.warning(f"Cancelling pending task that didn't complete")
                 task.cancel()
         
+        # Final cleanup: Mark any slides still in "pending" status as ERROR
+        # This catches edge cases where error persistence failed or tasks were cancelled unexpectedly
+        pending_slides = [
+            (i, s) for i, s in enumerate(deck_state.slides)
+            if s.get('status') == SlideStatus.PENDING.value
+        ]
+        if pending_slides:
+            logger.warning(f"[PARALLEL_ORCH] Found {len(pending_slides)} slides still pending after generation - marking as ERROR")
+            for idx, slide in pending_slides:
+                try:
+                    slide['status'] = SlideStatus.ERROR.value
+                    slide['error'] = 'Generation did not complete'
+                    error_slide_data = {
+                        'id': slide.get('id', f"{deck_state.deck_uuid}-slide-{idx}"),
+                        'title': slide.get('title', f'Slide {idx + 1}'),
+                        'order': idx,
+                        'status': SlideStatus.ERROR.value,
+                        'components': slide.get('components', []),
+                        'error': 'Generation did not complete'
+                    }
+                    await self.persistence.update_slide(
+                        deck_state.deck_uuid, idx, error_slide_data, force_immediate=True
+                    )
+                    logger.info(f"  ⚠️ Marked slide {idx + 1} as ERROR (was pending)")
+                except Exception as e:
+                    logger.warning(f"Failed to mark slide {idx + 1} as error: {e}")
+
         # Final completion event
         # Count successful vs failed slides
         successful_slides = sum(1 for s in deck_state.slides if s.get('status') == SlideStatus.COMPLETED.value)
@@ -515,7 +566,7 @@ class ParallelSlideOrchestrator:
                 elapsed = 0
                 
                 try:
-                    async with asyncio.timeout(300.0):  # 5 minute timeout per slide
+                    async with async_timeout(300.0):  # 5 minute timeout per slide
                         async for update in self.slide_generator.generate_slide(context):
                             # Add slide index to all updates
                             update['slide_index'] = slide_index
@@ -572,6 +623,25 @@ class ParallelSlideOrchestrator:
                 logger.error(f"❌ Slide {slide_index + 1} timed out after 300 seconds")
                 # Mark slide as errored but continue processing other slides
                 mark_slide_error()
+
+                # CRITICAL: Persist error status to database immediately
+                # This fixes the bug where slides stay "pending" with 0 components
+                try:
+                    error_slide_data = {
+                        'id': deck_state.slides[slide_index].get('id', f"{deck_state.deck_uuid}-slide-{slide_index}"),
+                        'title': slide_outline.title,
+                        'order': slide_index,
+                        'status': SlideStatus.ERROR.value,
+                        'components': [],  # Empty but status is ERROR not pending
+                        'error': 'Generation timed out after 300 seconds'
+                    }
+                    await self.persistence.update_slide(
+                        deck_state.deck_uuid, slide_index, error_slide_data, force_immediate=True
+                    )
+                    logger.info(f"  ⚠️ Persisted ERROR status for slide {slide_index + 1} (timeout)")
+                except Exception as persist_err:
+                    logger.warning(f"Failed to persist error status for slide {slide_index + 1}: {persist_err}")
+
                 await event_queue.put({
                     'type': 'slide_error',
                     'slide_index': slide_index,
@@ -583,6 +653,24 @@ class ParallelSlideOrchestrator:
             except asyncio.CancelledError:
                 logger.warning(f"⚠️ Slide {slide_index + 1} generation was cancelled")
                 mark_slide_error()
+
+                # CRITICAL: Persist error status to database immediately
+                try:
+                    error_slide_data = {
+                        'id': deck_state.slides[slide_index].get('id', f"{deck_state.deck_uuid}-slide-{slide_index}"),
+                        'title': slide_outline.title,
+                        'order': slide_index,
+                        'status': SlideStatus.ERROR.value,
+                        'components': [],
+                        'error': 'Generation was cancelled'
+                    }
+                    await self.persistence.update_slide(
+                        deck_state.deck_uuid, slide_index, error_slide_data, force_immediate=True
+                    )
+                    logger.info(f"  ⚠️ Persisted ERROR status for slide {slide_index + 1} (cancelled)")
+                except Exception as persist_err:
+                    logger.warning(f"Failed to persist error status for slide {slide_index + 1}: {persist_err}")
+
                 await event_queue.put({
                     'type': 'slide_error',
                     'slide_index': slide_index,
@@ -594,7 +682,7 @@ class ParallelSlideOrchestrator:
             except Exception as e:
                 # Import exception types
                 from agents.generation.exceptions import AIOverloadedError, is_retryable, get_retry_delay
-                
+
                 # Determine user-friendly error message
                 if isinstance(e, AIOverloadedError):
                     error_message = "AI service is temporarily overloaded. Please retry in a moment."
@@ -602,10 +690,29 @@ class ParallelSlideOrchestrator:
                 else:
                     error_message = str(e)
                     logger.error(f"Error generating slide {slide_index + 1}: {error_message}")
-                
+
                 # Mark slide as errored
                 mark_slide_error()
-                
+
+                # CRITICAL: Persist error status to database immediately
+                # This fixes the bug where slides stay "pending" with 0 components
+                try:
+                    error_slide_data = {
+                        'id': deck_state.slides[slide_index].get('id', f"{deck_state.deck_uuid}-slide-{slide_index}"),
+                        'title': slide_outline.title,
+                        'order': slide_index,
+                        'status': SlideStatus.ERROR.value,
+                        'components': [],
+                        'error': error_message,
+                        'retryable': is_retryable(e)
+                    }
+                    await self.persistence.update_slide(
+                        deck_state.deck_uuid, slide_index, error_slide_data, force_immediate=True
+                    )
+                    logger.info(f"  ⚠️ Persisted ERROR status for slide {slide_index + 1}")
+                except Exception as persist_err:
+                    logger.warning(f"Failed to persist error status for slide {slide_index + 1}: {persist_err}")
+
                 await event_queue.put({
                     'type': 'slide_error',
                     'slide_index': slide_index,

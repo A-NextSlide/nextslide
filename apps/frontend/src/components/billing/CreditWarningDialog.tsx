@@ -50,7 +50,7 @@ export function CreditWarningDialog({
   planName,
   mode,
   onProceed,
-  overageCostPerCredit = 0.10,
+  overageCostPerCredit = 0.03,  // $0.03 per credit (matches backend)
 }: CreditWarningDialogProps) {
   const navigate = useNavigate();
 

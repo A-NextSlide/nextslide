@@ -22,6 +22,7 @@ def execute_tool(
     attachments: List[Dict] = None,
     event_cb: Callable = None,
     chat_history: List[Dict] = None,
+    slide_screenshot: Dict = None,
 ) -> DeckDiff:
     """
     Execute a tool by name.
@@ -100,6 +101,9 @@ def execute_tool(
     # Tools that need chat_history for context-aware generation
     CHAT_CONTEXT_TOOLS = {"create_slide", "edit_slide", "custom_component_rewrite"}
 
+    # Tools that need slide_screenshot for visual context
+    SCREENSHOT_TOOLS = {"custom_component_str_replace"}
+
     if tool_name not in TOOLS:
         logger.error(f"Unknown tool: {tool_name}")
         raise ValueError(f"Unknown tool: {tool_name}")
@@ -124,6 +128,15 @@ def execute_tool(
             registry=registry,
             attachments=attachments,
             chat_history=chat_history,
+        )
+    elif tool_name in SCREENSHOT_TOOLS:
+        return tool_fn(
+            args=tool_args,
+            deck_data=deck_data,
+            current_slide=current_slide,
+            registry=registry,
+            attachments=attachments,
+            slide_screenshot=slide_screenshot,
         )
     else:
         return tool_fn(

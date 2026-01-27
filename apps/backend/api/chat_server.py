@@ -1119,41 +1119,47 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
     logger.warning(f"DECK CREATE REQUEST - Outline ID: {outline.get('id')}, Title: {outline.get('title')}, User: {user_id or 'anon'}")
     
     # Check for duplicate requests AFTER ensuring outline has an ID
-    request_hash = _get_request_hash(outline, user_id)
-    current_time = time.time()
-    
-    logger.info(f"Request hash: {request_hash}")
-    
-    # Clean up old entries
-    _recent_deck_creations_copy = _recent_deck_creations.copy()
-    for key, timestamp in _recent_deck_creations_copy.items():
-        if current_time - timestamp > _DEDUP_WINDOW_SECONDS:
-            del _recent_deck_creations[key]
-    
-    # Check if this is a duplicate request
-    if request_hash in _recent_deck_creations:
-        last_request_time = _recent_deck_creations[request_hash]
-        time_since_last = current_time - last_request_time
-        if time_since_last < _DEDUP_WINDOW_SECONDS:
-            logger.warning(f"DUPLICATE DECK CREATION REJECTED - Same request within {time_since_last:.1f}s (limit: {_DEDUP_WINDOW_SECONDS}s)")
-            logger.warning(f"  - Hash: {request_hash}")
-            logger.warning(f"  - Title: {outline.get('title')}")
-            logger.warning(f"  - Outline ID: {outline.get('id')}")
-            raise HTTPException(
-                status_code=429, 
-                detail={
-                    "error": "duplicate_request",
-                    "message": f"Duplicate request detected. Please wait {_DEDUP_WINDOW_SECONDS} seconds between identical deck creation requests.",
-                    "time_remaining": _DEDUP_WINDOW_SECONDS - time_since_last,
-                    "outline_id": outline.get('id'),
-                    "deck_id": outline.get('id'),  # Include deck_id for frontend navigation
-                    "deck_url": f"/deck/{outline.get('id')}"  # Include deck_url as well
-                }
-            )
-    
-    # Record this request
-    _recent_deck_creations[request_hash] = current_time
-    logger.info(f"Request recorded with hash: {request_hash}")
+    # Skip duplicate check if this is an overage confirmation retry
+    confirm_overage = request.get('confirm_overage', False)
+
+    if not confirm_overage:
+        request_hash = _get_request_hash(outline, user_id)
+        current_time = time.time()
+
+        logger.info(f"Request hash: {request_hash}")
+
+        # Clean up old entries
+        _recent_deck_creations_copy = _recent_deck_creations.copy()
+        for key, timestamp in _recent_deck_creations_copy.items():
+            if current_time - timestamp > _DEDUP_WINDOW_SECONDS:
+                del _recent_deck_creations[key]
+
+        # Check if this is a duplicate request
+        if request_hash in _recent_deck_creations:
+            last_request_time = _recent_deck_creations[request_hash]
+            time_since_last = current_time - last_request_time
+            if time_since_last < _DEDUP_WINDOW_SECONDS:
+                logger.warning(f"DUPLICATE DECK CREATION REJECTED - Same request within {time_since_last:.1f}s (limit: {_DEDUP_WINDOW_SECONDS}s)")
+                logger.warning(f"  - Hash: {request_hash}")
+                logger.warning(f"  - Title: {outline.get('title')}")
+                logger.warning(f"  - Outline ID: {outline.get('id')}")
+                raise HTTPException(
+                    status_code=429,
+                    detail={
+                        "error": "duplicate_request",
+                        "message": f"Duplicate request detected. Please wait {_DEDUP_WINDOW_SECONDS} seconds between identical deck creation requests.",
+                        "time_remaining": _DEDUP_WINDOW_SECONDS - time_since_last,
+                        "outline_id": outline.get('id'),
+                        "deck_id": outline.get('id'),  # Include deck_id for frontend navigation
+                        "deck_url": f"/deck/{outline.get('id')}"  # Include deck_url as well
+                    }
+                )
+
+        # Record this request
+        _recent_deck_creations[request_hash] = current_time
+        logger.info(f"Request recorded with hash: {request_hash}")
+    else:
+        logger.info(f"Skipping duplicate check for overage confirmation retry")
 
     # ===== CREDIT TRACKING =====
     # Check credits and determine how many slides we can generate
@@ -1173,27 +1179,41 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
         if balance:
             logger.info(f"[CREDITS] User {user_id} balance: {balance.remaining_credits} credits, needs {total_cost} for {num_slides} slides")
 
+            # Check for unlimited credits (-1 means unlimited)
+            if balance.remaining_credits == -1:
+                logger.info(f"[CREDITS] User {user_id} has unlimited credits (-1). Skipping credit check.")
+                slides_to_generate = num_slides
+                slides_to_charge = 0  # Don't charge unlimited users
             # For paid plans (starter/pro/enterprise)
-            if balance.plan_id in ('starter', 'pro', 'enterprise'):
+            elif balance.plan_id in ('starter', 'pro', 'enterprise'):
                 # Check if they have enough credits
                 if balance.remaining_credits < total_cost:
-                    # Paid user without enough credits - return error for frontend to handle
-                    # Frontend will show overage confirmation or ask them to buy more
-                    logger.info(f"[CREDITS] Paid user has insufficient credits: {balance.remaining_credits} < {total_cost}")
+                    # Pro users can use overage if they confirm
+                    can_use_overage = balance.plan_id == "pro"
+                    confirm_overage = request.get('confirm_overage', False)
+                    logger.info(f"[CREDITS] confirm_overage={confirm_overage}, can_use_overage={can_use_overage}")
 
-                    async def insufficient_credits_paid_response():
-                        yield f"data: {json.dumps({'type': 'error', 'error': 'INSUFFICIENT_CREDITS', 'message': 'You need more credits for this presentation.', 'remaining': balance.remaining_credits, 'required': total_cost, 'plan': balance.plan_id, 'can_use_overage': balance.can_use_overage})}\n\n"
-                        yield f"data: {json.dumps({'type': 'end', 'message': 'Stream complete'})}\n\n"
+                    if can_use_overage and confirm_overage:
+                        # Pro user confirmed overage - proceed with generation
+                        logger.info(f"[CREDITS] Pro user confirmed overage. Proceeding with {total_cost} credits (balance: {balance.remaining_credits})")
+                    else:
+                        # Paid user without enough credits - return error for frontend to handle
+                        # Frontend will show overage confirmation or ask them to buy more
+                        logger.info(f"[CREDITS] Paid user has insufficient credits: {balance.remaining_credits} < {total_cost}")
 
-                    return StreamingResponse(
-                        insufficient_credits_paid_response(),
-                        media_type="text/event-stream",
-                        headers={
-                            "Cache-Control": "no-cache",
-                            "Connection": "keep-alive",
-                            "X-Accel-Buffering": "no"
-                        }
-                    )
+                        async def insufficient_credits_paid_response():
+                            yield f"data: {json.dumps({'type': 'error', 'error': 'INSUFFICIENT_CREDITS', 'message': 'You need more credits for this presentation.', 'remaining': balance.remaining_credits, 'required': total_cost, 'plan': balance.plan_id, 'can_use_overage': can_use_overage})}\n\n"
+                            yield f"data: {json.dumps({'type': 'end', 'message': 'Stream complete'})}\n\n"
+
+                        return StreamingResponse(
+                            insufficient_credits_paid_response(),
+                            media_type="text/event-stream",
+                            headers={
+                                "Cache-Control": "no-cache",
+                                "Connection": "keep-alive",
+                                "X-Accel-Buffering": "no"
+                            }
+                        )
                 slides_to_generate = num_slides
             else:
                 # Free plan: Check if user has ANY credits
