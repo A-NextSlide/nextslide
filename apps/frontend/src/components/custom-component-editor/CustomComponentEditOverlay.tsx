@@ -358,10 +358,7 @@ export function generateEditModeScript(componentId: string): string {
         rect.height >= window.innerHeight * 0.98;
       if (tag === 'body' || tag === 'html' || isFullBleedBg) return;
       if (tag === 'img') {
-        const src = (el.getAttribute('src') || '').trim();
-        const alt = (el.getAttribute('alt') || '').trim();
-        const dataProp = (el.getAttribute('data-prop') || '').trim();
-        if (!src && !alt && !dataProp) return;
+        // Always detect img elements - users need to edit placeholder/empty images
       }
       if (tag === 'svg') {
         const hasImageChild = !!el.querySelector('image, img, use');

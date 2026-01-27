@@ -298,16 +298,16 @@ export const CustomComponentRenderer: React.FC<{
         return;
       }
 
-      // Send loading state to iframe first (show placeholder)
-      const iframes = document.querySelectorAll('iframe');
-      iframes.forEach(iframe => {
-        iframe.contentWindow?.postMessage({
+      // Send loading state to THIS component's iframe only (not all iframes)
+      // This prevents image updates from affecting other custom components on the slide
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage({
           target: 'ns-custom-component-edit',
           type: 'update-image-with-placeholder',
           elementId: elementId || propName,
           newSrc: imageUrl
         }, '*');
-      });
+      }
 
       // Get current props
       const currentProps = component.props.props || {};

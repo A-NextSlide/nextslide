@@ -718,17 +718,9 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   // Track if we're in text edit mode (editingElement is set but selectedElement is null)
   const isTextEditMode = isActiveComponent && editingElement && !selectedElement;
   const imageElements = useMemo(() => {
-    return activeDetectedElements.filter((element) => {
-      if (element.type !== 'image') return false;
-      const src = (element.src || '').trim();
-      const alt = (element.alt || '').trim();
-      const label = (element.label || '').trim();
-      const normalizedSrc = src.toLowerCase();
-      const hasSrc = !!src && !normalizedSrc.includes('placeholder');
-      const hasAlt = alt.length > 1 && !isGenericImageLabel(alt);
-      const hasLabel = label.length > 1 && !isGenericImageLabel(label);
-      return hasSrc || hasAlt || hasLabel;
-    });
+    // Show ALL detected images in the property panel - don't filter by label/alt quality
+    // Users need to see and edit all images, even those with generic or missing labels
+    return activeDetectedElements.filter((element) => element.type === 'image');
   }, [activeDetectedElements]);
 
   const htmlSyncRef = useRef<NodeJS.Timeout | null>(null);
