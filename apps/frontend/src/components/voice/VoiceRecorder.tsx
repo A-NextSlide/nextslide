@@ -17,6 +17,7 @@ import { API_CONFIG } from '@/config/environment';
 interface VoiceRecorderProps {
   onTranscript: (text: string) => void;
   onStreamingTranscript?: (text: string) => void;
+  onConnectingStart?: () => void;
   onRecordingStart?: () => void;
   onRecordingEnd?: () => void;
   onError?: (error: string) => void;
@@ -208,6 +209,7 @@ const RecordingWave: React.FC<{ audioLevel: number }> = ({ audioLevel }) => {
 export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   onTranscript,
   onStreamingTranscript,
+  onConnectingStart,
   onRecordingStart,
   onRecordingEnd,
   onError,
@@ -300,6 +302,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     if (disabled || isProcessing || isRecording || isConnecting) return;
 
     setIsConnecting(true);
+    onConnectingStart?.();
 
     try {
       // Get microphone access
@@ -449,7 +452,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         onError?.('Failed to start recording');
       }
     }
-  }, [disabled, isProcessing, isRecording, isConnecting, onRecordingStart, onError, analyzeAudio, onTranscript, onStreamingTranscript]);
+  }, [disabled, isProcessing, isRecording, isConnecting, onConnectingStart, onRecordingStart, onError, analyzeAudio, onTranscript, onStreamingTranscript]);
 
   const stopRecording = useCallback(async () => {
     if (!isRecording && !isConnecting) return;

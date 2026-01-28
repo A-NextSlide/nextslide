@@ -113,6 +113,9 @@ export interface VirtualElement {
 
   /** Whether this element can be resized */
   isResizable: boolean;
+
+  /** True if this image is from a JS array (tabs/carousel), not DOM */
+  isJsArrayImage?: boolean;
 }
 
 /**

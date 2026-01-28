@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Code, Zap, Type, Image, ChevronDown, ChevronRight, Maximize2, Square, AlignLeft, AlignCenter, AlignRight, AlignJustify } from 'lucide-react';
+import { Code, Zap, Type, Image, ChevronDown, ChevronRight, Maximize2, Square, AlignLeft, AlignCenter, AlignRight, AlignJustify, RefreshCw } from 'lucide-react';
 import { parseCustomComponentCode, ParsedVariable, convertToPropsBasedCode } from '@/utils/customComponentParser';
 import AdvancedCodeEditor from '@/components/ui/AdvancedCodeEditor';
 import { Textarea } from '@/components/ui/textarea';
@@ -25,11 +25,13 @@ import { HexColorPicker } from 'react-colorful';
 import EditableDropdown from '@/components/settings/EditableDropdown';
 import GroupedDropdown from '@/components/settings/GroupedDropdown';
 import ImageSlotEditor from '@/components/settings/ImageSlotEditor';
+import ImageCardGrid from '@/components/settings/ImageCardGrid';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCustomComponentEditStore } from '@/stores/customComponentEditStore';
 import { VirtualElement } from '@/components/custom-component-editor/types';
 import { LayersPanel } from '@/components/settings/LayersPanel';
 import { getElementDisplayName, getImagePropLabel, isGenericImageLabel } from '@/utils/customComponentLabels';
+import { parseJsArrayImages, updateJsArrayImage, JsArrayImage } from '@/utils/jsArrayImageParser';
 
 interface CustomComponentSettingsEditorProps {
   component: ComponentInstance;
@@ -428,48 +430,6 @@ const FontVariableSelector: React.FC<{
   );
 };
 
-// Dynamic image element editor
-const DynamicImageEditor: React.FC<{
-  element: VirtualElement;
-  componentId: string;
-  elementIndex?: number;
-  onImageUpdate: (elementId: string, newSrc: string) => void;
-  onStyleUpdate: (selector: string, property: string, value: string) => void;
-  onSave: (message?: string) => void;
-  onRequestHtmlUpdate?: () => void;
-}> = ({ element, componentId, elementIndex, onImageUpdate, onStyleUpdate, onSave, onRequestHtmlUpdate }) => {
-  const searchQuery = useMemo(() => {
-    if (element.alt && element.alt.length > 2 && !element.alt.toLowerCase().includes('placeholder')) {
-      return element.alt.replace(/[^a-zA-Z0-9\s]/g, ' ').trim().toLowerCase();
-    }
-    return 'image';
-  }, [element.alt]);
-
-  return (
-    <ImageSlotEditor
-      propName={element.id}
-      label={getElementDisplayName(element, elementIndex)}
-      value={element.src}
-      searchQuery={searchQuery}
-      objectFit={(element.computedStyle?.height && element.computedStyle?.width) ? 'cover' : 'contain'}
-      componentId={componentId}
-      onUpdate={(propName, imageUrl) => {
-        onImageUpdate(element.id, imageUrl);
-        // Request HTML update to persist the image change
-        onRequestHtmlUpdate?.();
-      }}
-      onSave={(propName, label) => {
-        onSave(`Updated ${label}`);
-      }}
-      onObjectFitChange={(fit) => {
-        onStyleUpdate(element.selector, 'objectFit', fit);
-        onRequestHtmlUpdate?.();
-        onSave('Changed image fit');
-      }}
-    />
-  );
-};
-
 // Dynamic container/box editor with background, border, padding controls
 const DynamicContainerEditor: React.FC<{
   element: VirtualElement;
@@ -708,7 +668,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   }, [component.id]);
 
   // Get detected elements from the custom component edit store
-  const { activeComponentId, detectedElements, selectedElement, editingElement, updateElementStyle, updateElementText, updateElementImage, injectFont, requestHtmlUpdate } = useCustomComponentEditStore();
+  const { activeComponentId, detectedElements, selectedElement, editingElement, updateElementStyle, updateElementText, updateElementImage, injectFont, requestHtmlUpdate, requestElements } = useCustomComponentEditStore();
 
   // Only use store data if it matches this component
   const isActiveComponent = activeComponentId === component.id;
@@ -717,11 +677,81 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   const activeSelectedElement = isActiveComponent ? (editingElement || selectedElement) : null;
   // Track if we're in text edit mode (editingElement is set but selectedElement is null)
   const isTextEditMode = isActiveComponent && editingElement && !selectedElement;
+
+  // Check if this is an HTML-based component (iframe)
+  const isHtmlComponent = useMemo(() => {
+    const render = (component.props.render as string) || '';
+    return render.trim().toLowerCase().startsWith('<!doctype') ||
+           render.trim().toLowerCase().startsWith('<html');
+  }, [component.props.render]);
+
+  // Parse JS array images from HTML source (for tabs/carousels that store images in JS arrays)
+  const jsArrayImages = useMemo(() => {
+    if (!isHtmlComponent) return [];
+    const raw = (component.props.render as string) || '';
+    const images = parseJsArrayImages(raw);
+    console.log('[CustomComponentSettingsEditor] Parsed JS array images:', images.length, images.map(i => ({ id: i.id, label: i.label, src: i.src.slice(0, 40) })));
+    return images;
+  }, [component.props.render, isHtmlComponent]);
+
+  // Keep a ref to the current JS array images for the handler
+  const jsArrayImagesRef = useRef<JsArrayImage[]>(jsArrayImages);
+  useEffect(() => {
+    jsArrayImagesRef.current = jsArrayImages;
+  }, [jsArrayImages]);
+
+  // Convert JS array images to VirtualElement format for unified display
+  const jsArrayImageElements = useMemo((): VirtualElement[] => {
+    return jsArrayImages.map((img, index) => ({
+      id: img.id,
+      type: 'image' as const,
+      tagName: 'IMG',
+      selector: `js-array-image-${index}`,
+      src: img.src,
+      alt: img.label,
+      label: img.label,
+      textContent: '',
+      iframeBounds: { x: 0, y: 0, width: 200, height: 150 },
+      bounds: { x: 0, y: 0, width: 200, height: 150 },
+      positioningStrategy: 'static' as const,
+      computedStyle: {
+        position: 'static',
+        top: '0',
+        left: '0',
+        right: 'auto',
+        bottom: 'auto',
+        width: '200px',
+        height: '150px',
+        transform: 'none',
+        margin: '0',
+      },
+      isDraggable: false,
+      isResizable: false,
+      // Mark this as a JS array image for special handling
+      isJsArrayImage: true,
+    }));
+  }, [jsArrayImages]);
+
+  // Merge DOM-detected images with JS array images, avoiding duplicates
   const imageElements = useMemo(() => {
-    // Show ALL detected images in the property panel - don't filter by label/alt quality
-    // Users need to see and edit all images, even those with generic or missing labels
-    return activeDetectedElements.filter((element) => element.type === 'image');
-  }, [activeDetectedElements]);
+    const domImages = activeDetectedElements.filter((element) => element.type === 'image');
+
+    // Filter out JS array images that are already shown in DOM (by matching URL)
+    const domImageUrls = new Set(domImages.map(img => img.src).filter(Boolean));
+    const uniqueJsImages = jsArrayImageElements.filter(img => !domImageUrls.has(img.src));
+
+    // Combine DOM images first (currently visible), then JS array images
+    const merged = [...domImages, ...uniqueJsImages];
+
+    console.log('[CustomComponentSettingsEditor] imageElements:', {
+      domCount: domImages.length,
+      jsArrayCount: uniqueJsImages.length,
+      totalCount: merged.length,
+      images: merged.map(img => ({ id: img.id, src: img.src?.slice(0, 40), isJsArray: img.isJsArrayImage }))
+    });
+
+    return merged;
+  }, [activeDetectedElements, jsArrayImageElements]);
 
   const htmlSyncRef = useRef<NodeJS.Timeout | null>(null);
   const scheduleHtmlSync = useCallback(() => {
@@ -753,16 +783,50 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   }, [updateElementText, scheduleHtmlSync]);
 
   const handleElementImage = useCallback((elementId: string, newSrc: string) => {
+    console.log('[CustomComponentSettingsEditor] handleElementImage called:', { elementId, newSrc: newSrc.slice(0, 60) });
+
+    // Check if this is a JS array image (id starts with 'js-')
+    if (elementId.startsWith('js-')) {
+      console.log('[CustomComponentSettingsEditor] JS array image detected');
+
+      // Find the image in our parsed array
+      const jsImage = jsArrayImagesRef.current.find(img => img.id === elementId);
+      if (!jsImage) {
+        console.warn('[CustomComponentSettingsEditor] JS image not found:', elementId);
+        return;
+      }
+
+      // Get current HTML and do direct replacement
+      const currentHtml = (component.props.render as string) || '';
+      const oldSrc = jsImage.src;
+
+      console.log('[CustomComponentSettingsEditor] Replacing URL:', {
+        oldSrc: oldSrc.slice(0, 60),
+        newSrc: newSrc.slice(0, 60),
+      });
+
+      // Simple string replace of the old URL with new URL
+      if (currentHtml.includes(oldSrc)) {
+        const updatedHtml = currentHtml.replace(oldSrc, newSrc);
+        console.log('[CustomComponentSettingsEditor] HTML updated, calling handlePropChange');
+
+        // Update the component - don't skip history for visibility
+        handlePropChangeRef.current('render', updatedHtml, false);
+
+        // Also update the iframe directly for immediate feedback
+        updateElementImage(elementId, newSrc);
+      } else {
+        console.warn('[CustomComponentSettingsEditor] Old URL not found in HTML');
+      }
+      return;
+    }
+
+    // For DOM images, use the standard update flow
+    console.log('[CustomComponentSettingsEditor] DOM image, using standard flow');
     updateElementImage(elementId, newSrc);
     scheduleHtmlSync();
-  }, [updateElementImage, scheduleHtmlSync]);
+  }, [updateElementImage, scheduleHtmlSync, component.props.render]);
 
-  // Check if this is an HTML-based component (iframe)
-  const isHtmlComponent = useMemo(() => {
-    const render = (component.props.render as string) || '';
-    return render.trim().toLowerCase().startsWith('<!doctype') ||
-           render.trim().toLowerCase().startsWith('<html');
-  }, [component.props.render]);
   // Stabilize function props for use inside effects without re-triggering deps
   const handlePropChangeRef = useRef(handlePropChange);
   const saveComponentToHistoryRef = useRef(saveComponentToHistory);
@@ -1237,18 +1301,6 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                 />
               )}
 
-              {activeSelectedElement.type === 'image' && (
-                <DynamicImageEditor
-                  element={activeSelectedElement}
-                  componentId={component.id}
-                  elementIndex={imageElements.findIndex(e => e.id === activeSelectedElement.id)}
-                  onImageUpdate={handleElementImage}
-                  onStyleUpdate={handleElementStyle}
-                  onSave={saveComponentToHistory}
-                  onRequestHtmlUpdate={requestHtmlUpdate}
-                />
-              )}
-
               {activeSelectedElement.type === 'container' && (
                 <DynamicContainerEditor
                   element={activeSelectedElement}
@@ -1262,40 +1314,37 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
 
           {/* Collapsible sections - ALWAYS visible regardless of selection */}
             <div className="space-y-1.5 border-t pt-2">
-            {/* Image Elements */}
-            {imageElements.length > 0 && (
-              <div className="space-y-2">
+            {/* Image Elements - Card Grid */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => setExpandedSections(prev => ({ ...prev, images: !prev.images }))}
-                  className="flex items-center gap-1.5 w-full text-left py-0.5 hover:bg-muted/50 rounded px-1 -mx-1"
+                  className="flex items-center gap-1.5 flex-1 text-left py-0.5 hover:bg-muted/50 rounded px-1 -mx-1"
                 >
                   {expandedSections.images ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                   <Image className="w-3 h-3 text-green-500" />
                   <span className="text-[11px] font-medium">Images ({imageElements.length})</span>
                 </button>
-
-                {expandedSections.images && (
-                  <div className="space-y-2 pl-3">
-                    {imageElements.map((element, index) => (
-                      <div key={element.id} className="space-y-1.5 pb-1.5 border-b last:border-0">
-                        <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                          {getElementDisplayName(element, index)}
-                        </div>
-                        <DynamicImageEditor
-                          element={element}
-                          componentId={component.id}
-                          elementIndex={index}
-                          onImageUpdate={handleElementImage}
-                          onStyleUpdate={handleElementStyle}
-                          onSave={saveComponentToHistory}
-                          onRequestHtmlUpdate={requestHtmlUpdate}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <button
+                  onClick={() => requestElements()}
+                  className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                  title="Refresh to detect all images"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                </button>
               </div>
-            )}
+
+              {expandedSections.images && (
+                <ImageCardGrid
+                  images={imageElements}
+                  componentId={component.id}
+                  onImageUpdate={handleElementImage}
+                  onStyleUpdate={handleElementStyle}
+                  onSave={saveComponentToHistory}
+                  onRequestHtmlUpdate={requestHtmlUpdate}
+                />
+              )}
+            </div>
 
             {/* Text Elements */}
             {activeDetectedElements.filter(e => e.type === 'text').length > 0 && (

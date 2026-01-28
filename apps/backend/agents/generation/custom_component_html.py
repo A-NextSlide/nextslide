@@ -61,12 +61,22 @@ def _object_is_image_like(obj_text: str) -> bool:
     # If the object has image-related properties, treat it as image-like regardless of type
     # This handles cases like { type: 'event', image: 'placeholder', imageAlt: '...' }
     # Also match property names CONTAINING 'image' like imageStage, stageImage, backgroundImage
-    image_prop_pattern = r'\b\w*(?:image|img|photo|picture|thumbnail|src)\w*\s*:\s*["\']'
-    if re.search(image_prop_pattern, obj_text, re.IGNORECASE):
+    # Pattern 1: Quoted values like image: "value"
+    image_prop_pattern_quoted = r'\b\w*(?:image|img|photo|picture|thumbnail|src)\w*\s*:\s*["\']'
+    if re.search(image_prop_pattern_quoted, obj_text, re.IGNORECASE):
+        return True
+
+    # Pattern 2: Unquoted placeholder values like image: placeholder
+    image_prop_pattern_unquoted = r'\b\w*(?:image|img|photo|picture|thumbnail|src)\w*\s*:\s*(?:placeholder|null|undefined|none)\s*[,}\]]'
+    if re.search(image_prop_pattern_unquoted, obj_text, re.IGNORECASE):
         return True
 
     # Also check for placeholder values directly - if object has 'placeholder' or 'placeholder?q=...' it needs replacement
+    # Quoted placeholders
     if re.search(r':\s*["\']placeholder(?:\?[^"\']*)?["\']', obj_text, re.IGNORECASE):
+        return True
+    # Unquoted placeholders
+    if re.search(r':\s*placeholder\s*[,}\]]', obj_text, re.IGNORECASE):
         return True
 
     # If no type property, assume it could be image-like
@@ -230,7 +240,10 @@ class CustomComponentHtmlProcessor:
             cursor = 0
 
             # Pattern for image SOURCE properties (excluding alt/label properties)
-            src_pattern = r'(\b\w*(?:src|image|img|photo|picture|thumbnail|background)(?!Alt|Label|Text|Title|Name|Description|Caption)\w*\s*:\s*)(["\'])([^"\']*)\2'
+            # Pattern 1: Quoted values like image: 'placeholder' or image: "url"
+            src_pattern_quoted = r'(\b\w*(?:src|image|img|photo|picture|thumbnail|background)(?!Alt|Label|Text|Title|Name|Description|Caption)\w*\s*:\s*)(["\'])([^"\']*)\2'
+            # Pattern 2: Unquoted placeholder values like image: placeholder or image: null
+            src_pattern_unquoted = r'(\b\w*(?:src|image|img|photo|picture|thumbnail|background)(?!Alt|Label|Text|Title|Name|Description|Caption)\w*\s*:\s*)(placeholder|null|undefined|none)(\s*[,}\]])'
 
             for start, end, obj_text in objects:
                 if not _object_is_image_like(obj_text):
@@ -238,7 +251,7 @@ class CustomComponentHtmlProcessor:
                     cursor = end
                     continue
 
-                def replace_obj_src(match):
+                def replace_obj_src_quoted(match):
                     prefix = match.group(1)
                     quote = match.group(2)
                     current_src = match.group(3)
@@ -257,7 +270,21 @@ class CustomComponentHtmlProcessor:
                             return f"{prefix}{quote}{url}{quote}"
                     return match.group(0)
 
-                new_obj = re.sub(src_pattern, replace_obj_src, obj_text, flags=re.IGNORECASE)
+                def replace_obj_src_unquoted(match):
+                    prefix = match.group(1)
+                    current_src = match.group(2)
+                    suffix = match.group(3)
+
+                    # Replace unquoted placeholder with quoted URL
+                    url = get_next_image()
+                    if url:
+                        logger.info(f"[IMAGE_INJECT] JS object (unquoted): replaced '{current_src}' with {url[:50]}...")
+                        return f"{prefix}'{url}'{suffix}"
+                    return match.group(0)
+
+                # First replace quoted values, then unquoted placeholders
+                new_obj = re.sub(src_pattern_quoted, replace_obj_src_quoted, obj_text, flags=re.IGNORECASE)
+                new_obj = re.sub(src_pattern_unquoted, replace_obj_src_unquoted, new_obj, flags=re.IGNORECASE)
                 parts.append(script_content[cursor:start])
                 parts.append(new_obj)
                 cursor = end

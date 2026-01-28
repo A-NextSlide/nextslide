@@ -163,21 +163,44 @@ def _iter_js_objects(text: str) -> List[Tuple[int, int, str]]:
     depth = 0
     start = None
     in_string = None
+    in_template_literal = False
+    template_brace_depth = 0
     escape = False
     idx = 0
     length = len(text)
 
     while idx < length:
         ch = text[idx]
+        if escape:
+            escape = False
+            idx += 1
+            continue
+
+        if ch == "\\":
+            escape = True
+            idx += 1
+            continue
+
+        # Handle template literals (backticks) which can contain ${...}
+        if in_template_literal:
+            if ch == "`":
+                in_template_literal = False
+            elif ch == "$" and idx + 1 < length and text[idx + 1] == "{":
+                template_brace_depth += 1
+                idx += 2
+                continue
+            elif ch == "}" and template_brace_depth > 0:
+                template_brace_depth -= 1
+            idx += 1
+            continue
+
         if in_string:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == in_string:
+            if ch == in_string:
                 in_string = None
         else:
-            if ch in ("'", '"'):
+            if ch == "`":
+                in_template_literal = True
+            elif ch in ("'", '"'):
                 in_string = ch
             elif ch == "{":
                 if depth == 0:
@@ -570,38 +593,22 @@ async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> s
     try:
         client, model_name = get_client(IMAGE_SEARCH_MODEL)
 
-        prompt = f"""Create a specific Google Image search query for a presentation slide.
+        prompt = f"""Create a specific image search query by combining the original query with the slide context.
 
 ORIGINAL QUERY: {query}
 SLIDE CONTEXT: {slide_context[:500] if slide_context else 'Presentation slide'}
-{f"TOPIC/BRAND: {topic}" if topic else ""}
 
-CRITICAL RULES:
-1. **ALWAYS COMBINE** the original query concept WITH the topic/context
-   - NEVER return just the topic name alone (e.g., don't just say "Zelda")
-   - The result must be MORE SPECIFIC than the original query
+RULES:
+1. Read the slide context to understand the TOPIC (game, movie, company, product, person, etc.)
+2. COMBINE the original query WITH that topic to make it specific
+3. NEVER return just the topic alone - always include the original concept
+4. If the original query is generic (main, boss, phase, content, visual, item, etc.), infer what it refers to from context
 
-2. **FOR GENERIC QUERIES** (main, boss, phase, content, visual, image, etc.):
-   - Extract what the slide is ABOUT from the context
-   - "main" + Zelda Ocarina context → "Zelda Ocarina of Time Link artwork"
-   - "boss" + Zelda context → "Zelda Ganondorf boss battle screenshot"
-   - "phase" + Zelda context → "Zelda final boss phase transformation"
-   - "content visual" + Zelda → "Zelda Ocarina of Time gameplay screenshot"
+OUTPUT FORMAT: [Topic/Franchise] + [Original Query Concept] + [Visual Descriptor]
+- 3-7 words total
+- Be specific and searchable
 
-3. **FOR VIDEO GAMES/ENTERTAINMENT**:
-   - ALWAYS include franchise + specific subject
-   - "Zora" + Zelda → "Zelda Zora Domain underwater kingdom"
-   - "forest" + Zelda → "Zelda Kokiri Forest Lost Woods"
-   - "temple" + Zelda → "Zelda Forest Temple dungeon interior"
-   - "castle" + Zelda → "Zelda Hyrule Castle Ocarina of Time"
-
-4. **FOR CORPORATE/BUSINESS**:
-   - "server" + NVIDIA → "NVIDIA AI data center GPU servers"
-   - "factory" + Tesla → "Tesla Gigafactory interior production line"
-
-5. Keep it 3-7 words, be SPECIFIC and VISUAL
-
-Return ONLY the search query, nothing else."""
+Return ONLY the search query."""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -795,27 +802,39 @@ async def _search_images_for_props(
                         logger.warning(f"[POST_SEARCH] Enhancement didn't help: '{query}' -> '{search_query}', skipping")
                         return (prop_name, original_query, None, None, None)
 
-                # Ensure query is concise
+                # Ensure query is concise (allow up to 8 words for more context)
                 words = search_query.split()
-                if len(words) > 6:
-                    search_query = " ".join(words[:6])
+                if len(words) > 8:
+                    search_query = " ".join(words[:8])
 
-                results = await serpapi.search_images(search_query)
-                if asyncio.iscoroutine(results):
-                    results = await results
-                if not isinstance(results, (dict, list)):
-                    logger.warning("[POST_SEARCH] Unexpected results type for '%s': %s", search_query, type(results))
-                    return (prop_name, original_query, None, None, None)
-                if not results:
-                    logger.warning("[POST_SEARCH] No results for: %s", search_query)
-                    return (prop_name, original_query, None, None, None)
+                async def try_search(q: str):
+                    """Helper to perform search and extract photos."""
+                    res = await serpapi.search_images(q)
+                    if asyncio.iscoroutine(res):
+                        res = await res
+                    if not isinstance(res, (dict, list)):
+                        return []
+                    photos_list = res.get('photos', []) if isinstance(res, dict) else res
+                    return photos_list if isinstance(photos_list, list) else []
 
-                photos = results.get('photos', []) if isinstance(results, dict) else results
-                if not isinstance(photos, list):
-                    logger.warning("[POST_SEARCH] Unexpected photos type for '%s': %s", search_query, type(photos))
-                    return (prop_name, original_query, None, None, None)
+                photos = await try_search(search_query)
+
+                # If no results, try a simplified fallback query (first 3-4 meaningful words)
+                if not photos and len(words) > 4:
+                    # Keep the first few words which usually contain the main subject
+                    fallback_query = " ".join(words[:4])
+                    logger.info(f"[POST_SEARCH] No results for '{search_query}', trying fallback: '{fallback_query}'")
+                    photos = await try_search(fallback_query)
+
+                # If still no results for person/celebrity queries, try with "photo" suffix
+                if not photos and any(word[0].isupper() for word in words[:2]):
+                    # Likely a person name - try simpler query
+                    name_query = " ".join(words[:2]) + " photo"
+                    logger.info(f"[POST_SEARCH] Trying name-based fallback: '{name_query}'")
+                    photos = await try_search(name_query)
+
                 if not photos:
-                    logger.warning("[POST_SEARCH] No image candidates for: %s", search_query)
+                    logger.warning("[POST_SEARCH] No image candidates for: %s (all fallbacks failed)", search_query)
                     return (prop_name, original_query, None, None, None)
 
                 # Keep full photo objects to preserve width/height metadata
@@ -858,7 +877,9 @@ async def _search_images_for_props(
                 logger.warning("[POST_SEARCH] Error for '%s': %s", query, e)
                 return (prop_name, original_query, None, None, None)
 
-        tasks = [search_and_pick_best(prop, query) for prop, query in regular_queries[:8]]
+        # Process up to 15 image queries per slide (increased from 8 to handle
+        # tab-based components with multiple images per tab)
+        tasks = [search_and_pick_best(prop, query) for prop, query in regular_queries[:15]]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for result in results:

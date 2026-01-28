@@ -309,6 +309,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     scrollToBottom,
   } = useChatScroll({ messages: displayMessages, showOldMessages: displayShowOldMessages, setShowOldMessages });
 
+  const [isVoiceConnecting, setIsVoiceConnecting] = useState(false);
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -474,6 +475,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
   const handleVoiceError = useCallback((error: unknown) => {
     console.error('Voice recording error:', error);
+    setIsVoiceConnecting(false);
+    setIsVoiceRecording(false);
   }, []);
 
   // Style with dynamic opacity based on panel width
@@ -561,6 +564,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               onKeyDown={handleKeyDown}
               inputRef={inputRef}
               isDraggingOver={isDraggingOver}
+              isVoiceConnecting={isVoiceConnecting}
               isVoiceRecording={isVoiceRecording}
               selectedElements={selectedElements}
               onRemoveSelection={removeSelection}
@@ -590,8 +594,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               onCloseMentionPopover={closeMentionPopover}
               onRemoveMention={removeMention}
               onVoiceTranscript={handleVoiceTranscript}
-              onVoiceStart={() => setIsVoiceRecording(true)}
-              onVoiceEnd={() => setIsVoiceRecording(false)}
+              onVoiceConnectingStart={() => setIsVoiceConnecting(true)}
+              onVoiceStart={() => { setIsVoiceConnecting(false); setIsVoiceRecording(true); }}
+              onVoiceEnd={() => { setIsVoiceConnecting(false); setIsVoiceRecording(false); }}
               onVoiceError={handleVoiceError}
               deckData={deckData}
             />

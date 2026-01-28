@@ -34,6 +34,7 @@ interface ChatInputAreaProps {
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   inputRef: RefObject<HTMLTextAreaElement>;
   isDraggingOver: boolean;
+  isVoiceConnecting: boolean;
   isVoiceRecording: boolean;
   selectedElements: SelectedElement[];
   onRemoveSelection: (elementId: string) => void;
@@ -63,6 +64,7 @@ interface ChatInputAreaProps {
   onCloseMentionPopover: () => void;
   onRemoveMention: (integrationId: string) => void;
   onVoiceTranscript: (text: string) => void;
+  onVoiceConnectingStart: () => void;
   onVoiceStart: () => void;
   onVoiceEnd: () => void;
   onVoiceError: (error: any) => void;
@@ -75,6 +77,7 @@ export function ChatInputArea({
   onKeyDown,
   inputRef,
   isDraggingOver,
+  isVoiceConnecting,
   isVoiceRecording,
   selectedElements,
   onRemoveSelection,
@@ -104,6 +107,7 @@ export function ChatInputArea({
   onCloseMentionPopover,
   onRemoveMention,
   onVoiceTranscript,
+  onVoiceConnectingStart,
   onVoiceStart,
   onVoiceEnd,
   onVoiceError,
@@ -163,11 +167,11 @@ export function ChatInputArea({
           </div>
         )}
 
-        {isVoiceRecording && (
+        {(isVoiceConnecting || isVoiceRecording) && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/95 dark:bg-zinc-900/95 rounded-xl z-10">
             <div className="flex items-center gap-1 px-4 py-2 bg-orange-500/10 rounded-full">
               <span className="text-lg font-medium text-orange-600 dark:text-orange-400">
-                Listening
+                {isVoiceRecording ? 'Listening' : 'Getting ready'}
               </span>
               <span className="text-lg font-medium text-orange-600 dark:text-orange-400 animate-pulse">
                 ...
@@ -345,6 +349,7 @@ export function ChatInputArea({
                 <VoiceRecorder
                   onTranscript={onVoiceTranscript}
                   onStreamingTranscript={onVoiceTranscript}
+                  onConnectingStart={onVoiceConnectingStart}
                   onRecordingStart={onVoiceStart}
                   onRecordingEnd={onVoiceEnd}
                   onError={onVoiceError}

@@ -347,24 +347,33 @@ export function generateEditModeScript(componentId: string): string {
     });
 
     // Image elements - include SVGs and background images
+    // Also detect images in hidden tabs/carousels that may have 0 dimensions
     var markImageElement = function(el) {
       if (el.dataset.nsId) return;
       const rect = el.getBoundingClientRect();
-      if (rect.width < 20 || rect.height < 20) return;
       const tag = el.tagName ? el.tagName.toLowerCase() : '';
-      const isFullBleedBg = tag !== 'img' &&
-        tag !== 'svg' &&
+
+      // For <img> tags, always include them even if hidden (in tabs/carousels)
+      // This ensures users can see and edit all images in the settings panel
+      if (tag === 'img') {
+        el.dataset.nsId = 'img-' + imageIndex++;
+        el.classList.add('ns-editable-image');
+        return;
+      }
+
+      // For other elements, require minimum size
+      if (rect.width < 20 || rect.height < 20) return;
+
+      const isFullBleedBg = tag !== 'svg' &&
         rect.width >= window.innerWidth * 0.98 &&
         rect.height >= window.innerHeight * 0.98;
       if (tag === 'body' || tag === 'html' || isFullBleedBg) return;
-      if (tag === 'img') {
-        // Always detect img elements - users need to edit placeholder/empty images
-      }
+
       if (tag === 'svg') {
         const hasImageChild = !!el.querySelector('image, img, use');
         if (!hasImageChild) return;
       }
-      if (tag !== 'img' && tag !== 'svg') {
+      if (tag !== 'svg') {
         const bg = extractBackgroundImage(getComputedStyle(el));
         if (!bg) return;
       }
