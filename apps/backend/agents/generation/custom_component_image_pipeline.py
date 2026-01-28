@@ -150,6 +150,7 @@ async def resolve_images(
             context_parts.append(content[:200])
 
         slide_search_context = " | ".join([part for part in context_parts if part])
+        logger.info(f"[IMAGE_PIPELINE] Built search context: {slide_search_context[:200]}...")
         cache = ImageSearchCache(deck_uuid or slide_context.get("deck_uuid"))
         serp_results = await _search_images_for_props(
             remaining,

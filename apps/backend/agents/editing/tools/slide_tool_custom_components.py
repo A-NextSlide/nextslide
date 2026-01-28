@@ -844,6 +844,14 @@ JSON: {{"ops":[{{"old_string":"exact from HTML","new_string":"replacement"}}],"n
             pass
         return dd
 
+    # Upload any external image URLs to our bucket
+    try:
+        from agents.generation.custom_component_image_pipeline import upload_external_urls_to_bucket
+        new_html = run_async(upload_external_urls_to_bucket(new_html))
+        logger.info("[TARGETED_EDIT] Uploaded external URLs to bucket")
+    except Exception as e:
+        logger.warning(f"[TARGETED_EDIT] Failed to upload external URLs: {e}")
+
     # Resolve any remaining placeholder images (src="placeholder" with alt text)
     try:
         from agents.generation.custom_component_image_pipeline import resolve_remaining_placeholders
@@ -1125,6 +1133,15 @@ Return ONLY the complete updated HTML (starting with <!DOCTYPE html>)."""
         new_html = new_html.split('```html')[1].split('```')[0].strip()
     elif '```' in new_html:
         new_html = new_html.split('```')[1].split('```')[0].strip()
+
+    # Upload external URLs to bucket (this path bypasses the generator)
+    try:
+        from agents.generation.custom_component_image_pipeline import upload_external_urls_to_bucket, resolve_remaining_placeholders
+        new_html = run_async(upload_external_urls_to_bucket(new_html))
+        new_html = run_async(resolve_remaining_placeholders(new_html))
+        logger.info("[custom_component_rewrite] Processed images in fallback path")
+    except Exception as e:
+        logger.warning(f"[custom_component_rewrite] Failed to process images in fallback: {e}")
 
     # Build diff
     deck_diff = DeckDiff(DeckDiffBase())

@@ -653,6 +653,14 @@ def search_images(
 
     logger.info(f"[IMAGES] Replaced image [{selected_idx}]: {old_url[:40]}... -> {new_url[:40]}...")
 
+    # Upload any external image URLs to our bucket
+    try:
+        from agents.generation.custom_component_image_pipeline import upload_external_urls_to_bucket
+        new_html = loop.run_until_complete(upload_external_urls_to_bucket(new_html))
+        logger.info("[IMAGES] Uploaded external URLs to bucket")
+    except Exception as e:
+        logger.warning(f"[IMAGES] Failed to upload external URLs: {e}")
+
     # Resolve any remaining placeholder images (src="placeholder" with alt text)
     # This handles cases where the HTML has other placeholders that need resolution
     try:

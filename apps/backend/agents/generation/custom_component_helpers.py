@@ -590,25 +590,65 @@ async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> s
     """Use AI to refine a search query into a visually striking image search term."""
     topic = _extract_topic_from_context(slide_context)
 
+    # Check if original query is generic/meaningless (outside try so available in fallback)
+    generic_terms = {'main', 'visual', 'content', 'item', 'hero', 'featured', 'primary',
+                    'secondary', 'background', 'image', 'photo', 'picture', 'img',
+                    'cover', 'banner', 'thumbnail', 'card', 'stage', 'phase', 'scene',
+                    'boss', 'level', 'frame', 'default', 'sample', 'placeholder'}
+    query_words = set(query.lower().split())
+    is_meaningless = len(query_words) <= 2 and query_words.issubset(generic_terms)
+
     try:
         client, model_name = get_client(IMAGE_SEARCH_MODEL)
 
-        prompt = f"""Create a specific image search query by combining the original query with the slide context.
+        if is_meaningless:
+            # For meaningless queries, generate entirely from context
+            prompt = f"""Generate an image search query based ONLY on the slide context below.
+The original prop name was "{query}" which is meaningless - IGNORE IT COMPLETELY.
+
+SLIDE CONTEXT: {slide_context[:600] if slide_context else 'Presentation slide'}
+
+YOUR TASK:
+1. Identify the MAIN SUBJECT of this presentation (person, game, product, company, concept, etc.)
+2. Generate a search query that would find a RELEVANT, HIGH-QUALITY image for this slide
+3. Focus on the specific topic, characters, people, or concepts mentioned
+
+OUTPUT: A 2-5 word image search query that captures the main visual subject.
+Return ONLY the search query, nothing else."""
+        else:
+            # For meaningful queries, refine without adding extraneous terms
+            query_word_count = len(query.split())
+            if query_word_count > 6:
+                # Query is already long - simplify it, don't add more
+                prompt = f"""Simplify this image search query to its essential terms.
 
 ORIGINAL QUERY: {query}
-SLIDE CONTEXT: {slide_context[:500] if slide_context else 'Presentation slide'}
 
 RULES:
-1. Read the slide context to understand the TOPIC (game, movie, company, product, person, etc.)
-2. COMBINE the original query WITH that topic to make it specific
-3. NEVER return just the topic alone - always include the original concept
-4. If the original query is generic (main, boss, phase, content, visual, item, etc.), infer what it refers to from context
+1. Extract the 3-5 MOST IMPORTANT words that describe the visual subject
+2. DO NOT add any new words or concepts
+3. Remove generic terms like "image", "photo", "render", "full body", etc.
+4. Keep character names, franchises, and specific descriptors
 
-OUTPUT FORMAT: [Topic/Franchise] + [Original Query Concept] + [Visual Descriptor]
-- 3-7 words total
-- Be specific and searchable
+Return ONLY the simplified search query (3-5 words max)."""
+            else:
+                # Short query - can enhance with context
+                prompt = f"""Refine this image search query.
 
-Return ONLY the search query."""
+ORIGINAL QUERY: {query}
+SLIDE CONTEXT: {slide_context[:300] if slide_context else 'Presentation slide'}
+
+RULES:
+1. Keep the EXACT subject from the original query
+2. DO NOT add unrelated terms or other image descriptions from context
+3. Only add context if it clarifies the SAME subject (e.g., brand name for a product)
+4. Make it a searchable 3-6 word phrase
+
+Return ONLY the refined search query."""
+
+        # Log what we're sending to AI for debugging
+        logger.info("[POST_SEARCH] Enhancing query '%s' (meaningless=%s)", query, is_meaningless)
+        logger.info("[POST_SEARCH] Context preview: %s", slide_context[:150] if slide_context else "NONE")
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -623,34 +663,43 @@ Return ONLY the search query."""
         )
 
         if response is None:
-            logger.debug("[POST_SEARCH] AI returned None for query: '%s'", query)
+            logger.warning("[POST_SEARCH] AI returned None for query: '%s'", query)
         else:
             enhanced = str(response).strip().strip('"\'')
-            # Reject if too long (more than ~6 words), contains refusal language, or is literal "None"
+            # Reject if too long (more than ~7 words), contains refusal language, or is literal "None"
             word_count = len(enhanced.split())
             is_valid = (
                 enhanced
                 and enhanced.lower() != "none"
-                and word_count <= 7
-                and len(enhanced) < 60
+                and word_count <= 8  # Allow slightly longer for context
+                and len(enhanced) < 70
                 and "cannot" not in enhanced.lower()
                 and "I " not in enhanced
+                and "sorry" not in enhanced.lower()
             )
             if is_valid:
-                logger.info("[POST_SEARCH] AI optimized query: '%s' -> '%s'", query, enhanced)
+                logger.info("[POST_SEARCH] ✅ AI enhanced: '%s' -> '%s'", query, enhanced)
                 return enhanced
+            else:
+                logger.warning("[POST_SEARCH] AI returned invalid response: '%s' (len=%d, words=%d)",
+                             enhanced[:50], len(enhanced), word_count)
     except Exception as e:
-        logger.debug("[POST_SEARCH] AI enhancement failed: %s", e)
+        logger.warning("[POST_SEARCH] AI enhancement failed: %s", e)
 
-    # Fallback: If we have a topic and the query is generic, prepend the topic
+    # Fallback: For generic queries, use topic alone if we have it
     cleaned = query.strip()
-    if topic and _is_generic_query(cleaned):
-        # Prepend topic to make the query more specific
-        enhanced_fallback = f"{topic} {cleaned}"
-        logger.info("[POST_SEARCH] Fallback: prepended topic: '%s' -> '%s'", query, enhanced_fallback)
-        return enhanced_fallback
+    if topic:
+        if is_meaningless:
+            # For meaningless queries, just use the topic
+            logger.info("[POST_SEARCH] Fallback: using topic alone: '%s' -> '%s'", query, topic)
+            return topic
+        elif _is_generic_query(cleaned):
+            # For semi-generic queries, prepend topic
+            enhanced_fallback = f"{topic} {cleaned}"
+            logger.info("[POST_SEARCH] Fallback: prepended topic: '%s' -> '%s'", query, enhanced_fallback)
+            return enhanced_fallback
 
-    logger.debug("[POST_SEARCH] Fallback cleaned query: '%s' -> '%s'", query, cleaned)
+    logger.warning("[POST_SEARCH] No enhancement possible for: '%s' (topic='%s')", query, topic)
     return cleaned if cleaned else query
 
 
@@ -809,6 +858,7 @@ async def _search_images_for_props(
 
                 async def try_search(q: str):
                     """Helper to perform search and extract photos."""
+                    logger.info(f"[POST_SEARCH] 🔍 SEARCHING SERPAPI: '{q}'")
                     res = await serpapi.search_images(q)
                     if asyncio.iscoroutine(res):
                         res = await res

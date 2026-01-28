@@ -424,7 +424,7 @@ export function useSendMessage({
               while (i < text.length) {
                 if (text[i] === '{') {
                   const remaining = text.slice(i);
-                  if (remaining.includes('"action"') && (remaining.includes('"update_slides"') || remaining.includes('"updated_slides"') || remaining.includes('"slides"'))) {
+                  if (remaining.includes('"action"') && (remaining.includes('"update_slides"') || remaining.includes('"updated_slides"') || remaining.includes('"slides"') || remaining.includes('"generate_outline"') || remaining.includes('"clarify"'))) {
                     let braceCount = 0;
                     let j = i;
                     let inString = false;

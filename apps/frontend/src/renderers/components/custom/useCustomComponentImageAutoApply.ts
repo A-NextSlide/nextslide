@@ -113,15 +113,43 @@ export const useCustomComponentImageAutoApply = ({
     const trimmedHtml = html.trim().toLowerCase();
     if (!trimmedHtml.startsWith('<!doctype html') && !trimmedHtml.startsWith('<html')) return;
 
-    // Skip auto-apply if HTML already has real images (backend already injected them)
-    // Check for ANY valid HTTPS URL in src attributes (not just specific domains)
-    // A real image URL is any https URL that's reasonably long (>20 chars suggests a real URL, not a placeholder)
+    // CRITICAL: Skip auto-apply if backend has already processed this component
+    // The backend prefetch is the source of truth - this auto-apply was causing wrong images to be injected
+
+    // Check 0: If there's a slide image cache with images for this slide, skip auto-apply entirely
+    // The image picker uses this cache - if it has images, backend has prefetched them
+    const slideContainer = document.querySelector('.slide-container[data-slide-id]');
+    const slideId = slideContainer?.getAttribute('data-slide-id') || '';
+    if (slideId && typeof window !== 'undefined' && window.__slideImageCache) {
+      const cachedEntry = window.__slideImageCache[slideId];
+      if (cachedEntry && cachedEntry.images && cachedEntry.images.length > 0) {
+        DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Skipping auto-apply - slide image cache has prefetched images for this slide');
+        return;
+      }
+    }
+
+    // Check 1: If HTML contains ANY Supabase URL, backend has processed it - DO NOT override
+    const hasSupabaseImages = /supabase|nextslide\.ai/i.test(html);
+    if (hasSupabaseImages) {
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Skipping auto-apply - backend has already injected Supabase images');
+      return;
+    }
+
+    // Check 2: If component has prefetched image props, backend handled it
+    const componentProps = component.props?.props || {};
+    const hasPrefetchedImages = Object.keys(componentProps).some(key =>
+      typeof componentProps[key] === 'string' &&
+      (componentProps[key].includes('supabase') || componentProps[key].includes('nextslide'))
+    );
+    if (hasPrefetchedImages) {
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Skipping auto-apply - component has prefetched image props');
+      return;
+    }
+
+    // Check 3: Skip if HTML already has real HTTPS images (not placeholders)
     const hasRealImages = /src=["']https?:\/\/[^"']{20,}["']/i.test(html) || /src=["']data:/i.test(html);
 
-    // Check if JavaScript arrays/objects contain real image URLs
-    // This indicates the backend has already injected images into the data, so we shouldn't try to "fix" template variables
-    // Pattern: image: "https://..." or src: "https://..." or similar in JS objects
-    // Match ANY https URL in image-related properties (not just specific domains)
+    // Check 4: JavaScript arrays/objects contain real image URLs
     const jsArrayHasRealImages = /(?:image|src|img|photo|thumbnail|picture|thumb)\s*:\s*["']https?:\/\/[^"']{10,}["']/i.test(html);
 
     if (jsArrayHasRealImages) {
@@ -129,8 +157,7 @@ export const useCustomComponentImageAutoApply = ({
       return;
     }
 
-    // Also skip if we detect template variables with corresponding real URLs in the same script block
-    // This catches cases like: items = [{ image: "https://...", thumbAlt: "..." }] with <img src="${item.image}">
+    // Check 5: Template variables with corresponding real URLs in the data
     const hasTemplateVarsWithData = /\$\{[^}]+\.(?:image|src|img|photo|thumbnail|picture|thumb)[^}]*\}/i.test(html) &&
       /(?:image|src|img|photo|thumbnail|picture|thumb)\s*:\s*["']https?:\/\//i.test(html);
 
@@ -139,7 +166,7 @@ export const useCustomComponentImageAutoApply = ({
       return;
     }
 
-    // Check for placeholders: literal "placeholder", template syntax ${}, or non-URL src values
+    // Check 6: Only proceed if there are actual placeholders that need filling
     const hasPlaceholders = /src=["']?(?:placeholder|\$\{)/i.test(html) || /src=["'](?!https?:|data:|blob:|\/\/)[^"']*["']/i.test(html);
 
     if (hasRealImages && !hasPlaceholders) {

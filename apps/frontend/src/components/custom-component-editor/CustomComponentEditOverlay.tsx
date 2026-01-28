@@ -490,6 +490,61 @@ export function generateEditModeScript(componentId: string): string {
         }
       });
 
+      // FIX: Detect and reset containers populated by JavaScript to prevent duplication
+      // When HTML is extracted and reloaded, JS runs again and would duplicate content
+      var scripts = clone.querySelectorAll('script');
+      var containersToReset = [];
+      scripts.forEach(function(script) {
+        var code = script.textContent || '';
+        if (code.includes('ns-custom-component-edit') || code.includes('NEXTSLIDE EDIT MODE')) return;
+
+        // Detect patterns that indicate JS renders into a container
+        var selectorMatches = [];
+
+        // Pattern: getElementById/querySelector with innerHTML or appendChild
+        var idMatches = code.match(/(?:getElementById|querySelector)\s*\(\s*['"]([^'"]+)['"]\s*\)/g) || [];
+        idMatches.forEach(function(m) {
+          var id = m.match(/['"]([^'"]+)['"]/);
+          if (id && (code.includes('.innerHTML') || code.includes('.appendChild') || code.includes('.insertAdjacentHTML'))) {
+            var sel = id[1];
+            if (!sel.startsWith('#') && !sel.startsWith('.') && !sel.includes(' ')) {
+              sel = '#' + sel;
+            }
+            if (selectorMatches.indexOf(sel) === -1) selectorMatches.push(sel);
+          }
+        });
+
+        // Pattern: forEach/map with innerHTML (common in AI-generated code)
+        if ((code.includes('.forEach') || code.includes('.map')) && code.includes('innerHTML')) {
+          var varMatches = code.match(/(?:const|let|var)\s+\w+\s*=\s*document\.(?:getElementById|querySelector)\s*\(\s*['"]([^'"]+)['"]\s*\)/g) || [];
+          varMatches.forEach(function(m) {
+            var id = m.match(/['"]([^'"]+)['"]/);
+            if (id) {
+              var sel = id[1];
+              if (!sel.startsWith('#') && !sel.startsWith('.') && !sel.includes(' ')) {
+                sel = '#' + sel;
+              }
+              if (selectorMatches.indexOf(sel) === -1) selectorMatches.push(sel);
+            }
+          });
+        }
+
+        selectorMatches.forEach(function(sel) {
+          if (containersToReset.indexOf(sel) === -1) containersToReset.push(sel);
+        });
+      });
+
+      // Reset containers that have multiple children (indicates JS rendered content)
+      containersToReset.forEach(function(selector) {
+        try {
+          var container = clone.querySelector(selector);
+          if (container && container.children.length > 1) {
+            console.log('[get-html] Resetting JS-rendered container:', selector, 'children:', container.children.length);
+            container.innerHTML = '';
+          }
+        } catch (e) { /* ignore invalid selectors */ }
+      });
+
       // Remove ns- classes from elements
       clone.querySelectorAll('[class*="ns-"]').forEach(function(el) {
         // Handle SVG elements where className is SVGAnimatedString, not string

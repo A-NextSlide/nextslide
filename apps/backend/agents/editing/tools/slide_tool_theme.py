@@ -79,6 +79,38 @@ def apply_theme_to_custom_components(
         f"[apply_theme_to_custom_components] Typography: {list(typography.keys()) if typography else 'None'}"
     )
 
+    # Extract fonts BEFORE processing components so we can include them in the diff
+    # This ensures component font props are updated alongside the HTML
+    extracted_heading_font = None
+    extracted_body_font = None
+
+    if typography:
+        # Extract heading font - try LLM format first, then deck theme format
+        if isinstance(typography.get('heading'), dict):
+            extracted_heading_font = typography['heading'].get('family')
+        elif isinstance(typography.get('heading'), str):
+            extracted_heading_font = typography['heading']
+        # Fallback to deck theme format (hero_title/hero_font)
+        if not extracted_heading_font:
+            if isinstance(typography.get('hero_title'), dict):
+                extracted_heading_font = typography['hero_title'].get('family')
+            elif isinstance(typography.get('hero_font'), str):
+                extracted_heading_font = typography['hero_font']
+
+        # Extract body font - try LLM format first, then deck theme format
+        if isinstance(typography.get('body'), dict):
+            extracted_body_font = typography['body'].get('family')
+        elif isinstance(typography.get('body'), str):
+            extracted_body_font = typography['body']
+        # Fallback to deck theme format (body_text/body_font)
+        if not extracted_body_font:
+            if isinstance(typography.get('body_text'), dict):
+                extracted_body_font = typography['body_text'].get('family')
+            elif isinstance(typography.get('body_font'), str):
+                extracted_body_font = typography['body_font']
+
+        logger.info(f"[apply_theme_to_custom_components] Extracted fonts for props - heading: {extracted_heading_font}, body: {extracted_body_font}")
+
     slides_to_update = []
     updated_count = 0
 
@@ -100,32 +132,71 @@ def apply_theme_to_custom_components(
             clean_html = strip_frontend_editing_scripts(html)
             themed_html = apply_theme_to_custom_component_html(clean_html, colors, typography)
 
-            # Log what changed
-            if themed_html != clean_html:
-                # Find actual differences (log first change for debugging)
-                import difflib
-                diff = list(difflib.unified_diff(
-                    clean_html[:2000].splitlines(),
-                    themed_html[:2000].splitlines(),
-                    lineterm='',
-                    n=0
-                ))
-                if diff:
-                    logger.info(f"[apply_theme_to_custom_components] Sample diff: {diff[:10]}")
+            # Check if we need to update this component:
+            # 1. HTML changed (colors/fonts applied to inline styles)
+            # 2. OR font props need updating (even if HTML uses CSS vars that didn't change)
+            html_changed = themed_html != clean_html
 
-            if themed_html != clean_html:
-                comp_id = comp.get("id")
-                components_to_update.append(
-                    ComponentDiffBase(
-                        id=comp_id,
-                        type="CustomComponent",
-                        props={"render": themed_html}
-                    )
-                )
-                updated_count += 1
+            # Check if component has old font props that need updating
+            current_hero_font = props.get("heroFont")
+            current_body_font = props.get("bodyFont")
+            current_font_family = props.get("fontFamily")
+
+            hero_font = extracted_heading_font or extracted_body_font
+            body_font = extracted_body_font or extracted_heading_font
+
+            font_props_need_update = False
+            if hero_font or body_font:
+                # Need to update if:
+                # 1. Component has ANY font prop set (we need to override it)
+                # 2. OR any existing font prop differs from new value
+                has_any_font_prop = current_hero_font or current_body_font or current_font_family
+                if has_any_font_prop:
+                    # Check if any differ - if so, update
+                    if current_hero_font != hero_font or current_body_font != body_font or current_font_family != body_font:
+                        font_props_need_update = True
+
+            # Log what we're checking
+            if font_props_need_update:
                 logger.info(
-                    f"[apply_theme_to_custom_components] Updated component {comp_id} on slide {slide_id}"
+                    f"[apply_theme_to_custom_components] Font props need update: "
+                    f"current=({current_hero_font}, {current_body_font}, {current_font_family}) -> new=({hero_font}, {body_font})"
                 )
+
+            # Update if EITHER HTML changed OR font props need updating
+            if html_changed or font_props_need_update:
+                comp_id = comp.get("id")
+                # Build props dict with render AND font props
+                # Font props MUST be included to override existing component font overrides
+                # Otherwise old fonts persist even after HTML is updated
+                new_props = {}
+
+                # Only include render if HTML actually changed
+                if html_changed:
+                    new_props["render"] = themed_html
+
+                # Include font props if typography is being changed
+                if hero_font or body_font:
+                    new_props["heroFont"] = hero_font
+                    new_props["bodyFont"] = body_font
+                    new_props["fontFamily"] = body_font  # Default to body font
+                    logger.info(
+                        f"[apply_theme_to_custom_components] Including font props: heroFont={hero_font}, bodyFont={body_font}"
+                    )
+
+                if new_props:  # Only add if we have something to update
+                    components_to_update.append(
+                        ComponentDiffBase(
+                            id=comp_id,
+                            type="CustomComponent",
+                            props=new_props
+                        )
+                    )
+                    updated_count += 1
+                    logger.info(
+                        f"[apply_theme_to_custom_components] Updated component {comp_id} on slide {slide_id} "
+                        f"(html_changed={html_changed}, font_props_updated={font_props_need_update})"
+                    )
 
         if components_to_update:
             slides_to_update.append(
@@ -143,27 +214,22 @@ def apply_theme_to_custom_components(
     # This is critical - the frontend injects fonts based on deck theme, not component HTML
     theme_updates = {}
 
-    if typography:
-        # Extract font families from typography arg
-        heading_font = None
-        body_font = None
+    # Use the pre-extracted fonts from above (extracted_heading_font, extracted_body_font)
+    if extracted_heading_font or extracted_body_font:
+        hero_font = extracted_heading_font or extracted_body_font
+        body_font = extracted_body_font or extracted_heading_font
 
-        if isinstance(typography.get('heading'), dict):
-            heading_font = typography['heading'].get('family')
-        elif isinstance(typography.get('heading'), str):
-            heading_font = typography['heading']
-
-        if isinstance(typography.get('body'), dict):
-            body_font = typography['body'].get('family')
-        elif isinstance(typography.get('body'), str):
-            body_font = typography['body']
-
-        if heading_font or body_font:
-            theme_updates['typography'] = {
-                'hero_font': heading_font or body_font,
-                'body_font': body_font or heading_font,
-            }
-            logger.info(f"[apply_theme_to_custom_components] Theme updates: {theme_updates}")
+        # Include ALL typography formats to ensure complete override
+        # The deck theme can have multiple font key formats that need updating
+        theme_updates['typography'] = {
+            # New format (used by component props)
+            'hero_font': hero_font,
+            'body_font': body_font,
+            # Legacy format (body_text/hero_title - may be read by frontend)
+            'body_text': {'family': body_font},
+            'hero_title': {'family': hero_font},
+        }
+        logger.info(f"[apply_theme_to_custom_components] Theme updates: {theme_updates}")
 
     if colors:
         theme_updates['color_palette'] = colors

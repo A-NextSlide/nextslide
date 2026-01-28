@@ -329,7 +329,6 @@ export const useCustomComponentEditStore = create<CustomComponentEditState>((set
 
   updateElementImage: (elementId, newSrc) => {
     const { iframeRef } = get();
-    console.log('[Store] updateElementImage:', { elementId, newSrc: newSrc?.slice(0, 60), hasIframe: !!iframeRef?.current?.contentWindow });
     if (iframeRef?.current?.contentWindow) {
       iframeRef.current.contentWindow.postMessage({
         target: 'ns-custom-component-edit',
@@ -337,8 +336,6 @@ export const useCustomComponentEditStore = create<CustomComponentEditState>((set
         elementId,
         newSrc,
       }, '*');
-    } else {
-      console.warn('[Store] No iframe ref for image update');
     }
   },
 

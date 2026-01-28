@@ -73,6 +73,42 @@ class ErrorBoundary extends React.Component<
 }
 
 /**
+ * Strip injected edit mode scripts and styles from HTML before saving.
+ * This prevents script accumulation when HTML is edited and saved multiple times.
+ */
+const stripInjectedScripts = (html: string): string => {
+  if (!html) return html;
+  let result = html;
+
+  // Remove NEXTSLIDE EDIT MODE markers
+  result = result.replace(/<!-- NEXTSLIDE EDIT MODE V2 -->/g, '');
+
+  // Remove edit mode styles block (id="ns-edit-mode-styles")
+  result = result.replace(/<style[^>]*id=["']ns-edit-mode-styles["'][^>]*>[\s\S]*?<\/style>/gi, '');
+
+  // Remove ns-placeholder-wrapper styles and scripts
+  result = result.replace(/<style>\s*\.ns-placeholder-wrapper[\s\S]*?<\/style>\s*<script>[\s\S]*?ns-placeholder-wrapper[\s\S]*?<\/script>/gi, '');
+
+  // Remove ns-image-processing-overlay styles and scripts
+  result = result.replace(/<style>\s*\.ns-image-processing-overlay[\s\S]*?<\/style>\s*<script>[\s\S]*?ns-image-processing-overlay[\s\S]*?<\/script>/gi, '');
+
+  // Remove standalone scripts containing our markers
+  result = result.replace(/<script>[\s\S]*?ns-custom-component-edit[\s\S]*?<\/script>/gi, '');
+  result = result.replace(/<script>[\s\S]*?NEXTSLIDE EDIT MODE[\s\S]*?<\/script>/gi, '');
+
+  // Remove window.parent.postMessage image click handler scripts
+  result = result.replace(/<script>[\s\S]*?customcomponent:image-click[\s\S]*?<\/script>/gi, '');
+
+  // Remove ns-slide-zoom relay scripts
+  result = result.replace(/<script>[\s\S]*?ns-slide-zoom[\s\S]*?<\/script>/gi, '');
+
+  // Clean up multiple consecutive newlines
+  result = result.replace(/\n{3,}/g, '\n\n');
+
+  return result;
+};
+
+/**
  * Simplified custom component renderer
  * CRITICAL FIXES:
  * 1. Stable iframe rendering to prevent flashing
@@ -1237,6 +1273,51 @@ export const CustomComponentRenderer: React.FC<{
           DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Edit mode ready in iframe');
         }
 
+        // Handle image update - update the HTML with the new image URL
+        if (event.data.type === 'image-updated' || event.data.type === 'image-loaded') {
+          const { elementId, newSrc } = event.data;
+          if (elementId && newSrc && stableIframeSrcDoc) {
+            // Find the element's old src in the HTML and replace it
+            // First, try to find an img tag with this data-ns-id
+            const imgPattern = new RegExp(
+              `(<[^>]*data-ns-id=["']${elementId}["'][^>]*(?:src=["']))([^"']+)(["'])`,
+              'gi'
+            );
+            let updatedHtml = stableIframeSrcDoc.replace(imgPattern, `$1${newSrc}$3`);
+
+            // If no match with data-ns-id, try matching by the old src directly
+            if (updatedHtml === stableIframeSrcDoc && selectedElement?.src) {
+              const oldSrc = selectedElement.src;
+              if (oldSrc && oldSrc !== newSrc && stableIframeSrcDoc.includes(oldSrc)) {
+                updatedHtml = stableIframeSrcDoc.replace(oldSrc, newSrc);
+              }
+            }
+
+            if (updatedHtml !== stableIframeSrcDoc) {
+              // Strip injected scripts before saving
+              const cleanHtml = stripInjectedScripts(updatedHtml);
+
+              updateComponent(component.id, {
+                props: {
+                  ...component.props,
+                  render: cleanHtml
+                }
+              });
+              DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Updated HTML with new image');
+
+              // Persist changes to backend
+              setTimeout(() => {
+                try {
+                  useEditorStore.getState().applyDraftChanges();
+                  DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Persisted image changes to backend');
+                } catch (e) {
+                  console.error('[CustomComponent] Failed to persist image changes:', e);
+                }
+              }, 300);
+            }
+          }
+        }
+
         if (event.data.type === 'component-clicked') {
           // Dispatch a custom event that ComponentRenderer can catch for selection
           const clickEvent = new CustomEvent('customcomponent:request-select', {
@@ -1250,7 +1331,7 @@ export const CustomComponentRenderer: React.FC<{
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [isIframeComponent, isEditing, component.id, component.slideId, stableIframeSrcDoc, updateComponent, component.props]);
+  }, [isIframeComponent, isEditing, component.id, component.slideId, stableIframeSrcDoc, updateComponent, component.props, selectedElement]);
 
   // Render the component content (non-iframe path)
   const content = useMemo(() => {
@@ -1427,11 +1508,15 @@ export const CustomComponentRenderer: React.FC<{
 
     DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] HTML update from overlay, length:', newHtml.length);
 
-    // Update the component with new HTML
+    // CRITICAL: Strip injected scripts before saving to prevent accumulation
+    const cleanHtml = stripInjectedScripts(newHtml);
+    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] After stripping injected scripts, length:', cleanHtml.length);
+
+    // Update the component with clean HTML
     updateComponent(component.id, {
       props: {
         ...component.props,
-        render: newHtml
+        render: cleanHtml
       }
     });
 
@@ -1472,14 +1557,17 @@ export const CustomComponentRenderer: React.FC<{
     }
 
     if (updatedHtml !== stableIframeSrcDoc) {
-      // Update the component with new HTML
+      // CRITICAL: Strip injected scripts before saving to prevent accumulation
+      const cleanHtml = stripInjectedScripts(updatedHtml);
+
+      // Update the component with clean HTML
       updateComponent(component.id, {
         props: {
           ...component.props,
-          render: updatedHtml
+          render: cleanHtml
         }
       });
-      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Updated HTML with new text');
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Updated HTML with new text (stripped injected scripts)');
 
       // CRITICAL: Immediately persist changes to backend
       setTimeout(() => {
@@ -1518,11 +1606,14 @@ export const CustomComponentRenderer: React.FC<{
         }, '*');
       }
 
-      // THEN: Update the component state
+      // CRITICAL: Strip injected scripts before saving to prevent accumulation
+      const cleanHtml = stripInjectedScripts(updatedHtml);
+
+      // THEN: Update the component state with clean HTML
       updateComponent(component.id, {
         props: {
           ...component.props,
-          render: updatedHtml
+          render: cleanHtml
         }
       });
 
@@ -1547,26 +1638,39 @@ export const CustomComponentRenderer: React.FC<{
     DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] AI Edit request:', { type: element.type, id: element.id, instruction });
 
     // Create a descriptive label for the component chip in chat
-    let label = 'Custom Component';
+    // Generate user-friendly labels for the element (no technical jargon)
+    let label = 'Slide Element';
+    let friendlyType = 'element';
+
     if (element.type === 'text' && element.content) {
       const preview = element.content.slice(0, 20);
-      label = `Text: "${preview}${element.content.length > 20 ? '...' : ''}"`;
+      label = `"${preview}${element.content.length > 20 ? '...' : ''}"`;
+      friendlyType = 'text';
     } else if (element.type === 'image') {
-      label = 'Image';
+      label = element.alt || 'Image';
+      friendlyType = 'image';
     } else if (element.type === 'container') {
-      label = element.tagName || 'Section';
+      // Use friendly names instead of HTML tags
+      const tagLower = (element.tagName || '').toLowerCase();
+      if (tagLower === 'section' || tagLower === 'article') friendlyType = 'section';
+      else if (tagLower === 'header') friendlyType = 'header';
+      else if (tagLower === 'footer') friendlyType = 'footer';
+      else if (tagLower === 'nav') friendlyType = 'navigation';
+      else if (tagLower === 'aside') friendlyType = 'sidebar';
+      else friendlyType = 'content block';
+      label = friendlyType.charAt(0).toUpperCase() + friendlyType.slice(1);
     }
 
-    // Build the prompt with SPECIFIC element targeting info
+    // Build the prompt with clear targeting but user-friendly language
     let prompt = '';
 
     if (element.type === 'text' && element.content) {
-      prompt = `In this custom HTML component, find and edit ONLY this specific text element: "${element.content.slice(0, 150)}${element.content.length > 150 ? '...' : ''}"\n\nMake this change: ${instruction}\n\nIMPORTANT: Only modify this exact text element, do not change anything else.`;
+      prompt = `Edit this text on the slide: "${element.content.slice(0, 100)}${element.content.length > 100 ? '...' : ''}"\n\nChange: ${instruction}\n\n[Target: text element only]`;
     } else if (element.type === 'image') {
-      prompt = `In this custom HTML component, edit the image${element.alt ? ` with alt text "${element.alt}"` : ''}.\n\nMake this change: ${instruction}\n\nIMPORTANT: Only modify this specific image element.`;
+      prompt = `Edit this image on the slide${element.alt ? ` (${element.alt})` : ''}.\n\nChange: ${instruction}\n\n[Target: image element only]`;
     } else if (element.type === 'container') {
-      const contentPreview = element.content ? element.content.slice(0, 100) : '';
-      prompt = `In this custom HTML component, find and edit ONLY the ${element.tagName || 'section'} element${contentPreview ? ` that contains: "${contentPreview}..."` : ''}.\n\nMake this change: ${instruction}\n\nIMPORTANT: Only modify this specific ${element.tagName || 'section'} element and its contents, do not change other parts of the component.`;
+      const contentPreview = element.content ? element.content.slice(0, 80).replace(/\s+/g, ' ').trim() : '';
+      prompt = `Edit this ${friendlyType} on the slide${contentPreview ? `: "${contentPreview}..."` : ''}.\n\nChange: ${instruction}\n\n[Target: this ${friendlyType} only]`;
     } else {
       prompt = instruction;
     }
@@ -1600,9 +1704,12 @@ export const CustomComponentRenderer: React.FC<{
   // Handle element selection from overlay
   const handleElementSelect = useCallback((element: DetectedElement | null, cursorX?: number, cursorY?: number) => {
     setSelectedElement(element);
+    // Reset chat state when selecting a new element (start with sparkle button, not expanded)
+    setShowAiChatBubble(false);
+    setAiChatMessage('');
 
-    // Set cursor position for toolbar/panel positioning (used by image and container)
-    if (element && (element.type === 'image' || element.type === 'container')) {
+    // Set cursor position for toolbar/panel positioning (used by all element types)
+    if (element) {
       if (cursorX !== undefined && cursorY !== undefined) {
         setCursorPosition({ x: cursorX, y: cursorY });
       } else {
@@ -1748,301 +1855,324 @@ export const CustomComponentRenderer: React.FC<{
           />
         )}
 
-        {/* TEXT ELEMENT - Small floating AI button (doesn't block editing) */}
+        {/* TEXT ELEMENT - AI sparkle button that expands into chat */}
         {/* Safety check: only render portal if document.body exists and not iOS (prevents mobile crash) */}
-        {selectedElement && selectedElement.type === 'text' && typeof document !== 'undefined' && document.body && !BROWSER.isIOS && createPortal(
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: 'fixed',
-              // Position at top-right of component (iframe), not overlapping
-              top: Math.max(60, (iframeRef.current?.getBoundingClientRect().top || 0) + 8),
-              left: Math.min(
-                typeof window !== 'undefined' ? window.innerWidth - 100 : 300, // Don't go off right edge
-                (iframeRef.current?.getBoundingClientRect().right || 0) + 8
-              ),
-              zIndex: 9999,
-              display: 'flex',
-              gap: '4px',
-            }}
-          >
-            {/* AI button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowAiChatBubble(!showAiChatBubble);
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              title="Edit with AI"
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '8px',
-                border: '1px solid #e5e5e5',
-                background: showAiChatBubble ? '#FF4301' : 'white',
-                color: showAiChatBubble ? 'white' : '#FF4301',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 3v18M3 12h18M7.5 7.5l9 9M16.5 7.5l-9 9" />
-              </svg>
-            </button>
-            {/* Close button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedElement(null);
-                setShowAiChatBubble(false);
-                setAiChatMessage('');
-                try {
-                  iframeRef.current?.contentWindow?.postMessage({
-                    target: 'ns-custom-component-edit',
-                    type: 'deselect'
-                  }, '*');
-                } catch (err) {
-                  // Ignore postMessage errors during unmount
-                }
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '8px',
-                border: '1px solid #e5e5e5',
-                background: 'white',
-                color: '#666',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
+        {selectedElement && selectedElement.type === 'text' && typeof document !== 'undefined' && document.body && !BROWSER.isIOS && (() => {
+          // bounds are already in viewport coordinates (used for fixed positioning)
+          const panelWidth = showAiChatBubble ? 300 : 30;
 
-            {/* AI Chat popup - only shows when AI button is clicked */}
-            {showAiChatBubble && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  position: 'absolute',
-                  top: '40px',
-                  left: 0,
-                  width: '280px',
-                  background: 'white',
-                  borderRadius: '12px',
-                  border: '1px solid #e5e5e5',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-                  overflow: 'hidden',
-                }}
-              >
-                {/* Input area */}
-                <div style={{ padding: '12px 12px 8px 12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ width: '2px', height: '16px', backgroundColor: '#FF4301', borderRadius: '1px' }} />
-                    <input
-                      type="text"
-                      value={aiChatMessage}
-                      onChange={(e) => setAiChatMessage(e.target.value)}
-                      placeholder="Rewrite or enhance..."
-                      disabled={isAiProcessing}
-                      autoFocus
-                      style={{
-                        flex: 1,
-                        border: 'none',
-                        outline: 'none',
-                        fontSize: '13px',
-                        color: '#333',
-                        background: 'transparent',
-                      }}
-                      onKeyDown={(e) => {
-                        e.stopPropagation();
-                        if (e.key === 'Enter' && !e.shiftKey && aiChatMessage.trim() && !isAiProcessing && selectedElement) {
-                          e.preventDefault();
-                          handleElementAiEdit(selectedElement, aiChatMessage.trim());
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-                {/* Bottom bar with suggestions + send */}
-                <div style={{ padding: '6px 12px 10px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ display: 'flex', gap: '4px', flex: 1, overflowX: 'auto' }}>
-                    {['Make punchier', 'Add flair', 'Simplify'].map(label => (
-                      <button
-                        key={label}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!isAiProcessing && selectedElement) {
-                            handleElementAiEdit(selectedElement, label);
-                          }
-                        }}
-                        disabled={isAiProcessing}
-                        style={{
-                          padding: '4px 10px',
-                          background: '#f5f5f5',
-                          border: 'none',
-                          borderRadius: '12px',
-                          fontSize: '10px',
-                          cursor: isAiProcessing ? 'default' : 'pointer',
-                          color: '#666',
-                          fontWeight: 500,
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ width: '1px', height: '18px', backgroundColor: '#e5e5e5' }} />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (aiChatMessage.trim() && !isAiProcessing && selectedElement) {
-                        handleElementAiEdit(selectedElement, aiChatMessage.trim());
-                      }
-                    }}
-                    disabled={!aiChatMessage.trim() || isAiProcessing}
-                    style={{
-                      width: '26px',
-                      height: '26px',
-                      borderRadius: '50%',
-                      border: 'none',
-                      background: (aiChatMessage.trim() && !isAiProcessing) ? '#FF4301' : '#e5e5e5',
-                      cursor: (aiChatMessage.trim() && !isAiProcessing) ? 'pointer' : 'default',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-                      <polyline points="18 15 12 9 6 15" />
-                    </svg>
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </motion.div>,
-          document.body
-        )}
+          // Position at top-right corner of the element's bounding box
+          let posLeft = selectedElement.bounds.x + selectedElement.bounds.width + 8;
+          let posTop = selectedElement.bounds.y;
 
-        {/* CONTAINER ELEMENT AI EDIT - ChatPanel style */}
-        {/* Safety check: only render portal if document.body exists and not iOS (prevents mobile crash) */}
-        {selectedElement && selectedElement.type === 'container' && typeof document !== 'undefined' && document.body && !BROWSER.isIOS && (() => {
-          // Position at top-right of the selected element, shift left if needed to stay in slide
-          const panelWidth = 300;
-          const panelHeight = 280;
-          const padding = 12;
-
-          // Get element and iframe position in viewport coordinates
-          const iframeRect = iframeRef.current?.getBoundingClientRect();
-          const elementRight = (iframeRect?.left || 0) + selectedElement.bounds.x + selectedElement.bounds.width;
-          const elementTop = (iframeRect?.top || 0) + selectedElement.bounds.y;
-
-          // Use iframe right edge as the boundary (not viewport) to avoid overlapping sidebar
-          // Safety check for window access
+          // Keep within viewport
           const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
           const windowHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
-          const maxRight = iframeRect?.right || windowWidth;
 
-          // Position at top-right corner of element
-          let panelLeft = elementRight + padding;
-          let panelTop = elementTop;
-
-          // If it would go past the slide area, shift left just enough to fit
-          if (panelLeft + panelWidth > maxRight) {
-            panelLeft = maxRight - panelWidth - padding;
+          if (posLeft + panelWidth > windowWidth - 20) {
+            posLeft = selectedElement.bounds.x - panelWidth - 8; // Position to the left instead
           }
-
-          // Ensure left doesn't go past the left edge of the iframe
-          const minLeft = iframeRect?.left || padding;
-          if (panelLeft < minLeft) {
-            panelLeft = minLeft;
-          }
-
-          // Ensure top stays within viewport
-          panelTop = Math.max(padding, Math.min(panelTop, windowHeight - panelHeight - padding));
+          posTop = Math.max(60, Math.min(posTop, windowHeight - 200));
 
           return createPortal(
           <AnimatePresence>
             <motion.div
-              initial={{ opacity: 0, y: 10, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: posTop,
+                left: posLeft,
+                zIndex: 9999,
+              }}
+            >
+              {/* Collapsed: Just the AI sparkle button */}
+              {!showAiChatBubble ? (
+                <motion.button
+                  initial={{ scale: 0.8 }}
+                  animate={{ scale: 1 }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowAiChatBubble(true);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title="Edit with AI"
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #FF6B00 0%, #FF4301 100%)',
+                    color: 'white',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 2px 8px rgba(255, 67, 1, 0.3)',
+                  }}
+                >
+                  {/* AI Sparkle icon */}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
+                    <path d="M5 19l1 3 1-3M19 16l1 3 1-3" />
+                  </svg>
+                </motion.button>
+              ) : (
+                /* Expanded: Chat input box */
+                <motion.div
+                  initial={{ opacity: 0, width: 36, height: 36 }}
+                  animate={{ opacity: 1, width: 300, height: 'auto' }}
+                  exit={{ opacity: 0, width: 36, height: 36 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    background: 'white',
+                    borderRadius: '10px',
+                    border: '1px solid #e5e5e5',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* Close button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowAiChatBubble(false);
+                      setAiChatMessage('');
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    style={{
+                      position: 'absolute',
+                      top: '8px',
+                      right: '8px',
+                      padding: '4px',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: '#999',
+                      zIndex: 10,
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+
+                  {/* Input area */}
+                  <div style={{ padding: '12px 12px 8px 12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '2px', height: '16px', backgroundColor: '#FF4301', borderRadius: '1px' }} />
+                      <input
+                        type="text"
+                        value={aiChatMessage}
+                        onChange={(e) => setAiChatMessage(e.target.value)}
+                        placeholder="Describe your changes..."
+                        disabled={isAiProcessing}
+                        autoFocus
+                        style={{
+                          flex: 1,
+                          border: 'none',
+                          outline: 'none',
+                          fontSize: '14px',
+                          color: '#333',
+                          background: 'transparent',
+                        }}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter' && !e.shiftKey && aiChatMessage.trim() && !isAiProcessing && selectedElement) {
+                            e.preventDefault();
+                            handleElementAiEdit(selectedElement, aiChatMessage.trim());
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                  {/* Bottom bar with suggestions + send */}
+                  <div style={{ padding: '6px 12px 10px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ display: 'flex', gap: '4px', flex: 1, overflowX: 'auto' }}>
+                      {[
+                        { label: 'Make it punchier', prompt: 'Make this text more impactful and attention-grabbing. Use power words, create urgency, and make every word count while keeping the core message.' },
+                        { label: 'Executive tone', prompt: 'Rewrite in a polished, executive tone perfect for C-suite presentations. Be concise, confident, and strategic.' },
+                        { label: 'Add storytelling', prompt: 'Transform this into engaging narrative copy that connects emotionally and draws the reader in with storytelling techniques.' },
+                      ].map(({ label, prompt }) => (
+                        <button
+                          key={label}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isAiProcessing && selectedElement) {
+                              handleElementAiEdit(selectedElement, prompt);
+                            }
+                          }}
+                          disabled={isAiProcessing}
+                          style={{
+                            padding: '4px 10px',
+                            background: '#f5f5f5',
+                            border: 'none',
+                            borderRadius: '10px',
+                            fontSize: '11px',
+                            cursor: isAiProcessing ? 'default' : 'pointer',
+                            color: '#666',
+                            fontWeight: 500,
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ width: '1px', height: '18px', backgroundColor: '#e5e5e5' }} />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (aiChatMessage.trim() && !isAiProcessing && selectedElement) {
+                          handleElementAiEdit(selectedElement, aiChatMessage.trim());
+                        }
+                      }}
+                      disabled={!aiChatMessage.trim() || isAiProcessing}
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '50%',
+                        border: 'none',
+                        background: (aiChatMessage.trim() && !isAiProcessing) ? '#FF4301' : '#e5e5e5',
+                        cursor: (aiChatMessage.trim() && !isAiProcessing) ? 'pointer' : 'default',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                        <polyline points="18 15 12 9 6 15" />
+                      </svg>
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </motion.div>
+          </AnimatePresence>,
+          document.body
+        );
+        })()}
+
+        {/* CONTAINER ELEMENT AI EDIT - Sparkle button that expands to chat */}
+        {/* Safety check: only render portal if document.body exists and not iOS (prevents mobile crash) */}
+        {selectedElement && selectedElement.type === 'container' && typeof document !== 'undefined' && document.body && !BROWSER.isIOS && (() => {
+          // bounds are already in viewport coordinates (used for fixed positioning)
+          const panelWidth = showAiChatBubble ? 300 : 30;
+
+          // Position at top-right corner of the element's bounding box
+          let posLeft = selectedElement.bounds.x + selectedElement.bounds.width + 8;
+          let posTop = selectedElement.bounds.y;
+
+          // Keep within viewport
+          const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+          const windowHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+
+          if (posLeft + panelWidth > windowWidth - 20) {
+            posLeft = selectedElement.bounds.x - panelWidth - 8; // Position to the left instead
+          }
+          posTop = Math.max(60, Math.min(posTop, windowHeight - 200));
+
+          return createPortal(
+          <AnimatePresence>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
               transition={{ duration: 0.15 }}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               style={{
                 position: 'fixed',
-                top: panelTop,
-                left: panelLeft,
+                top: posTop,
+                left: posLeft,
                 zIndex: 9999,
-                width: `${panelWidth}px`,
               }}
             >
-              {/* ChatPanel-style input box */}
-              <div
-                style={{
-                  background: 'white',
-                  borderRadius: '16px',
-                  border: '1px solid #e5e5e5',
-                  boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
-                  overflow: 'hidden',
-                }}
-              >
-                {/* Close button */}
-                <button
+              {/* Collapsed state: sparkle button */}
+              {!showAiChatBubble && (
+                <motion.button
+                  initial={{ scale: 0.8 }}
+                  animate={{ scale: 1 }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedElement(null);
-                    setShowAiChatBubble(false);
-                    setAiChatMessage('');
-                    try {
-                      iframeRef.current?.contentWindow?.postMessage({
-                        target: 'ns-custom-component-edit',
-                        type: 'deselect'
-                      }, '*');
-                    } catch (err) {
-                      // Ignore postMessage errors during unmount
-                    }
+                    setShowAiChatBubble(true);
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
+                  title="Edit with AI"
                   style={{
-                    position: 'absolute',
-                    top: '12px',
-                    right: '12px',
-                    padding: '4px',
-                    background: 'transparent',
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
                     border: 'none',
+                    background: 'linear-gradient(135deg, #FF6B00 0%, #FF4301 100%)',
+                    color: 'white',
                     cursor: 'pointer',
-                    color: '#999',
-                    zIndex: 10,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 2px 8px rgba(255, 67, 1, 0.3)',
                   }}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M18 6L6 18M6 6l12 12" />
+                  {/* AI Sparkle icon */}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
+                    <path d="M5 19l1 3 1-3M19 16l1 3 1-3" />
                   </svg>
-                </button>
+                </motion.button>
+              )}
 
-                {/* Input area with drag-drop support */}
-                <>
+              {/* Expanded state: chat panel */}
+              {showAiChatBubble && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, width: 36 }}
+                  animate={{ opacity: 1, scale: 1, width: 300 }}
+                  transition={{ duration: 0.2 }}
+                  style={{
+                    background: 'white',
+                    borderRadius: '10px',
+                    border: '1px solid #e5e5e5',
+                    boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* Close button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowAiChatBubble(false);
+                      setAiChatMessage('');
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    style={{
+                      position: 'absolute',
+                      top: '10px',
+                      right: '10px',
+                      padding: '4px',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: '#999',
+                      zIndex: 10,
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+
+                  {/* Input area with drag-drop support */}
+                  <>
                   <div
                     style={{
                       padding: '12px',
@@ -2147,25 +2277,33 @@ export const CustomComponentRenderer: React.FC<{
                     {/* Suggestions */}
                     <div style={{ display: 'flex', gap: '4px', flex: 1, overflowX: 'auto' }}>
                       {(selectedElement?.tagName?.toLowerCase().includes('img') || selectedElement?.content?.includes('image')
-                        ? ['Remove background', 'Add soft shadow', 'Round corners']
-                        : ['Glassmorphism + blur', 'Floating card', 'Gradient mesh bg']
-                      ).map(label => (
+                        ? [
+                            { label: 'Cinematic look', prompt: 'Apply cinematic color grading with dramatic contrast, rich shadows, and film-like tones that make this image feel like a movie still.' },
+                            { label: 'Remove background', prompt: 'Remove the background from this image completely, keeping only the main subject with clean edges.' },
+                            { label: 'Soft glow effect', prompt: 'Add a soft, dreamy glow effect around the image with subtle light bloom and ethereal atmosphere.' },
+                          ]
+                        : [
+                            { label: 'Glassmorphism', prompt: 'Apply modern glassmorphism: frosted glass effect with backdrop blur, subtle transparency, soft white border, and elegant shadow.' },
+                            { label: 'Floating 3D card', prompt: 'Create a floating 3D card effect with layered shadows, subtle rotation on hover-ready styling, and premium depth.' },
+                            { label: 'Neon glow', prompt: 'Add vibrant neon glow styling with glowing borders, color accent shadows, and cyberpunk-inspired aesthetics.' },
+                          ]
+                      ).map(({ label, prompt }) => (
                         <button
                           key={label}
                           onClick={(e) => {
                             e.stopPropagation();
                             if (!isAiProcessing && selectedElement) {
-                              handleElementAiEdit(selectedElement, label);
+                              handleElementAiEdit(selectedElement, prompt);
                             }
                           }}
                           disabled={isAiProcessing}
                           onMouseDown={(e) => e.stopPropagation()}
                           style={{
-                            padding: '4px 10px',
+                            padding: '5px 12px',
                             background: '#f5f5f5',
                             border: 'none',
-                            borderRadius: '12px',
-                            fontSize: '10px',
+                            borderRadius: '8px',
+                            fontSize: '11px',
                             cursor: isAiProcessing ? 'default' : 'pointer',
                             color: '#666',
                             fontWeight: 500,
@@ -2214,7 +2352,8 @@ export const CustomComponentRenderer: React.FC<{
                     </button>
                   </div>
                 </>
-              </div>
+                </motion.div>
+              )}
             </motion.div>
           </AnimatePresence>,
           document.body

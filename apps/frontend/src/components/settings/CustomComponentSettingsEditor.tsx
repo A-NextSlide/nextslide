@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Code, Zap, Type, Image, ChevronDown, ChevronRight, Maximize2, Square, AlignLeft, AlignCenter, AlignRight, AlignJustify, RefreshCw } from 'lucide-react';
+import { Code, Zap, Type, Image, ChevronDown, ChevronRight, Maximize2, Square, AlignLeft, AlignCenter, AlignRight, AlignJustify } from 'lucide-react';
 import { parseCustomComponentCode, ParsedVariable, convertToPropsBasedCode } from '@/utils/customComponentParser';
 import AdvancedCodeEditor from '@/components/ui/AdvancedCodeEditor';
 import { Textarea } from '@/components/ui/textarea';
@@ -652,17 +652,18 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   const [showCodeEditor, setShowCodeEditor] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState<Record<string, boolean>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    selected: false,  // Selected element section collapsed by default
     text: false,
-    images: true,  // Images expanded by default for quick access
+    images: false,
     containers: false,
   });
 
   // Reset expanded sections when component changes (navigating slides)
-  // Keep images expanded by default
   useEffect(() => {
     setExpandedSections({
+      selected: false,
       text: false,
-      images: true,  // Keep images expanded for quick access
+      images: false,
       containers: false,
     });
   }, [component.id]);
@@ -689,9 +690,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   const jsArrayImages = useMemo(() => {
     if (!isHtmlComponent) return [];
     const raw = (component.props.render as string) || '';
-    const images = parseJsArrayImages(raw);
-    console.log('[CustomComponentSettingsEditor] Parsed JS array images:', images.length, images.map(i => ({ id: i.id, label: i.label, src: i.src.slice(0, 40) })));
-    return images;
+    return parseJsArrayImages(raw);
   }, [component.props.render, isHtmlComponent]);
 
   // Keep a ref to the current JS array images for the handler
@@ -741,16 +740,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
     const uniqueJsImages = jsArrayImageElements.filter(img => !domImageUrls.has(img.src));
 
     // Combine DOM images first (currently visible), then JS array images
-    const merged = [...domImages, ...uniqueJsImages];
-
-    console.log('[CustomComponentSettingsEditor] imageElements:', {
-      domCount: domImages.length,
-      jsArrayCount: uniqueJsImages.length,
-      totalCount: merged.length,
-      images: merged.map(img => ({ id: img.id, src: img.src?.slice(0, 40), isJsArray: img.isJsArrayImage }))
-    });
-
-    return merged;
+    return [...domImages, ...uniqueJsImages];
   }, [activeDetectedElements, jsArrayImageElements]);
 
   const htmlSyncRef = useRef<NodeJS.Timeout | null>(null);
@@ -783,49 +773,47 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   }, [updateElementText, scheduleHtmlSync]);
 
   const handleElementImage = useCallback((elementId: string, newSrc: string) => {
-    console.log('[CustomComponentSettingsEditor] handleElementImage called:', { elementId, newSrc: newSrc.slice(0, 60) });
+    const currentHtml = (component.props.render as string) || '';
 
     // Check if this is a JS array image (id starts with 'js-')
     if (elementId.startsWith('js-')) {
-      console.log('[CustomComponentSettingsEditor] JS array image detected');
-
       // Find the image in our parsed array
       const jsImage = jsArrayImagesRef.current.find(img => img.id === elementId);
-      if (!jsImage) {
-        console.warn('[CustomComponentSettingsEditor] JS image not found:', elementId);
-        return;
-      }
+      if (!jsImage) return;
 
-      // Get current HTML and do direct replacement
-      const currentHtml = (component.props.render as string) || '';
       const oldSrc = jsImage.src;
 
-      console.log('[CustomComponentSettingsEditor] Replacing URL:', {
-        oldSrc: oldSrc.slice(0, 60),
-        newSrc: newSrc.slice(0, 60),
-      });
+      // Don't replace if URLs are the same
+      if (oldSrc === newSrc) return;
 
       // Simple string replace of the old URL with new URL
       if (currentHtml.includes(oldSrc)) {
         const updatedHtml = currentHtml.replace(oldSrc, newSrc);
-        console.log('[CustomComponentSettingsEditor] HTML updated, calling handlePropChange');
-
-        // Update the component - don't skip history for visibility
-        handlePropChangeRef.current('render', updatedHtml, false);
-
-        // Also update the iframe directly for immediate feedback
-        updateElementImage(elementId, newSrc);
-      } else {
-        console.warn('[CustomComponentSettingsEditor] Old URL not found in HTML');
+        if (updatedHtml !== currentHtml) {
+          handlePropChangeRef.current('render', updatedHtml, false);
+          updateElementImage(elementId, newSrc);
+        }
       }
       return;
     }
 
-    // For DOM images, use the standard update flow
-    console.log('[CustomComponentSettingsEditor] DOM image, using standard flow');
+    // For DOM images, also do direct HTML replacement for reliability
+    // Find the image element to get its old src
+    const imageElement = activeDetectedElements.find(el => el.id === elementId && el.type === 'image');
+    const oldSrc = imageElement?.src;
+
+    if (oldSrc && oldSrc !== newSrc && currentHtml.includes(oldSrc)) {
+      // Direct HTML replacement (more reliable than async iframe flow)
+      const updatedHtml = currentHtml.replace(oldSrc, newSrc);
+      if (updatedHtml !== currentHtml) {
+        handlePropChangeRef.current('render', updatedHtml, false);
+      }
+    }
+
+    // Also update iframe visually
     updateElementImage(elementId, newSrc);
     scheduleHtmlSync();
-  }, [updateElementImage, scheduleHtmlSync, component.props.render]);
+  }, [updateElementImage, scheduleHtmlSync, component.props.render, activeDetectedElements]);
 
   // Stabilize function props for use inside effects without re-triggering deps
   const handlePropChangeRef = useRef(handlePropChange);
@@ -1224,9 +1212,11 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Component Settings Header */}
-      <div className="flex items-center gap-1.5">
-        <Zap className="w-3.5 h-3.5 text-blue-500" />
-        <h3 className="text-[11px] font-medium">Custom Property</h3>
+      <div className="flex items-center gap-2 pb-2 mb-1 border-b border-zinc-100">
+        <div className="w-5 h-5 rounded-md bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center">
+          <Zap className="w-3 h-3 text-white" />
+        </div>
+        <h3 className="text-[12px] font-semibold text-zinc-800">Custom Property</h3>
       </div>
       {/* Code Editor - temporarily hidden
       <Dialog open={showCodeEditor} onOpenChange={setShowCodeEditor}>
@@ -1272,97 +1262,106 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
         <div className="space-y-2">
           {/* Selected Element Editor - AT THE TOP */}
           {activeSelectedElement && (
-            <div className="space-y-1.5 px-2 py-1.5 bg-muted/20 rounded-md border border-pink-200/70">
-              <div className="flex items-center gap-1.5 pb-0.5 border-b border-pink-200/50">
-                {activeSelectedElement.type === 'text' && <Type className="w-3 h-3 text-blue-500" />}
-              {activeSelectedElement.type === 'image' && <Image className="w-3 h-3 text-green-500" />}
-              {activeSelectedElement.type === 'container' && <Maximize2 className="w-3 h-3 text-purple-500" />}
-              <span className="text-[10px] font-medium text-pink-600">
+            <div className={`rounded-lg overflow-hidden border ${expandedSections.selected ? 'border-zinc-200 bg-white' : 'border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50'}`}>
+              {/* Collapsible header */}
+              <button
+                onClick={() => setExpandedSections(prev => ({ ...prev, selected: !prev.selected }))}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors ${
+                  expandedSections.selected
+                    ? 'hover:bg-zinc-50'
+                    : 'hover:from-orange-100 hover:to-amber-100'
+                }`}
+              >
+                {expandedSections.selected ? <ChevronDown className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronRight className="w-3.5 h-3.5 text-orange-500" />}
+                {activeSelectedElement.type === 'text' && <Type className={`w-3.5 h-3.5 ${expandedSections.selected ? 'text-blue-500' : 'text-orange-600'}`} />}
+                {activeSelectedElement.type === 'image' && <Image className={`w-3.5 h-3.5 ${expandedSections.selected ? 'text-green-500' : 'text-orange-600'}`} />}
+                {activeSelectedElement.type === 'container' && <Maximize2 className={`w-3.5 h-3.5 ${expandedSections.selected ? 'text-purple-500' : 'text-orange-600'}`} />}
+                <span className={`text-[11px] font-medium flex-1 truncate ${expandedSections.selected ? 'text-zinc-700' : 'text-orange-700'}`}>
                   Selected: {activeSelectedElement.type === 'text'
-                    ? (activeSelectedElement.textContent?.slice(0, 25) + (activeSelectedElement.textContent && activeSelectedElement.textContent.length > 25 ? '...' : ''))
+                    ? (activeSelectedElement.textContent?.slice(0, 20) + (activeSelectedElement.textContent && activeSelectedElement.textContent.length > 20 ? '...' : ''))
                     : getElementDisplayName(activeSelectedElement)}
                 </span>
-              {activeSelectedElement.bounds && (
-                <span className="ml-auto text-[9px] text-muted-foreground">
-                  {Math.round(activeSelectedElement.bounds.width)}×{Math.round(activeSelectedElement.bounds.height)}
-                </span>
-              )}
-              </div>
+                {activeSelectedElement.bounds && (
+                  <span className={`text-[9px] ${expandedSections.selected ? 'text-zinc-400' : 'text-orange-500'}`}>
+                    {Math.round(activeSelectedElement.bounds.width)}×{Math.round(activeSelectedElement.bounds.height)}
+                  </span>
+                )}
+              </button>
 
-              {activeSelectedElement.type === 'text' && (
-                <DynamicTextEditor
-                  element={activeSelectedElement}
-                  onStyleUpdate={handleElementStyle}
-                  onTextUpdate={handleElementText}
-                  onSave={saveComponentToHistory}
-                  onInjectFont={injectFont}
-                  onRequestHtmlUpdate={requestHtmlUpdate}
-                  hideTextInput={isTextEditMode}
-                />
-              )}
+              {/* Expanded content */}
+              {expandedSections.selected && (
+                <div className="px-3 pb-3 pt-1 border-t border-zinc-100">
+                  {activeSelectedElement.type === 'text' && (
+                    <DynamicTextEditor
+                      element={activeSelectedElement}
+                      onStyleUpdate={handleElementStyle}
+                      onTextUpdate={handleElementText}
+                      onSave={saveComponentToHistory}
+                      onInjectFont={injectFont}
+                      onRequestHtmlUpdate={requestHtmlUpdate}
+                      hideTextInput={isTextEditMode}
+                    />
+                  )}
 
-              {activeSelectedElement.type === 'container' && (
-                <DynamicContainerEditor
-                  element={activeSelectedElement}
-                  onStyleUpdate={handleElementStyle}
-                  onSave={saveComponentToHistory}
-                  onRequestHtmlUpdate={requestHtmlUpdate}
-                />
+                  {activeSelectedElement.type === 'container' && (
+                    <DynamicContainerEditor
+                      element={activeSelectedElement}
+                      onStyleUpdate={handleElementStyle}
+                      onSave={saveComponentToHistory}
+                      onRequestHtmlUpdate={requestHtmlUpdate}
+                    />
+                  )}
+                </div>
               )}
             </div>
           )}
 
           {/* Collapsible sections - ALWAYS visible regardless of selection */}
-            <div className="space-y-1.5 border-t pt-2">
+            <div className="space-y-2 border-t pt-2">
             {/* Image Elements - Card Grid */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setExpandedSections(prev => ({ ...prev, images: !prev.images }))}
-                  className="flex items-center gap-1.5 flex-1 text-left py-0.5 hover:bg-muted/50 rounded px-1 -mx-1"
-                >
-                  {expandedSections.images ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                  <Image className="w-3 h-3 text-green-500" />
-                  <span className="text-[11px] font-medium">Images ({imageElements.length})</span>
-                </button>
-                <button
-                  onClick={() => requestElements()}
-                  className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground"
-                  title="Refresh to detect all images"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                </button>
-              </div>
+            <div className={`rounded-lg overflow-hidden border ${expandedSections.images ? 'border-zinc-200 bg-white' : 'border-zinc-200 bg-zinc-50'}`}>
+              <button
+                onClick={() => setExpandedSections(prev => ({ ...prev, images: !prev.images }))}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-100 transition-colors"
+              >
+                {expandedSections.images ? <ChevronDown className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />}
+                <Image className="w-3.5 h-3.5 text-green-500" />
+                <span className="text-[11px] font-medium text-zinc-700">Images</span>
+                <span className="text-[10px] text-zinc-400">({imageElements.length})</span>
+              </button>
 
               {expandedSections.images && (
-                <ImageCardGrid
-                  images={imageElements}
-                  componentId={component.id}
-                  onImageUpdate={handleElementImage}
-                  onStyleUpdate={handleElementStyle}
-                  onSave={saveComponentToHistory}
-                  onRequestHtmlUpdate={requestHtmlUpdate}
-                />
+                <div className="px-3 pb-3 border-t border-zinc-100">
+                  <ImageCardGrid
+                    images={imageElements}
+                    componentId={component.id}
+                    onImageUpdate={handleElementImage}
+                    onStyleUpdate={handleElementStyle}
+                    onSave={saveComponentToHistory}
+                    onRequestHtmlUpdate={requestHtmlUpdate}
+                  />
+                </div>
               )}
             </div>
 
             {/* Text Elements */}
             {activeDetectedElements.filter(e => e.type === 'text').length > 0 && (
-              <div className="space-y-2">
+              <div className={`rounded-lg overflow-hidden border ${expandedSections.text ? 'border-zinc-200 bg-white' : 'border-zinc-200 bg-zinc-50'}`}>
                 <button
                   onClick={() => setExpandedSections(prev => ({ ...prev, text: !prev.text }))}
-                  className="flex items-center gap-1.5 w-full text-left py-0.5 hover:bg-muted/50 rounded px-1 -mx-1"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-100 transition-colors"
                 >
-                  {expandedSections.text ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                  <Type className="w-3 h-3 text-blue-500" />
-                  <span className="text-[11px] font-medium">Text ({activeDetectedElements.filter(e => e.type === 'text').length})</span>
+                  {expandedSections.text ? <ChevronDown className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />}
+                  <Type className="w-3.5 h-3.5 text-blue-500" />
+                  <span className="text-[11px] font-medium text-zinc-700">Text</span>
+                  <span className="text-[10px] text-zinc-400">({activeDetectedElements.filter(e => e.type === 'text').length})</span>
                 </button>
 
                 {expandedSections.text && (
-                  <div className="space-y-2 pl-3">
+                  <div className="px-3 pb-3 border-t border-zinc-100 space-y-3 pt-2">
                     {activeDetectedElements.filter(e => e.type === 'text').map((element, index) => (
-                      <div key={element.id} className="space-y-1.5 pb-1.5 border-b last:border-0">
-                        <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                      <div key={element.id} className="space-y-1.5 pb-2 border-b border-zinc-100 last:border-0 last:pb-0">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium">
                           {element.tagName} - {element.textContent?.slice(0, 20)}...
                         </div>
                         <DynamicTextEditor
@@ -1383,21 +1382,22 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
 
             {/* Container/Box Elements */}
             {activeDetectedElements.filter(e => e.type === 'container').length > 0 && (
-              <div className="space-y-2">
+              <div className={`rounded-lg overflow-hidden border ${expandedSections.containers ? 'border-zinc-200 bg-white' : 'border-zinc-200 bg-zinc-50'}`}>
                 <button
                   onClick={() => setExpandedSections(prev => ({ ...prev, containers: !prev.containers }))}
-                  className="flex items-center gap-1.5 w-full text-left py-0.5 hover:bg-muted/50 rounded px-1 -mx-1"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-100 transition-colors"
                 >
-                  {expandedSections.containers ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                  <Square className="w-3 h-3 text-purple-500" />
-                  <span className="text-[11px] font-medium">Boxes ({activeDetectedElements.filter(e => e.type === 'container').length})</span>
+                  {expandedSections.containers ? <ChevronDown className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />}
+                  <Square className="w-3.5 h-3.5 text-purple-500" />
+                  <span className="text-[11px] font-medium text-zinc-700">Boxes</span>
+                  <span className="text-[10px] text-zinc-400">({activeDetectedElements.filter(e => e.type === 'container').length})</span>
                 </button>
 
                 {expandedSections.containers && (
-                  <div className="space-y-2 pl-3">
+                  <div className="px-3 pb-3 border-t border-zinc-100 space-y-3 pt-2">
                     {activeDetectedElements.filter(e => e.type === 'container').map((element, index) => (
-                      <div key={element.id} className="space-y-1.5 pb-1.5 border-b last:border-0">
-                        <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                      <div key={element.id} className="space-y-1.5 pb-2 border-b border-zinc-100 last:border-0 last:pb-0">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium">
                           {getElementDisplayName(element, index)}
                         </div>
                         <DynamicContainerEditor

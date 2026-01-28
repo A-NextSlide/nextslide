@@ -29,6 +29,8 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { SearchTab } from '@/components/media/SearchTab';
 
@@ -109,7 +111,6 @@ const ImageCard: React.FC<ImageCardProps> = ({
 
   // Handle image selection from dialog
   const handleImageSelect = useCallback((url: string) => {
-    console.log('[ImageCardGrid] Image selected:', url, 'for element:', element.id);
     onImageUpdate(element.id, url);
     onRequestHtmlUpdate?.();
     onSave('Changed image');
@@ -547,7 +548,12 @@ const ImageCard: React.FC<ImageCardProps> = ({
       <Dialog open={isMediaDialogOpen} onOpenChange={setIsMediaDialogOpen}>
         <DialogContent
           className="p-0 border-0 bg-transparent shadow-2xl w-full max-w-[95vw] sm:max-w-[480px]"
+          aria-describedby={undefined}
         >
+          <DialogTitle className="sr-only">Select Image</DialogTitle>
+          <DialogDescription className="sr-only">
+            Search or upload an image for {displayName}
+          </DialogDescription>
           <div className="bg-white rounded-2xl overflow-hidden border border-zinc-200 shadow-xl w-full flex flex-col max-h-[85vh]">
             {/* Orange gradient top bar */}
             <div className="h-[3px] bg-gradient-to-r from-[#FF6B00] via-[#FF8533] to-[#FF6B00] shrink-0" />
@@ -592,7 +598,6 @@ const ImageCard: React.FC<ImageCardProps> = ({
               <div className="flex-1 overflow-y-auto p-4">
                 <SearchTab
                   onSelect={(url, type) => {
-                    console.log('[ImageCardGrid] SearchTab onSelect:', url, type);
                     if (url && typeof url === 'string') {
                       handleImageSelect(url);
                     }

@@ -194,16 +194,8 @@ export function updateJsArrayImage(
 ): string {
   const image = jsImages.find(img => img.id === imageId);
   if (!image) {
-    console.warn('[jsArrayImageParser] Image not found:', imageId);
     return html;
   }
-
-  console.log('[jsArrayImageParser] Attempting to update:', {
-    id: imageId,
-    propName: image.propName,
-    oldSrc: image.src.slice(0, 80),
-    newSrc: newSrc.slice(0, 80),
-  });
 
   // Direct find-and-replace approach - find the exact URL in a property context
   // Match: propName: 'oldUrl' or propName: "oldUrl"
@@ -218,13 +210,11 @@ export function updateJsArrayImage(
 
   updatedHtml = html.replace(directPattern, (match, prefix, quote, url) => {
     matchFound = true;
-    console.log('[jsArrayImageParser] Found match, replacing');
     return `${prefix}${quote}${newSrc}${quote}`;
   });
 
   if (!matchFound) {
     // Fallback: try to find just the URL anywhere and replace it
-    console.warn('[jsArrayImageParser] Direct pattern failed, trying fallback');
     const fallbackPattern = new RegExp(escapeRegExp(image.src), 'g');
     const beforeReplace = updatedHtml;
     updatedHtml = updatedHtml.replace(fallbackPattern, newSrc);
@@ -232,11 +222,9 @@ export function updateJsArrayImage(
   }
 
   if (!matchFound) {
-    console.warn('[jsArrayImageParser] Could not replace image:', image.propName, image.src.slice(0, 50));
     return html;
   }
 
-  console.log('[jsArrayImageParser] Successfully updated JS array image');
   return updatedHtml;
 }
 
