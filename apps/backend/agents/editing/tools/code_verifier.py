@@ -616,6 +616,11 @@ def verify_slide_code(html: str, user_request: str = "") -> VerificationResult:
     issues.extend(image_issues)
     warnings.extend(image_warnings)
 
+    # Check for overlay blocking issues (buttons not clickable)
+    overlay_issues, overlay_warnings = _check_overlay_blocking(html)
+    issues.extend(overlay_issues)
+    warnings.extend(overlay_warnings)
+
     is_valid = len(issues) == 0
 
     return VerificationResult(
@@ -725,6 +730,102 @@ def _check_image_issues(html: str) -> Tuple[List[str], List[str]]:
             f"Found {len(bad_alts)} images with generic alt text like 'image' or 'photo'. "
             "Alt text should be a specific search query like 'SpaceX Falcon 9 launch'."
         )
+
+    return issues, warnings
+
+
+def _check_overlay_blocking(html: str) -> Tuple[List[str], List[str]]:
+    """
+    Check for CSS overlays that might block button clicks.
+
+    The #1 cause of non-functional buttons is decorative elements with
+    position:absolute/fixed that sit on top of buttons without pointer-events:none.
+    """
+    issues = []
+    warnings = []
+
+    # Only relevant if buttons exist
+    has_buttons = bool(re.search(r'<button[\s>]', html, re.IGNORECASE))
+    has_onclick = bool(re.search(r'onclick\s*=', html, re.IGNORECASE))
+    if not has_buttons and not has_onclick:
+        return issues, warnings
+
+    # Extract all CSS (inline styles and style blocks)
+    style_blocks = re.findall(r'<style[^>]*>(.*?)</style>', html, re.DOTALL | re.IGNORECASE)
+    all_css = '\n'.join(style_blocks)
+
+    # Check for user-select: none on universal selectors
+    user_select_universal = re.search(
+        r'(?:\*|html|body)\s*\{[^}]*user-select\s*:\s*none',
+        all_css,
+        re.IGNORECASE
+    )
+    if user_select_universal:
+        issues.append(
+            "user-select:none on *, html, or body breaks click handling on interactive elements. "
+            "Remove it or apply only to specific non-interactive elements."
+        )
+
+    # Count position:absolute/fixed elements vs those with pointer-events:none
+    # Look in both CSS and inline styles
+    abs_fixed_count = len(re.findall(
+        r'position\s*:\s*(?:absolute|fixed)',
+        all_css + html,
+        re.IGNORECASE
+    ))
+    pointer_none_count = len(re.findall(
+        r'pointer-events\s*:\s*none',
+        all_css + html,
+        re.IGNORECASE
+    ))
+
+    # If there are many absolutely positioned elements but few with pointer-events:none,
+    # some may be blocking buttons
+    if abs_fixed_count > 3 and pointer_none_count < abs_fixed_count // 2:
+        warnings.append(
+            f"Found {abs_fixed_count} absolutely/fixed positioned elements but only "
+            f"{pointer_none_count} have pointer-events:none. Decorative overlays "
+            "(gradients, fog, textures, patterns) with position:absolute MUST have "
+            "pointer-events:none or they will block button clicks."
+        )
+
+    # Check for common overlay patterns without pointer-events:none
+    overlay_patterns = [
+        (r'(?:class|style)\s*=\s*["\'][^"\']*(?:overlay|fog|vignette|gradient-overlay|texture|grain|noise)[^"\']*["\']', 'overlay/texture'),
+        (r'(?:class|style)\s*=\s*["\'][^"\']*(?:before|after)[^"\']*position\s*:\s*absolute[^"\']*["\']', 'pseudo-element overlay'),
+    ]
+    for pattern, name in overlay_patterns:
+        matches = re.findall(pattern, html, re.IGNORECASE)
+        for match in matches:
+            if 'pointer-events' not in match.lower():
+                warnings.append(
+                    f"Found {name} element without pointer-events:none. "
+                    "This may block button clicks. Add pointer-events:none to decorative overlays."
+                )
+                break  # One warning per pattern type
+
+    # Check for ::before/::after pseudo-elements with position:absolute in CSS
+    pseudo_overlays = re.findall(
+        r'::(?:before|after)\s*\{[^}]*position\s*:\s*absolute[^}]*\}',
+        all_css,
+        re.IGNORECASE
+    )
+    for pseudo in pseudo_overlays:
+        if 'pointer-events' not in pseudo.lower():
+            warnings.append(
+                "CSS ::before/::after pseudo-element with position:absolute found without "
+                "pointer-events:none. Add pointer-events:none to prevent blocking button clicks."
+            )
+            break  # One warning is enough
+
+    # Check for clip-path on containers that might contain buttons
+    if re.search(r'clip-path\s*:', all_css + html, re.IGNORECASE):
+        # Only warn if there are also buttons
+        if has_buttons:
+            warnings.append(
+                "clip-path detected alongside buttons. clip-path clips the clickable hit area "
+                "and can prevent button clicks. Avoid clip-path on containers with interactive children."
+            )
 
     return issues, warnings
 

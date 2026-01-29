@@ -95,6 +95,7 @@ class SlideGeneratorV2(ISlideGenerator):
                 slide_data = {
                     "id": f"slide-{context.slide_index + 1}",
                     "title": context.slide_outline.title or f"Slide {context.slide_index + 1}",
+                    "order": context.slide_index,
                     "components": []
                 }
                 try:

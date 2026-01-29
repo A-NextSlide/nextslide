@@ -235,21 +235,31 @@ class DeckState:
         """Mark a slide as complete."""
         import logging
         logger = logging.getLogger(__name__)
-        
+
         logger.debug(f"[DECK_STATE] mark_slide_complete called for slide {index}")
         logger.debug(f"[DECK_STATE] Slide data has {len(slide_data.get('components', []))} components")
-        
+
         if index < len(self.slides):
             # Log what we're replacing
             old_components = len(self.slides[index].get('components', []))
             logger.debug(f"[DECK_STATE] Replacing slide {index} (had {old_components} components)")
-            
+
+            # Preserve critical fields from the original slide that the generator may not include
+            original_slide = self.slides[index]
+            if 'order' not in slide_data and 'order' in original_slide:
+                slide_data['order'] = original_slide['order']
+            if 'deckId' not in slide_data and 'deckId' in original_slide:
+                slide_data['deckId'] = original_slide['deckId']
+            # Ensure order is set even if the original didn't have it
+            if 'order' not in slide_data:
+                slide_data['order'] = index
+
             # Replace the entire slide data instead of updating
             # This ensures components array is properly replaced
             self.slides[index] = slide_data
             # Ensure status is set to completed
             self.slides[index]['status'] = SlideStatus.COMPLETED.value
-            
+
             logger.debug(f"[DECK_STATE] Slide {index} now has {len(self.slides[index].get('components', []))} components")
     
     def to_dict(self) -> Dict[str, Any]:

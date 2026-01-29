@@ -16,10 +16,31 @@
     <meta name="twitter:title" content="NextSlide - AI-Powered Presentation Builder" />
     <meta name="twitter:description" content="Create stunning presentations with AI-powered slide generation and real-time collaboration" />
     <meta name="twitter:image" content="/og-image.png" />
+
+    <!-- Preload critical HK Grotesk Wide weights to avoid FOUT -->
+    <link rel="preload" href="/fonts/HKGroteskWide-Black.otf" as="font" type="font/otf" crossorigin />
+    <link rel="preload" href="/fonts/HKGroteskWide-Bold.otf" as="font" type="font/otf" crossorigin />
+    <link rel="preload" href="/fonts/HKGroteskWide-SemiBold.otf" as="font" type="font/otf" crossorigin />
+
+    <!-- Hide content until HK Grotesk is loaded -->
+    <style>
+      #root { opacity: 0; }
+      .fonts-ready #root { opacity: 1; }
+    </style>
   </head>
 
   <body>
     <div id="root"></div>
+    <script>
+      // Wait for HK Grotesk Wide to load before showing content
+      document.fonts.ready.then(function () {
+        document.documentElement.classList.add('fonts-ready');
+      });
+      // Safety fallback — show content after 2s even if font fails
+      setTimeout(function () {
+        document.documentElement.classList.add('fonts-ready');
+      }, 2000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

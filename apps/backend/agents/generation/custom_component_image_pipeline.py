@@ -530,7 +530,27 @@ async def upload_external_urls_to_bucket(html_content: str) -> str:
             if bucket_url and any(domain in bucket_url for domain in BUCKET_DOMAINS):
                 html_content = html_content.replace(raw_url, bucket_url)
             elif not bucket_url:
-                logger.warning("[UPLOAD_EXTERNAL] No replacement found for: %s", decoded_url[:60])
+                logger.warning("[UPLOAD_EXTERNAL] No replacement found for: %s - removing external URL", decoded_url[:60])
+                # Remove external URL to prevent loading from third-party CDNs
+                # Replace in <img src="..."> tags with a gradient fallback
+                import re as _re
+                img_pattern = _re.compile(
+                    r'<img([^>]*?)src=["\']?' + _re.escape(raw_url) + r'["\']?([^>]*?)>',
+                    _re.IGNORECASE,
+                )
+                img_match = img_pattern.search(html_content)
+                if img_match:
+                    fallback_div = (
+                        '<div style="width:100%;height:100%;background:linear-gradient(135deg,'
+                        'rgba(99,102,241,0.1) 0%,rgba(139,92,246,0.1) 100%);border-radius:8px;"></div>'
+                    )
+                    html_content = img_pattern.sub(fallback_div, html_content)
+                    logger.info("[UPLOAD_EXTERNAL] Replaced unresolved external URL with gradient fallback")
+                else:
+                    # URL is in CSS background-image or JS string - replace with transparent pixel
+                    transparent_pixel = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+                    html_content = html_content.replace(raw_url, transparent_pixel)
+                    logger.info("[UPLOAD_EXTERNAL] Replaced unresolved external URL with transparent pixel")
 
     return html_content
 
