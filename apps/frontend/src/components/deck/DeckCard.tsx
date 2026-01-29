@@ -14,6 +14,10 @@ interface DeckCardProps {
   index: number;
   shouldAnimate?: boolean; // New prop to control animation
   thumbnailRenderMode?: 'full' | 'background';
+  /** Cached thumbnail URL - if provided, shows this instead of rendering live thumbnail */
+  cachedThumbnailUrl?: string | null;
+  /** Callback when thumbnail element is ready for screenshot capture */
+  onThumbnailRef?: (element: HTMLDivElement | null) => void;
 }
 
 const DeckCard: React.FC<DeckCardProps> = React.memo(({
@@ -23,6 +27,8 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
   index,
   shouldAnimate = false,
   thumbnailRenderMode = 'full',
+  cachedThumbnailUrl,
+  onThumbnailRef
 }) => {
   const touchHandledRef = React.useRef(false);
   const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
@@ -115,8 +121,17 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
                 </>
               )}
             </div>
+          ) : cachedThumbnailUrl ? (
+            /* Show cached screenshot if available */
+            <img
+              src={cachedThumbnailUrl}
+              alt={deck.name || 'Deck thumbnail'}
+              className="w-full h-full object-cover"
+              draggable={false}
+            />
           ) : (
-            <div className="w-full h-full">
+            /* Render live thumbnail */
+            <div ref={onThumbnailRef} className="w-full h-full">
               <DeckThumbnail deck={deck} renderMode={thumbnailRenderMode} />
             </div>
           )}
@@ -194,7 +209,8 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
     prevProps.deck.shared_by?.email === nextProps.deck.shared_by?.email &&
     prevProps.index === nextProps.index &&
     prevProps.shouldAnimate === nextProps.shouldAnimate &&
-    prevProps.thumbnailRenderMode === nextProps.thumbnailRenderMode
+    prevProps.thumbnailRenderMode === nextProps.thumbnailRenderMode &&
+    prevProps.cachedThumbnailUrl === nextProps.cachedThumbnailUrl
   );
 });
 

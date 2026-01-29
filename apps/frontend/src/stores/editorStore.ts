@@ -12,7 +12,7 @@ import { slideSyncService } from '../lib/slideSyncService';
 import { toast } from '@/hooks/use-toast';
 import { useEditModeTransitionStore } from './editModeTransitionStore';
 import { autoGroupComponents, calculateGroupBounds } from '@/utils/groupingUtils';
-import { invalidateStamp } from '@/stamps/stampCache';
+
 
 // No longer need HistoryEntry here
 
@@ -848,11 +848,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     // Perform batch update via deckStore
     if (slideUpdates.length > 0) {
         deckStore.batchUpdateSlideComponents(slideUpdates);
-
-        // Invalidate stamp thumbnails for all edited slides
-        for (const { slideId } of slideUpdates) {
-          invalidateStamp(slideId);
-        }
     }
 
     // Clear unsaved changes flags

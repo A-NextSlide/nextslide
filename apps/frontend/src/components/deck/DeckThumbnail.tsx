@@ -2,8 +2,6 @@ import React, { useMemo } from 'react';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { Presentation } from 'lucide-react';
 import MiniSlide from './MiniSlide';
-import { StampThumbnail } from '@/stamps';
-import { BROWSER } from '@/utils/browser';
 
 // Component to render a deck thumbnail using the first slide
 const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'background' }> = React.memo(({ deck, renderMode = 'full' }) => {
@@ -33,20 +31,7 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'b
     );
   }
 
-  // Mobile: use stamp-based thumbnails (pre-rendered images) to prevent crashes
-  if (BROWSER.isMobile) {
-    return (
-      <div className="w-full h-full">
-        <StampThumbnail
-          slide={firstSlide}
-          slideSize={deck.size}
-          className="w-full h-full"
-        />
-      </div>
-    );
-  }
-
-  // Desktop: use MiniSlide - it has IntersectionObserver for lazy loading
+  // Use MiniSlide - it has IntersectionObserver for lazy loading
   return (
     <div className="w-full h-full">
       <MiniSlide

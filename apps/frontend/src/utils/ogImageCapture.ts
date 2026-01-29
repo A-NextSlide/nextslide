@@ -1,7 +1,7 @@
+import html2canvas from 'html2canvas';
 import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
-import { SlideData } from '@/types/SlideTypes';
-import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
+import { captureTinySlideScreenshot } from './slideScreenshot';
 
 /**
  * OG Image dimensions (optimized for social sharing)
@@ -11,139 +11,203 @@ const OG_WIDTH = 1200;
 const OG_HEIGHT = 630;
 
 /**
- * Captures a slide as an OG-optimized thumbnail using offscreen rendering.
- * Renders the slide data in a hidden container (same approach as the stamp system)
- * to produce a perfect capture regardless of what's visible in the DOM.
+ * Native slide dimensions
+ */
+const NATIVE_WIDTH = 1920;
+const NATIVE_HEIGHT = 1080;
+
+/**
+ * Finds a slide element by its ID using the data-slide-id attribute.
+ * Prefers main editing slides over thumbnails.
+ * Excludes empty overlay elements (pointer-events-none, no children).
+ */
+export function findSlideElement(slideId: string): HTMLElement | null {
+  // First, try to find the main editing slide (not in a thumbnail context)
+  const allSlides = document.querySelectorAll(`[data-slide-id="${slideId}"]`);
+
+  if (allSlides.length === 0) {
+    return null;
+  }
+
+  // Find the best slide element - must have children and not be an overlay
+  let bestSlide: HTMLElement | null = null;
+  let bestArea = 0;
+
+  allSlides.forEach((el) => {
+    const element = el as HTMLElement;
+    const rect = element.getBoundingClientRect();
+    const area = rect.width * rect.height;
+
+    // Skip very small thumbnails (less than 200x100)
+    if (rect.width < 200 || rect.height < 100) {
+      return;
+    }
+
+    // Skip empty overlay elements (no children = no content to capture)
+    if (element.children.length === 0) {
+      console.log('[findSlideElement] Skipping empty element:', element.className);
+      return;
+    }
+
+    // Skip pointer-events-none overlays
+    const style = window.getComputedStyle(element);
+    if (style.pointerEvents === 'none' && element.innerHTML.length < 100) {
+      console.log('[findSlideElement] Skipping pointer-events-none overlay:', element.className);
+      return;
+    }
+
+    if (area > bestArea) {
+      bestArea = area;
+      bestSlide = element;
+    }
+  });
+
+  if (bestSlide) {
+    console.log('[findSlideElement] Found slide with', bestSlide.children.length, 'children');
+  }
+
+  // Fall back to first match if no good candidate found
+  return bestSlide || (allSlides[0] as HTMLElement);
+}
+
+/**
+ * Finds any slide element in the DOM, preferring larger ones.
+ * Excludes empty overlay elements.
+ */
+export function findAnySlideElement(): HTMLElement | null {
+  const allSlides = document.querySelectorAll('[data-slide-id]');
+
+  if (allSlides.length === 0) {
+    return null;
+  }
+
+  // Find the largest slide element with actual content
+  let bestSlide: HTMLElement | null = null;
+  let bestArea = 0;
+
+  allSlides.forEach((el) => {
+    const element = el as HTMLElement;
+    const rect = element.getBoundingClientRect();
+    const area = rect.width * rect.height;
+
+    // Skip very small thumbnails
+    if (rect.width < 200 || rect.height < 100) {
+      return;
+    }
+
+    // Skip empty overlay elements
+    if (element.children.length === 0) {
+      return;
+    }
+
+    // Skip pointer-events-none overlays
+    const style = window.getComputedStyle(element);
+    if (style.pointerEvents === 'none' && element.innerHTML.length < 100) {
+      return;
+    }
+
+    if (area > bestArea) {
+      bestArea = area;
+      bestSlide = element;
+    }
+  });
+
+  return bestSlide || (allSlides[0] as HTMLElement);
+}
+
+/**
+ * Waits for all images within an element to load
+ */
+async function waitForImages(element: HTMLElement, timeout = 5000): Promise<void> {
+  const images = element.querySelectorAll('img');
+  const promises: Promise<void>[] = [];
+
+  images.forEach((img) => {
+    if (!img.complete) {
+      promises.push(
+        new Promise((resolve) => {
+          const timer = setTimeout(resolve, timeout);
+          img.onload = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          img.onerror = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        })
+      );
+    }
+  });
+
+  await Promise.all(promises);
+}
+
+/**
+ * Captures a slide as an OG-optimized thumbnail.
+ * Uses the proven captureTinySlideScreenshot function and scales up to OG dimensions.
+ *
+ * @param slideElementOrId - Either an HTMLElement or a slide ID string
  */
 export async function captureOGThumbnail(
-  slide: SlideData,
-  slideSize?: { width: number; height: number }
+  slideElementOrId: HTMLElement | string
 ): Promise<string | null> {
-  const size = slideSize || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
+  // Resolve slide element if a string ID was passed
+  const slideContainer = typeof slideElementOrId === 'string'
+    ? findSlideElement(slideElementOrId)
+    : slideElementOrId;
 
-  // Create offscreen container — MUST stay within viewport bounds for html-to-image to capture.
-  // Using z-index:-9999 hides it behind all content; pointer-events:none prevents interaction.
-  const container = document.createElement('div');
-  container.style.position = 'fixed';
-  container.style.left = '0';
-  container.style.top = '0';
-  container.style.width = `${size.width}px`;
-  container.style.height = `${size.height}px`;
-  container.style.overflow = 'hidden';
-  container.style.background = '#ffffff';
-  container.style.zIndex = '-9999';
-  container.style.pointerEvents = 'none';
-  document.body.appendChild(container);
-
-  let root: any = null;
+  if (!slideContainer) {
+    console.warn('[OG Capture] Slide element not found');
+    return null;
+  }
 
   try {
-    console.log('[OG Capture] Rendering slide offscreen:', slide.id);
+    const slideId = slideContainer.getAttribute('data-slide-id') || 'unknown';
+    console.log('[OG Capture] Starting capture for slide:', slideId);
+    console.log('[OG Capture] Element:', slideContainer.tagName, slideContainer.className);
+    console.log('[OG Capture] Children count:', slideContainer.children.length);
 
-    // Dynamically import React modules (same as stampRenderer)
-    const [React, ReactDOMClient, ReactDOM, SlideModule, providers, normModule] = await Promise.all([
-      import('react'),
-      import('react-dom/client'),
-      import('react-dom'),
-      import('@/components/Slide'),
-      import('@/stamps/stampProviders'),
-      import('@/utils/slideNormalization'),
-    ]);
+    // Use the PROVEN working captureTinySlideScreenshot function
+    // This captures slides correctly including backgrounds, text, and components
+    console.log('[OG Capture] Using captureTinySlideScreenshot (proven working)');
+    const tinyDataUrl = await captureTinySlideScreenshot(slideContainer);
 
-    const Slide = SlideModule.default;
-    const { StampProviders } = providers;
-    const { normalizeSlideForRender, resolveSlideSize } = normModule;
-
-    // Normalize slide data
-    const result = normalizeSlideForRender(slide, size, { preferFallbackSize: true });
-    const normalizedSlide = result?.slide || slide;
-    const resolvedSize = result?.slideSize || resolveSlideSize(normalizedSlide, size);
-
-    const safeSlide: SlideData = normalizedSlide || {
-      id: 'og-fallback',
-      deckId: '',
-      order: 0,
-      status: 'completed' as const,
-      components: [],
-    };
-
-    // Render with React using flushSync for synchronous DOM commit
-    root = ReactDOMClient.createRoot(container);
-
-    const el = React.createElement(
-      StampProviders,
-      { slideSize: resolvedSize || size, slide: safeSlide },
-      React.createElement(Slide, {
-        slide: safeSlide,
-        isActive: true,
-        isEditing: false,
-        isThumbnail: true,
-      })
-    );
-
-    // flushSync forces synchronous render + useLayoutEffect (sets isVisible=true)
-    ReactDOM.flushSync(() => {
-      root.render(el);
-    });
-
-    // Brief delay for useEffect callbacks to fire
-    await new Promise(r => setTimeout(r, 50));
-
-    // --- Wait sequence (same as stamp renderer) ---
-
-    // 1. Fonts (up to 3s)
-    try {
-      await Promise.race([
-        document.fonts.ready,
-        new Promise(r => setTimeout(r, 3000)),
-      ]);
-    } catch { /* ignore */ }
-
-    // 2. Images (up to 5s)
-    await waitForImages(container, 5000);
-
-    // 3. Iframes (up to 3s)
-    await waitForIframes(container, 3000);
-
-    // 4. Force animations to end state
-    const animStyle = forceAnimationsToEnd(container);
-
-    // 5. Settling delay
-    await new Promise(r => setTimeout(r, 200));
-
-    // --- Capture at native resolution ---
-    const capturedUrl = await captureElement(container, size.width, size.height);
-
-    if (animStyle) animStyle.remove();
-
-    if (!capturedUrl) {
-      console.warn('[OG Capture] Offscreen capture returned null');
+    if (!tinyDataUrl) {
+      console.warn('[OG Capture] captureTinySlideScreenshot returned null');
       return null;
     }
 
-    // --- Scale to OG dimensions (1200x630) ---
+    console.log('[OG Capture] Got tiny screenshot, scaling up to OG dimensions');
+
+    // Load the tiny screenshot into an image
     const img = new Image();
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve();
       img.onerror = () => reject(new Error('Failed to load captured image'));
-      img.src = capturedUrl;
+      img.src = tinyDataUrl;
     });
 
+    console.log('[OG Capture] Tiny image size:', img.width, 'x', img.height);
+
+    // Create final OG-sized canvas (1200x630)
     const finalCanvas = document.createElement('canvas');
     finalCanvas.width = OG_WIDTH;
     finalCanvas.height = OG_HEIGHT;
-    const ctx = finalCanvas.getContext('2d');
+    const finalCtx = finalCanvas.getContext('2d');
 
-    if (!ctx) {
+    if (!finalCtx) {
       throw new Error('Could not get canvas context');
     }
 
-    // Fill with white background for letterboxing
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, OG_WIDTH, OG_HEIGHT);
+    // Fill with white background first (for letterboxing)
+    finalCtx.fillStyle = '#ffffff';
+    finalCtx.fillRect(0, 0, OG_WIDTH, OG_HEIGHT);
 
-    // Fit the captured slide into OG dimensions
-    const sourceAspect = img.width / img.height;
+    // Calculate how to fit the captured slide into OG dimensions
+    const sourceWidth = img.width;
+    const sourceHeight = img.height;
+    const sourceAspect = sourceWidth / sourceHeight;
     const targetAspect = OG_WIDTH / OG_HEIGHT;
 
     let drawWidth: number;
@@ -152,35 +216,37 @@ export async function captureOGThumbnail(
     let offsetY: number;
 
     if (sourceAspect > targetAspect) {
+      // Source is wider (16:9 slide vs 1.9:1 OG) - fit to width, letterbox vertically
       drawWidth = OG_WIDTH;
       drawHeight = OG_WIDTH / sourceAspect;
       offsetX = 0;
       offsetY = (OG_HEIGHT - drawHeight) / 2;
     } else {
+      // Source is taller - fit to height, letterbox horizontally
       drawHeight = OG_HEIGHT;
       drawWidth = OG_HEIGHT * sourceAspect;
       offsetX = (OG_WIDTH - drawWidth) / 2;
       offsetY = 0;
     }
 
-    ctx.drawImage(img, 0, 0, img.width, img.height, offsetX, offsetY, drawWidth, drawHeight);
+    // Draw the captured slide centered in the OG canvas (scaled up from tiny)
+    finalCtx.drawImage(
+      img,
+      0, 0, sourceWidth, sourceHeight,
+      offsetX, offsetY, drawWidth, drawHeight
+    );
 
     const dataUrl = finalCanvas.toDataURL('image/jpeg', 0.92);
     console.log('[OG Capture] Final image size:', Math.round(dataUrl.length / 1024), 'KB');
+
+    // Store for debugging
+    (window as any).__lastOGCapture = dataUrl;
+    console.log('[OG Capture] 💡 Run window.open(__lastOGCapture) to view the captured image');
 
     return dataUrl;
   } catch (error) {
     console.error('[OG Capture] Failed to capture:', error);
     return null;
-  } finally {
-    try {
-      if (root) root.unmount();
-    } catch { /* ignore */ }
-    try {
-      if (document.body.contains(container)) {
-        document.body.removeChild(container);
-      }
-    } catch { /* ignore */ }
   }
 }
 
@@ -228,131 +294,36 @@ export async function uploadOGThumbnail(
 
 /**
  * Captures and uploads an OG thumbnail for a shared deck.
- * Renders the slide offscreen for a perfect capture.
+ * This is the main function to call when creating a share link.
  */
 export async function generateShareOGImage(
-  slide: SlideData,
-  shortCode: string,
-  slideSize?: { width: number; height: number }
+  slideElement: HTMLElement,
+  shortCode: string
 ): Promise<string | null> {
-  const dataUrl = await captureOGThumbnail(slide, slideSize);
+  // Capture the thumbnail
+  const dataUrl = await captureOGThumbnail(slideElement);
 
   if (!dataUrl) {
     return null;
   }
 
+  // Upload to storage
   const publicUrl = await uploadOGThumbnail(dataUrl, shortCode);
+
   return publicUrl;
 }
 
-// --- Capture helpers (same as stampRenderer) ---
+/**
+ * Attempts to capture the first slide from the current deck.
+ * Searches for any available slide element in the DOM.
+ */
+export async function captureFirstSlideOG(shortCode: string): Promise<string | null> {
+  const slideElement = findAnySlideElement();
 
-async function captureElement(
-  element: HTMLElement,
-  width: number,
-  height: number
-): Promise<string | null> {
-  // Try html-to-image first (better CSS/SVG support)
-  try {
-    const htmlToImage = await import('html-to-image');
-    const dataUrl = await htmlToImage.toPng(element, {
-      width,
-      height,
-      pixelRatio: 0.7, // 1344x756 output - plenty for OG scaling
-      backgroundColor: '#ffffff',
-      skipAutoScale: true,
-      cacheBust: true,
-    });
-    return dataUrl;
-  } catch (err) {
-    console.warn('[OG Capture] html-to-image failed, trying html2canvas:', err);
-  }
-
-  // Fallback to html2canvas
-  try {
-    const html2canvas = (await import('html2canvas')).default;
-    const canvas = await html2canvas(element, {
-      scale: 0.7,
-      backgroundColor: '#ffffff',
-      width,
-      height,
-      logging: false,
-      useCORS: true,
-      allowTaint: true,
-      imageTimeout: 5000,
-    });
-    return canvas.toDataURL('image/png');
-  } catch (err) {
-    console.warn('[OG Capture] html2canvas also failed:', err);
+  if (!slideElement) {
+    console.warn('[OG Capture] No slide element found in DOM');
     return null;
   }
-}
 
-// --- Wait helpers ---
-
-async function waitForImages(container: HTMLElement, maxWait: number): Promise<void> {
-  const images = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
-  if (images.length === 0) return;
-
-  const timeout = new Promise<void>(r => setTimeout(r, maxWait));
-  const loading = Promise.all(
-    images.map(img => new Promise<void>(resolve => {
-      if (img.complete && img.naturalWidth > 0) { resolve(); return; }
-      const done = () => { img.removeEventListener('load', done); img.removeEventListener('error', done); resolve(); };
-      img.addEventListener('load', done);
-      img.addEventListener('error', done);
-    }))
-  );
-  await Promise.race([loading, timeout]);
-}
-
-async function waitForIframes(container: HTMLElement, maxWait: number): Promise<void> {
-  const iframes = Array.from(container.querySelectorAll('iframe[srcdoc]')) as HTMLIFrameElement[];
-  if (iframes.length === 0) return;
-
-  const start = Date.now();
-  for (const iframe of iframes) {
-    const remaining = maxWait - (Date.now() - start);
-    if (remaining <= 0) break;
-    await waitForIframeReady(iframe, remaining);
-  }
-}
-
-function waitForIframeReady(iframe: HTMLIFrameElement, maxWait: number): Promise<Document | null> {
-  const start = Date.now();
-  return new Promise(resolve => {
-    const check = () => {
-      const doc = iframe.contentDocument;
-      if (doc && (doc.readyState === 'complete' || doc.readyState === 'interactive')) {
-        resolve(doc);
-        return;
-      }
-      if (Date.now() - start > maxWait) {
-        resolve(doc || null);
-        return;
-      }
-      requestAnimationFrame(check);
-    };
-    check();
-  });
-}
-
-function forceAnimationsToEnd(container: HTMLElement): HTMLStyleElement | null {
-  try {
-    const doc = container.ownerDocument;
-    const style = doc.createElement('style');
-    style.textContent = `
-      *, *::before, *::after {
-        animation-delay: -9999s !important;
-        animation-duration: 0.001s !important;
-        animation-fill-mode: forwards !important;
-        transition-delay: 0s !important;
-        transition-duration: 0s !important;
-      }
-    `;
-    container.appendChild(style);
-    return style;
-  } catch {
-    return null;
-  }
+  return generateShareOGImage(slideElement, shortCode);
 }

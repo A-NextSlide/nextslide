@@ -4,8 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Copy, FileStack, Loader2 } from 'lucide-react';
 import { CommunityDeck, COMMUNITY_CATEGORIES } from '@/services/communityService';
 import MiniSlide from '@/components/deck/MiniSlide';
-import { StampThumbnail } from '@/stamps';
-import { BROWSER } from '@/utils/browser';
 import { cn } from '@/lib/utils';
 
 interface CommunityDeckCardProps {
@@ -59,19 +57,12 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
               draggable={false}
             />
           ) : deck.firstSlide ? (
-            /* Render thumbnail - stamp-based on mobile, live MiniSlide on desktop */
+            /* Render live thumbnail */
             <div ref={onThumbnailRef} className="w-full h-full">
-              {BROWSER.isMobile ? (
-                <StampThumbnail
-                  slide={deck.firstSlide}
-                  className="w-full h-full"
-                />
-              ) : (
-                <MiniSlide
-                  slide={deck.firstSlide}
-                  className="w-full h-full"
-                />
-              )}
+              <MiniSlide
+                slide={deck.firstSlide}
+                className="w-full h-full"
+              />
             </div>
           ) : (
             <div className="flex items-center justify-center h-full bg-gray-100 dark:bg-gray-800">

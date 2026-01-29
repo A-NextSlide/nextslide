@@ -13,7 +13,7 @@ import { autosaveService } from '../services/autosaveService';
 import { warnIfNotGenerating } from '../utils/errorHandler';
 import { deckSyncService } from '../lib/deckSyncService';
 import { cleanupDeckCustomComponents } from '../utils/deckDiffUtils';
-import { invalidateStamp } from '../stamps/stampCache';
+
 
 // Create the store
 export const useDeckStore = create<DeckState>((set, get, store) => {
@@ -160,8 +160,7 @@ export const useDeckStore = create<DeckState>((set, get, store) => {
               return { slidesCache: restCache };
             });
 
-            // Invalidate stamp thumbnail for this slide
-            invalidateStamp(slideId);
+
           }
         } else {
           warnIfNotGenerating(`[batchUpdateSlideComponents] Slide ${slideId} not found during batch update.`);
