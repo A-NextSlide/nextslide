@@ -21,16 +21,18 @@ export async function captureOGThumbnail(
 ): Promise<string | null> {
   const size = slideSize || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
 
-  // Create hidden offscreen container at native slide dimensions
+  // Create offscreen container — MUST stay within viewport bounds for html-to-image to capture.
+  // Using z-index:-9999 hides it behind all content; pointer-events:none prevents interaction.
   const container = document.createElement('div');
   container.style.position = 'fixed';
-  container.style.left = '-9999px';
+  container.style.left = '0';
   container.style.top = '0';
   container.style.width = `${size.width}px`;
   container.style.height = `${size.height}px`;
   container.style.overflow = 'hidden';
   container.style.background = '#ffffff';
-  container.style.zIndex = '-1';
+  container.style.zIndex = '-9999';
+  container.style.pointerEvents = 'none';
   document.body.appendChild(container);
 
   let root: any = null;
@@ -39,9 +41,10 @@ export async function captureOGThumbnail(
     console.log('[OG Capture] Rendering slide offscreen:', slide.id);
 
     // Dynamically import React modules (same as stampRenderer)
-    const [React, ReactDOMClient, SlideModule, providers, normModule] = await Promise.all([
+    const [React, ReactDOMClient, ReactDOM, SlideModule, providers, normModule] = await Promise.all([
       import('react'),
       import('react-dom/client'),
+      import('react-dom'),
       import('@/components/Slide'),
       import('@/stamps/stampProviders'),
       import('@/utils/slideNormalization'),
@@ -64,23 +67,27 @@ export async function captureOGThumbnail(
       components: [],
     };
 
-    // Render with React
+    // Render with React using flushSync for synchronous DOM commit
     root = ReactDOMClient.createRoot(container);
 
-    await new Promise<void>((resolve) => {
-      const el = React.createElement(
-        StampProviders,
-        { slideSize: resolvedSize || size, slide: safeSlide },
-        React.createElement(Slide, {
-          slide: safeSlide,
-          isActive: true,
-          isEditing: false,
-          isThumbnail: true,
-        })
-      );
+    const el = React.createElement(
+      StampProviders,
+      { slideSize: resolvedSize || size, slide: safeSlide },
+      React.createElement(Slide, {
+        slide: safeSlide,
+        isActive: true,
+        isEditing: false,
+        isThumbnail: true,
+      })
+    );
+
+    // flushSync forces synchronous render + useLayoutEffect (sets isVisible=true)
+    ReactDOM.flushSync(() => {
       root.render(el);
-      setTimeout(resolve, 100);
     });
+
+    // Brief delay for useEffect callbacks to fire
+    await new Promise(r => setTimeout(r, 50));
 
     // --- Wait sequence (same as stamp renderer) ---
 

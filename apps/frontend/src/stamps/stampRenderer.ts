@@ -133,25 +133,28 @@ async function renderSlideOffscreen(
 ): Promise<string | null> {
   const { width, height } = slideSize;
 
-  // Create hidden container
+  // Create offscreen container — MUST stay within viewport bounds for html-to-image to capture.
+  // Using z-index:-9999 hides it behind all content; pointer-events:none prevents interaction.
   const container = document.createElement('div');
   container.style.position = 'fixed';
-  container.style.left = '-9999px';
+  container.style.left = '0';
   container.style.top = '0';
   container.style.width = `${width}px`;
   container.style.height = `${height}px`;
   container.style.overflow = 'hidden';
   container.style.background = '#ffffff';
-  container.style.zIndex = '-1';
+  container.style.zIndex = '-9999';
+  container.style.pointerEvents = 'none';
   document.body.appendChild(container);
 
   let root: any = null;
 
   try {
     // Dynamically import React modules to avoid circular deps
-    const [React, ReactDOMClient, SlideModule, providers, normModule] = await Promise.all([
+    const [React, ReactDOMClient, ReactDOM, SlideModule, providers, normModule] = await Promise.all([
       import('react'),
       import('react-dom/client'),
+      import('react-dom'),
       import('@/components/Slide'),
       import('./stampProviders'),
       import('@/utils/slideNormalization'),
@@ -174,24 +177,27 @@ async function renderSlideOffscreen(
       components: [],
     };
 
-    // Render using React
+    // Render using React with flushSync for synchronous DOM commit
     root = ReactDOMClient.createRoot(container);
 
-    await new Promise<void>((resolve) => {
-      const el = React.createElement(
-        StampProviders,
-        { slideSize: resolvedSize || slideSize, slide: safeSlide },
-        React.createElement(Slide, {
-          slide: safeSlide,
-          isActive: true,
-          isEditing: false,
-          isThumbnail: true,
-        })
-      );
+    const el = React.createElement(
+      StampProviders,
+      { slideSize: resolvedSize || slideSize, slide: safeSlide },
+      React.createElement(Slide, {
+        slide: safeSlide,
+        isActive: true,
+        isEditing: false,
+        isThumbnail: true,
+      })
+    );
+
+    // flushSync forces synchronous render + useLayoutEffect (sets isVisible=true)
+    ReactDOM.flushSync(() => {
       root.render(el);
-      // Give React time to commit
-      setTimeout(resolve, 100);
     });
+
+    // Brief delay for useEffect callbacks to fire
+    await new Promise(r => setTimeout(r, 50));
 
     // --- Wait sequence ---
 

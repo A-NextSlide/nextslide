@@ -21,7 +21,10 @@ export const StampProviders: React.FC<StampProvidersProps> = ({ slideSize, slide
       <StaticEditorStateProvider slideSize={slideSize}>
         <StaticActiveSlideProvider slide={slide}>
           <ThumbnailRenderProvider mode="full">
-            {children}
+            {/* Wrapper div matches MiniSlide: gives Slide's position:absolute a positioned ancestor */}
+            <div style={{ width: slideSize.width, height: slideSize.height, position: 'relative' }}>
+              {children}
+            </div>
           </ThumbnailRenderProvider>
         </StaticActiveSlideProvider>
       </StaticEditorStateProvider>
