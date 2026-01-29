@@ -329,7 +329,14 @@ body.agent-select-mode [data-component-id] {
 .slide-container .slide-background {
   transition: none !important;
 }
-.slide-container * {
-  /* Don't allow global opacity transitions on mode toggle that cause fade-out */
+/* Prevent opacity/size transitions on slide components that cause flash on mode toggle.
+   Scoped to component wrappers and their content — buttons/links keep their hover transitions. */
+.slide-container .component-wrapper,
+.slide-container .component-wrapper * {
   transition-property: transform !important;
+}
+/* Images must never transition size or opacity — they should snap to their final state */
+.slide-container .component-type-Image,
+.slide-container .component-type-Image * {
+  transition: none !important;
 }

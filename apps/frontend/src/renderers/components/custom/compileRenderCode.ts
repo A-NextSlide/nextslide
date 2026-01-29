@@ -18,16 +18,14 @@ export const compileRenderCode = (renderCode: any): CompiledRenderResult => {
     return { compiledRender: null, compilationError: new Error('No render function provided') };
   }
 
-  // CRITICAL: Unescape the code FIRST before any detection
-  // The stored code may have escaped newlines (\n as literal backslash-n)
+  // Unescape whitespace characters first (needed for format detection).
+  // Quote unescaping is deferred — it corrupts JavaScript inside <script> blocks
+  // in full HTML documents (e.g., "The \"Sniff\" API" becomes "The "Sniff" API" — a syntax error).
   let code = typeof renderCode === 'string' ? renderCode : String(renderCode || '');
-  if (code.includes('\\n') || code.includes('\\t') || code.includes('\\"') || code.includes("\\'")) {
+  if (code.includes('\\n') || code.includes('\\t')) {
     code = code
       .replace(/\\n/g, '\n')
-      .replace(/\\t/g, '\t')
-      .replace(/\\"/g, '"')
-      .replace(/\\'/g, "'")
-      .replace(/\\\\/g, '\\');
+      .replace(/\\t/g, '\t');
   }
 
   // ADAPTIVE FORMAT DETECTION: Handle multiple formats from AI
@@ -51,6 +49,15 @@ export const compileRenderCode = (renderCode: any): CompiledRenderResult => {
                         lowerCode.startsWith('<html') ||
                         lowerCode.includes('<!doctype html') ||
                         (lowerCode.includes('<html') && lowerCode.includes('</html>'));
+
+  // For non-HTML code paths, unescape quotes and backslashes.
+  // SKIP for full HTML docs — unescaping \" to " inside <script> blocks breaks JS string literals.
+  if (!isFullHtmlDoc && (code.includes('\\"') || code.includes("\\'"))) {
+    code = code
+      .replace(/\\"/g, '"')
+      .replace(/\\'/g, "'")
+      .replace(/\\\\/g, '\\');
+  }
 
   if (isFullHtmlDoc) {
     // Fix broken CSS @import URLs (AI sometimes generates them with newlines inside)

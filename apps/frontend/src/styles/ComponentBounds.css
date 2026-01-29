@@ -33,13 +33,19 @@
   word-break: break-word;
 }
 
-/* Image components – override Tailwind's preflight `img { height: auto; max-width: 100% }`
-   which can flash the image at its intrinsic aspect ratio for one frame before
-   the inline objectFit/width/height styles take effect.  The renderer sets
-   the final sizing via inline styles; we just need to neutralise the base reset. */
+/* Image components – CSS containment prevents layout/paint from leaking in or out,
+   so the image can never flash at its intrinsic size before objectFit applies.
+   Also override Tailwind's preflight `img { height: auto; max-width: 100% }`. */
+.component-type-Image {
+  contain: layout paint;
+  overflow: hidden;
+}
 .component-type-Image img {
-  max-width: none;
-  height: 100%;
+  /* Neutralise Tailwind preflight max-width:100% / height:auto which can flash
+     the image at its intrinsic aspect ratio.  Width/height come from inline styles
+     so they handle both normal (100%) and crop (scaled) cases. */
+  max-width: none !important;
+  max-height: none !important;
 }
 
 /* Video components */

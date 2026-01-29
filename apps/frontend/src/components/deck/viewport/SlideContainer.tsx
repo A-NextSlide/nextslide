@@ -741,7 +741,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
            margin: '0',
            paddingBottom: '0',
            position: 'relative',
-           transition: 'transform 0.3s ease-in-out',
            // Responsive maxWidth: smaller on mobile, larger on big screens
            maxWidth: 'min(95vw, 1600px)',
            width: '100%',
@@ -844,7 +843,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
 
       {/* Slide display container */}
       <div className="flex flex-col items-center w-full" style={{
-        transition: 'transform 0.3s ease-in-out',
         position: 'relative',
         width: '100%',
         maxWidth: '100%',

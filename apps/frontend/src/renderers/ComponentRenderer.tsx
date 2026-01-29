@@ -330,8 +330,8 @@ export const ComponentRenderer: React.FC<Props> = memo(({
     willChange: (isDragging || isResizing) ? 'transform' : 'auto',
     // For Lines and Background components, disable pointer events on the wrapper
     pointerEvents: (isLines || (isBackground && isEditing)) ? 'none' : 'auto',
-    // Allow overflow for resize handles to be visible
-    overflow: 'visible',
+    // In edit mode: visible so resize handles show. In view mode: hidden to clip content.
+    overflow: isEditing ? 'visible' : 'hidden',
     // No outline in debug mode, we'll show the actual content bounds instead
   };
 

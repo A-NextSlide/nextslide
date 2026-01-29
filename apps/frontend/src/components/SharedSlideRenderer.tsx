@@ -90,7 +90,7 @@ export const SharedSlideRenderer: React.FC<SharedSlideRendererProps> = ({
               alt={props.alt || ''}
               width={typeof dimensions.width === 'number' ? dimensions.width : undefined}
               height={typeof dimensions.height === 'number' ? dimensions.height : undefined}
-              decoding="async"
+              decoding="sync"
               style={{
                 ...componentStyle,
                 objectFit: (props.objectFit as any) || 'cover',

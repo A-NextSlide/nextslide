@@ -361,7 +361,6 @@ export const renderImage = (
     // Hide until the browser has decoded the image so the user never sees
     // the raw intrinsic dimensions before objectFit applies.
     opacity: imageLoaded ? 1 : 0,
-    transition: `transform 200ms ease-out, filter ${hoverTransitionDuration}s ease-in-out`,
     maxWidth: 'none', // Ensure image doesn't get constrained when cropped
   };
   
@@ -402,8 +401,8 @@ export const renderImage = (
     // Also keep visible during hover when hoverEffect adds a shadow
     overflow: (isCroppingThis ? 'visible' : (shadow || (isHovered && !!hoverShadow) ? 'visible' : 'hidden')),
     pointerEvents: 'auto', // Ensure hover events work
-    // Improve rendering stability across browsers
-    willChange: 'filter'
+    // Ensure image never escapes its container
+    contain: 'layout paint'
   };
   
   // We'll apply shadow to the inner container instead
@@ -650,7 +649,6 @@ export const renderImage = (
     height: '100%',
     // Always clip image content in normal mode; enable overflow only during cropping
     overflow: isCroppingThis ? 'visible' : 'hidden',
-    transition: `border ${hoverTransitionDuration}s ease-in-out, box-shadow ${hoverTransitionDuration}s ease-in-out`,
   };
   
   // Add border to inner container so it follows the border-radius
@@ -845,7 +843,7 @@ export const renderImage = (
           ref={imageRef}
           src={src}
           alt={isLogoComponent ? (alt || 'Company logo') : alt}
-          decoding="async"
+          decoding="sync"
           style={{
             ...imageStyles,
             filter: duotoneEnabled ? `url(#duotone-${component.id}) ${imageStyles.filter}` : imageStyles.filter,
