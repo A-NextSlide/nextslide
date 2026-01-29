@@ -235,11 +235,32 @@ def _cleanup_invalid_image_values(html: str) -> str:
     return html
 
 
-def _apply_object_fit_from_dimensions(html: str, prefetched_images: Dict[str, Any]) -> str:
-    """Post-process HTML to apply correct object-fit based on image dimensions.
+def _should_contain_by_alt_text(alt_text: str) -> bool:
+    """Check if alt text suggests the image content needs to be fully visible (contain)."""
+    if not alt_text:
+        return False
+    alt_lower = alt_text.lower()
+    # Keywords that indicate the full image content must be visible
+    contain_keywords = [
+        'logo', 'diagram', 'chart', 'infographic', 'screenshot', 'map',
+        'poster', 'book cover', 'album cover', 'album art', 'movie poster',
+        'product', 'blueprint', 'schematic', 'floor plan', 'floorplan',
+        'illustration', 'comic', 'manga', 'anime character',
+        'portrait', 'headshot', 'profile photo', 'mugshot',
+        'icon', 'badge', 'emblem', 'crest', 'coat of arms',
+        'certificate', 'diploma', 'document', 'newspaper',
+        'jersey', 'uniform', 'trophy',
+    ]
+    return any(kw in alt_lower for kw in contain_keywords)
 
-    Portrait images (aspect < 0.8) and panoramic images (aspect > 2.5) use 'contain'.
-    Standard landscape/square images use 'cover'.
+
+def _apply_object_fit_from_dimensions(html: str, prefetched_images: Dict[str, Any]) -> str:
+    """Post-process HTML to apply correct object-fit based on image dimensions and content type.
+
+    Uses contain when:
+    - Portrait images (aspect < 0.8) or panoramic images (aspect > 2.5)
+    - Alt text indicates content that must be fully visible (logos, diagrams, posters, etc.)
+    Uses cover for standard landscape/square background/atmospheric images.
     """
     if not html or not prefetched_images:
         return html
@@ -298,11 +319,18 @@ def _apply_object_fit_from_dimensions(html: str, prefetched_images: Dict[str, An
         width, height = url_to_dimensions[url]
         aspect_ratio = width / height
 
-        # Determine suggested object-fit
-        if aspect_ratio < 0.8 or aspect_ratio > 2.5:
+        # Extract alt text for content-type check
+        alt_match = re.search(r'alt=["\']([^"\']+)["\']', full_tag, re.IGNORECASE)
+        alt_text = alt_match.group(1) if alt_match else ""
+        content_needs_contain = _should_contain_by_alt_text(alt_text)
+
+        # Determine suggested object-fit based on BOTH dimensions and content type
+        if content_needs_contain or aspect_ratio < 0.8 or aspect_ratio > 2.5:
             suggested_fit = "contain"
+            reason = f"alt='{alt_text[:30]}'" if content_needs_contain else f"aspect={aspect_ratio:.2f}"
         else:
             suggested_fit = "cover"
+            reason = f"aspect={aspect_ratio:.2f}"
 
         # If already has object-fit in the tag
         if 'object-fit' in full_tag.lower():
@@ -314,8 +342,9 @@ def _apply_object_fit_from_dimensions(html: str, prefetched_images: Dict[str, An
                     full_tag,
                     flags=re.IGNORECASE
                 )
-                logger.info(f"[IMAGE_PIPELINE] Changed object-fit to contain for {url[:60]}... (aspect={aspect_ratio:.2f})")
+                logger.info(f"[IMAGE_PIPELINE] Changed object-fit to contain for {url[:60]}... ({reason})")
                 return new_tag
+            # If AI already set contain and we agree, or AI set cover and we agree, keep it
             return full_tag
 
         # No object-fit in tag - add it if we want contain (images default to cover anyway)
@@ -333,7 +362,7 @@ def _apply_object_fit_from_dimensions(html: str, prefetched_images: Dict[str, An
             else:
                 # Add style attribute
                 new_tag = full_tag.replace('<img', '<img style="object-fit:contain;"', 1)
-            logger.info(f"[IMAGE_PIPELINE] Added object-fit:contain for portrait/panoramic image {url[:60]}... (aspect={aspect_ratio:.2f})")
+            logger.info(f"[IMAGE_PIPELINE] Added object-fit:contain for {url[:60]}... ({reason})")
             return new_tag
 
         return full_tag
@@ -419,7 +448,7 @@ async def _search_fallback_image(alt_text: str, storage: ImageStorageService) ->
         from services.serpapi_service import SerpAPIService
         async with SerpAPIService() as serpapi:
             # Truncate query to first 6 words for better results
-            search_query = " ".join(alt_text.split()[:6])
+            search_query = " ".join(alt_text.split()[:5])  # Keep topic context
             results = await serpapi.search_images(search_query)
             photos = results.get('photos', []) if isinstance(results, dict) else results
 

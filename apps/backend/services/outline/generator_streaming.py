@@ -12,6 +12,7 @@ from agents import config as agents_config
 from setup_logging_optimized import get_logger
 
 from .models import OutlineOptions, ProgressUpdate, SlideContent
+from .research_decision import get_current_date_context
 
 logger = get_logger(__name__)
 
@@ -385,7 +386,7 @@ Return JSON:
 
                     full_context = "\n\n".join(context_parts)
 
-                    today_line = f"Today (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+                    today_line = get_current_date_context()
 
                     research_prompt = f"""Research this slide topic and provide rich, data-heavy facts with sources.
 {today_line}

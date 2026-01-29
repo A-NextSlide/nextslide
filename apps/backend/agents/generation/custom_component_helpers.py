@@ -383,7 +383,10 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
             seen_props.add(query.lower())
 
     has_js_alt_queries = bool(js_image_queries)
+    has_descriptive_queries = bool(results)  # Already found alt-text queries
 
+    # Patterns 1-3: Extract queries from prop NAMES (e.g., mainImage → "main").
+    # These are fallbacks — skip generic ones when we already have descriptive alt text.
     pattern1 = re.findall(r'<img[^>]*src=["\']?\$\{(\w+)\}["\']?', html, re.IGNORECASE)
     for prop in pattern1:
         if has_js_alt_queries and not _looks_like_image_prop(prop):
@@ -391,6 +394,9 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
         if prop not in seen_props:
             query = _simple_clean_query(_extract_search_query_from_prop_name(prop))
             if query:
+                if has_descriptive_queries and _is_generic_query(query):
+                    logger.debug("[IMAGE_EXTRACT] Skipping generic prop-derived query: '%s' (from %s)", query, prop)
+                    continue
                 results.append((prop, query))
                 seen_props.add(prop)
 
@@ -399,6 +405,9 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
         if prop not in seen_props:
             query = _simple_clean_query(_extract_search_query_from_prop_name(prop))
             if query:
+                if has_descriptive_queries and _is_generic_query(query):
+                    logger.debug("[IMAGE_EXTRACT] Skipping generic prop-derived query: '%s' (from %s)", query, prop)
+                    continue
                 results.append((prop, query))
                 seen_props.add(prop)
 
@@ -407,6 +416,9 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
         if prop not in seen_props:
             query = _simple_clean_query(_extract_search_query_from_prop_name(prop))
             if query:
+                if has_descriptive_queries and _is_generic_query(query):
+                    logger.debug("[IMAGE_EXTRACT] Skipping generic prop-derived query: '%s' (from %s)", query, prop)
+                    continue
                 results.append((prop, query))
                 seen_props.add(prop)
 
@@ -584,6 +596,104 @@ def _extract_topic_from_context(slide_context: str) -> str:
             topic = slide_search.group(1).strip()[:30]
 
     return topic
+
+
+async def _batch_enhance_image_queries_with_ai(
+    queries: List[Tuple[str, str]],
+    slide_context: str = "",
+) -> Dict[str, str]:
+    """Batch-enhance multiple generic image queries in a single AI call.
+
+    Args:
+        queries: List of (prop_name, query) tuples that need enhancement
+        slide_context: Slide context string (BRAND, Deck, Topic, Slide)
+
+    Returns:
+        Dict mapping prop_name -> enhanced_query
+    """
+    if not queries:
+        return {}
+
+    try:
+        client, model_name = get_client(IMAGE_SEARCH_MODEL)
+
+        # Build a numbered list of queries for the AI
+        query_lines = []
+        for i, (prop_name, query) in enumerate(queries, 1):
+            query_lines.append(f"{i}. prop=\"{prop_name}\" original=\"{query}\"")
+
+        prompt = f"""Generate specific Google Images search queries for these slide image placeholders.
+
+SLIDE CONTEXT: {slide_context[:600] if slide_context else 'Presentation slide'}
+
+IMAGE PLACEHOLDERS TO RESOLVE:
+{chr(10).join(query_lines)}
+
+RULES:
+- Each query should be 2-5 words, specific and searchable
+- Use names, brands, products, or concepts from the SLIDE CONTEXT
+- For "background"/"bg" props: use the topic + "background" (e.g., "Tesla office background")
+- For "hero"/"banner" props: use the main subject (e.g., "Tesla Model S")
+- For generic props like "main", "visual", "content": pick the most relevant visual subject
+- IGNORE the original query if it's generic (like "image", "photo", "bg", "main")
+- DO NOT repeat the same query for different props
+
+Return ONLY a numbered list matching the input, one query per line:
+1. specific search query
+2. specific search query
+..."""
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            invoke,
+            client,
+            model_name,
+            [{"role": "user", "content": prompt}],
+            None,
+            300,  # Enough for ~15 queries
+            0.3,
+        )
+
+        if not response:
+            logger.warning("[BATCH_ENHANCE] AI returned empty response")
+            return {}
+
+        # Parse numbered responses
+        result_map: Dict[str, str] = {}
+        lines = str(response).strip().split('\n')
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # Match "1. query text" or "1: query text"
+            match = re.match(r'(\d+)[.:\-)\s]+(.+)', line)
+            if match:
+                idx = int(match.group(1)) - 1
+                enhanced = match.group(2).strip().strip('"\'')
+                if 0 <= idx < len(queries) and enhanced and len(enhanced) < 70:
+                    prop_name = queries[idx][0]
+                    # Validate: not a refusal, not too long
+                    if ('cannot' not in enhanced.lower() and
+                        'sorry' not in enhanced.lower() and
+                        'I ' not in enhanced and
+                        enhanced.lower() != 'none'):
+                        result_map[prop_name] = enhanced
+
+        logger.info(
+            "[BATCH_ENHANCE] Enhanced %d/%d queries in single AI call",
+            len(result_map), len(queries)
+        )
+        for prop, enhanced in result_map.items():
+            original = next((q for p, q in queries if p == prop), "?")
+            logger.info("[BATCH_ENHANCE]   '%s': '%s' -> '%s'", prop, original, enhanced)
+
+        return result_map
+
+    except Exception as e:
+        logger.warning("[BATCH_ENHANCE] Batch enhancement failed: %s", e)
+        return {}
 
 
 async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> str:
@@ -808,6 +918,29 @@ async def _search_images_for_props(
 
     logger.info("[POST_SEARCH] Searching SERP API for %s image props", len(regular_queries))
 
+    # ── BATCH AI ENHANCEMENT ──────────────────────────────────────────────
+    # Collect all queries that need AI enhancement and process them in ONE call
+    # instead of N individual calls (saves 3-5s × N)
+    queries_needing_enhancement: List[Tuple[str, str]] = []
+    for prop, query in regular_queries:
+        words = query.lower().split()
+        generic_word_count = sum(1 for w in words if w in GENERIC_IMAGE_TERMS)
+        is_entirely_generic = _is_generic_query(query)
+        needs_enhancement = (
+            is_entirely_generic or
+            len(words) <= 2 or
+            generic_word_count >= len(words) // 2
+        )
+        if needs_enhancement:
+            queries_needing_enhancement.append((prop, query))
+
+    # Run single batch AI call for all generic queries
+    batch_enhanced: Dict[str, str] = {}
+    if queries_needing_enhancement and slide_context:
+        batch_enhanced = await _batch_enhance_image_queries_with_ai(
+            queries_needing_enhancement, slide_context
+        )
+
     async with ImageStorageService() as storage:
 
         async def search_and_pick_best(prop_name: str, query: str) -> Tuple[str, str, Optional[str], Optional[int], Optional[int]]:
@@ -824,32 +957,34 @@ async def _search_images_for_props(
                 search_query = query
                 logger.info(f"[POST_SEARCH] Processing query for '{prop_name}': '{query[:60]}...'")
 
-                # Enhance short queries, generic queries, or queries that contain mostly generic words
-                words = query.lower().split()
-                generic_word_count = sum(1 for w in words if w in GENERIC_IMAGE_TERMS)
-                is_entirely_generic = _is_generic_query(query)
-                needs_enhancement = (
-                    is_entirely_generic or  # Always enhance placeholder/generic queries
-                    len(words) <= 2 or
-                    generic_word_count >= len(words) // 2  # Half or more words are generic
-                )
-                if needs_enhancement:
-                    logger.info(f"[POST_SEARCH] Query '{query}' needs enhancement (generic={is_entirely_generic}, words={len(words)})")
-                    # For completely generic queries, rely entirely on slide context
-                    context_for_enhancement = slide_context
-                    if is_entirely_generic and slide_context:
-                        # Prepend a hint that we need to generate a query from scratch
-                        context_for_enhancement = f"Generate image query from context (original was too generic: '{query}'). {slide_context}"
-                    search_query = await _enhance_image_query_with_ai(query, context_for_enhancement)
-                    # Reject "None" or empty enhanced queries
-                    if not search_query or search_query.lower() == "none":
-                        logger.warning(f"[POST_SEARCH] AI returned invalid query for '{query}', skipping")
+                # Use batch-enhanced query if available, otherwise fall back to individual enhancement
+                if prop_name in batch_enhanced:
+                    search_query = batch_enhanced[prop_name]
+                    logger.info(f"[POST_SEARCH] ✓ Batch-enhanced: '{query}' -> '{search_query}'")
+                    # Validate the batch result
+                    if _is_generic_query(search_query):
+                        logger.warning(f"[POST_SEARCH] Batch enhancement still generic: '{search_query}', skipping")
                         return (prop_name, original_query, None, None, None)
-                    logger.info(f"[POST_SEARCH] ✓ Enhanced: '{query}' -> '{search_query}'")
-                    # If enhancement didn't help for a generic query, skip it
-                    if is_entirely_generic and _is_generic_query(search_query):
-                        logger.warning(f"[POST_SEARCH] Enhancement didn't help: '{query}' -> '{search_query}', skipping")
-                        return (prop_name, original_query, None, None, None)
+                else:
+                    # Check if individual enhancement is needed (for queries not in the batch)
+                    words = query.lower().split()
+                    generic_word_count = sum(1 for w in words if w in GENERIC_IMAGE_TERMS)
+                    is_entirely_generic = _is_generic_query(query)
+                    needs_enhancement = (
+                        is_entirely_generic or
+                        len(words) <= 2 or
+                        generic_word_count >= len(words) // 2
+                    )
+                    if needs_enhancement:
+                        # Batch missed this one - fall back to individual call
+                        context_for_enhancement = slide_context
+                        if is_entirely_generic and slide_context:
+                            context_for_enhancement = f"Generate image query from context (original was too generic: '{query}'). {slide_context}"
+                        search_query = await _enhance_image_query_with_ai(query, context_for_enhancement)
+                        if not search_query or search_query.lower() == "none":
+                            return (prop_name, original_query, None, None, None)
+                        if is_entirely_generic and _is_generic_query(search_query):
+                            return (prop_name, original_query, None, None, None)
 
                 # Ensure query is concise (allow up to 8 words for more context)
                 words = search_query.split()

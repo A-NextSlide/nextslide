@@ -1133,16 +1133,6 @@
     "primaryFile": "assets/fonts/pixelbuddha/all_downloads/extracted/3987-monigue-condensed-sans-serif-font/Monigue \u0393\u00c7\u00f6 Condensed Sans Serif Font/Files/Monigue.ttf"
   },
   {
-    "id": "3998-bertholina-script",
-    "name": "Bertholina Script",
-    "fileCount": 4,
-    "formats": [
-      "ttf",
-      "otf"
-    ],
-    "primaryFile": "assets/fonts/pixelbuddha/all_downloads/extracted/3998-bertholina-script/__MACOSX/Bertholina Script /Files/._Bertholina Script.ttf"
-  },
-  {
     "id": "4000-elastic-square-display-font",
     "name": "ELASTIC SQUARE \u2014 Display Font",
     "fileCount": 4,
@@ -3300,18 +3290,6 @@
       "otf"
     ],
     "primaryFile": "assets/fonts/pixelbuddha/all_downloads/extracted/5099-hiluna-clean-sans-serif/__MACOSX/Hiluna \u0393\u00c7\u00f6 Clean Sans Serif/Files/._Hiluna-Regular.ttf"
-  },
-  {
-    "id": "5107-acrona-display-font",
-    "name": "Acrona Display Font",
-    "fileCount": 8,
-    "formats": [
-      "ttf",
-      "woff",
-      "woff2",
-      "otf"
-    ],
-    "primaryFile": "assets/fonts/pixelbuddha/all_downloads/extracted/5107-acrona-display-font/__MACOSX/Acrona Display Font/Files/._Acrona.ttf"
   },
   {
     "id": "5111-plump-pixel-bouncy-8-bit-font",

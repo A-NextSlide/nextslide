@@ -3,10 +3,10 @@
  * Contains: RotatingWords, VirtualizedDeckGrid, VirtualizedPopupDeckGrid
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { Button } from '@/components/ui/button';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Check, X, ArrowUpDown } from 'lucide-react';
 import DeckCard from '@/components/deck/DeckCard';
 import DeckThumbnail from '@/components/deck/DeckThumbnail';
 import { formatDistanceToNow } from 'date-fns';
@@ -470,10 +470,13 @@ export const VirtualizedDeckGrid = React.memo(({
 
 VirtualizedDeckGrid.displayName = 'VirtualizedDeckGrid';
 
+type SortOption = 'newest' | 'oldest' | 'name-asc' | 'name-desc' | 'slides';
+
 interface VirtualizedPopupDeckGridProps {
   decks: CompleteDeckData[] | any;
   onEdit: (deck: CompleteDeckData) => void;
   onShowDeleteDialog: (deckId: string, event: React.MouseEvent) => void;
+  onBulkDelete?: (deckIds: string[]) => void;
   onLoadMore: () => void;
   hasMore: boolean;
   isLoadingMore: boolean;
@@ -484,16 +487,44 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   decks,
   onEdit,
   onShowDeleteDialog,
+  onBulkDelete,
   onLoadMore,
   hasMore,
   isLoadingMore
 }: VirtualizedPopupDeckGridProps) => {
   const isMobile = useIsMobile();
   const safeDecks: CompleteDeckData[] = Array.isArray(decks) ? decks : [];
+
+  // Multi-select state
+  const [selectedDecks, setSelectedDecks] = useState<Set<string>>(new Set());
+  const [isSelectMode, setIsSelectMode] = useState(false);
+
+  // Sorting state
+  const [sortOption, setSortOption] = useState<SortOption>('newest');
+
+  // Sort decks based on current option
+  const sortedDecks = useMemo(() => {
+    const sorted = [...safeDecks];
+    switch (sortOption) {
+      case 'newest':
+        return sorted.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
+      case 'oldest':
+        return sorted.sort((a, b) => new Date(a.lastModified).getTime() - new Date(b.lastModified).getTime());
+      case 'name-asc':
+        return sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      case 'name-desc':
+        return sorted.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+      case 'slides':
+        return sorted.sort((a, b) => (b.slides?.length || 0) - (a.slides?.length || 0));
+      default:
+        return sorted;
+    }
+  }, [safeDecks, sortOption]);
+
   const [visibleDecks, setVisibleDecks] = useState<Set<number>>(() => {
     // On iOS, start empty and let throttled queue handle visibility one at a time
     if (BROWSER.isMobile) return new Set();
-    return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
+    return new Set(Array.from({ length: Math.min(12, safeDecks.length) }, (_, i) => i));
   });
   // Progressive upgrade for popup thumbnails on mobile too
   const [upgradedDecks, setUpgradedDecks] = useState<Set<number>>(() => new Set());
@@ -510,6 +541,61 @@ export const VirtualizedPopupDeckGrid = React.memo(({
   // Queue for throttled visibility on iOS
   const visibilityQueueRef = useRef<number[]>([]);
   const isProcessingVisibilityQueueRef = useRef(false);
+
+  // Exit select mode when no decks selected
+  useEffect(() => {
+    if (selectedDecks.size === 0 && isSelectMode) {
+      // Keep select mode if user explicitly enabled it
+    }
+  }, [selectedDecks.size, isSelectMode]);
+
+  // Toggle deck selection
+  const toggleDeckSelection = useCallback((deckId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedDecks(prev => {
+      const next = new Set(prev);
+      if (next.has(deckId)) {
+        next.delete(deckId);
+      } else {
+        next.add(deckId);
+      }
+      return next;
+    });
+    if (!isSelectMode) setIsSelectMode(true);
+  }, [isSelectMode]);
+
+  // Select all / deselect all
+  const toggleSelectAll = useCallback(() => {
+    if (selectedDecks.size === sortedDecks.length) {
+      setSelectedDecks(new Set());
+    } else {
+      setSelectedDecks(new Set(sortedDecks.map(d => d.uuid || '')));
+    }
+  }, [selectedDecks.size, sortedDecks]);
+
+  // Cancel selection mode
+  const cancelSelectMode = useCallback(() => {
+    setIsSelectMode(false);
+    setSelectedDecks(new Set());
+  }, []);
+
+  // Handle bulk delete
+  const handleBulkDelete = useCallback(() => {
+    if (onBulkDelete && selectedDecks.size > 0) {
+      onBulkDelete(Array.from(selectedDecks));
+      setSelectedDecks(new Set());
+      setIsSelectMode(false);
+    }
+  }, [onBulkDelete, selectedDecks]);
+
+  // Sort label for dropdown
+  const sortLabels: Record<SortOption, string> = {
+    'newest': 'Newest first',
+    'oldest': 'Oldest first',
+    'name-asc': 'Name (A-Z)',
+    'name-desc': 'Name (Z-A)',
+    'slides': 'Most slides',
+  };
 
   // Process visibility queue one item at a time on iOS to prevent crashes
   const processVisibilityQueue = useCallback(() => {
@@ -698,41 +784,231 @@ export const VirtualizedPopupDeckGrid = React.memo(({
     };
   }, [hasMore, isLoadingMore, onLoadMore]);
 
-  // Simple text list - no thumbnails for better iOS performance
   return (
-    <div ref={containerRef} className="flex flex-col w-full divide-y divide-zinc-100 dark:divide-zinc-800">
-      {safeDecks.map((deck, index) => (
-        <div
-          key={deck.uuid}
-          ref={(el) => {
-            if (el) itemRefs.current.set(index, el);
-          }}
-          data-index={index}
-          className="group flex items-center justify-between py-3 px-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors rounded-lg"
-          onClick={() => onEdit(deck)}
-        >
-          <div className="flex-1 min-w-0 pr-4">
-            <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
-              {deck.name || 'Untitled presentation'}
-            </h3>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-              {formatDistanceToNow(new Date(deck.lastModified), { addSuffix: true })}
-              {deck.slides?.length ? ` · ${deck.slides.length} slides` : ''}
-            </p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-            onClick={(e) => {
-              e.stopPropagation();
-              onShowDeleteDialog(deck.uuid || '', e);
-            }}
-          >
-            <Trash2 size={14} />
-          </Button>
+    <div ref={containerRef} className="flex flex-col w-full">
+      {/* Toolbar with sort and multi-select controls */}
+      <div className="flex items-center justify-between gap-3 pb-4 mb-2 border-b border-zinc-100 dark:border-zinc-800">
+        <div className="flex items-center gap-2">
+          {isSelectMode ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={cancelSelectMode}
+                className="h-8 px-2 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Cancel
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleSelectAll}
+                className="h-8 px-2 text-zinc-600 dark:text-zinc-300"
+              >
+                {selectedDecks.size === sortedDecks.length ? 'Deselect all' : 'Select all'}
+              </Button>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 ml-2">
+                {selectedDecks.size} selected
+              </span>
+            </>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsSelectMode(true)}
+              className="h-8 px-3 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              <Check className="h-3.5 w-3.5 mr-1.5" />
+              Select
+            </Button>
+          )}
         </div>
-      ))}
+
+        <div className="flex items-center gap-2">
+          {/* Bulk delete button */}
+          {isSelectMode && selectedDecks.size > 0 && onBulkDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleBulkDelete}
+              className="h-8 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+              Delete ({selectedDecks.size})
+            </Button>
+          )}
+
+          {/* Sort select - native for dialog compatibility */}
+          <div className="relative flex items-center">
+            <ArrowUpDown className="h-3.5 w-3.5 mr-1.5 text-zinc-400 pointer-events-none" />
+            <select
+              value={sortOption}
+              onChange={(e) => setSortOption(e.target.value as SortOption)}
+              className="h-8 pl-1 pr-6 text-sm bg-transparent text-zinc-600 dark:text-zinc-300 border-none outline-none cursor-pointer appearance-none hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center' }}
+            >
+              {(Object.keys(sortLabels) as SortOption[]).map((option) => (
+                <option key={option} value={option}>
+                  {sortLabels[option]}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Grid layout with thumbnails on desktop, list on mobile */}
+      {!isMobile ? (
+        // Desktop: Grid with thumbnails
+        <div className="grid grid-cols-3 xl:grid-cols-4 gap-4">
+          {sortedDecks.map((deck, index) => {
+            const isSelected = selectedDecks.has(deck.uuid || '');
+            const shouldRender = visibleDecks.has(index);
+
+            return (
+              <div
+                key={deck.uuid}
+                ref={(el) => {
+                  if (el) itemRefs.current.set(index, el);
+                }}
+                data-index={index}
+                className={`group relative rounded-xl overflow-hidden cursor-pointer transition-all duration-200 ${
+                  isSelected
+                    ? 'ring-2 ring-orange-500 ring-offset-2 dark:ring-offset-zinc-900'
+                    : 'hover:ring-2 hover:ring-zinc-300 dark:hover:ring-zinc-600'
+                }`}
+                onClick={(e) => {
+                  if (isSelectMode) {
+                    toggleDeckSelection(deck.uuid || '', e);
+                  } else {
+                    onEdit(deck);
+                  }
+                }}
+              >
+                {/* Thumbnail with text overlay */}
+                <div className="aspect-[16/9] bg-zinc-100 dark:bg-zinc-800 relative overflow-hidden">
+                  <div className="absolute inset-0 w-full h-full">
+                    {shouldRender ? (
+                      <DeckThumbnail deck={deck} renderMode="full" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <div className="animate-pulse w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Text overlay at bottom - like DeckCard */}
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent pt-6 pb-2 px-3">
+                    <h3 className="text-sm font-bold text-white truncate">
+                      {deck.name || 'Untitled presentation'}
+                    </h3>
+                    <p className="text-xs text-white/70 mt-0.5">
+                      {formatDistanceToNow(new Date(deck.lastModified), { addSuffix: true })}
+                      {deck.slides?.length ? ` · ${deck.slides.length} slides` : ''}
+                    </p>
+                  </div>
+
+                  {/* Selection checkbox overlay */}
+                  {isSelectMode && (
+                    <div
+                      className={`absolute top-2 left-2 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${
+                        isSelected
+                          ? 'bg-orange-500 border-orange-500'
+                          : 'bg-white/80 dark:bg-zinc-800/80 border-zinc-300 dark:border-zinc-600'
+                      }`}
+                    >
+                      {isSelected && <Check className="h-3 w-3 text-white" />}
+                    </div>
+                  )}
+
+                  {/* Delete button (only when not in select mode) */}
+                  {!isSelectMode && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity bg-white/80 dark:bg-zinc-800/80 hover:bg-red-50 dark:hover:bg-red-900/50 text-zinc-500 hover:text-red-500"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        if (deck.uuid) {
+                          onShowDeleteDialog(deck.uuid, e);
+                        }
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        // Mobile: Simple list
+        <div className="flex flex-col divide-y divide-zinc-100 dark:divide-zinc-800">
+          {sortedDecks.map((deck, index) => {
+            const isSelected = selectedDecks.has(deck.uuid || '');
+
+            return (
+              <div
+                key={deck.uuid}
+                ref={(el) => {
+                  if (el) itemRefs.current.set(index, el);
+                }}
+                data-index={index}
+                className={`group flex items-center gap-3 py-3 px-2 cursor-pointer transition-colors rounded-lg ${
+                  isSelected ? 'bg-orange-50 dark:bg-orange-900/20' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                }`}
+                onClick={(e) => {
+                  if (isSelectMode) {
+                    toggleDeckSelection(deck.uuid || '', e);
+                  } else {
+                    onEdit(deck);
+                  }
+                }}
+              >
+                {/* Checkbox for select mode */}
+                {isSelectMode && (
+                  <div
+                    className={`w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                      isSelected
+                        ? 'bg-orange-500 border-orange-500'
+                        : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600'
+                    }`}
+                  >
+                    {isSelected && <Check className="h-3 w-3 text-white" />}
+                  </div>
+                )}
+
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                    {deck.name || 'Untitled presentation'}
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    {formatDistanceToNow(new Date(deck.lastModified), { addSuffix: true })}
+                    {deck.slides?.length ? ` · ${deck.slides.length} slides` : ''}
+                  </p>
+                </div>
+
+                {!isSelectMode && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onShowDeleteDialog(deck.uuid || '', e);
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Load more trigger */}
       {hasMore && (

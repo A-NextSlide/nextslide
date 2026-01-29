@@ -12,6 +12,7 @@ from agents.config import (
 from setup_logging_optimized import get_logger
 
 from .models import ChartData, OutlineOptions, OutlineResult, SlideContent
+from .research_decision import get_current_date_context
 
 logger = get_logger(__name__)
 
@@ -45,7 +46,10 @@ class OutlineGeneratorResearchMixin:
             logger.info("[HYBRID PHASE 1] Gathering research data with Perplexity Pro...")
             
             research_client, research_model = get_client(PERPLEXITY_OUTLINE_MODEL)
+            date_context = get_current_date_context()
             research_prompt = f"""You are a research assistant. Gather comprehensive, fact-based information about the following topic.
+{date_context}
+
 Focus on:
 - Key statistics, numbers, and data points (prioritize quantitative sources)
 - Recent developments and trends with concrete figures

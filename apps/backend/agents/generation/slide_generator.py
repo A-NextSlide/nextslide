@@ -77,7 +77,7 @@ class SlideGeneratorV2(ISlideGenerator):
             
             system_prompt, user_prompt = await self._build_prompts(context)
             
-            # Step 2: Generate with AI
+            # Step 2: Generate slide
             substep_event = {
                 'type': 'slide_substep',
                 'slide_index': context.slide_index,
@@ -86,19 +86,32 @@ class SlideGeneratorV2(ISlideGenerator):
             }
             await self.event_bus.emit(Events.SLIDE_SUBSTEP, substep_event)
             yield substep_event
-            
-            slide_data = await self._generate_with_ai(
-                system_prompt, user_prompt, context
-            )
 
-            # Step 3.5: Enhance CustomComponents with Gemini 3 Pro if enabled
+            # OPTIMIZATION: Skip the first AI pass and go directly to CustomComponent generation
+            # The first pass generates MinimalSlide JSON that gets thrown away anyway when
+            # full_slide=True (the enhancer replaces all components with a single CustomComponent)
             if ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN:
+                # Create minimal slide structure directly from context (no AI call needed)
+                slide_data = {
+                    "id": f"slide-{context.slide_index + 1}",
+                    "title": context.slide_outline.title or f"Slide {context.slide_index + 1}",
+                    "components": []
+                }
                 try:
                     slide_data = await self._enhance_custom_components_with_gemini(
                         slide_data, context
                     )
                 except Exception as cc_err:
-                    logger.warning(f"CustomComponent enhancement failed: {cc_err}")
+                    logger.warning(f"CustomComponent generation failed: {cc_err}")
+                    # Fallback to legacy two-pass flow if CustomComponent fails
+                    slide_data = await self._generate_with_ai(
+                        system_prompt, user_prompt, context
+                    )
+            else:
+                # Legacy path: use AISlideGenerator
+                slide_data = await self._generate_with_ai(
+                    system_prompt, user_prompt, context
+                )
 
             # Step 4: Post-process and validate
             substep_event = {

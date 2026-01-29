@@ -1146,7 +1146,7 @@ export class OutlineAPI {
         detailLevel: options.detailLevel || 'standard',
         slideCount: typeof options.slideCount === 'number' ? options.slideCount : undefined,
         styleContext: options.styleContext && options.styleContext.trim().length > 0 ? options.styleContext : undefined,
-        enableResearch: typeof options.enableResearch === 'boolean' ? options.enableResearch : undefined,
+        // enableResearch is no longer sent - backend intelligently decides based on prompt analysis
         async_images: options.autoSelectImages !== undefined ? !options.autoSelectImages : false, // When autoSelectImages=true (default), send async_images=false (backend auto-apply mode)
       };
 

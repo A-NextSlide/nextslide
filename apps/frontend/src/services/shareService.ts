@@ -564,9 +564,9 @@ class ShareService {
 
   async getSharedDecks(filter: 'shared' | 'all' = 'shared'): Promise<ApiResponse<any[]>> {
     try {
-      // Build auth endpoint base by stripping trailing /api for environments where auth routes live at root
-      const baseForAuth = API_ENDPOINTS.BASE_URL.replace(/\/$/, '').replace(/\/api$/, '');
-      const url = `${baseForAuth}/auth/decks?filter=${encodeURIComponent(filter)}`;
+      // Use /api/auth/decks so the vite proxy rule for /api/auth catches it and rewrites to /auth/decks
+      const base = API_ENDPOINTS.BASE_URL.replace(/\/$/, '');
+      const url = `${base}/auth/decks?filter=${encodeURIComponent(filter)}`;
       
       console.log('[ShareService] Fetching shared decks:', {
         url,

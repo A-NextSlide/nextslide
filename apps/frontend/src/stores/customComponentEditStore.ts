@@ -262,7 +262,8 @@ export const useCustomComponentEditStore = create<CustomComponentEditState>((set
           selector: element.selector,
           styles: {
             zIndex: String(zIndex),
-            position: 'relative',
+            // Don't modify position - only z-index should change when reordering layers
+            // Changing position can break flex/grid layouts and absolute positioning
           },
         }, '*');
       });
@@ -328,7 +329,9 @@ export const useCustomComponentEditStore = create<CustomComponentEditState>((set
   },
 
   updateElementImage: (elementId, newSrc) => {
-    const { iframeRef } = get();
+    const { iframeRef, detectedElements, selectedElementId } = get();
+
+    // Update iframe visually
     if (iframeRef?.current?.contentWindow) {
       iframeRef.current.contentWindow.postMessage({
         target: 'ns-custom-component-edit',
@@ -337,6 +340,19 @@ export const useCustomComponentEditStore = create<CustomComponentEditState>((set
         newSrc,
       }, '*');
     }
+
+    // Also update local state immediately so UI reflects the change
+    const updatedElements = detectedElements.map((el) => {
+      if (el.id === elementId) {
+        return { ...el, src: newSrc };
+      }
+      return el;
+    });
+
+    set({
+      detectedElements: updatedElements,
+      selectedElement: resolveSelectedElement(updatedElements, selectedElementId),
+    });
   },
 
   injectFont: (fontName, fontDef?: { source: string; url?: string; family?: string; id?: string }) => {

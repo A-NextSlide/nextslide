@@ -291,14 +291,6 @@ export const UNBLAST_LOCAL_FONTS: FontDefinition[] = [
     "url": "/fonts/AV Galveria — Display Serif Font /Files/AV Galveria.woff"
   },
   {
-    "name": "Acrona Display Font",
-    "family": "Acrona Display Font",
-    "source": "local",
-    "weight": "400",
-    "style": "normal",
-    "url": "/fonts/Acrona Display Font/Files/Acrona.woff2"
-  },
-  {
     "name": "Acure - Display Font",
     "family": "Acure - Display Font",
     "source": "local",

@@ -983,7 +983,7 @@ class ThemeAgent:
                 actual_model,
                 [{"role": "user", "content": validation_prompt}],
                 None,
-                300,
+                500,
                 0.0,
             )
             parsed = _extract_json_object(_coerce_response_text(response))

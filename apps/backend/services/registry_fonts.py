@@ -63,7 +63,7 @@ class RegistryFonts:
             "Bold": [],  # Empty - use PixelBuddha/Designer fonts instead
             "Designer": [
                 # Local Designer Fonts (cleaned names) - these exist in /assets/fonts/designer/
-                "AV Galveria — Display Serif Font", "Acrona Display Font", "Acure - Display Font", "Alerio Sans Serif",
+                "AV Galveria — Display Serif Font", "Acure - Display Font", "Alerio Sans Serif",
                 "Delamot", "ElMariachi", "Felicidade", "Floriena Ligatures Sans", "Glorida — Sans Serif Family",
                 "HFPensional", "HKGroteskWide", "Hiluna — Clean Sans Serif", "Marine Elmoure Sans Serif", "Maxmillion",
                 "Newaves", "PORTANIC REGULAR", "PORTANIC TEXTURE", "Pink Zebra Quirky Four-Font Family", "PlumpPixel",
@@ -128,7 +128,7 @@ class RegistryFonts:
         # DO NOT include Google Fonts unless they're actually downloaded
         fallback_designer = [
             # Local Designer Fonts (these exist in /assets/fonts/designer/)
-            "AV Galveria — Display Serif Font", "Acrona Display Font", "Acure - Display Font", "Alerio Sans Serif",
+            "AV Galveria — Display Serif Font", "Acure - Display Font", "Alerio Sans Serif",
             "Delamot", "ElMariachi", "Felicidade", "Floriena Ligatures Sans", "Glorida — Sans Serif Family",
             "HFPensional", "HKGroteskWide", "Hiluna — Clean Sans Serif", "Marine Elmoure Sans Serif", "Maxmillion",
             "Newaves", "PORTANIC REGULAR", "PORTANIC TEXTURE", "Pink Zebra Quirky Four-Font Family", "PlumpPixel",

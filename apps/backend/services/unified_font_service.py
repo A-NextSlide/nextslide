@@ -46,7 +46,6 @@ class UnifiedFontService:
                 '5115-hexaplex-geometric-typeface',  # Designer - geometric
                 '5135-synthetika-futuristic-typeface',  # Designer - futuristic
                 '5134-binary-groove-groovy-1980s-typeface',  # Designer - retro tech
-                'acrona-display-font',  # Designer - modern display
                 'acure---display-font',  # Designer - clean display
             ],
             'elegant': [

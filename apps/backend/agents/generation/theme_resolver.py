@@ -163,6 +163,20 @@ class ThemeResolver:
 
             colors_config = getattr(style_prefs, "colors", None)
             if colors_config:
+                # Extract fonts from style_prefs - CRITICAL: don't lose bodyFont!
+                hero_font = getattr(style_prefs, "font", None)
+                body_font = getattr(style_prefs, "bodyFont", None)
+
+                # Build typography dict with both fonts
+                typography = {}
+                if hero_font:
+                    typography["hero_title"] = {"family": hero_font}
+                if body_font:
+                    typography["body_text"] = {"family": body_font}
+                elif hero_font:
+                    # Only fall back to hero if no body font specified
+                    typography["body_text"] = {"family": hero_font}
+
                 theme_data = {
                     "theme_name": "StylePreferences",
                     "design_philosophy": "Cohesive, professional slides with clear hierarchy.",
@@ -172,14 +186,14 @@ class ThemeResolver:
                         "accent_1": getattr(colors_config, "accent1", None),
                         "accent_2": getattr(colors_config, "accent2", None),
                     },
-                    "typography": {},
+                    "typography": typography,
                     "layout_style": "grid",
                     "visual_effects": {},
                     "image_treatment": {},
                 }
                 theme = ThemeSpec.from_dict(theme_data)
                 palette = self._extract_palette(theme_data)
-                logger.info("[THEME RESOLVER] Using theme from stylePreferences.colors")
+                logger.info(f"[THEME RESOLVER] Using theme from stylePreferences.colors (fonts: hero={hero_font}, body={body_font})")
                 return ThemeResolutionResult(
                     theme=theme,
                     palette=palette,

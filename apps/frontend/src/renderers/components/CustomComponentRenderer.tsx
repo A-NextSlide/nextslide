@@ -251,9 +251,9 @@ export const CustomComponentRenderer: React.FC<{
     const theme = deckData?.theme || {};
     const typography = theme.typography || {};
     return {
-      // Check new flat format first, then old nested format
-      bodyFont: typography.body_font || typography.bodyFont || typography.body_text?.family,
-      heroFont: typography.hero_font || typography.heroFont || typography.hero_title?.family
+      // Check all known formats: flat, camelCase, nested backend, nested frontend
+      bodyFont: typography.body_font || typography.bodyFont || typography.body_text?.family || typography.paragraph?.fontFamily,
+      heroFont: typography.hero_font || typography.heroFont || typography.hero_title?.family || typography.heading?.fontFamily
     };
   }, [deckData?.theme]);
 
@@ -275,24 +275,27 @@ export const CustomComponentRenderer: React.FC<{
     // Font priority order:
     // 1. Explicit slide-level overrides (overrideBodyFont/overrideHeroFont) - highest priority
     // 2. Deck theme fonts - normal priority for global consistency
-    // 3. Component defaults (fontFamily, etc.) - lowest priority (often hardcoded 'Inter')
+    // 3. Component body/hero font props - explicit role-specific font
+    // 4. Component fontFamily - generic fallback (often hero font, so lowest priority for body)
     const bodyFont =
       props.overrideBodyFont ||      // Slide-specific override (user explicitly set)
       nested.overrideBodyFont ||
       deckThemeFonts.bodyFont ||     // Deck theme (global font)
-      props.fontFamily ||            // Component default
-      props.bodyFont ||
-      nested.fontFamily ||
-      nested.bodyFont;
+      props.bodyFont ||              // Component body font (explicit)
+      nested.bodyFont ||
+      props.fontFamily ||            // Generic fallback (often hero font)
+      nested.fontFamily;
 
     const heroFont =
       props.overrideHeroFont ||      // Slide-specific override
       nested.overrideHeroFont ||
       deckThemeFonts.heroFont ||     // Deck theme (global font)
-      props.heroFont ||
+      props.heroFont ||              // Component hero font (explicit)
       props.headingFont ||
       nested.heroFont ||
-      nested.headingFont;
+      nested.headingFont ||
+      props.fontFamily ||            // Generic fallback
+      nested.fontFamily;
 
     const result = {
       bodyFont: typeof bodyFont === 'string' ? bodyFont : undefined,

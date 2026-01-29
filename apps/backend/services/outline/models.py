@@ -10,7 +10,9 @@ class OutlineOptions(BaseModel):
     """Options for outline generation"""
     prompt: str
     detail_level: str = "standard"  # quick, standard, detailed
-    enable_research: bool = True  # Will be auto-set based on detail_level
+    # Research is now intelligently determined by analyzing the prompt content
+    # This field is set by the research_decision module, not by user toggle
+    enable_research: bool = False  # Will be auto-determined based on prompt analysis
     style_context: Optional[str] = None
     font_preference: Optional[str] = None
     color_scheme: Optional[Any] = None
@@ -26,6 +28,8 @@ class OutlineOptions(BaseModel):
     visual_density: Optional[str] = Field(None, description="Visual density preference: minimal | moderate | rich | dense")
     # Image auto-application control
     async_images: bool = Field(False, description="If True, images are placeholders; if False, images are auto-applied")
+    # Research queries determined by intelligent analysis (populated by research_decision module)
+    research_queries: List[str] = Field(default_factory=list, description="Specific research queries if research is needed")
 
     @validator('slide_count')
     def validate_slide_count(cls, v):
@@ -37,17 +41,6 @@ class OutlineOptions(BaseModel):
                 # Most presentations stay under 20, but some educational/technical content needs more
                 return 50
         return v
-
-    @validator('enable_research', always=True)
-    def auto_set_research_based_on_detail_level(cls, v, values):
-        """Auto-enable research for detailed mode, disable for presentation modes"""
-        detail_level = values.get('detail_level', 'standard')
-        # Detailed mode = research enabled (comprehensive analysis)
-        # Presentation modes (standard/quick) = research disabled (hero content focus)
-        if detail_level == 'detailed':
-            return True
-        else:
-            return False
 
 
 class ChartData(BaseModel):

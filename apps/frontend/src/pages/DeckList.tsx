@@ -135,6 +135,7 @@ const DeckList: React.FC = () => {
     error,
     authError,
     deckToDelete,
+    decksToDelete,
     isDeleting,
     hasMore,
     loadDecks,
@@ -142,6 +143,7 @@ const DeckList: React.FC = () => {
     handleCreateDeck,
     handleEditDeck,
     handleShowDeleteDialog,
+    handleBulkDeleteDialog,
     handleConfirmDelete,
     handleCancelDelete,
   } = useDeckManagement();
@@ -2845,7 +2847,7 @@ const DeckList: React.FC = () => {
 
                     {/* View All Presentations Dialog - Sleek & Sophisticated Design */}
                     <Dialog open={showGallery} onOpenChange={handleDialogOpenChange}>
-                      <DialogContent className="sm:max-w-[1100px] h-[85vh] p-0 overflow-hidden flex flex-col bg-gradient-to-br from-white via-zinc-50/80 to-zinc-100/50 dark:from-zinc-900 dark:via-zinc-900/95 dark:to-black border-zinc-200/50 dark:border-zinc-800/50 shadow-2xl shadow-black/10 dark:shadow-black/50 backdrop-blur-xl">
+                      <DialogContent className="sm:max-w-[1400px] w-[95vw] h-[90vh] p-0 overflow-hidden flex flex-col bg-gradient-to-br from-white via-zinc-50/80 to-zinc-100/50 dark:from-zinc-900 dark:via-zinc-900/95 dark:to-black border-zinc-200/50 dark:border-zinc-800/50 shadow-2xl shadow-black/10 dark:shadow-black/50 backdrop-blur-xl">
                         {/* Sleek header with gradient accent */}
                         <div className="relative px-8 pt-8 pb-6 flex-shrink-0">
                           {/* Subtle gradient line accent */}
@@ -2893,7 +2895,7 @@ const DeckList: React.FC = () => {
                         </div>
 
                         {/* Tabs with modern styling */}
-                        <Tabs defaultValue="by-me" className="flex flex-col flex-grow overflow-hidden">
+                        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-grow overflow-hidden">
                           <div className="px-8 flex-shrink-0 border-b border-zinc-100 dark:border-zinc-800/50">
                             <TabsList className="bg-transparent h-auto p-0 gap-6">
                               <TabsTrigger
@@ -2956,7 +2958,15 @@ const DeckList: React.FC = () => {
                                       handleEditDeck(deck);
                                       setShowGallery(false);
                                     }}
-                                    onShowDeleteDialog={handleShowDeleteDialog}
+                                    onShowDeleteDialog={(deckId, e) => {
+                                      e.stopPropagation();
+                                      setShowGallery(false);
+                                      setTimeout(() => handleShowDeleteDialog(deckId, e), 150);
+                                    }}
+                                    onBulkDelete={(deckIds) => {
+                                      setShowGallery(false);
+                                      setTimeout(() => handleBulkDeleteDialog(deckIds), 150);
+                                    }}
                                     onLoadMore={loadMorePopupDecks}
                                     hasMore={hasMorePopup && !popupSearchQuery.trim()}
                                     isLoadingMore={isLoadingMorePopup}
@@ -2998,7 +3008,15 @@ const DeckList: React.FC = () => {
                                       handleEditDeck(deck);
                                       setShowGallery(false);
                                     }}
-                                    onShowDeleteDialog={handleShowDeleteDialog}
+                                    onShowDeleteDialog={(deckId, e) => {
+                                      e.stopPropagation();
+                                      setShowGallery(false);
+                                      setTimeout(() => handleShowDeleteDialog(deckId, e), 150);
+                                    }}
+                                    onBulkDelete={(deckIds) => {
+                                      setShowGallery(false);
+                                      setTimeout(() => handleBulkDeleteDialog(deckIds), 150);
+                                    }}
                                     onLoadMore={() => { }}
                                     hasMore={false}
                                     isLoadingMore={false}
@@ -3030,7 +3048,15 @@ const DeckList: React.FC = () => {
                                         handleEditDeck(deck);
                                         setShowGallery(false);
                                       }}
-                                      onShowDeleteDialog={handleShowDeleteDialog}
+                                      onShowDeleteDialog={(deckId, e) => {
+                                        e.stopPropagation();
+                                        setShowGallery(false);
+                                        setTimeout(() => handleShowDeleteDialog(deckId, e), 150);
+                                      }}
+                                      onBulkDelete={(deckIds) => {
+                                        setShowGallery(false);
+                                        setTimeout(() => handleBulkDeleteDialog(deckIds), 150);
+                                      }}
                                       onLoadMore={() => { }}
                                       hasMore={false}
                                       isLoadingMore={false}
@@ -3054,13 +3080,18 @@ const DeckList: React.FC = () => {
 
                     <GoogleSlidesImportModal open={showGoogleImport} onOpenChange={setShowGoogleImport} />
 
-                    <AlertDialog open={deckToDelete !== null} onOpenChange={(open) => !open && handleCancelDelete()}>
-                      <AlertDialogContent>
+                    <AlertDialog open={deckToDelete !== null || decksToDelete.length > 0} onOpenChange={(open) => !open && handleCancelDelete()}>
+                      <AlertDialogContent className="z-[200]">
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Are you sure you want to delete this presentation?</AlertDialogTitle>
+                          <AlertDialogTitle>
+                            {decksToDelete.length > 0
+                              ? `Delete ${decksToDelete.length} presentation${decksToDelete.length > 1 ? 's' : ''}?`
+                              : 'Are you sure you want to delete this presentation?'}
+                          </AlertDialogTitle>
                           <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete the
-                            presentation and all of its slides.
+                            {decksToDelete.length > 0
+                              ? `This action cannot be undone. This will permanently delete ${decksToDelete.length} presentation${decksToDelete.length > 1 ? 's' : ''} and all their slides.`
+                              : 'This action cannot be undone. This will permanently delete the presentation and all of its slides.'}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -3075,6 +3106,8 @@ const DeckList: React.FC = () => {
                                 <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-background border-r-transparent"></span>
                                 Deleting...
                               </>
+                            ) : decksToDelete.length > 0 ? (
+                              `Delete ${decksToDelete.length} Presentation${decksToDelete.length > 1 ? 's' : ''}`
                             ) : (
                               "Delete Presentation"
                             )}

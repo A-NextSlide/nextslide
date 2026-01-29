@@ -285,9 +285,10 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dropZoneIndex, setDropZoneIndex] = useState<number | null>(null);
 
-  // Sort slides by order
+  // Use slides as-is to stay consistent with viewport (which uses deckData.slides directly)
+  // Sorting here would make thumbnail indices diverge from viewport indices
   const displaySlides = useMemo(() => {
-    return [...(slides || [])].sort((a, b) => a.order - b.order);
+    return slides || [];
   }, [slides]);
 
   const totalSlides = displaySlides.length;

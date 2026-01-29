@@ -181,8 +181,9 @@ class CustomComponentHtmlProcessor:
     def inject_prefetched_images(self, html: str, prefetched_images: Dict[str, str]) -> str:
         """Replace placeholder/variable image sources with real URLs.
 
-        Simplified approach: We have image URLs and placeholder images.
-        Just inject the URLs into the placeholders, cycling through if needed.
+        Alt-text-aware: matches each placeholder to its correct image by
+        comparing alt text / JS object labels against the search queries that
+        produced each URL.  Falls back to sequential cycling when no query match.
         """
         if not html:
             return html
@@ -211,6 +212,68 @@ class CustomComponentHtmlProcessor:
             return html
 
         logger.info(f"[IMAGE_INJECT] Starting injection with {len(image_urls)} images, {len(logo_urls)} logos")
+
+        # Build query-to-URL mapping for alt-text-aware injection
+        # This ensures each image goes to its correct placeholder based on search query
+        query_to_url: Dict[str, str] = {}
+        for key, value in prefetched_images.items():
+            if key.endswith('_query') and isinstance(value, str):
+                url_key = key[:-6]  # Remove '_query' suffix
+                url = prefetched_images.get(url_key)
+                if url and isinstance(url, str) and url.startswith('http'):
+                    query_to_url[value.lower().strip()] = url
+
+        used_matched_urls: set = set()
+
+        def find_url_for_query(text: str) -> str:
+            """Find the correct image URL for given alt/label text."""
+            if not text:
+                return ""
+            text_lower = text.lower().strip()
+            if not text_lower:
+                return ""
+
+            # Exact match
+            if text_lower in query_to_url and query_to_url[text_lower] not in used_matched_urls:
+                url = query_to_url[text_lower]
+                used_matched_urls.add(url)
+                logger.info("[IMAGE_INJECT] Matched by query: '%s' -> %s", text[:40], url[:50])
+                return url
+
+            # Substring match
+            for query, url in query_to_url.items():
+                if url in used_matched_urls:
+                    continue
+                if query in text_lower or text_lower in query:
+                    used_matched_urls.add(url)
+                    logger.info("[IMAGE_INJECT] Matched by substring: '%s' ~ '%s'", text[:40], query[:40])
+                    return url
+
+            # Token overlap (best match with at least 2 common words)
+            text_words = set(re.findall(r'[a-z0-9]+', text_lower))
+            best_url = ""
+            best_score = 0
+            for query, url in query_to_url.items():
+                if url in used_matched_urls:
+                    continue
+                query_words = set(re.findall(r'[a-z0-9]+', query))
+                if not query_words:
+                    continue
+                overlap = len(text_words & query_words)
+                threshold = max(2, len(query_words) // 2)
+                if overlap >= threshold and overlap > best_score:
+                    best_url = url
+                    best_score = overlap
+
+            if best_url:
+                used_matched_urls.add(best_url)
+                logger.info("[IMAGE_INJECT] Matched by tokens (%d words): '%s'", best_score, text[:40])
+                return best_url
+
+            return ""
+
+        if query_to_url:
+            logger.info("[IMAGE_INJECT] Query-to-URL mappings: %d", len(query_to_url))
 
         result = html
         images_injected = 0
@@ -251,34 +314,46 @@ class CustomComponentHtmlProcessor:
                     cursor = end
                     continue
 
-                def replace_obj_src_quoted(match):
+                # Extract label/alt from this JS object for alt-aware image matching
+                obj_label = _extract_js_object_label(obj_text)
+
+                def replace_obj_src_quoted(match, _label=obj_label):
                     prefix = match.group(1)
                     quote = match.group(2)
                     current_src = match.group(3)
 
-                    # Skip if already a valid URL
+                    # Skip if already our bucket URL
                     if current_src.startswith('http') and is_our_url(current_src):
                         return match.group(0)
                     if current_src.startswith('data:') or current_src.startswith('blob:'):
                         return match.group(0)
 
-                    # Replace placeholder
-                    if _is_placeholder_src(current_src):
-                        url = get_next_image()
+                    # Replace placeholder OR external URL (AI sometimes generates
+                    # real Unsplash/Pexels URLs instead of 'placeholder')
+                    needs_replace = (
+                        _is_placeholder_src(current_src) or
+                        (current_src.startswith('http') and not is_our_url(current_src))
+                    )
+                    if needs_replace:
+                        url = find_url_for_query(_label) if _label else ""
+                        if not url:
+                            url = get_next_image()
                         if url:
-                            logger.info(f"[IMAGE_INJECT] JS object: replaced '{current_src[:30]}' with {url[:50]}...")
+                            logger.info(f"[IMAGE_INJECT] JS object: '{current_src[:30]}' -> {url[:50]}... (label: '{_label[:30] if _label else ''}')")
                             return f"{prefix}{quote}{url}{quote}"
                     return match.group(0)
 
-                def replace_obj_src_unquoted(match):
+                def replace_obj_src_unquoted(match, _label=obj_label):
                     prefix = match.group(1)
                     current_src = match.group(2)
                     suffix = match.group(3)
 
-                    # Replace unquoted placeholder with quoted URL
-                    url = get_next_image()
+                    # Try alt-aware matching first
+                    url = find_url_for_query(_label) if _label else ""
+                    if not url:
+                        url = get_next_image()
                     if url:
-                        logger.info(f"[IMAGE_INJECT] JS object (unquoted): replaced '{current_src}' with {url[:50]}...")
+                        logger.info(f"[IMAGE_INJECT] JS object (unquoted): '{current_src}' -> {url[:50]}... (label: '{_label[:30] if _label else ''}')")
                         return f"{prefix}'{url}'{suffix}"
                     return match.group(0)
 
@@ -329,8 +404,15 @@ class CustomComponentHtmlProcessor:
                 if '${' in current_src and '.' in current_src:
                     return full_tag
 
-            # This is a placeholder - replace it
-            url = get_next_image()
+            # This is a placeholder - try alt-text-aware matching first
+            alt_match = re.search(r'alt=["\']([^"\']+)["\']', full_tag, re.IGNORECASE)
+            alt_text = alt_match.group(1).strip() if alt_match else ""
+            # Skip template variable alt text
+            if alt_text and ('${' in alt_text or alt_text.startswith('{')):
+                alt_text = ""
+            url = find_url_for_query(alt_text) if alt_text else ""
+            if not url:
+                url = get_next_image()
             if not url:
                 return full_tag
 

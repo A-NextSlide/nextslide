@@ -149,7 +149,15 @@ def get_outline_planning_prompt(user_prompt: str, style_context: Optional[str], 
         f"{detail_inst}\n"
         f"{context_inst}\n"
         f"Flow: {get_flow_requirements(slide_count)}\n"
-        "Include a title slide and a closing slide when appropriate.\n"
+        "Include a title slide and a closing slide when appropriate.\n\n"
+        "SLIDE TITLE FORMATTING:\n"
+        "- Use Title Case (capitalize first letter of major words)\n"
+        "- Keep titles concise (2-6 words ideal)\n"
+        "- Make titles engaging and specific, not generic\n"
+        "- Use strong nouns and action words\n"
+        "- Avoid filler words like 'A', 'The' at the start when possible\n"
+        "Examples of GOOD titles: \"The Wit of Mark Twain\", \"Revolutionary Innovations\", \"Key Market Insights\"\n"
+        "Examples of BAD titles: \"life and works of someone\", \"introduction to the topic\", \"some key points\"\n\n"
         "Return JSON with fields: {\"slides\": [\"Title\", ...], \"slide_types\": [\"title\", ...]}."
     )
 

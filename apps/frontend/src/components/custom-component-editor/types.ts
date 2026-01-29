@@ -116,6 +116,9 @@ export interface VirtualElement {
 
   /** True if this image is from a JS array (tabs/carousel), not DOM */
   isJsArrayImage?: boolean;
+
+  /** True if this element is semantically interactive (button, link, has onclick, etc.) */
+  isInteractive?: boolean;
 }
 
 /**

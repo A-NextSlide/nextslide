@@ -802,33 +802,6 @@
       },
       "file_count": 3
     },
-    "acrona-display-font": {
-      "id": "acrona-display-font",
-      "name": "Acrona Display",
-      "category": "display",
-      "source": "designer",
-      "styles": {
-        "regular": [
-          {
-            "path": "Acrona Display Font/Files/Acrona.otf",
-            "format": "otf"
-          },
-          {
-            "path": "Acrona Display Font/Files/Acrona.ttf",
-            "format": "ttf"
-          },
-          {
-            "path": "Acrona Display Font/Files/Acrona.woff",
-            "format": "woff"
-          },
-          {
-            "path": "Acrona Display Font/Files/Acrona.woff2",
-            "format": "woff2"
-          }
-        ]
-      },
-      "file_count": 4
-    },
     "acure---display-font": {
       "id": "acure---display-font",
       "name": "Acure - Display",

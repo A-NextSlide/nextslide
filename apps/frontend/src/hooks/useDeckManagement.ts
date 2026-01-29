@@ -15,6 +15,7 @@ export interface UseDeckManagementReturn {
   error: string | null;
   authError: boolean;
   deckToDelete: string | null;
+  decksToDelete: string[]; // For bulk delete
   isDeleting: boolean;
   hasMore: boolean;
   loadDecks: () => Promise<void>; // Exposed for potential manual refresh
@@ -22,6 +23,7 @@ export interface UseDeckManagementReturn {
   handleCreateDeck: () => Promise<void>;
   handleEditDeck: (deck: CompleteDeckData) => Promise<void>;
   handleShowDeleteDialog: (deckId: string, event: React.MouseEvent) => void;
+  handleBulkDeleteDialog: (deckIds: string[]) => void; // For bulk delete
   handleConfirmDelete: () => Promise<void>;
   handleCancelDelete: () => void;
   setDecks: React.Dispatch<React.SetStateAction<CompleteDeckData[]>>;
@@ -35,6 +37,7 @@ export const useDeckManagement = (): UseDeckManagementReturn => {
   const [error, setError] = useState<string | null>(null);
   const [authError, setAuthError] = useState(false);
   const [deckToDelete, setDeckToDelete] = useState<string | null>(null);
+  const [decksToDelete, setDecksToDelete] = useState<string[]>([]); // For bulk delete
   const [isDeleting, setIsDeleting] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [currentOffset, setCurrentOffset] = useState(0);
@@ -390,15 +393,69 @@ export const useDeckManagement = (): UseDeckManagementReturn => {
   const handleShowDeleteDialog = (deckId: string, event: React.MouseEvent) => {
     event.stopPropagation();
     setDeckToDelete(deckId);
+    setDecksToDelete([]); // Clear bulk delete
+  };
+
+  const handleBulkDeleteDialog = (deckIds: string[]) => {
+    setDecksToDelete(deckIds);
+    setDeckToDelete(null); // Clear single delete
   };
 
   const handleConfirmDelete = async () => {
+    // Handle bulk delete
+    if (decksToDelete.length > 0) {
+      setIsDeleting(true);
+      try {
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const deckId of decksToDelete) {
+          try {
+            const success = await storeDeleteDeck(deckId);
+            if (success) {
+              successCount++;
+              setDecks(prevDecks => prevDecks.filter(d => d.uuid !== deckId));
+            } else {
+              failCount++;
+            }
+          } catch {
+            failCount++;
+          }
+        }
+
+        if (failCount === 0) {
+          toast({
+            title: "Presentations deleted",
+            description: `${successCount} presentation${successCount > 1 ? 's' : ''} deleted successfully.`
+          });
+        } else {
+          toast({
+            title: "Some deletions failed",
+            description: `${successCount} deleted, ${failCount} failed.`,
+            variant: "destructive"
+          });
+        }
+      } catch (err) {
+        console.error('Error bulk deleting decks:', err);
+        toast({
+          title: "Error deleting presentations",
+          description: "There was an error deleting presentations. Please try again.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsDeleting(false);
+        setDecksToDelete([]);
+      }
+      return;
+    }
+
+    // Handle single delete
     if (!deckToDelete) return;
     setIsDeleting(true);
     try {
       const success = await storeDeleteDeck(deckToDelete);
       if (success) {
-        setDecks(prevDecks => prevDecks.filter(d => d.uuid !== deckToDelete)); // Ensure correct variable name
+        setDecks(prevDecks => prevDecks.filter(d => d.uuid !== deckToDelete));
         toast({
           title: "Presentation deleted",
           description: "Your presentation has been deleted successfully."
@@ -427,6 +484,7 @@ export const useDeckManagement = (): UseDeckManagementReturn => {
 
   const handleCancelDelete = () => {
     setDeckToDelete(null);
+    setDecksToDelete([]);
   };
 
   return {
@@ -437,6 +495,7 @@ export const useDeckManagement = (): UseDeckManagementReturn => {
     error,
     authError,
     deckToDelete,
+    decksToDelete,
     isDeleting,
     hasMore,
     loadDecks,
@@ -444,8 +503,9 @@ export const useDeckManagement = (): UseDeckManagementReturn => {
     handleCreateDeck,
     handleEditDeck,
     handleShowDeleteDialog,
+    handleBulkDeleteDialog,
     handleConfirmDelete,
     handleCancelDelete,
-    setDecks 
+    setDecks
   };
 }; 

@@ -27,13 +27,15 @@ export {
 } from './coordinateTranslator';
 
 // Element interaction components
-export { ElementHitArea } from './ElementHitArea';
+export { ElementHitArea } from './ElementHitArea'; // Legacy - replaced by HitDetectionLayer
+export { HitDetectionLayer } from './HitDetectionLayer';
 export { ElementSelectionOverlay } from './ElementSelectionOverlay';
 export { PortaledTiptapEditor } from './PortaledTiptapEditor';
 
 // Hooks
 export { useElementDrag } from './useElementDrag';
 export { useElementResize } from './useElementResize';
+export { useHitDetection, calculateSemanticZIndex, type HitResult } from './useHitDetection';
 
 // Style mutation utilities
 export {

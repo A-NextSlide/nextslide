@@ -192,9 +192,11 @@ export const useCustomComponentImageAutoApply = ({
       const isPlaceholder = !src || src === 'placeholder' || src.includes('placeholder') ||
         (!src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:') && !src.startsWith('//'));
 
-      // Skip template variable images like src="${item.image}" - these are rendered dynamically by JS
-      // and should not be modified. The backend has already injected real URLs into the data arrays.
-      const isTemplateVariable = src.includes('${') && src.includes('.');
+      // Skip ALL template variable images like src="${heroImage}" or src="${item.image}"
+      // These are resolved by injectImageProps from component props, not by auto-apply.
+      // Auto-apply searching for these would inject random/wrong images that overlay
+      // the correct prop-injected ones (e.g., NFL image over basketball content).
+      const isTemplateVariable = src.includes('${');
       const hasTemplateAlt = alt.includes('${');
 
       if (isTemplateVariable || hasTemplateAlt) {
@@ -340,7 +342,7 @@ export const useCustomComponentImageAutoApply = ({
                 DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Proxied URL:', imageUrl.substring(0, 60));
               }
             } catch {
-              DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] Proxy failed, using original URL');
+              DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] Proxy failed');
             }
           }
 

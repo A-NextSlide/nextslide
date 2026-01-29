@@ -94,13 +94,12 @@ class EnhancedFontService:
     
     def _load_pixelbuddha_fonts(self) -> Dict:
         """
-        Load PixelBuddha font registry.
-        PERFORMANCE: Only loads curated subset (80 fonts) instead of all 701.
+        Load PixelBuddha font registry — all available fonts.
         """
         registry_root = Path(__file__).parent.parent / 'assets' / 'fonts' / 'pixelbuddha'
-        registry_path = registry_root / 'font_registry_filtered.json'
+        registry_path = registry_root / 'font_registry.json'
         if not registry_path.exists():
-            registry_path = registry_root / 'font_registry.json'
+            registry_path = registry_root / 'font_registry_filtered.json'
 
         font_data_dict = self._load_registry_file(registry_path)
         if not font_data_dict:

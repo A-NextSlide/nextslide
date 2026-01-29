@@ -7,10 +7,15 @@
  * - Cursor feedback
  *
  * Positioned over the iframe using parent viewport coordinates.
+ *
+ * Performance optimizations:
+ * - Wrapped in React.memo with custom comparison
+ * - Uses translate3d for GPU compositing
+ * - will-change hints during drag/resize
  */
 
-import React, { useRef, useCallback } from 'react';
-import { VirtualElement, ResizeDirection, Bounds } from './types';
+import React from 'react';
+import { VirtualElement, ResizeDirection } from './types';
 import { CoordinateTranslator } from './coordinateTranslator';
 
 interface ElementSelectionOverlayProps {
@@ -29,7 +34,10 @@ interface ElementSelectionOverlayProps {
 // Pink selection color - same as slide level
 const SELECTION_COLOR = '#FF007B';
 
-export const ElementSelectionOverlay: React.FC<ElementSelectionOverlayProps> = ({
+/**
+ * ElementSelectionOverlay - Memoized for performance
+ */
+const ElementSelectionOverlayComponent: React.FC<ElementSelectionOverlayProps> = ({
   element,
   coordinator,
   isDragging,
@@ -85,14 +93,17 @@ export const ElementSelectionOverlay: React.FC<ElementSelectionOverlayProps> = (
   };
 
   // Apply transforms based on drag or resize state
+  // Use translate3d for GPU compositing (Figma-style)
   if (isDragging) {
-    dynamicStyle.transform = 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px))';
+    dynamicStyle.transform = 'translate3d(var(--drag-x, 0px), var(--drag-y, 0px), 0)';
+    dynamicStyle.willChange = 'transform';
   } else if (isResizing && resizeDelta) {
     // For resize, we adjust position and size using CSS variables
     dynamicStyle.left = bounds.x + resizeDelta.x;
     dynamicStyle.top = bounds.y + resizeDelta.y;
     dynamicStyle.width = bounds.width + resizeDelta.width;
     dynamicStyle.height = bounds.height + resizeDelta.height;
+    dynamicStyle.willChange = 'left, top, width, height';
   }
 
   return (
@@ -123,13 +134,11 @@ export const ElementSelectionOverlay: React.FC<ElementSelectionOverlayProps> = (
             pointerEvents: 'auto',
           }}
           onMouseDown={(e) => {
-            console.log('[ElementSelectionOverlay] Drag area mouseDown');
             e.stopPropagation();
             e.preventDefault();
             onDragStart(e);
           }}
           onDoubleClick={(e) => {
-            console.log('[ElementSelectionOverlay] Drag area doubleClick');
             e.stopPropagation();
             e.preventDefault();
             onDoubleClick?.(e.clientX, e.clientY);
@@ -199,5 +208,32 @@ export const ElementSelectionOverlay: React.FC<ElementSelectionOverlayProps> = (
     </div>
   );
 };
+
+/**
+ * Memoized ElementSelectionOverlay - only re-renders when bounds or state changes
+ */
+export const ElementSelectionOverlay = React.memo(
+  ElementSelectionOverlayComponent,
+  (prevProps, nextProps) => {
+    // Custom comparison - only re-render if bounds or interaction state changed
+    return (
+      prevProps.element.id === nextProps.element.id &&
+      prevProps.element.bounds.x === nextProps.element.bounds.x &&
+      prevProps.element.bounds.y === nextProps.element.bounds.y &&
+      prevProps.element.bounds.width === nextProps.element.bounds.width &&
+      prevProps.element.bounds.height === nextProps.element.bounds.height &&
+      prevProps.isDragging === nextProps.isDragging &&
+      prevProps.isResizing === nextProps.isResizing &&
+      prevProps.dragOffset.x === nextProps.dragOffset.x &&
+      prevProps.dragOffset.y === nextProps.dragOffset.y &&
+      prevProps.resizeDelta?.x === nextProps.resizeDelta?.x &&
+      prevProps.resizeDelta?.y === nextProps.resizeDelta?.y &&
+      prevProps.resizeDelta?.width === nextProps.resizeDelta?.width &&
+      prevProps.resizeDelta?.height === nextProps.resizeDelta?.height
+    );
+  }
+);
+
+ElementSelectionOverlay.displayName = 'ElementSelectionOverlay';
 
 export default ElementSelectionOverlay;

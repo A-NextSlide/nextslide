@@ -8,6 +8,7 @@ from .models import (
     ChartData,
     ProgressUpdate
 )
+from .research_decision import should_research, get_current_date_context
 
 __all__ = [
     'OutlineGenerator',
@@ -15,5 +16,7 @@ __all__ = [
     'OutlineResult',
     'SlideContent',
     'ChartData',
-    'ProgressUpdate'
+    'ProgressUpdate',
+    'should_research',
+    'get_current_date_context'
 ] 

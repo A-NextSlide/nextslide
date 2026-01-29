@@ -111,12 +111,34 @@ const ImageCard: React.FC<ImageCardProps> = ({
 
   // Handle image selection from dialog
   const handleImageSelect = useCallback((url: string) => {
-    onImageUpdate(element.id, url);
-    onRequestHtmlUpdate?.();
-    onSave('Changed image');
+    // Close dialog immediately - force unmount by setting state in microtask
     setIsMediaDialogOpen(false);
-    toast({ title: 'Image updated' });
-  }, [element.id, onImageUpdate, onRequestHtmlUpdate, onSave, toast]);
+    setIsProcessing(true);
+
+    // Dispatch processing event so iframe shows loading overlay too
+    window.dispatchEvent(new CustomEvent('image:processing', {
+      detail: { componentId, propName: element.id, isProcessing: true }
+    }));
+
+    // Defer the actual update to next tick so dialog closes first
+    requestAnimationFrame(() => {
+      onImageUpdate(element.id, url);
+      onRequestHtmlUpdate?.();
+      onSave('Changed image');
+
+      // Preload the image, then clear loading state
+      const img = new Image();
+      const done = () => {
+        setIsProcessing(false);
+        window.dispatchEvent(new CustomEvent('image:processing', {
+          detail: { componentId, propName: element.id, isProcessing: false }
+        }));
+      };
+      img.onload = done;
+      img.onerror = done;
+      img.src = url;
+    });
+  }, [element.id, componentId, onImageUpdate, onRequestHtmlUpdate, onSave]);
 
   // Handle file upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -544,72 +566,74 @@ const ImageCard: React.FC<ImageCardProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Media Selection Dialog - On-brand styling */}
-      <Dialog open={isMediaDialogOpen} onOpenChange={setIsMediaDialogOpen}>
-        <DialogContent
-          className="p-0 border-0 bg-transparent shadow-2xl w-full max-w-[95vw] sm:max-w-[480px]"
-          aria-describedby={undefined}
-        >
-          <DialogTitle className="sr-only">Select Image</DialogTitle>
-          <DialogDescription className="sr-only">
-            Search or upload an image for {displayName}
-          </DialogDescription>
-          <div className="bg-white rounded-2xl overflow-hidden border border-zinc-200 shadow-xl w-full flex flex-col max-h-[85vh]">
-            {/* Orange gradient top bar */}
-            <div className="h-[3px] bg-gradient-to-r from-[#FF6B00] via-[#FF8533] to-[#FF6B00] shrink-0" />
+      {/* Media Selection Dialog - Instant mount/unmount (no exit animation) */}
+      {isMediaDialogOpen && (
+        <Dialog open onOpenChange={(open) => { if (!open) setIsMediaDialogOpen(false); }}>
+          <DialogContent
+            className="p-0 border-0 bg-transparent shadow-2xl w-full max-w-[95vw] sm:max-w-[480px] duration-0 data-[state=closed]:duration-0"
+            aria-describedby={undefined}
+          >
+            <DialogTitle className="sr-only">Select Image</DialogTitle>
+            <DialogDescription className="sr-only">
+              Search or upload an image for {displayName}
+            </DialogDescription>
+            <div className="bg-white rounded-2xl overflow-hidden border border-zinc-200 shadow-xl w-full flex flex-col max-h-[85vh]">
+              {/* Orange gradient top bar */}
+              <div className="h-[3px] bg-gradient-to-r from-[#FF6B00] via-[#FF8533] to-[#FF6B00] shrink-0" />
 
-            {/* Header */}
-            <div className="px-4 py-3 border-b border-zinc-100 shrink-0">
-              <h2
-                className="text-base text-zinc-900"
-                style={{
-                  fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-                  fontWeight: 700,
-                  letterSpacing: '-0.01em'
-                }}
-              >
-                Select Image
-              </h2>
-              <p className="text-xs text-zinc-500 mt-0.5">
-                Search or upload an image for {displayName}
-              </p>
-            </div>
-
-            {/* Upload option */}
-            <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/50 shrink-0">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-zinc-300 hover:border-orange-400 hover:bg-orange-50/50 text-sm text-zinc-600 hover:text-orange-600 transition-all"
-              >
-                <Upload className="w-4 h-4" />
-                Upload from device
-              </button>
-            </div>
-
-            {/* Search Tab - with fixed height for scrolling */}
-            <div className="flex-1 overflow-hidden flex flex-col min-h-0" style={{ height: '400px' }}>
-              <div className="flex-1 overflow-y-auto p-4">
-                <SearchTab
-                  onSelect={(url, type) => {
-                    if (url && typeof url === 'string') {
-                      handleImageSelect(url);
-                    }
+              {/* Header */}
+              <div className="px-4 py-3 border-b border-zinc-100 shrink-0">
+                <h2
+                  className="text-base text-zinc-900"
+                  style={{
+                    fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                    fontWeight: 700,
+                    letterSpacing: '-0.01em'
                   }}
-                  defaultSearchTerm={element.alt && element.alt !== 'Image' ? element.alt : undefined}
-                  autoSearchToken={dialogSearchToken}
+                >
+                  Select Image
+                </h2>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Search or upload an image for {displayName}
+                </p>
+              </div>
+
+              {/* Upload option */}
+              <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/50 shrink-0">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleFileUpload}
                 />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-zinc-300 hover:border-orange-400 hover:bg-orange-50/50 text-sm text-zinc-600 hover:text-orange-600 transition-all"
+                >
+                  <Upload className="w-4 h-4" />
+                  Upload from device
+                </button>
+              </div>
+
+              {/* Search Tab - with fixed height for scrolling */}
+              <div className="flex-1 overflow-hidden flex flex-col min-h-0" style={{ height: '400px' }}>
+                <div className="flex-1 overflow-y-auto p-4">
+                  <SearchTab
+                    onSelect={(url, type) => {
+                      if (url && typeof url === 'string') {
+                        handleImageSelect(url);
+                      }
+                    }}
+                    defaultSearchTerm={element.alt && element.alt !== 'Image' ? element.alt : undefined}
+                    autoSearchToken={dialogSearchToken}
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };

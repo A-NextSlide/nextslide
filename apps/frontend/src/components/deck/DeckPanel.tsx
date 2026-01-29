@@ -3,6 +3,7 @@ import { useSlideNavigation } from '@/hooks/useSlideNavigation';
 import { useDeckStore } from '@/stores/deckStore';
 import { useEditor } from '@/hooks/useEditor';
 import { useToast } from '@/hooks/use-toast';
+import { useImagePreloader } from '@/hooks/useImagePreloader';
 
 import SlideViewport from './SlideViewport';
 import ThumbnailNavigator from './ThumbnailNavigator';
@@ -27,8 +28,11 @@ const DeckPanel: React.FC = () => {
   const updateSlide = useDeckStore(state => state.updateSlide);
   
   const { isEditing } = useEditor();
-  
+
   const { toast } = useToast();
+
+  // Preload images for adjacent slides so they're cached before navigation
+  useImagePreloader(deckData.slides, currentSlideIndex);
   
   const panelRef = useRef<HTMLDivElement>(null);
   const thumbsRef = useRef<HTMLDivElement>(null);

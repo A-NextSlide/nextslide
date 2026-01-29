@@ -8,6 +8,7 @@ from agents.research import OutlineResearchAgent
 from setup_logging_optimized import get_logger
 
 from .models import OutlineOptions, OutlineResult, ProgressUpdate
+from .research_decision import should_research, get_current_date_context
 
 logger = get_logger(__name__)
 
@@ -17,9 +18,28 @@ class OutlineGeneratorFlowMixin:
     async def generate(self, options: OutlineOptions, progress_callback=None) -> OutlineResult:
         """Generate complete outline"""
         start_time = time.time()
-        
+
         logger.info(f"Starting outline generation: slides={options.slide_count}, detail={options.detail_level}")
-        
+
+        # INTELLIGENT RESEARCH DECISION: Analyze prompt to determine if research is needed
+        try:
+            needs_research, research_queries, reason = await should_research(
+                options.prompt,
+                options.style_context
+            )
+            options.enable_research = needs_research
+            options.research_queries = research_queries
+            logger.info(f"[RESEARCH DECISION] Research {'ENABLED' if needs_research else 'DISABLED'}: {reason}")
+            if progress_callback and needs_research:
+                await self._call_progress(progress_callback, ProgressUpdate(
+                    stage="research_decision",
+                    message=f"Research needed: {reason}",
+                    progress=3
+                ))
+        except Exception as e:
+            logger.warning(f"[RESEARCH DECISION] Failed to analyze prompt, defaulting to research: {e}")
+            options.enable_research = True
+
         # Fast-path: Perplexity/Claude single-pass outline generation (mode-optimized)
         # Use different models based on detail level for optimized performance
         try:
@@ -211,10 +231,29 @@ class OutlineGeneratorFlowMixin:
 
     async def stream_generation(self, options: OutlineOptions) -> AsyncGenerator[ProgressUpdate, None]:
         """Stream outline generation progress"""
-        
+
         async def streaming_generate():
             start_time = time.time()
-            
+
+            # INTELLIGENT RESEARCH DECISION: Analyze prompt to determine if research is needed
+            try:
+                needs_research, research_queries, reason = await should_research(
+                    options.prompt,
+                    options.style_context
+                )
+                options.enable_research = needs_research
+                options.research_queries = research_queries
+                logger.info(f"[RESEARCH DECISION] Research {'ENABLED' if needs_research else 'DISABLED'}: {reason}")
+                if needs_research:
+                    yield ProgressUpdate(
+                        stage="research_decision",
+                        message=f"Research needed: {reason}",
+                        progress=2
+                    )
+            except Exception as e:
+                logger.warning(f"[RESEARCH DECISION] Failed to analyze prompt, defaulting to research: {e}")
+                options.enable_research = True
+
             # Decide on Perplexity fast-path early (respects explicit model)
             try:
                 use_pplx_stream = USE_PERPLEXITY_FOR_OUTLINE or (options.model and options.model.startswith("perplexity-"))
@@ -222,7 +261,7 @@ class OutlineGeneratorFlowMixin:
             except Exception as e:
                 logger.warning(f"[DEBUG] Exception in Perplexity check: {e}")
                 use_pplx_stream = USE_PERPLEXITY_FOR_OUTLINE
-            
+
             # Process files first if any
             processed_files = None
             brand_guidelines = None

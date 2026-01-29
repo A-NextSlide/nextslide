@@ -333,7 +333,7 @@ export const renderImage = (
     objectFit: (isLogoComponent ? (objectFit || 'contain') : objectFit) as "cover" | "contain" | "fill" | "none" | "scale-down",
     filter: getFilterString(props),
     transform: getTransformString(props),
-    transition: `transform 200ms ease-out, all ${hoverTransitionDuration}s ease-in-out`,
+    transition: `transform 200ms ease-out, filter ${hoverTransitionDuration}s ease-in-out, opacity ${hoverTransitionDuration}s ease-in-out`,
     maxWidth: 'none', // Ensure image doesn't get constrained when cropped
   };
   
@@ -571,16 +571,16 @@ export const renderImage = (
   }
   
   // Create pattern overlay
-  const getPatternOverlay = () => {
+  const getPatternOverlay = (isVisible: boolean = true) => {
     if (overlayPattern === 'none') return null;
-    
+
     const patternStyles: React.CSSProperties = {
       position: 'absolute',
       top: 0,
       left: 0,
       width: '100%',
       height: '100%',
-      opacity: overlayPatternOpacity,
+      opacity: isVisible ? overlayPatternOpacity : 0,
       pointerEvents: 'none',
       mixBlendMode: overlayBlendMode as any,
       zIndex: 2,
@@ -622,7 +622,7 @@ export const renderImage = (
     height: '100%',
     // Always clip image content in normal mode; enable overflow only during cropping
     overflow: isCroppingThis ? 'visible' : 'hidden',
-    transition: `all ${hoverTransitionDuration}s ease-in-out`,
+    transition: `border ${hoverTransitionDuration}s ease-in-out, box-shadow ${hoverTransitionDuration}s ease-in-out`,
   };
   
   // Add border to inner container so it follows the border-radius
@@ -917,8 +917,8 @@ export const renderImage = (
           }}
         />
         
-        {/* Color overlay (render only after image loads to avoid masking during initial load) */}
-          {imageLoaded ? (() => {
+        {/* Color overlay - always rendered to avoid layout shift, visibility controlled via opacity */}
+          {(() => {
             // Extract RGB values and alpha from the color
             let r = 0, g = 0, b = 0, a = 0; // Default alpha to 0 when no color is provided
             if (overlayColor && overlayColor.startsWith('#')) {
@@ -931,12 +931,12 @@ export const renderImage = (
                 a = hex.length === 8 ? (parseInt(hex.slice(6, 8), 16) / 255) : 0;
               }
             }
-            
+
             // Use overlay opacity if it's been explicitly set; otherwise fall back to color alpha
             const finalOpacity = (overlayOpacity !== undefined && overlayOpacity !== null)
               ? overlayOpacity
               : a;
-            
+
             // Only render overlay if opacity is greater than 0
             if (finalOpacity > 0) {
               return (
@@ -948,7 +948,7 @@ export const renderImage = (
               width: '100%',
               height: '100%',
                     backgroundColor: `rgb(${r}, ${g}, ${b})`,
-                    opacity: finalOpacity,
+                    opacity: imageLoaded ? finalOpacity : 0,
               mixBlendMode: overlayBlendMode as any,
               pointerEvents: 'none',
               zIndex: 2,
@@ -957,13 +957,13 @@ export const renderImage = (
               );
             }
             return null;
-          })() : null}
-        
-        {/* Pattern overlay */}
-        {imageLoaded ? getPatternOverlay() : null}
-        
-        {/* Gradient overlay */}
-        {imageLoaded && gradientOverlayEnabled && ((overlayOpacity ?? 0) > 0) && (
+          })()}
+
+        {/* Pattern overlay - always rendered, hidden until image loads */}
+        {getPatternOverlay(imageLoaded)}
+
+        {/* Gradient overlay - always rendered, hidden until image loads */}
+        {gradientOverlayEnabled && ((overlayOpacity ?? 0) > 0) && (
           <div
             style={{
               position: 'absolute',
@@ -973,15 +973,15 @@ export const renderImage = (
               height: '100%',
               background: `linear-gradient(${gradientDirection}deg, ${gradientStartColor}, ${gradientEndColor})`,
               mixBlendMode: overlayBlendMode as any,
-              opacity: Math.max(0, Math.min(1, overlayOpacity || 0)),
+              opacity: imageLoaded ? Math.max(0, Math.min(1, overlayOpacity || 0)) : 0,
               pointerEvents: 'none',
               zIndex: 3,
             }}
           />
         )}
-        
-          {/* Gradient mask effect - separate from overlay */}
-          {imageLoaded && props.gradientMaskEnabled && (
+
+          {/* Gradient mask effect - always rendered, hidden until image loads */}
+          {props.gradientMaskEnabled && (
             <div
               style={{
                 position: 'absolute',
@@ -993,6 +993,7 @@ export const renderImage = (
                 mixBlendMode: 'multiply',
                 maskImage: `linear-gradient(${props.gradientMaskDirection || 180}deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 100%)`,
                 WebkitMaskImage: `linear-gradient(${props.gradientMaskDirection || 180}deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 100%)`,
+                opacity: imageLoaded ? 1 : 0,
                 pointerEvents: 'none',
                 zIndex: 4,
               }}

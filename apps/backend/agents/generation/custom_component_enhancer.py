@@ -75,7 +75,7 @@ def inject_theme_data(theme_dict: Dict[str, Any], context: SlideGenerationContex
     typography = theme_dict.get("typography", {})
     if not typography.get("hero_title", {}).get("family") and not typography.get("hero_font"):
         hero_font = _get_attr_or_key(style_prefs, "font")
-        body_font = _get_attr_or_key(style_prefs, "bodyFont") or hero_font
+        body_font = _get_attr_or_key(style_prefs, "bodyFont")  # Don't fallback yet - check deck_theme first
         if isinstance(deck_theme, dict):
             deck_typo = deck_theme.get("typography", {})
             if not hero_font:
@@ -83,11 +83,16 @@ def inject_theme_data(theme_dict: Dict[str, Any], context: SlideGenerationContex
             if not body_font:
                 body_font = deck_typo.get("body_text", {}).get("family") or deck_typo.get("body_font")
 
+        # Only fall back to hero_font as last resort
+        if not body_font and hero_font:
+            logger.warning(f"[THEME INJECT] No body font found, falling back to hero font: {hero_font}")
+            body_font = hero_font
+
         if hero_font:
             theme_dict.setdefault("typography", {})
             theme_dict["typography"]["hero_title"] = {"family": hero_font}
             theme_dict["typography"]["body_text"] = {"family": body_font or hero_font}
-            logger.info(f"[THEME INJECT] Fonts injected: hero={hero_font}, body={body_font or hero_font}")
+            logger.info(f"[THEME INJECT] Fonts injected: hero={hero_font}, body={body_font}")
 
     # INJECT COLORS
     color_palette = theme_dict.get("color_palette", {})

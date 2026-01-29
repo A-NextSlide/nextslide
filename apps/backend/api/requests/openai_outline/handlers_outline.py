@@ -32,7 +32,8 @@ async def process_outline(request: OutlineRequest, registry=None) -> OutlineResp
         options = OutlineOptions(
             prompt=request.prompt,
             detail_level=request.detailLevel or "standard",
-            enable_research=(request.enableResearch if request.enableResearch is not None else True),
+            # enable_research is now determined intelligently by analyzing the prompt
+            # The generator_flow will call should_research() to decide
             style_context=request.styleContext,
             font_preference=request.fontPreference,
             color_scheme=request.colorPreference,  # Pass the full colorPreference object
@@ -195,7 +196,8 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
             options = OutlineOptions(
                 prompt=request.prompt,
                 detail_level=request.detailLevel or "standard",
-                enable_research=(request.enableResearch if request.enableResearch is not None else True),
+                # enable_research is now determined intelligently by analyzing the prompt
+                # The generator_flow will call should_research() to decide
                 style_context=request.styleContext,
                 font_preference=request.fontPreference,
                 color_scheme=normalized_color,

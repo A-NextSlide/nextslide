@@ -16,7 +16,8 @@ import { createPortal } from 'react-dom';
 
 import { VirtualElement, Bounds } from './types';
 import { CoordinateTranslator, createCoordinateTranslator } from './coordinateTranslator';
-import { ElementHitArea } from './ElementHitArea';
+import { HitDetectionLayer } from './HitDetectionLayer';
+import { useHitDetection } from './useHitDetection';
 import { ElementSelectionOverlay } from './ElementSelectionOverlay';
 import { useElementDrag } from './useElementDrag';
 import { useElementResize } from './useElementResize';
@@ -296,8 +297,26 @@ export function generateEditModeScript(componentId: string): string {
       // All elements can be dragged - styleMutator handles positioning strategy appropriately
       // For flex/grid items, only resize will take effect (position determined by layout)
       isDraggable: true,
-      isResizable: true
+      isResizable: true,
+      // Mark interactive elements for priority hit detection
+      isInteractive: isInteractiveElement(el, tag)
     };
+  }
+
+  // Detect if an element is semantically interactive
+  function isInteractiveElement(el, tagName) {
+    var interactiveTags = ['button', 'a', 'input', 'select', 'textarea', 'label'];
+    if (interactiveTags.indexOf(tagName) !== -1) return true;
+    // Check for onclick or event handlers
+    if (el.onclick || el.getAttribute('onclick')) return true;
+    // Check for role="button" or tabindex
+    var role = el.getAttribute('role');
+    if (role === 'button' || role === 'link' || role === 'menuitem') return true;
+    if (el.hasAttribute('tabindex') && el.getAttribute('tabindex') !== '-1') return true;
+    // Check for cursor: pointer (indicates clickable)
+    var style = getComputedStyle(el);
+    if (style.cursor === 'pointer') return true;
+    return false;
   }
 
   // Mark elements as editable - comprehensive detection
@@ -1020,6 +1039,9 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     [virtualElements, selectedElementId]
   );
 
+  // Hit detection for finding elements at a point (used by handleClickNested)
+  const { hitTestAtPoint } = useHitDetection(virtualElements);
+
   useEffect(() => {
     if (skipNextSelectionNotifyRef.current) {
       skipNextSelectionNotifyRef.current = false;
@@ -1310,15 +1332,19 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
   }, [componentId, isEditing, isSelected, iframeRef, setActiveComponent, setStoreIframeRef]);
 
-  // Clear store when component unmounts or is deselected
+  // Clear store when component unmounts
+  // NOTE: Using empty dependency array to ensure cleanup only runs on unmount
+  // Access store directly to avoid stale closure issues
   useEffect(() => {
     return () => {
       // Only clear if this component was the active one
-      setActiveComponent(null);
-      setDetectedElements([]);
-      clearSelection();
+      const store = useCustomComponentEditStore.getState();
+      store.setActiveComponent(null);
+      store.setDetectedElements([]);
+      store.clearSelection();
     };
-  }, [setActiveComponent, setDetectedElements, clearSelection]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Request elements from iframe when ready
   const requestElements = useCallback(() => {
@@ -1672,13 +1698,29 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   }, [handleStartTextEdit, onElementSelect, selectAtPoint]);
 
   // Handle click on nested element (when clicking inside selected element's bounds)
+  // Uses priority-based hit detection to find the topmost interactive element
   const handleClickNested = useCallback((x: number, y: number) => {
-    const selected = selectAtPoint({ x, y });
-    if (selected) {
+    // Use hit detection to find the element at this point, excluding the currently selected element
+    // so we can click "through" it to children
+    const excludeIds = selectedElementId ? new Set([selectedElementId]) : undefined;
+    const { element } = hitTestAtPoint({ x, y }, excludeIds);
+
+    if (element) {
+      // Found a child element - select it directly
+      const path = getSelectionPathForElement(element.id);
+      const pathIndex = path.length - 1; // Select the element itself (deepest in path)
+      applySelectionPath(path, { x, y }, pathIndex);
       skipNextSelectionNotifyRef.current = true;
-      onElementSelect(toDetectedElement(selected), x, y);
+      onElementSelect(toDetectedElement(element), x, y);
+    } else {
+      // No child element found - use cycling logic to go deeper or deselect
+      const selected = selectAtPoint({ x, y });
+      if (selected) {
+        skipNextSelectionNotifyRef.current = true;
+        onElementSelect(toDetectedElement(selected), x, y);
+      }
     }
-  }, [selectAtPoint, onElementSelect]);
+  }, [selectedElementId, hitTestAtPoint, getSelectionPathForElement, applySelectionPath, selectAtPoint, onElementSelect]);
 
   // Handle position change (during drag)
   const handlePositionChange = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
@@ -1899,6 +1941,71 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     window.addEventListener('mouseup', handleMouseUp);
   }, [iframeBounds, editingTextId, applySelectionPath, getSelectionPathForRect, onElementSelect, virtualElements]);
 
+  // HitDetectionLayer handlers - for the new Figma-style hit detection
+  const handleHitLayerClick = useCallback((element: VirtualElement, point: { x: number; y: number }) => {
+    // The HitDetectionLayer already found the best element at this point using priority sorting
+    // (text > image > container, smaller on top). Use this element directly instead of
+    // recalculating with selectAtPoint, which would start at the root.
+
+    // If clicking the same element again, use selectAtPoint to cycle through nested elements
+    if (selectedElementId === element.id) {
+      const selected = selectAtPoint(point);
+      setEditingTextId(null);
+      setEditingElement(null);
+      if (selected) {
+        skipNextSelectionNotifyRef.current = true;
+        onElementSelect(toDetectedElement(selected), point.x, point.y);
+      }
+    } else {
+      // New element - select it directly using its selection path
+      const path = getSelectionPathForElement(element.id);
+      const pathIndex = path.length - 1; // Select the deepest (the clicked element itself)
+      applySelectionPath(path, point, pathIndex);
+      setEditingTextId(null);
+      setEditingElement(null);
+      skipNextSelectionNotifyRef.current = true;
+      onElementSelect(toDetectedElement(element), point.x, point.y);
+    }
+
+    // Notify iframe to clear any previous selection styling
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'deselect',
+      }, '*');
+    }
+  }, [selectedElementId, selectAtPoint, getSelectionPathForElement, applySelectionPath, onElementSelect, iframeRef, setEditingElement]);
+
+  const handleHitLayerDoubleClick = useCallback((element: VirtualElement, point: { x: number; y: number }) => {
+    // Use existing double-click logic
+    const selected = selectAtPoint(point, true);
+    if (selected?.type === 'text') {
+      handleStartTextEdit(selected);
+      return;
+    }
+    if (selected) {
+      skipNextSelectionNotifyRef.current = true;
+      onElementSelect(toDetectedElement(selected), point.x, point.y);
+    } else if (element.type === 'image') {
+      skipNextSelectionNotifyRef.current = true;
+      onElementSelect(toDetectedElement(element));
+    }
+  }, [selectAtPoint, handleStartTextEdit, onElementSelect]);
+
+  const handleHitLayerBackgroundClick = useCallback((point: { x: number; y: number }) => {
+    // Deselect when clicking on background
+    applySelectionPath([], null, 0);
+    skipNextSelectionNotifyRef.current = true;
+    onElementSelect(null);
+
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'deselect',
+      }, '*');
+    }
+  }, [applySelectionPath, onElementSelect, iframeRef]);
+
   // Don't render if not in edit mode
   if (!isEditing || !isSelected) return null;
 
@@ -1908,8 +2015,9 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           This allows clicking on empty space in the slide to deselect, while clicks on
           the settings panel and other UI elements pass through normally.
           IMPORTANT: Don't render during text editing - the iframe needs to receive pointer events
-          for contentEditable text input to work. */}
-      {iframeBounds && !editingTextId && (
+          for contentEditable text input to work.
+          z-index: 1 is BELOW the HitDetectionLayer so element clicks are handled first. */}
+      {iframeBounds && !editingTextId && !selectedElementId && (
         <div
           style={{
             position: 'fixed',
@@ -1918,8 +2026,8 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
             width: iframeBounds.width,
             height: iframeBounds.height,
             pointerEvents: 'auto',
-            cursor: selectedElementId ? 'default' : 'crosshair',
-            zIndex: 1, // Lower than hit areas (10000+) so elements are clickable
+            cursor: 'crosshair',
+            zIndex: 1, // Lower than HitDetectionLayer (30000) so element clicks work
           }}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) {
@@ -1935,10 +2043,10 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         />
       )}
 
-      {/* Element hit areas for click detection
-          - Always visible EXCEPT the currently selected element
-          - This allows clicking to select different elements while dragging the selected one
-          - IMPORTANT: Wrapped in clipping container to prevent hit areas from extending into sidebar
+      {/* HitDetectionLayer - Figma-style single DOM element for all hit detection
+          Replaces N ElementHitArea components with O(1) DOM + O(log n) hit calculation
+          - Uses mathematical hit testing instead of N overlapping divs
+          - Provides hover feedback via single hover indicator element
           - z-index 30000 is BELOW selection overlay (40000) so drag/resize works */}
       {iframeBounds && (
         <div
@@ -1949,29 +2057,22 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
             width: iframeBounds.width,
             height: iframeBounds.height,
             overflow: 'hidden',
-            pointerEvents: 'none', // Container doesn't receive events, children do
-            zIndex: 30000, // BELOW selection overlay (40000) so drag works
+            pointerEvents: 'none', // Container doesn't receive events, HitDetectionLayer does
+            zIndex: 30000,
           }}
         >
-          {virtualElements.map(element => (
-            <ElementHitArea
-              key={element.id}
-              element={{
-                ...element,
-                // Adjust bounds to be relative to the clipping container
-                bounds: {
-                  ...element.bounds,
-                  x: element.bounds.x - iframeBounds.left,
-                  y: element.bounds.y - iframeBounds.top,
-                },
-              }}
-              isSelected={element.id === selectedElementId}
-              onSelect={(cursorX, cursorY) => handleSelectElement(element.id, cursorX, cursorY)}
-              onDoubleClick={(cursorX, cursorY) => handleDoubleClick(element, cursorX, cursorY)}
-              disabled={!!editingTextId || isBoxSelecting}
-              hideForSelection={element.id === selectedElementId}
-            />
-          ))}
+          <HitDetectionLayer
+            iframeBounds={iframeBounds}
+            virtualElements={virtualElements}
+            selectedElementId={selectedElementId}
+            onElementClick={handleHitLayerClick}
+            onElementDoubleClick={handleHitLayerDoubleClick}
+            onBackgroundClick={handleHitLayerBackgroundClick}
+            onBackgroundDragStart={handleBackgroundPointerDown}
+            disabled={!!editingTextId}
+            isBoxSelecting={isBoxSelecting}
+          />
+          {/* Box selection rectangle */}
           {selectionRect && (
             <div
               style={{

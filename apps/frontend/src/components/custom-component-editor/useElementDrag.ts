@@ -102,10 +102,12 @@ export function useElementDrag({
           document.body.style.webkitUserSelect = 'none';
           document.body.classList.add('dragging-component');
 
-          // Initialize CSS variables on overlay element
+          // Initialize CSS variables on overlay element with GPU hints
           if (overlayRef.current) {
             overlayRef.current.style.setProperty('--drag-x', '0px');
             overlayRef.current.style.setProperty('--drag-y', '0px');
+            // GPU compositing hint for smooth 60fps
+            overlayRef.current.style.willChange = 'transform';
           }
 
           setIsDragging(true);
@@ -189,6 +191,8 @@ export function useElementDrag({
         if (overlayRef.current) {
           overlayRef.current.style.removeProperty('--drag-x');
           overlayRef.current.style.removeProperty('--drag-y');
+          // Remove GPU hint after drag ends
+          overlayRef.current.style.willChange = '';
         }
       });
 

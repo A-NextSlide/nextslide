@@ -215,7 +215,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   let setCurrentSlideIndexSafe: (index: number) => void = () => {};
 
   try {
-    slides = [...(deckData?.slides || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    slides = deckData?.slides || [];
     const navigationContext = useNavigation();
     currentSlideIndex = navigationContext.currentSlideIndex;
     setCurrentSlideIndexSafe = navigationContext.setCurrentSlideIndex;
