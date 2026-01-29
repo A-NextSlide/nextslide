@@ -267,14 +267,6 @@ export const CustomComponentRenderer: React.FC<{
   // Debug: Log when component re-renders with font-related props
   const fontOverrideBody = component.props?.overrideBodyFont;
   const fontOverrideHero = component.props?.overrideHeroFont;
-  if (fontOverrideBody || fontOverrideHero) {
-    console.log('[CustomComponent] RENDER with font overrides:', {
-      componentId: component.id?.slice(0, 12),
-      overrideBodyFont: fontOverrideBody,
-      overrideHeroFont: fontOverrideHero,
-    });
-  }
-
   const resolvedFonts = useMemo(() => {
     const props = component.props || {};
     const nested = (props.props && typeof props.props === 'object') ? props.props as Record<string, any> : {};
@@ -304,15 +296,10 @@ export const CustomComponentRenderer: React.FC<{
       props.fontFamily ||            // Generic fallback
       nested.fontFamily;
 
-    const result = {
+    return {
       bodyFont: typeof bodyFont === 'string' ? bodyFont : undefined,
       heroFont: typeof heroFont === 'string' ? heroFont : undefined
     };
-    // Debug: Log resolved fonts when they include overrides
-    if (props.overrideBodyFont || props.overrideHeroFont) {
-      console.log('[CustomComponent] resolvedFonts with override:', result);
-    }
-    return result;
   }, [component.props, deckThemeFonts]);
 
   // Keep last successful compiled render to avoid flicker during recompilation
@@ -1289,7 +1276,7 @@ body:not(.ns-overlay-mode) [role="tab"]::after {
     }
 
     return html;
-  }, [iframeSrcDoc, component.id, isEditing, isThumbnail, propsKey, effectiveIsEditMode, isSelected, resolvedFonts.bodyFont, resolvedFonts.heroFont, fontCatalogVersion]); // Use propsKey instead of object reference
+  }, [iframeSrcDoc, component.id, isEditing, isThumbnail, propsKey, effectiveIsEditMode, isSelected, resolvedFonts.bodyFont, resolvedFonts.heroFont]); // fontCatalogVersion removed - fonts are loaded globally and don't need to invalidate iframe srcDoc
 
   // Listen for messages from iframe (placeholder image clicks and edit mode)
   // NOTE: Disabled on iOS due to postMessage crash issues
@@ -1938,14 +1925,7 @@ body:not(.ns-overlay-mode) [role="tab"]::after {
         >
           {/* IFRAME RENDERING - Simple 100% fill, HTML handles responsive layout */}
           {/* On iOS thumbnails: strip scripts for memory safety, full view keeps scripts */}
-          {isIframeComponent && stableIframeSrcDoc && (() => {
-            // Debug: Log iframe key when font overrides are present
-            if (resolvedFonts.bodyFont || resolvedFonts.heroFont) {
-              const iframeKey = `${component.id?.slice(0, 12)}-${renderCodeHash?.slice(0, 8)}-${propsKey.length}-${resolvedFonts.bodyFont || 'none'}-${resolvedFonts.heroFont || 'none'}`;
-              console.log('[CustomComponent] Iframe key (with fonts):', iframeKey);
-            }
-            return true;
-          })() && (
+          {isIframeComponent && stableIframeSrcDoc && (
             <iframe
               ref={iframeRef}
               key={`${component.id}-${renderCodeHash}-${propsKey.length}-${propsKey.slice(-20)}-${resolvedFonts.bodyFont || ''}-${resolvedFonts.heroFont || ''}`}

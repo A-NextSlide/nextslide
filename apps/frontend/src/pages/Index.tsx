@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { deckSyncService } from '@/lib/deckSyncService';
 import { useDeckStore } from '@/stores/deckStore';
-import { useEditorStore } from '@/stores/editorStore';
 import LoadingDisplay from '@/components/common/LoadingDisplay';
 
 /**
@@ -30,18 +29,22 @@ const Index: React.FC = () => {
   const deckData = useDeckStore(state => state.deckData);
 
   useEffect(() => {
+    // Reset loading state so we show the loading screen while the new deck fetches
+    setIsLoaded(false);
+    setError(null);
+
     const startTime = Date.now();
     const loadingTimer = setInterval(() => {
       setLoadingTime(Date.now() - startTime);
     }, 1000);
 
     try {
-    
-      
+
+
       // Check backend connection
       const checkSupabaseConnection = async () => {
         try {
-    
+
           // Use a simple health check endpoint instead of querying Supabase directly
           const response = await fetch('/api/health');
           
@@ -89,15 +92,15 @@ const Index: React.FC = () => {
                 }
                 
                 // Now load the deck since we know it exists
-                // Clear editor drafts when switching to a different deck
+                // Reset stale state when switching to a different deck
                 if (isNewDeck || deckId !== useDeckStore.getState().deckData.uuid) {
-                  useEditorStore.getState().clearDraftComponents();
+                  useDeckStore.getState().resetStore();
                 }
 
                 // Initialize the store with the deck ID - this will load the deck
-                useDeckStore.getState().initialize({ 
-                  deckId: deckId, 
-                  syncEnabled: true, 
+                useDeckStore.getState().initialize({
+                  deckId: deckId,
+                  syncEnabled: true,
                   useRealtimeSubscription: true,
                   isNewDeck: isNewDeck  // Pass the new deck flag
                 });

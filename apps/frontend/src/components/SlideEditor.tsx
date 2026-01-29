@@ -309,6 +309,15 @@ const SlideEditorContent: React.FC = () => {
   const { isHistoryPanelOpen } = useVersionHistory();
   const { deckId } = useParams<{ deckId: string }>();
 
+  // Reset all stores when switching to a different deck (router reuses same component instance)
+  const prevDeckIdRef = useRef<string | undefined>(deckId);
+  useEffect(() => {
+    if (prevDeckIdRef.current && deckId && prevDeckIdRef.current !== deckId) {
+      useDeckStore.getState().resetStore();
+    }
+    prevDeckIdRef.current = deckId;
+  }, [deckId]);
+
   // Constants for panel management
   const CHAT_MIN_SIZE = 22; // Reduced from 22 to give more space to slides
   const COLLAPSE_THRESHOLD = 3;
