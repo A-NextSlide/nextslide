@@ -19,6 +19,7 @@ from agents.config import (
     CUSTOM_COMPONENT_MODEL,
     CUSTOM_COMPONENT_ALLOW_FALLBACK,
     CUSTOM_COMPONENT_FALLBACK_MODEL,
+    CUSTOM_COMPONENT_TIMEOUT_FALLBACK_MODEL,
     CUSTOM_COMPONENT_RESPECT_GLOBAL_GEMINI_COOLDOWN,
     CUSTOM_COMPONENT_TEMPERATURE,
     ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN
@@ -189,7 +190,8 @@ class CustomComponentGenerator:
     def __init__(self, model: str = CUSTOM_COMPONENT_MODEL):
         self.model = model
         self.temperature = CUSTOM_COMPONENT_TEMPERATURE
-        self.generation_timeout = 240.0
+        self.generation_timeout = 180.0  # Primary model timeout
+        self.fallback_timeout = 120.0    # Timeout fallback gets its own budget
         self._html_processor = CustomComponentHtmlProcessor()
 
     def _inject_prefetched_images_into_html(self, html: str, prefetched_images: Dict[str, str]) -> str:
@@ -393,10 +395,11 @@ class CustomComponentGenerator:
 
             return component
 
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, TimeoutError):
             logger.error(
-                "[CUSTOM_COMPONENT] Generation timed out after %ss (including fallback attempt)",
+                "[CUSTOM_COMPONENT] Generation timed out after %ss (primary) + %ss (fallback)",
                 self.generation_timeout,
+                self.fallback_timeout,
             )
             return None
         except Exception as exc:
@@ -407,6 +410,8 @@ class CustomComponentGenerator:
         loop = asyncio.get_event_loop()
         used_fallback = False
         allow_fallback = bool(CUSTOM_COMPONENT_ALLOW_FALLBACK and CUSTOM_COMPONENT_FALLBACK_MODEL)
+        # Timeout fallback to Gemini 3 Flash is always enabled, independent of the env var gate
+        allow_timeout_fallback = bool(CUSTOM_COMPONENT_TIMEOUT_FALLBACK_MODEL)
 
         client, model_name = get_client(self.model)
         active_client, active_model = client, model_name
@@ -424,6 +429,22 @@ class CustomComponentGenerator:
 
         try:
             response = await self._invoke_model(loop, active_client, active_model, messages)
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            # Timeout-specific fallback: always try Gemini 3 Flash (fast model)
+            if not used_fallback and allow_timeout_fallback:
+                logger.warning(
+                    "[CUSTOM_COMPONENT] Primary model timed out after %ss, falling back to %s",
+                    self.generation_timeout,
+                    CUSTOM_COMPONENT_TIMEOUT_FALLBACK_MODEL,
+                )
+                timeout_client, timeout_model = get_client(CUSTOM_COMPONENT_TIMEOUT_FALLBACK_MODEL)
+                response = await self._invoke_model(
+                    loop, timeout_client, timeout_model, messages,
+                    timeout_override=self.fallback_timeout,
+                )
+                used_fallback = True
+            else:
+                raise
         except AIRateLimitError:
             if not used_fallback:
                 mark_provider_rate_limited(GEMINI_PROVIDER)
@@ -459,8 +480,10 @@ class CustomComponentGenerator:
         client: Any,
         model: str,
         messages: List[Dict[str, Any]],
+        timeout_override: Optional[float] = None,
     ) -> Any:
-        logger.info("[CUSTOM_COMPONENT] Calling %s with temperature=%s", model, self.temperature)
+        timeout = timeout_override or self.generation_timeout
+        logger.info("[CUSTOM_COMPONENT] Calling %s with temperature=%s, timeout=%ss", model, self.temperature, timeout)
         return await asyncio.wait_for(
             loop.run_in_executor(
                 None,
@@ -472,7 +495,7 @@ class CustomComponentGenerator:
                 32000,
                 self.temperature,
             ),
-            timeout=self.generation_timeout,
+            timeout=timeout,
         )
 
     @staticmethod

@@ -15,7 +15,7 @@ import GroupedDropdown from '../settings/GroupedDropdown';
 import GradientPicker from '../GradientPicker';
 import { useDeckStore } from '@/stores/deckStore';
 import { useHistoryStore } from '@/stores/historyStore';
-import { SlideThumbnailService } from '@/services/SlideThumbnailService';
+import { invalidateStamp } from '@/stamps/stampCache';
 import { Loader2, Undo2, Sparkles, Wand2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useEditorStore } from '@/stores/editorStore';
@@ -210,7 +210,7 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
     }
 
     updates.forEach(({ slideId }) => {
-      SlideThumbnailService.clearThumbnail(slideId);
+      invalidateStamp(slideId);
     });
   };
 

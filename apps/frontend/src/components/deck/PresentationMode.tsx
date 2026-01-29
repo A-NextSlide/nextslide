@@ -8,10 +8,9 @@ import { cn } from '@/lib/utils';
 import { DEFAULT_SLIDE_HEIGHT, DEFAULT_SLIDE_WIDTH } from '@/utils/deckUtils';
 import Watermark from '@/components/common/Watermark';
 import MiniSlide from './MiniSlide';
-import MobilePresentationThumbnail from './MobilePresentationThumbnail';
+import { StampThumbnail } from '@/stamps';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { BROWSER } from '@/utils/browser';
-import { captureTinySlideScreenshot } from '@/utils/slideScreenshot';
 import { useLockedSlides } from '@/hooks/useLockedSlides';
 import LockedSlideOverlay from './LockedSlideOverlay';
 
@@ -23,56 +22,6 @@ interface PresentationModeProps {
   alwaysShowControls?: boolean;
   slideSize?: { width: number; height: number };
 }
-
-/**
- * CaptureSlot - Offscreen component for capturing slide screenshots
- * Reports when the slide is fully mounted and ready for capture
- */
-interface CaptureSlotProps {
-  slide: SlideData;
-  slideSize: { width: number; height: number };
-  onSlideReady: (slideId: string) => void;
-}
-
-const CaptureSlot = React.forwardRef<HTMLDivElement, CaptureSlotProps>(
-  ({ slide, slideSize, onSlideReady }, ref) => {
-    // Report when this slide is mounted
-    useEffect(() => {
-      if (slide?.id) {
-        // Small delay to ensure MiniSlide has started rendering
-        const timer = setTimeout(() => {
-          onSlideReady(slide.id);
-        }, 50);
-        return () => clearTimeout(timer);
-      }
-    }, [slide?.id, onSlideReady]);
-
-    return (
-      <div
-        ref={ref}
-        style={{
-          position: 'fixed',
-          left: '-9999px',
-          top: 0,
-          width: `${slideSize.width}px`,
-          height: `${slideSize.height}px`,
-          background: '#fff',
-          pointerEvents: 'none',
-        }}
-      >
-        <MiniSlide
-          key={`capture-${slide.id}`}
-          slide={slide}
-          width={slideSize.width}
-          height={slideSize.height}
-          responsive={false}
-          slideSize={slideSize}
-          forceRender
-        />
-      </div>
-    );
-  }
-);
 
 const PresentationMode: React.FC<PresentationModeProps> = ({
   slides,
@@ -97,109 +46,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   // Get locked slides info
   const { isLocked, lockedCount } = useLockedSlides();
 
-  // Use lightweight thumbnails on mobile to prevent crashes
+  // Use stamp-based thumbnails on mobile to prevent crashes
   const useMobileThumbnails = BROWSER.isMobile;
-
-  // Mobile thumbnail capture state - captures one slide at a time offscreen
-  const [thumbnailCache, setThumbnailCache] = useState<Map<string, string>>(() => new Map());
-  const [captureIndex, setCaptureIndex] = useState<number>(-1);
-  const captureSlotRef = useRef<HTMLDivElement>(null);
-  const isCapturingRef = useRef(false);
-
-  // Start capturing when thumbnails open on mobile
-  useEffect(() => {
-    if (useMobileThumbnails && showThumbnails && captureIndex === -1) {
-      // Start with first uncached slide
-      const firstUncached = slides.findIndex(s => s?.id && !thumbnailCache.has(s.id));
-      if (firstUncached !== -1) {
-        setCaptureIndex(firstUncached);
-      }
-    }
-    if (!showThumbnails) {
-      setCaptureIndex(-1);
-      isCapturingRef.current = false;
-    }
-  }, [showThumbnails, useMobileThumbnails, slides, thumbnailCache, captureIndex]);
-
-  // Ref to track which slide is currently in the capture slot
-  const captureSlotSlideIdRef = useRef<string | null>(null);
-
-  // Capture current slide and move to next
-  const captureCurrentSlide = useCallback(async () => {
-    if (!captureSlotRef.current || isCapturingRef.current) return;
-
-    // Capture slide ID at start - this is the slide we're capturing
-    const currentIndex = captureIndex;
-    const slide = slides[currentIndex];
-    if (!slide?.id) {
-      // Move to next
-      const nextUncached = slides.findIndex((s, i) => i > currentIndex && s?.id && !thumbnailCache.has(s.id));
-      setCaptureIndex(nextUncached);
-      return;
-    }
-
-    const slideId = slide.id; // Lock in the ID
-    isCapturingRef.current = true;
-    console.log(`[MobileCapture] Starting capture for slide ${currentIndex}: ${slideId}`);
-
-    try {
-      // Wait for MiniSlide to render the correct slide
-      // Check up to 5 times with 100ms intervals
-      let attempts = 0;
-      const maxAttempts = 5;
-      while (attempts < maxAttempts) {
-        await new Promise(r => setTimeout(r, 100));
-
-        // Verify the capture slot has the correct slide
-        if (captureSlotSlideIdRef.current === slideId) {
-          break;
-        }
-        attempts++;
-        console.log(`[MobileCapture] Waiting for slide ${slideId}, slot has ${captureSlotSlideIdRef.current}, attempt ${attempts}`);
-      }
-
-      if (captureSlotSlideIdRef.current !== slideId) {
-        console.warn(`[MobileCapture] Slot mismatch after ${maxAttempts} attempts, skipping ${slideId}`);
-        isCapturingRef.current = false;
-        const nextUncached = slides.findIndex((s, i) => i > currentIndex && s?.id && !thumbnailCache.has(s.id));
-        setCaptureIndex(nextUncached);
-        return;
-      }
-
-      const dataUrl = await captureTinySlideScreenshot(captureSlotRef.current);
-
-      if (dataUrl) {
-        console.log(`[MobileCapture] Success: ${slideId}`);
-        // Update cache with the locked slideId
-        setThumbnailCache(prev => {
-          const next = new Map(prev);
-          next.set(slideId, dataUrl);
-          return next;
-        });
-
-        // Small delay to let state update propagate before moving to next
-        await new Promise(r => setTimeout(r, 50));
-      } else {
-        console.warn(`[MobileCapture] No data returned for: ${slideId}`);
-      }
-    } catch (err) {
-      console.error(`[MobileCapture] Failed:`, err);
-    }
-
-    isCapturingRef.current = false;
-
-    // Find next uncached slide - check from current position
-    const nextUncached = slides.findIndex((s, i) => i > currentIndex && s?.id && !thumbnailCache.has(s.id));
-    setCaptureIndex(nextUncached);
-  }, [captureIndex, slides, thumbnailCache]);
-
-  // Trigger capture when captureIndex changes
-  useEffect(() => {
-    if (useMobileThumbnails && showThumbnails && captureIndex >= 0 && captureIndex < slides.length) {
-      const timer = setTimeout(captureCurrentSlide, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [captureIndex, useMobileThumbnails, showThumbnails, slides.length, captureCurrentSlide]);
 
   // Edge detection state and timeout ref
   const [isInEdgeZone, setIsInEdgeZone] = useState(false);
@@ -646,21 +494,43 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
                         const slideIsLocked = isLocked(index);
 
-                        // On mobile, use lightweight thumbnail with cached screenshots
+                        // On mobile, use stamp-based thumbnails (pre-rendered images)
                         if (useMobileThumbnails) {
                           return (
-                            <MobilePresentationThumbnail
+                            <button
                               key={slide.id}
-                              slide={slide}
-                              width={thumbnailWidth}
-                              height={thumbnailHeight}
-                              isActive={validIndex === index}
-                              slideNumber={index + 1}
                               onClick={() => { goToSlide(index); setShowThumbnails(false); }}
-                              cachedUrl={thumbnailCache.get(slide.id) || null}
-                              isCapturing={captureIndex === index}
-                              isLocked={slideIsLocked}
-                            />
+                              className={cn(
+                                'relative group flex-shrink-0 overflow-hidden rounded-md bg-gray-800',
+                                'ring-1 ring-transparent hover:ring-white/50',
+                                slideIsLocked && 'ring-1 ring-orange-500/50',
+                                validIndex === index && 'ring-2 ring-white'
+                              )}
+                              style={{ height: thumbnailHeight, width: thumbnailWidth }}
+                            >
+                              <div className="relative bg-white w-full h-full overflow-hidden">
+                                <StampThumbnail
+                                  slide={slide}
+                                  className="pointer-events-none hover:ring-0"
+                                  slideSize={deckSlideSize}
+                                  isLocked={slideIsLocked}
+                                />
+                              </div>
+                              <div className="absolute top-1 left-1 bg-black/70 rounded-full px-2 py-0.5 text-white text-xs font-medium flex items-center gap-1">
+                                {slideIsLocked && <Lock size={10} className="text-orange-400" />}
+                                {index + 1}
+                              </div>
+                              {validIndex === index && !slideIsLocked && (
+                                <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-white rounded-full px-2 py-0.5 text-black text-xs font-bold">
+                                  Current
+                                </div>
+                              )}
+                              {slideIsLocked && (
+                                <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-orange-500 rounded-full px-2 py-0.5 text-white text-xs font-bold">
+                                  Locked
+                                </div>
+                              )}
+                            </button>
                           );
                         }
 
@@ -715,16 +585,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Offscreen capture slot - renders ONE MiniSlide at a time for screenshot capture */}
-      {/* Hidden behind overlay, forceRender bypasses lazy loading */}
-      {useMobileThumbnails && showThumbnails && captureIndex >= 0 && captureIndex < slides.length && slides[captureIndex]?.id && (
-        <CaptureSlot
-          ref={captureSlotRef}
-          slide={slides[captureIndex]}
-          slideSize={deckSlideSize}
-          onSlideReady={(slideId) => { captureSlotSlideIdRef.current = slideId; }}
-        />
-      )}
     </motion.div>
   );
 };

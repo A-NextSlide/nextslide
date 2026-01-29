@@ -14,7 +14,7 @@ GEMINI_FLASH_LITE = "gemini-2.5-flash-lite"
 GEMINI_PRO = "gemini-2.5-pro"
 GEMINI_3_PRO = "gemini-3-pro-preview"
 GEMINI_3_FLASH = "gemini-3-flash-preview"  # Available but not used yet
-GEMINI_IMAGE = "gemini-2.0-flash-exp"
+GEMINI_IMAGE = "gemini-2.5-flash-image"
 
 # Claude Models
 CLAUDE_OPUS = "claude-opus-4-5"
@@ -187,6 +187,7 @@ CUSTOM_COMPONENT_FALLBACK_MODEL = (
     if CUSTOM_COMPONENT_ALLOW_FALLBACK
     else None
 )
+CUSTOM_COMPONENT_TIMEOUT_FALLBACK_MODEL = GEMINI_3_FLASH  # Always-on fallback when primary times out
 CUSTOM_COMPONENT_EDIT_MODEL = GEMINI_3_FLASH
 CUSTOM_COMPONENT_SIMPLE_MODEL = MODEL_EASY
 CUSTOM_COMPONENT_TEMPERATURE = 0.8

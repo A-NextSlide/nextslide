@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type RefObject } from 'react';
+import { useLayoutEffect, useMemo, useState, type RefObject } from 'react';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 
 const FALLBACK_VIEWPORT = { width: 1200, height: 800 };
@@ -54,7 +54,12 @@ const computeSlideSize = (viewportWidth: number, viewportHeight: number, options
 export const useSlideViewportSize = (viewportRef: RefObject<HTMLElement>, options?: SlideViewportSizeOptions) => {
   const [viewportSize, setViewportSize] = useState(getViewportFallback());
 
-  useEffect(() => {
+  // useLayoutEffect runs synchronously BEFORE the browser paints, so the
+  // slide is measured and rendered at the correct viewport-fitted dimensions
+  // on the very first visible frame.  Using plain useEffect here would cause
+  // a one-frame flash where the slide renders at window.innerWidth/Height
+  // (the fallback), then shrinks to the actual container size.
+  useLayoutEffect(() => {
     const element = viewportRef.current;
     if (!element) return;
 

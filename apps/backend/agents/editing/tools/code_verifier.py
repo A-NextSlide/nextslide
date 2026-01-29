@@ -621,6 +621,11 @@ def verify_slide_code(html: str, user_request: str = "") -> VerificationResult:
     issues.extend(overlay_issues)
     warnings.extend(overlay_warnings)
 
+    # Check for external resource issues (Tailwind CDN, bad @imports, missing fonts)
+    resource_issues, resource_warnings = _check_external_resources(html)
+    issues.extend(resource_issues)
+    warnings.extend(resource_warnings)
+
     is_valid = len(issues) == 0
 
     return VerificationResult(
@@ -730,6 +735,98 @@ def _check_image_issues(html: str) -> Tuple[List[str], List[str]]:
             f"Found {len(bad_alts)} images with generic alt text like 'image' or 'photo'. "
             "Alt text should be a specific search query like 'SpaceX Falcon 9 launch'."
         )
+
+    return issues, warnings
+
+
+def _check_external_resources(html: str) -> Tuple[List[str], List[str]]:
+    """
+    Check for external resource issues that break slides.
+
+    Detects:
+    - Tailwind CDN or other external CSS frameworks (cause thumbnail + perf issues)
+    - @import of non-CSS files (invalid, wastes network requests)
+    - Missing font <link> tags when custom fonts are referenced in CSS
+    """
+    issues = []
+    warnings = []
+
+    # Extract CSS
+    style_blocks = re.findall(r'<style[^>]*>(.*?)</style>', html, re.DOTALL | re.IGNORECASE)
+    all_css = '\n'.join(style_blocks)
+
+    # Check for Tailwind CDN (script tag loading tailwindcss)
+    if re.search(r'<script[^>]*src=["\'][^"\']*tailwindcss[^"\']*["\']', html, re.IGNORECASE):
+        issues.append(
+            "Tailwind CSS CDN loaded via <script>. This adds massive overhead, "
+            "breaks thumbnail rendering, and is never needed. Remove the Tailwind "
+            "script tag and write all CSS in <style> tags."
+        )
+
+    # Check for @import of non-CSS files (images, etc.)
+    import_urls = re.findall(
+        r'@import\s+url\s*\(\s*["\']?([^"\')\s]+)["\']?\s*\)',
+        all_css,
+        re.IGNORECASE
+    )
+    for url in import_urls:
+        # Allow font imports and CSS files
+        if re.search(r'\.(css|woff2?|ttf|otf)(\?|$)', url, re.IGNORECASE):
+            continue
+        if 'fonts.googleapis.com' in url or 'fonts.gstatic.com' in url:
+            continue
+        # Flag non-CSS imports (images, etc.)
+        if re.search(r'\.(jpg|jpeg|png|gif|svg|webp|avif|bmp|ico)(\?|$)', url, re.IGNORECASE):
+            issues.append(
+                f"@import used to load an image file ({url[-60:]}). "
+                "@import is only for CSS stylesheets/fonts, not images. "
+                "Use <img> tags for images instead."
+            )
+        else:
+            warnings.append(
+                f"@import loading a non-standard resource ({url[-60:]}). "
+                "Verify this is a valid CSS file."
+            )
+
+    # Check for custom fonts referenced in CSS but not loaded via <link>
+    font_families = re.findall(
+        r"font-family\s*:\s*['\"]?([A-Z][A-Za-z\s]+)",
+        all_css,
+        re.IGNORECASE
+    )
+    # Also check CSS variables for font names
+    font_vars = re.findall(
+        r"--font-\w+\s*:\s*['\"]?([A-Z][A-Za-z\s]+)",
+        all_css,
+        re.IGNORECASE
+    )
+    custom_fonts = set()
+    system_fonts = {
+        'arial', 'helvetica', 'verdana', 'georgia', 'times', 'times new roman',
+        'courier', 'courier new', 'serif', 'sans-serif', 'monospace', 'cursive',
+        'fantasy', 'system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace',
+        'inherit', 'initial', 'unset', 'var',
+    }
+    for font in font_families + font_vars:
+        font_clean = font.strip().strip("'\"")
+        if font_clean.lower() not in system_fonts and len(font_clean) > 2:
+            custom_fonts.add(font_clean)
+
+    if custom_fonts:
+        # Check if there are <link> tags for Google Fonts or similar
+        has_font_link = bool(re.search(
+            r'<link[^>]*(?:fonts\.googleapis\.com|fonts\.gstatic\.com|font)[^>]*>',
+            html,
+            re.IGNORECASE
+        ))
+        has_font_face = bool(re.search(r'@font-face', all_css, re.IGNORECASE))
+
+        if not has_font_link and not has_font_face:
+            font_list = ', '.join(list(custom_fonts)[:3])
+            warnings.append(
+                f"Custom fonts referenced ({font_list}) but no <link> or @font-face found. "
+                "Add Google Fonts <link> tags in <head> or fonts will fall back to system defaults."
+            )
 
     return issues, warnings
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { ComponentInstance } from "../../types/components";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ImagePlaceholder } from '@/components/common/ImagePlaceholder';
@@ -224,7 +224,11 @@ export const renderImage = (
   const props = component.props;
   const [isHovered, setIsHovered] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("Searching for the perfect image...");
-  const [imageLoaded, setImageLoaded] = useState(false);
+  // Track which src has been fully loaded (not just a boolean).
+  // This avoids the flash where src changes but the old imageLoaded=true
+  // persists for one render frame before the useEffect resets it.
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const imageLoaded = loadedSrc === src && !!src && src !== 'placeholder';
 
   const imageRef = useRef<HTMLImageElement>(null);
   const { updateComponent, slideId: activeSlideId } = useActiveSlide();
@@ -307,9 +311,17 @@ export const renderImage = (
     height
   } = props;
 
-  // Reset image loaded flag when source changes
-  useEffect(() => {
-    setImageLoaded(false);
+  // When src changes, probe the browser cache so cached images appear on the
+  // very first paint (useLayoutEffect runs before the browser paints).
+  // For uncached images, loadedSrc will differ from src, keeping the img
+  // hidden until the onLoad callback fires.
+  useLayoutEffect(() => {
+    if (!src || src === 'placeholder') return;
+    const probe = new Image();
+    probe.src = src;
+    if (probe.complete && probe.naturalWidth > 0) {
+      setLoadedSrc(src);
+    }
   }, [src]);
   
   // Detect logo components early (used in styles below)
@@ -325,15 +337,31 @@ export const renderImage = (
 
 
   
-  // Create image-specific styles for the img element itself
+  // Resolve objectFit: ensure it's always a valid CSS value (never empty string)
+  const resolvedObjectFit = (
+    isLogoComponent
+      ? (objectFit || 'contain')
+      : (objectFit || 'cover')
+  ) as "cover" | "contain" | "fill" | "none" | "scale-down";
+
+  // Create image-specific styles for the img element itself.
+  // The image is absolutely positioned inside its overflow:hidden container
+  // so it can NEVER expand the container or cause layout shifts.
   const imageStyles: React.CSSProperties = {
     display: 'block',
+    position: 'absolute',
+    top: 0,
+    left: 0,
     width: "100%",
     height: "100%",
-    objectFit: (isLogoComponent ? (objectFit || 'contain') : objectFit) as "cover" | "contain" | "fill" | "none" | "scale-down",
+    objectFit: resolvedObjectFit,
+    objectPosition: 'center center',
     filter: getFilterString(props),
     transform: getTransformString(props),
-    transition: `transform 200ms ease-out, filter ${hoverTransitionDuration}s ease-in-out, opacity ${hoverTransitionDuration}s ease-in-out`,
+    // Hide until the browser has decoded the image so the user never sees
+    // the raw intrinsic dimensions before objectFit applies.
+    opacity: imageLoaded ? 1 : 0,
+    transition: `transform 200ms ease-out, filter ${hoverTransitionDuration}s ease-in-out`,
     maxWidth: 'none', // Ensure image doesn't get constrained when cropped
   };
   
@@ -813,10 +841,11 @@ export const renderImage = (
           </svg>
         )}
         
-        <img 
+        <img
           ref={imageRef}
-          src={src} 
-          alt={isLogoComponent ? (alt || 'Company logo') : alt} 
+          src={src}
+          alt={isLogoComponent ? (alt || 'Company logo') : alt}
+          decoding="async"
           style={{
             ...imageStyles,
             filter: duotoneEnabled ? `url(#duotone-${component.id}) ${imageStyles.filter}` : imageStyles.filter,
@@ -913,7 +942,8 @@ export const renderImage = (
             if (target) {
               target.dataset.errorCount = '0';
             }
-            setImageLoaded(true);
+            // Mark the prop src as loaded so imageLoaded (loadedSrc === src) becomes true
+            setLoadedSrc(src);
           }}
         />
         

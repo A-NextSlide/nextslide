@@ -79,13 +79,15 @@ export function useImagePreloader(
   useEffect(() => {
     if (!slides || slides.length === 0) return;
 
-    // Collect URLs from the adjacent slides (skip current – it's already loading)
+    // Collect URLs from the current slide AND adjacent slides.
+    // Including the current slide ensures its images are in the browser
+    // decode cache, preventing the "condensed then expand" flash when
+    // objectFit is applied after the image loads.
     const urlsToPreload = new Set<string>();
     const start = Math.max(0, currentIndex - buffer);
     const end = Math.min(slides.length - 1, currentIndex + buffer);
 
     for (let i = start; i <= end; i++) {
-      if (i === currentIndex) continue; // current slide already rendering
       const slideUrls = extractImageUrls(slides[i]);
       for (const url of slideUrls) {
         if (!preloadedUrls.has(url)) {

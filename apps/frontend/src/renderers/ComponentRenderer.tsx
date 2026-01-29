@@ -358,7 +358,7 @@ export const ComponentRenderer: React.FC<Props> = memo(({
     // Other interactive components (TextBlock, TiptapTextBlock, Table, Video) keep auto for their editing needs
     pointerEvents: isEditing && componentType === 'CustomComponent'
       ? 'none'
-      : ['TextBlock', 'TiptapTextBlock', 'Table', 'Video', 'Background'].includes(componentType)
+      : ['CustomComponent', 'TextBlock', 'TiptapTextBlock', 'Table', 'Video', 'Background'].includes(componentType)
         ? 'auto'
         : 'none',
   };
@@ -513,7 +513,7 @@ export const ComponentRenderer: React.FC<Props> = memo(({
     <div
       ref={containerRef}
       style={componentWrapperStyle}
-      className={`component - wrapper component - type - ${componentType} `}
+      className={`component-wrapper component-type-${componentType}`}
       data-component-id={componentId}
       data-component-type={componentType}
       data-position-x={(normalizedPosition as any).x}

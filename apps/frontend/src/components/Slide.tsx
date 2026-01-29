@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef, useMemo } from 'react';
 import { SlideData } from '@/types/SlideTypes';
 import { ComponentInstance } from "../types/components";
 import { ActiveSlideContext } from '@/context/ActiveSlideContext';
@@ -173,13 +173,10 @@ const SlideContent: React.FC<SlideProps> = ({
     setSlideData(slide);
   }, [slide]);
 
-  // Control visibility based on active state
-  useEffect(() => {
+  // Control visibility based on active state – useLayoutEffect so zIndex is
+  // correct before the browser paints (avoids a single frame at zIndex 0).
+  useLayoutEffect(() => {
     setIsVisible(isActive);
-    
-    // Remove all animation triggering logic from here
-    // The slidechange event should only be triggered from useSlideNavigation
-    // to prevent double animations
   }, [isActive, slideData.id]);
 
   // Handle selection of this slide

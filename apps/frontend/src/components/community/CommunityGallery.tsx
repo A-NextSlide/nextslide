@@ -28,13 +28,10 @@ import {
   COMMUNITY_CATEGORIES,
 } from '@/services/communityService';
 import CommunityDeckCard from './CommunityDeckCard';
-import CommunityDeckCardPlaceholder from './CommunityDeckCardPlaceholder';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/SupabaseAuthContext';
-import { useCommunityThumbnailCache } from '@/hooks/useCommunityThumbnailCache';
-import { BROWSER } from '@/utils/browser';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 interface CommunityGalleryProps {
@@ -73,87 +70,7 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
   // Remix state
   const [remixingId, setRemixingId] = useState<string | null>(null);
 
-  // Thumbnail caching for mobile performance
-  const { getCachedThumbnail, hasCachedThumbnail, captureThumbnail, cacheVersion } = useCommunityThumbnailCache();
-  const thumbnailRefsMapRef = useRef<Map<string, HTMLDivElement>>(new Map());
-
-  // Progressive rendering for mobile - only render 1 thumbnail at a time
-  // Use refs to avoid dependency loops that cause multiple simultaneous renders
-  const renderQueueRef = useRef<string[]>([]);
-  const activeRenderIdRef = useRef<string | null>(null);
-  const [, forceUpdate] = useState(0); // Only used to trigger re-renders when needed
-  const MAX_CONCURRENT_RENDERS = 1; // Strict limit of 1 to prevent crashes
-
-  // Get ref versions of cache functions to use in callbacks without dependencies
-  const hasCachedThumbnailRef = useRef(hasCachedThumbnail);
-  hasCachedThumbnailRef.current = hasCachedThumbnail;
-
-  // Process render queue - allows next item to render (ONE at a time)
-  const processRenderQueue = useCallback(() => {
-    if (!BROWSER.isMobile) return;
-
-    // If currently rendering one, wait for it to complete
-    if (activeRenderIdRef.current !== null) {
-      // Check if the active one is now cached
-      if (hasCachedThumbnailRef.current(activeRenderIdRef.current)) {
-        console.log(`[CommunityGallery] ✅ Cached: ${activeRenderIdRef.current}`);
-        activeRenderIdRef.current = null;
-      } else {
-        // Still rendering, don't start another
-        return;
-      }
-    }
-
-    // Clean queue - remove already cached items
-    renderQueueRef.current = renderQueueRef.current.filter(
-      id => !hasCachedThumbnailRef.current(id)
-    );
-
-    if (renderQueueRef.current.length === 0) return;
-
-    // Get next item to render
-    const nextId = renderQueueRef.current[0];
-    if (nextId) {
-      console.log(`[CommunityGallery] 🎬 Rendering: ${nextId}, queue: ${renderQueueRef.current.length}`);
-      activeRenderIdRef.current = nextId;
-      forceUpdate(v => v + 1); // Trigger re-render to show the new item
-    }
-  }, []); // No dependencies - uses refs
-
-  // When cache changes (thumbnail captured), process next in queue
-  useEffect(() => {
-    if (BROWSER.isMobile) {
-      const timer = setTimeout(processRenderQueue, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [cacheVersion, processRenderQueue]);
-
-  // Add new decks to render queue when they load
-  useEffect(() => {
-    if (!BROWSER.isMobile) return;
-
-    const newIds = decks
-      .map(d => d.id)
-      .filter(id =>
-        id &&
-        !hasCachedThumbnailRef.current(id) &&
-        id !== activeRenderIdRef.current &&
-        !renderQueueRef.current.includes(id)
-      );
-
-    if (newIds.length > 0) {
-      renderQueueRef.current.push(...newIds);
-      // Small delay to batch multiple additions
-      setTimeout(processRenderQueue, 50);
-    }
-  }, [decks, processRenderQueue]);
-
-  // Check if a deck should render its full thumbnail
-  const shouldRenderThumbnail = useCallback((deckId: string): boolean => {
-    if (!BROWSER.isMobile) return true; // Desktop always renders
-    if (hasCachedThumbnail(deckId)) return true; // Already cached
-    return activeRenderIdRef.current === deckId; // Currently the ONE allowed to render
-  }, [hasCachedThumbnail]);
+  // CommunityDeckCard handles mobile stamp-based rendering internally
 
   // Debounce search
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -416,47 +333,16 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
                 : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
             )}
           >
-            {decks.map((deck) => {
-              // Get cached thumbnail for mobile performance
-              const cachedUrl = BROWSER.isMobile ? getCachedThumbnail(deck.id) : null;
-
-              // On mobile, show placeholder if not ready to render yet
-              if (BROWSER.isMobile && !shouldRenderThumbnail(deck.id)) {
-                return (
-                  <CommunityDeckCardPlaceholder
-                    key={deck.id}
-                    deck={deck}
-                    onView={onDeckClick || handleView}
-                  />
-                );
-              }
-
-              return (
-                <CommunityDeckCard
-                  key={deck.id}
-                  deck={deck}
-                  onRemix={handleRemix}
-                  onView={onDeckClick || handleView}
-                  isRemixing={remixingId === deck.id}
-                  showRemixButton={variant === 'app'}
-                  cachedThumbnailUrl={cachedUrl}
-                  onThumbnailRef={(el) => {
-                    if (el && !cachedUrl) {
-                      thumbnailRefsMapRef.current.set(deck.id, el);
-                      // Capture thumbnail after render
-                      setTimeout(() => {
-                        const element = thumbnailRefsMapRef.current.get(deck.id);
-                        if (element) {
-                          captureThumbnail(deck.id, element);
-                        }
-                      }, 400);
-                    } else {
-                      thumbnailRefsMapRef.current.delete(deck.id);
-                    }
-                  }}
-                />
-              );
-            })}
+            {decks.map((deck) => (
+              <CommunityDeckCard
+                key={deck.id}
+                deck={deck}
+                onRemix={handleRemix}
+                onView={onDeckClick || handleView}
+                isRemixing={remixingId === deck.id}
+                showRemixButton={variant === 'app'}
+              />
+            ))}
           </div>
 
           {/* Load More */}

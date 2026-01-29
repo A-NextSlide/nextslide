@@ -63,7 +63,7 @@ import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { shareService, ShareLink, ApiResponse, CollaboratorResponse, ShareAnalytics, ShareViewer } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
-import { generateShareOGImage, findSlideElement, findAnySlideElement } from '@/utils/ogImageCapture';
+import { generateShareOGImage } from '@/utils/ogImageCapture';
 import { formatDistanceToNow } from 'date-fns';
 import { useDeckStore } from '@/stores/deckStore';
 import { Switch } from '../ui/switch';
@@ -369,24 +369,11 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
         return;
       }
 
-      // Use improved slide finding - prefers larger slides (main editor) over thumbnails
-      const firstSlideId = slides[0].id;
-      let slideElement = findSlideElement(firstSlideId);
+      const firstSlide = slides[0];
+      console.log('[DeckSharing] Capturing OG image from slide:', firstSlide.id);
 
-      // If first slide not found, try to find any slide
-      if (!slideElement) {
-        slideElement = findAnySlideElement();
-      }
-
-      if (!slideElement) {
-        console.log('[DeckSharing] No slide element found in DOM for OG capture');
-        return;
-      }
-
-      console.log('[DeckSharing] Capturing OG image from slide:', slideElement.getAttribute('data-slide-id'));
-
-      // Generate and upload the OG image
-      const ogImageUrl = await generateShareOGImage(slideElement, shortCode);
+      // Render offscreen and capture (no DOM dependency)
+      const ogImageUrl = await generateShareOGImage(firstSlide, shortCode, deckData?.size);
 
       if (ogImageUrl) {
         // Update share metadata with the OG image URL

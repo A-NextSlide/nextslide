@@ -80,6 +80,14 @@ def strip_frontend_editing_scripts(html: str) -> str:
     )
     cleaned = orphan_placeholder_style.sub('', cleaned)
 
+    # Strip Tailwind CDN script tag (render-blocking, never needed)
+    cleaned = re.sub(
+        r'<script[^>]*src=["\'][^"\']*tailwindcss[^"\']*["\'][^>]*>\s*</script>',
+        '',
+        cleaned,
+        flags=re.IGNORECASE
+    )
+
     # Clean up multiple consecutive newlines that might result
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
     cleaned = cleaned.strip()

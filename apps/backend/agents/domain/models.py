@@ -244,8 +244,12 @@ class DeckState:
             old_components = len(self.slides[index].get('components', []))
             logger.debug(f"[DECK_STATE] Replacing slide {index} (had {old_components} components)")
 
-            # Preserve critical fields from the original slide that the generator may not include
+            # Preserve critical fields from the original placeholder slide.
+            # The generator builds an unreliable id (slide-{slide_index+1}) which
+            # can collide during parallel generation; the placeholder id is unique.
             original_slide = self.slides[index]
+            if 'id' in original_slide:
+                slide_data['id'] = original_slide['id']
             if 'order' not in slide_data and 'order' in original_slide:
                 slide_data['order'] = original_slide['order']
             if 'deckId' not in slide_data and 'deckId' in original_slide:

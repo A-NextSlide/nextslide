@@ -123,7 +123,6 @@ const ImageCard: React.FC<ImageCardProps> = ({
     // Defer the actual update to next tick so dialog closes first
     requestAnimationFrame(() => {
       onImageUpdate(element.id, url);
-      onRequestHtmlUpdate?.();
       onSave('Changed image');
 
       // Preload the image, then clear loading state
@@ -138,7 +137,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
       img.onerror = done;
       img.src = url;
     });
-  }, [element.id, componentId, onImageUpdate, onRequestHtmlUpdate, onSave]);
+  }, [element.id, componentId, onImageUpdate, onSave]);
 
   // Handle file upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -193,7 +192,6 @@ const ImageCard: React.FC<ImageCardProps> = ({
       if (!url) throw new Error('No URL in response');
 
       onImageUpdate(element.id, url);
-      onRequestHtmlUpdate?.();
       onSave('AI edited image');
       setAiPrompt('');
       onToggleAction(element.id, null);
@@ -242,7 +240,6 @@ const ImageCard: React.FC<ImageCardProps> = ({
       if (!url) throw new Error('No URL in response');
 
       onImageUpdate(element.id, url);
-      onRequestHtmlUpdate?.();
       onSave('Fused images');
       setFuseImages([]);
       setFusePrompt('');
@@ -262,7 +259,6 @@ const ImageCard: React.FC<ImageCardProps> = ({
   const handleUrlSubmit = () => {
     if (urlInput.trim()) {
       onImageUpdate(element.id, urlInput.trim());
-      onRequestHtmlUpdate?.();
       onSave('Updated image URL');
       setUrlInput('');
       onToggleAction(element.id, null);

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { deckSyncService } from '@/lib/deckSyncService';
 import { useDeckStore } from '@/stores/deckStore';
+import { useEditorStore } from '@/stores/editorStore';
 import LoadingDisplay from '@/components/common/LoadingDisplay';
 
 /**
@@ -88,10 +89,9 @@ const Index: React.FC = () => {
                 }
                 
                 // Now load the deck since we know it exists
-                // Remove redundant deck loading - initialize will handle it
-                // Clear the store first to prevent showing old deck data
+                // Clear editor drafts when switching to a different deck
                 if (isNewDeck || deckId !== useDeckStore.getState().deckData.uuid) {
-                  // Don't reset store - just let initialize handle the deck loading
+                  useEditorStore.getState().clearDraftComponents();
                 }
 
                 // Initialize the store with the deck ID - this will load the deck

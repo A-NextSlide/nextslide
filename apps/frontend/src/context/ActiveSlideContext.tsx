@@ -90,19 +90,19 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // Track previous components to detect realtime updates in view mode
   const previousComponentsRef = useRef<ComponentInstance[] | null>(null);
-  
+
   // Fetch components when needed dependencies change
   useEffect(() => {
     if (!currentSlide) {
       setActiveComponents([]);
       return;
     }
-    
+
     // PERFORMANCE: Skip during transitions
     if (isInTransition) {
       return;
     }
-    
+
     // Check if we're actually changing slides
     const isSlideChange = previousSlideIdRef.current !== currentSlide.id;
     if (isSlideChange) {
@@ -121,13 +121,12 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
 
     // Update the previous components ref
     previousComponentsRef.current = currentComponents;
-    
+
     // Clear any pending update
     if (updateTimeoutRef.current) {
       clearTimeout(updateTimeoutRef.current);
     }
-    
-    // PERFORMANCE: Use microtask instead of timeout for immediate updates
+
     const updateComponents = () => {
       if (isEditing) {
         // Get draft components
@@ -138,15 +137,10 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
         setActiveComponents(components);
       }
     };
-    
-    if (isSlideChange) {
-      // Use timeout for slide changes to allow UI to update
-      updateTimeoutRef.current = setTimeout(updateComponents, 50);
-    } else {
-      // Use microtask for other updates
-      queueMicrotask(updateComponents);
-    }
-    
+
+    // Always update synchronously — async delays cause stale slide display
+    updateComponents();
+
     return () => {
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);
@@ -280,7 +274,7 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
       updateSlide(currentSlide.id, { components: filteredComponents });
     }
   };
-  
+
   // Update the current slide components when they change
   useEffect(() => {
     if (isEditing && currentSlide) {
@@ -290,7 +284,7 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
       setActiveComponents(currentSlide.components || []);
     }
   }, [isEditing, currentSlide, getDraftComponents, lastOperation]);
-  
+
   return (
     <ActiveSlideContext.Provider 
       value={{

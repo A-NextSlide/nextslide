@@ -3,7 +3,7 @@ import { ComponentInstance } from "../../types/components";
 import { useComponentInstance } from "../../context/CustomComponentStateContext";
 import { useNavigation } from '../../context/NavigationContext';
 import { usePresentationStore } from '@/stores/presentationStore';
-import { useActiveSlide } from '../../context/ActiveSlideContext';
+import { useActiveSlideSafe } from '../../context/ActiveSlideContext';
 import { useEditorStore } from '@/stores/editorStore';
 import { useDeckStore } from '@/stores/deckStore';
 import { useEditorState } from '@/context/EditorStateContext';
@@ -40,6 +40,13 @@ class ErrorBoundary extends React.Component<
     console.error('[CustomComponent] Error caught by boundary:', error);
     // Notify parent component of error
     this.props.onError?.();
+  }
+
+  componentDidUpdate(prevProps: { children: React.ReactNode }) {
+    // Reset error state when children change (slide navigation, HMR fix, etc.)
+    if (this.state.hasError && prevProps.children !== this.props.children) {
+      this.setState({ hasError: false, error: null });
+    }
   }
 
   render() {
@@ -317,7 +324,8 @@ export const CustomComponentRenderer: React.FC<{
   const { state, updateState, clearState } = useComponentInstance(component.id);
 
   // Get updateComponent from ActiveSlide context for direct image updates
-  const { updateComponent } = useActiveSlide();
+  // Use safe version — this component renders in thumbnails/presentation without ActiveSlideProvider
+  const { updateComponent } = useActiveSlideSafe();
 
   // Listen for image selection events and update component directly
   // NOTE: Disabled on iOS due to postMessage crash issues
@@ -780,6 +788,151 @@ export const CustomComponentRenderer: React.FC<{
     return html + zoomRelayScript;
   };
 
+  /**
+   * Inject a runtime "safety net" that fixes common interactivity issues
+   * in AI-generated HTML. Uses CSS rules (not inline styles) so the edit
+   * mode overlay's `body.ns-overlay-mode * { pointer-events:none }` can
+   * still take precedence when editing. Also runs a lightweight JS pass
+   * to neutralize decorative overlays that sit on top of buttons.
+   */
+  const injectInteractivityFixes = (html: string): string => {
+    if (!html || isThumbnail) return html;
+    if (html.includes('ns-interactivity-fix')) return html; // Already injected
+
+    const fixScript = `
+<style>
+/* === NextSlide Interactivity Safety Net === */
+/* 1. Kill user-select:none globally — it breaks click handling in iframes */
+*:not(svg *) { user-select: auto !important; -webkit-user-select: auto !important; }
+
+/* 2. Ensure buttons/tabs are clickable UNLESS edit overlay is active */
+body:not(.ns-overlay-mode) button,
+body:not(.ns-overlay-mode) [onclick],
+body:not(.ns-overlay-mode) [role="button"],
+body:not(.ns-overlay-mode) [role="tab"],
+body:not(.ns-overlay-mode) input,
+body:not(.ns-overlay-mode) select,
+body:not(.ns-overlay-mode) textarea,
+body:not(.ns-overlay-mode) .tab-btn,
+body:not(.ns-overlay-mode) .nav-btn,
+body:not(.ns-overlay-mode) .accordion-header {
+  pointer-events: auto !important;
+  position: relative;
+}
+
+/* 3. Give ::before/::after on interactive wrappers safe pointer-events */
+body:not(.ns-overlay-mode) button::before,
+body:not(.ns-overlay-mode) button::after,
+body:not(.ns-overlay-mode) .tab-btn::before,
+body:not(.ns-overlay-mode) .tab-btn::after,
+body:not(.ns-overlay-mode) [role="tab"]::before,
+body:not(.ns-overlay-mode) [role="tab"]::after {
+  pointer-events: none !important;
+}
+</style>
+<script>
+(function() {
+  if (window.__nsInteractivityFixInstalled) return;
+  window.__nsInteractivityFixInstalled = true;
+
+  var INTERACTIVE_SELECTOR = 'button, [onclick], [role="button"], [role="tab"], input, select, textarea, a[href], .tab-btn, .nav-btn, .accordion-header';
+
+  function fixOverlays() {
+    /* Skip when edit overlay is active */
+    if (document.body.classList.contains('ns-overlay-mode')) return;
+
+    var interactiveEls = document.querySelectorAll(INTERACTIVE_SELECTOR);
+    if (!interactiveEls.length) return;
+
+    /* Collect interactive bounding rects once */
+    var btnRects = [];
+    interactiveEls.forEach(function(el) {
+      var r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) btnRects.push(r);
+    });
+    if (!btnRects.length) return;
+
+    /* Walk ancestors of every button — unblock pointer-events on the chain */
+    interactiveEls.forEach(function(el) {
+      var parent = el.parentElement;
+      while (parent && parent !== document.body) {
+        var cs = window.getComputedStyle(parent);
+        if (cs.pointerEvents === 'none') {
+          parent.style.pointerEvents = 'auto';
+        }
+        parent = parent.parentElement;
+      }
+    });
+
+    /* Find absolutely-positioned decorative elements that overlap buttons */
+    document.querySelectorAll('*').forEach(function(el) {
+      var cs = window.getComputedStyle(el);
+      if (cs.position !== 'absolute' && cs.position !== 'fixed') return;
+      if (cs.pointerEvents === 'none') return; /* already safe */
+
+      var tag = el.tagName.toLowerCase();
+      if (tag === 'button' || tag === 'a' || tag === 'input' || tag === 'select' ||
+          tag === 'textarea' || tag === 'script' || tag === 'style' ||
+          tag === 'html' || tag === 'body') return;
+      if (el.getAttribute('onclick') || el.getAttribute('role') === 'button' ||
+          el.getAttribute('role') === 'tab') return;
+      if (el.querySelector(INTERACTIVE_SELECTOR)) return;
+      /* Skip content containers */
+      if ((el.textContent || '').trim().length > 50 || el.children.length > 2) return;
+      if (el.children.length > 0 && el.querySelector('h1, h2, h3, p, ul, ol, table')) return;
+
+      var elRect = el.getBoundingClientRect();
+      if (elRect.width === 0 || elRect.height === 0) return;
+
+      for (var i = 0; i < btnRects.length; i++) {
+        var br = btnRects[i];
+        var overlaps = !(elRect.right < br.left || elRect.left > br.right ||
+                        elRect.bottom < br.top || elRect.top > br.bottom);
+        if (overlaps) {
+          el.style.pointerEvents = 'none';
+          break;
+        }
+      }
+    });
+  }
+
+  /* Run after DOM is ready and after delays for dynamic content */
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+      fixOverlays();
+      setTimeout(fixOverlays, 200);
+    });
+  } else {
+    fixOverlays();
+    setTimeout(fixOverlays, 200);
+  }
+  setTimeout(fixOverlays, 600);
+})();
+</script>
+<!-- ns-interactivity-fix -->`;
+
+    // Inject CSS in <head> and script before </body> for proper ordering
+    let result = html;
+
+    // Extract and inject the <style> block into <head>
+    const styleEnd = fixScript.indexOf('</style>') + '</style>'.length;
+    const styleBlock = fixScript.substring(0, styleEnd);
+    const scriptBlock = fixScript.substring(styleEnd);
+
+    if (result.includes('</head>')) {
+      result = result.replace('</head>', styleBlock + '\n</head>');
+    } else if (result.includes('<body')) {
+      result = result.replace('<body', styleBlock + '\n<body');
+    }
+
+    if (result.includes('</body>')) {
+      return result.replace('</body>', scriptBlock + '\n</body>');
+    } else if (result.includes('</html>')) {
+      return result.replace('</html>', scriptBlock + '\n</html>');
+    }
+    return result + scriptBlock;
+  };
+
   // Inject image props into HTML by replacing placeholder src attributes
   const injectImageProps = (html: string, props: Record<string, any>): string => {
     if (!html || !props) return html;
@@ -963,6 +1116,7 @@ export const CustomComponentRenderer: React.FC<{
     let cleanHtml = iframeSrcDoc;
     // Remove all instances of our injected scripts/markers so we can re-inject cleanly
     cleanHtml = cleanHtml.replace(/<!-- NEXTSLIDE EDIT MODE V2 -->/g, '');
+    cleanHtml = cleanHtml.replace(/<!-- ns-interactivity-fix -->/g, '');
     // Remove duplicate processing overlay styles/scripts (keep checking until no more found)
     const processingOverlayRegex = /<style>\s*\.ns-image-processing-overlay[\s\S]*?<\/script>/g;
     const matches = cleanHtml.match(processingOverlayRegex);
@@ -983,6 +1137,12 @@ export const CustomComponentRenderer: React.FC<{
     // Remove duplicate placeholder scripts
     const placeholderRegex = /<style>\s*\.ns-placeholder-wrapper[\s\S]*?<!-- NEXTSLIDE EDIT MODE V2 -->/g;
     cleanHtml = cleanHtml.replace(placeholderRegex, '');
+
+    // Strip Tailwind CDN script (render-blocking, never needed, breaks thumbnails)
+    cleanHtml = cleanHtml.replace(
+      /<script[^>]*src=["'][^"']*tailwindcss[^"']*["'][^>]*>\s*<\/script>/gi,
+      ''
+    );
 
     // First inject image props from component.props.props (the nested props object)
     // componentProps already spreads these, but we need the actual image URLs
@@ -1012,6 +1172,9 @@ export const CustomComponentRenderer: React.FC<{
     }
 
     html = injectZoomRelay(html, component.id);
+
+    // Inject interactivity safety net — fixes decorative overlays blocking button clicks
+    html = injectInteractivityFixes(html);
 
     // Inject element-level edit mode when in edit mode (not just when selected)
     // This allows hover effects and double-click to work before selection
