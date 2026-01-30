@@ -706,8 +706,12 @@ Return JSON: {{"ops":[{{"old_string":"exact","new_string":"replacement"}}],"note
                 return True, f"Rejecting large deletion ({len(old_str)} chars) without replacement"
 
         # Block viewBox changes (they affect ALL SVG elements, not just the target)
+        # Only block if the viewBox value is actually being modified, not just present
         if 'viewbox' in old_lower:
-            return True, "Rejecting viewBox change - use CSS transform on specific element instead"
+            old_viewboxes = re.findall(r'viewbox\s*=\s*["\']([^"\']*)["\']', old_lower)
+            new_viewboxes = re.findall(r'viewbox\s*=\s*["\']([^"\']*)["\']', new_str.lower())
+            if old_viewboxes != new_viewboxes:
+                return True, "Rejecting viewBox change - use CSS transform on specific element instead"
 
         # Reject changes to very large font-sizes (decorative text)
         font_match = re.search(r'font-size:\s*(\d+)px', old_lower)
