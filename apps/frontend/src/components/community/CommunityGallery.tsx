@@ -81,6 +81,7 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
   // Use refs to avoid dependency loops that cause multiple simultaneous renders
   const renderQueueRef = useRef<string[]>([]);
   const activeRenderIdRef = useRef<string | null>(null);
+  const renderStartTimeRef = useRef<number>(0);
   const [, forceUpdate] = useState(0); // Only used to trigger re-renders when needed
   const MAX_CONCURRENT_RENDERS = 1; // Strict limit of 1 to prevent crashes
 
@@ -99,8 +100,14 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
         console.log(`[CommunityGallery] ✅ Cached: ${activeRenderIdRef.current}`);
         activeRenderIdRef.current = null;
       } else {
-        // Still rendering, don't start another
-        return;
+        // Skip if stuck too long (capture failed silently)
+        if (Date.now() - renderStartTimeRef.current > 10000) {
+          console.log(`[CommunityGallery] ⏭ Skipping timed out render: ${activeRenderIdRef.current}`);
+          activeRenderIdRef.current = null;
+        } else {
+          // Still rendering, don't start another
+          return;
+        }
       }
     }
 
@@ -116,6 +123,7 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
     if (nextId) {
       console.log(`[CommunityGallery] 🎬 Rendering: ${nextId}, queue: ${renderQueueRef.current.length}`);
       activeRenderIdRef.current = nextId;
+      renderStartTimeRef.current = Date.now();
       forceUpdate(v => v + 1); // Trigger re-render to show the new item
     }
   }, []); // No dependencies - uses refs
