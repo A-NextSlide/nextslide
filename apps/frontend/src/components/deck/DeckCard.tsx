@@ -18,6 +18,8 @@ interface DeckCardProps {
   cachedThumbnailUrl?: string | null;
   /** Callback when thumbnail element is ready for screenshot capture */
   onThumbnailRef?: (element: HTMLDivElement | null) => void;
+  /** Force immediate thumbnail render, bypassing lazy loading */
+  forceRender?: boolean;
 }
 
 const DeckCard: React.FC<DeckCardProps> = React.memo(({
@@ -28,7 +30,8 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
   shouldAnimate = false,
   thumbnailRenderMode = 'full',
   cachedThumbnailUrl,
-  onThumbnailRef
+  onThumbnailRef,
+  forceRender = false
 }) => {
   const touchHandledRef = React.useRef(false);
   const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
@@ -132,7 +135,7 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
           ) : (
             /* Render live thumbnail */
             <div ref={onThumbnailRef} className="w-full h-full">
-              <DeckThumbnail deck={deck} renderMode={thumbnailRenderMode} />
+              <DeckThumbnail deck={deck} renderMode={thumbnailRenderMode} forceRender={forceRender} />
             </div>
           )}
         </div>
@@ -210,7 +213,8 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
     prevProps.index === nextProps.index &&
     prevProps.shouldAnimate === nextProps.shouldAnimate &&
     prevProps.thumbnailRenderMode === nextProps.thumbnailRenderMode &&
-    prevProps.cachedThumbnailUrl === nextProps.cachedThumbnailUrl
+    prevProps.cachedThumbnailUrl === nextProps.cachedThumbnailUrl &&
+    prevProps.forceRender === nextProps.forceRender
   );
 });
 

@@ -4,7 +4,7 @@ import { Presentation } from 'lucide-react';
 import MiniSlide from './MiniSlide';
 
 // Component to render a deck thumbnail using the first slide
-const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'background' }> = React.memo(({ deck, renderMode = 'full' }) => {
+const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'background'; forceRender?: boolean }> = React.memo(({ deck, renderMode = 'full', forceRender = false }) => {
   // Get the first slide from the deck for the thumbnail
   const rawFirstSlide = (deck as any).first_slide || (deck.slides && deck.slides.length > 0 ? deck.slides[0] : null);
 
@@ -41,6 +41,7 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'b
         slideSize={deck.size}
         className="w-full h-full"
         renderMode={renderMode}
+        forceRender={forceRender}
       />
     </div>
   );
@@ -52,7 +53,8 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'b
     prevProps.deck.uuid === nextProps.deck.uuid &&
     prevFirstSlide?.id === nextFirstSlide?.id &&
     prevFirstSlide?.lastModified === nextFirstSlide?.lastModified &&
-    prevProps.renderMode === nextProps.renderMode
+    prevProps.renderMode === nextProps.renderMode &&
+    prevProps.forceRender === nextProps.forceRender
   );
 });
 
