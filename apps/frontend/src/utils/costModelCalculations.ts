@@ -123,7 +123,7 @@ export interface EconomicsResult {
 // ============================================================================
 
 export const MODEL_COSTS: Record<string, ModelCosts> = {
-  gemini: { input: 0.15, output: 0.60, name: 'Gemini 3 Flash' },
+  gemini: { input: 1.25, output: 10.00, name: 'Gemini 3 Pro' },
   perplexity: { input: 1.00, output: 5.00, name: 'Perplexity Sonar Pro' },
   haiku: { input: 0.80, output: 4.00, name: 'Claude Haiku' },
 };

@@ -34,6 +34,7 @@ async def _get_pool() -> asyncpg.Pool:
                     min_size=1,
                     max_size=5,
                     command_timeout=30,
+                    statement_cache_size=0,
                 )
                 logger.info("[AdminAgent] asyncpg pool created")
     return _pool
@@ -161,18 +162,14 @@ async def execute_read_query(
                 if not re.search(r"\bLIMIT\b", limited_sql, re.IGNORECASE):
                     limited_sql += f" LIMIT {MAX_READ_ROWS}"
 
-                stmt = await asyncio.wait_for(
-                    conn.prepare(limited_sql),
-                    timeout=READ_TIMEOUT,
-                )
                 if params:
                     records = await asyncio.wait_for(
-                        stmt.fetch(*params),
+                        conn.fetch(limited_sql, *params),
                         timeout=READ_TIMEOUT,
                     )
                 else:
                     records = await asyncio.wait_for(
-                        stmt.fetch(),
+                        conn.fetch(limited_sql),
                         timeout=READ_TIMEOUT,
                     )
 

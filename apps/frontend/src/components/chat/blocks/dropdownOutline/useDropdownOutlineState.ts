@@ -82,7 +82,7 @@ export function useDropdownOutlineState(options: UseDropdownOutlineStateOptions)
   const requestContentLoad = useCallback((slideId: string, slideIndex: number) => {
     if (!onLoadContent) return;
     const slide = slideById.get(slideId);
-    if (!slide || (slide.isContentLoaded && slide.generationContext != null)) return;
+    if (!slide || slide.isContentLoaded) return;
 
     let shouldLoad = false;
     setLoadingSlides(prev => {
@@ -102,7 +102,6 @@ export function useDropdownOutlineState(options: UseDropdownOutlineStateOptions)
           content: contentData.content ?? '',
           isContentLoaded: true,
           isContentEdited: slide.isContentEdited ?? false,
-          generationContext: contentData.generationContext,
         };
         if (contentData.keyPoints) {
           updates.keyPoints = contentData.keyPoints;
@@ -169,12 +168,12 @@ export function useDropdownOutlineState(options: UseDropdownOutlineStateOptions)
   const handleDragStart = useCallback((e: DragEvent, index: number) => {
     const target = e.target as HTMLElement | null;
 
-    // Prevent dragging if interacting with form elements
+    // Prevent dragging from form elements or buttons
     if (
       target?.tagName === 'INPUT' ||
       target?.tagName === 'TEXTAREA' ||
       target?.isContentEditable ||
-      target?.closest('button') // Also prevent if clicking buttons (like edit/delete icons)
+      target?.closest('button')
     ) {
       e.preventDefault();
       return;
@@ -183,8 +182,6 @@ export function useDropdownOutlineState(options: UseDropdownOutlineStateOptions)
     setDraggedIndex(index);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', index.toString());
-
-    // Optional: Set custom drag image if needed, but default ghost is usually fine for rows
   }, []);
 
   const handleDragEnd = useCallback(() => {

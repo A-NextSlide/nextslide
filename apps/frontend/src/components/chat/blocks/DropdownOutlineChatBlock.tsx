@@ -29,7 +29,7 @@ const DropdownOutlineChatBlock: React.FC<DropdownOutlineChatBlockProps> = ({
   const normalizedSlides = useMemo(() => (
     data.slides.map(slide => ({
       ...slide,
-      isContentLoaded: slide.isContentLoaded ?? Boolean(slide.content),
+      isContentLoaded: slide.isContentLoaded || Boolean(slide.content),
     }))
   ), [data.slides]);
 

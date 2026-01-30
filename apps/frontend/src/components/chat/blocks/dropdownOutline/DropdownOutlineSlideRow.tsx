@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { cn } from '@/lib/utils';
 import {
   Trash2,
@@ -93,16 +93,9 @@ const DropdownOutlineSlideRow: React.FC<DropdownOutlineSlideRowProps> = ({
       || (slide.keyPoints && slide.keyPoints.length > 0)
   );
   const showLoadingState = isLoading && !hasPreviewContent;
-  const [showFullModelContext, setShowFullModelContext] = useState(false);
-  const modelContext = slide.generationContext?.trim() || '';
-  const hasModelContext = modelContext.length > 0;
-  const isModelContextLong = modelContext.length > 320;
 
   return (
     <div
-      draggable={isDraggable}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
@@ -114,6 +107,9 @@ const DropdownOutlineSlideRow: React.FC<DropdownOutlineSlideRowProps> = ({
     >
       {/* Slide header */}
       <div
+        draggable={isDraggable}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
         className={cn(
           "flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors group",
           isExpanded
@@ -154,9 +150,9 @@ const DropdownOutlineSlideRow: React.FC<DropdownOutlineSlideRowProps> = ({
         </span>
 
         {/* Title */}
-        <div className="flex-1 min-w-0" onClick={e => e.stopPropagation()}>
+        <div className="flex-1 min-w-0">
           {isEditingTitle ? (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
               <input
                 autoFocus
                 className="flex-1 text-sm bg-white dark:bg-zinc-800 border border-orange-400 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400"
@@ -166,7 +162,6 @@ const DropdownOutlineSlideRow: React.FC<DropdownOutlineSlideRowProps> = ({
                   if (e.key === 'Enter') onSaveEdit();
                   if (e.key === 'Escape') onCancelEdit();
                 }}
-                onClick={(e) => e.stopPropagation()}
               />
               <button
                 onClick={onSaveEdit}
@@ -304,34 +299,7 @@ const DropdownOutlineSlideRow: React.FC<DropdownOutlineSlideRowProps> = ({
                 )}
               </div>
 
-              {/* Model context */}
-              <div className="mt-2.5">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wide">
-                    Model Context
-                  </span>
-                  {hasModelContext && isModelContextLong && (
-                    <button
-                      onClick={() => setShowFullModelContext((prev) => !prev)}
-                      className="text-[10px] font-medium text-zinc-400 hover:text-zinc-600 transition-colors"
-                    >
-                      {showFullModelContext ? 'Show less' : 'Show full'}
-                    </button>
-                  )}
-                </div>
-                <div
-                  className={cn(
-                    "rounded-md px-2 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-50/70 dark:bg-zinc-800/40 whitespace-pre-wrap leading-relaxed",
-                    hasModelContext && isModelContextLong && !showFullModelContext && "max-h-[120px] overflow-hidden"
-                  )}
-                >
-                  {hasModelContext ? modelContext : (
-                    <span className="text-zinc-400 italic">No model context yet</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Context */}
+              {/* Slide Notes */}
               <div className="mt-2.5">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wide">

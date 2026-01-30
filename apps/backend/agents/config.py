@@ -41,8 +41,8 @@ PERPLEXITY_SONAR_PRO = "perplexity-sonar-pro"
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # HARD should be the highest-quality model for creative + reasoning work.
-# TEST: Using Gemini 3 Flash instead of Pro for evaluation.
-MODEL_HARD = GEMINI_3_FLASH
+# We want Gemini 3 Pro for slide/design generation & editing.
+MODEL_HARD = GEMINI_3_PRO
 MODEL_SMART = CLAUDE_SONNET    # Smart reasoning (orchestration, planning)
 MODEL_EASY = GEMINI_3_FLASH    # Fast/simple tasks (was CLAUDE_HAIKU)
 MODEL_FALLBACK = CLAUDE_OPUS   # Rate limit fallback
@@ -90,7 +90,7 @@ EDIT_TYPE_MODELS = {
     EditType.THEME_CHANGE: GEMINI_3_FLASH,
     EditType.CONTENT_UPDATE: MODEL_SMART,      # Needs reasoning
     EditType.COMPLEX_EDIT: MODEL_SMART,        # Needs planning
-    EditType.SLIDE_CREATE: GEMINI_3_FLASH,      # Creative generation (TEST: Flash)
+    EditType.SLIDE_CREATE: GEMINI_3_PRO,       # Creative generation
     EditType.RESEARCH_EDIT: MODEL_SMART,       # Multi-step reasoning
     EditType.CHAT_ONLY: MODEL_EASY,
 }
@@ -176,8 +176,8 @@ SLIDE_STYLE_MODEL = MODEL_HARD
 CUSTOM_COMPONENT_COMPOSER = MODEL_EASY
 CUSTOM_COMPONENT_CREATIVE = MODEL_HARD
 CUSTOM_COMPONENT_FALLBACK = MODEL_FALLBACK
-# TEST: Using Gemini 3 Flash for CustomComponentGenerator instead of Pro
-CUSTOM_COMPONENT_MODEL = GEMINI_3_FLASH
+# Prefer Gemini 3 Pro for CustomComponentGenerator (raw HTML generation works well even when structured output is finicky)
+CUSTOM_COMPONENT_MODEL = GEMINI_3_PRO
 CUSTOM_COMPONENT_ALLOW_FALLBACK = os.getenv('CUSTOM_COMPONENT_ALLOW_FALLBACK', 'false').lower() == 'true'
 CUSTOM_COMPONENT_RESPECT_GLOBAL_GEMINI_COOLDOWN = os.getenv(
     'CUSTOM_COMPONENT_RESPECT_GLOBAL_GEMINI_COOLDOWN',
@@ -236,6 +236,7 @@ USE_PERPLEXITY_FOR_RESEARCH = True
 USE_HYBRID_RESEARCH_MODE = True
 USE_AGENT_THEMER = os.getenv('USE_AGENT_THEMER', 'true').lower() == 'true'
 USE_AGENTS_MD = os.getenv('USE_AGENTS_MD', 'true').lower() == 'true'
+USE_OUTLINE_AGENTS_MD = os.getenv('USE_OUTLINE_AGENTS_MD', 'true').lower() == 'true'
 
 IMAGE_GENERATION_ENABLED = False
 AUTO_APPLY_PENDING_IMAGES = False

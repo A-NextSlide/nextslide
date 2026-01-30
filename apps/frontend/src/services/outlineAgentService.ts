@@ -95,6 +95,7 @@ export interface ClarificationField {
   type?: 'text' | 'number' | 'choice' | 'boolean';
   value?: string | number | boolean;
   options?: string[];
+  placeholder?: string;
 }
 
 export interface OutlineClarification {

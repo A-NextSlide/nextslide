@@ -87,6 +87,31 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
     return true;
   }, []);
 
+  // Progressive rendering: stagger card mounts on mobile to prevent crashes
+  const [mountedCount, setMountedCount] = useState<number>(Infinity);
+
+  useEffect(() => {
+    if (isLoading || decks.length === 0) return;
+
+    if (!isMobile) {
+      setMountedCount(Infinity);
+      return;
+    }
+
+    // Mobile: progressively mount cards one by one
+    setMountedCount(0);
+    let count = 0;
+    const timer = setInterval(() => {
+      count += 1;
+      setMountedCount(count);
+      if (count >= decks.length) {
+        clearInterval(timer);
+      }
+    }, 150);
+
+    return () => clearInterval(timer);
+  }, [decks.length, isLoading, isMobile]);
+
   // Debounce search
   const [debouncedSearch, setDebouncedSearch] = useState('');
   useEffect(() => {
@@ -348,7 +373,14 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
                 : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
             )}
           >
-            {decks.map((deck) => {
+            {decks.map((deck, index) => {
+              // Progressive rendering: show skeleton for not-yet-mounted cards on mobile
+              if (isMobile && index >= mountedCount) {
+                return (
+                  <div key={deck.id} className="aspect-[16/9] w-full rounded-lg bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+                );
+              }
+
               // Get cached thumbnail for mobile performance
               const cachedUrl = BROWSER.isMobile ? getCachedThumbnail(deck.id) : null;
 
