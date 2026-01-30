@@ -85,10 +85,10 @@ export function useCommunityThumbnailCache(): UseCommunityThumbnailCacheResult {
     isCapturingRef.current.add(deckId);
 
     try {
-      // Wait a bit for the thumbnail to fully render
-      await new Promise(r => setTimeout(r, 250));
+      // Wait for the thumbnail to fully render (500ms for mobile hardware)
+      await new Promise(r => setTimeout(r, 500));
 
-      const dataUrl = await captureTinySlideScreenshot(element, { skipIframeCapture: true });
+      const dataUrl = await captureTinySlideScreenshot(element);
 
       if (dataUrl) {
         thumbnailCache.set(deckId, {

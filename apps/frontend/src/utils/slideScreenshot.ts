@@ -182,9 +182,7 @@ export const captureTinySlideScreenshot = async (
     // Find iframes with srcDoc (CustomComponent content)
     const iframe = slideContainer.querySelector('iframe[srcdoc]') as HTMLIFrameElement;
 
-    // On mobile, skip iframe.contentDocument capture - html2canvas fails due to sandbox
-    const isMobile = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent);
-    const skipIframe = options?.skipIframeCapture || isMobile;
+    const skipIframe = options?.skipIframeCapture || false;
 
     if (iframe && !skipIframe) {
       // CustomComponent: Use html-to-image for MUCH better SVG/CSS rendering
@@ -209,15 +207,23 @@ export const captureTinySlideScreenshot = async (
         try {
           // html-to-image captures the actual rendered DOM including all CSS
           // It serializes to SVG first, preserving styles, then converts to PNG
-          const dataUrl = await htmlToImage.toJpeg(iframeBody, {
-            width: 1920,
-            height: 1080,
-            pixelRatio: 0.8, // 1536x864 output
-            backgroundColor: '#ffffff',
-            skipAutoScale: true,
-            cacheBust: true,
-            quality: 0.85,
-          });
+          const isMobile = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent);
+          const timeoutMs = isMobile ? 5000 : 10000;
+
+          const dataUrl = await Promise.race([
+            htmlToImage.toJpeg(iframeBody, {
+              width: 1920,
+              height: 1080,
+              pixelRatio: 0.8, // 1536x864 output
+              backgroundColor: '#ffffff',
+              skipAutoScale: true,
+              cacheBust: true,
+              quality: 0.85,
+            }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`html-to-image timed out after ${timeoutMs}ms`)), timeoutMs)
+            ),
+          ]);
 
           console.log(`[TinyScreenshot] html-to-image capture successful`);
           logScreenshotDebugFromUrl(dataUrl);
@@ -257,6 +263,12 @@ export const captureTinySlideScreenshot = async (
         } finally {
           removeAnimationOverride(animOverride);
         }
+      } else {
+        // contentDocument was null (old browser edge case) - fall back to srcDoc extraction
+        console.log(`[TinyScreenshot] contentDocument null, falling back to srcDoc extraction`);
+        const srcDoc = iframe.getAttribute('srcdoc') || '';
+        const fallback = await captureFromSrcDoc(srcDoc, { scale: 0.8, format: 'png' });
+        if (fallback) return fallback;
       }
 
     } else if (iframe && skipIframe) {
