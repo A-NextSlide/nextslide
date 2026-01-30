@@ -111,14 +111,6 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = (props
               {isPlanView ? (
                 <div className="space-y-4">
                   <section className="rounded-2xl border border-zinc-200/70 bg-white/95 dark:bg-zinc-900/80 dark:border-zinc-800/70 p-4 shadow-[0_12px_30px_-24px_rgba(15,23,42,0.4)]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                        Generate
-                      </span>
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-orange-500">
-                        {readinessLabel}
-                      </span>
-                    </div>
                     <SlideModeSelection
                       isProcessing={state.isProcessing}
                       isBlocking={state.generationStatus.isBlocking}
@@ -129,6 +121,14 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = (props
                       onContinueChat={handlers.handleContinueChat}
                       showContinueChat={false}
                       compact
+                      themeData={state.themeBlock ? {
+                        background: state.themeBlock.colors.primary_background,
+                        text: state.themeBlock.colors.primary_text,
+                        accent: state.themeBlock.colors.accent_1,
+                        headingFont: state.themeBlock.typography.headingFont,
+                        bodyFont: state.themeBlock.typography.bodyFont,
+                      } : undefined}
+                      firstSlideTitle={state.outlineBlock?.slides?.[0]?.title}
                     />
                     {showSkipChat && (
                       <SkipChatPrompt
@@ -203,7 +203,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = (props
                     onClarificationConfirm={handlers.handleClarificationConfirm}
                     onClarificationEdit={handlers.handleClarificationEdit}
                     showInlineOutline={!isMobileView}
-                    showInlineSlideModeSelection={!isMobileView && state.stage === 'slide_mode_selection'}
+                    showInlineSlideModeSelection={state.stage === 'slide_mode_selection' && !state.isAgentTyping}
                     inlineControlsClassName="lg:hidden"
                   />
 

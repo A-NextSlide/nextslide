@@ -226,21 +226,31 @@ class CustomComponentHtmlProcessor:
         used_matched_urls: set = set()
 
         def find_url_for_query(text: str) -> str:
-            """Find the correct image URL for given alt/label text."""
+            """Find the correct image URL for given alt/label text.
+
+            Exact matches always return the correct URL (even if already used by
+            another phase), so that both JS-object and <img>-tag slots with the
+            same alt text get the image that was searched for that text.
+
+            Fuzzy matches (substring / token) still respect used_matched_urls to
+            avoid stealing a URL that belongs to a different alt text.
+            """
             if not text:
                 return ""
             text_lower = text.lower().strip()
             if not text_lower:
                 return ""
 
-            # Exact match
-            if text_lower in query_to_url and query_to_url[text_lower] not in used_matched_urls:
+            # Exact match — always honour, even if the URL was already used.
+            # This ensures Phase 2 <img> tags get the same correct image as
+            # Phase 1 JS objects when they share the same alt text.
+            if text_lower in query_to_url:
                 url = query_to_url[text_lower]
                 used_matched_urls.add(url)
                 logger.info("[IMAGE_INJECT] Matched by query: '%s' -> %s", text[:40], url[:50])
                 return url
 
-            # Substring match
+            # Substring match (fuzzy — only claim unused URLs)
             for query, url in query_to_url.items():
                 if url in used_matched_urls:
                     continue
@@ -249,7 +259,7 @@ class CustomComponentHtmlProcessor:
                     logger.info("[IMAGE_INJECT] Matched by substring: '%s' ~ '%s'", text[:40], query[:40])
                     return url
 
-            # Token overlap (best match with at least 2 common words)
+            # Token overlap (best match with at least 2 common words, unused only)
             text_words = set(re.findall(r'[a-z0-9]+', text_lower))
             best_url = ""
             best_score = 0

@@ -654,7 +654,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     selected: false,  // Selected element section collapsed by default
     text: false,
-    images: false,
+    images: true,
     containers: false,
   });
 
@@ -663,7 +663,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
     setExpandedSections({
       selected: false,
       text: false,
-      images: false,
+      images: true,
       containers: false,
     });
   }, [component.id]);
@@ -678,6 +678,15 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   const activeSelectedElement = isActiveComponent ? (editingElement || selectedElement) : null;
   // Track if we're in text edit mode (editingElement is set but selectedElement is null)
   const isTextEditMode = isActiveComponent && editingElement && !selectedElement;
+
+  // Auto-expand the selected section when an image element is selected
+  const activeSelectedElementRef = useRef<typeof activeSelectedElement>(null);
+  useEffect(() => {
+    if (activeSelectedElement?.type === 'image' && activeSelectedElement !== activeSelectedElementRef.current) {
+      setExpandedSections(prev => ({ ...prev, selected: true }));
+    }
+    activeSelectedElementRef.current = activeSelectedElement;
+  }, [activeSelectedElement]);
 
   // Check if this is an HTML-based component (iframe)
   const isHtmlComponent = useMemo(() => {
@@ -1301,6 +1310,16 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                       onRequestHtmlUpdate={requestHtmlUpdate}
                       hideTextInput={isTextEditMode}
                     />
+                  )}
+
+                  {activeSelectedElement.type === 'image' && activeSelectedElement.src && (
+                    <div className="rounded-lg overflow-hidden border border-border/50 bg-[repeating-conic-gradient(#f5f5f5_0_90deg,#fafafa_90deg_180deg)_0_0/12px_12px]">
+                      <img
+                        src={activeSelectedElement.src}
+                        alt={getElementDisplayName(activeSelectedElement)}
+                        className="w-full h-28 object-contain"
+                      />
+                    </div>
                   )}
 
                   {activeSelectedElement.type === 'container' && (

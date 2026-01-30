@@ -488,13 +488,10 @@ def build_user_prompt(
     is_title_slide = slide_context.get("slide_index", 0) == 0
     if is_title_slide:
         sections.append(
-            "⚠️ TITLE SLIDE: This is the OPENING slide of the deck. Design it as a bold, cinematic TITLE PAGE:\n"
-            "  - Make the title MASSIVE and dramatic (largest text on any slide) - this is the first impression\n"
-            "  - Use a full-bleed hero image or strong gradient background that sets the deck's visual tone\n"
-            "  - Keep it SIMPLE: title + optional subtitle/tagline only. No bullet points, no paragraphs, no content blocks\n"
-            "  - Optional: small metadata row at the bottom (presenter, date, org) in muted text\n"
-            "  - This slide should feel like a movie poster or book cover - bold, clean, and immediate\n"
-            "  - Do NOT make this look like a content slide. No tabs, no cards, no lists. Just a powerful opening."
+            "⚠️ TITLE SLIDE: This is the OPENING slide. Design a visually striking title page that sets the tone for the deck.\n"
+            "  - Keep it SIMPLE: title + optional subtitle/tagline. No bullet points, no paragraphs, no content blocks\n"
+            "  - No tabs, no cards, no lists, no interactive elements. Just the title page.\n"
+            "  - Optional: metadata row (presenter, date, org) if relevant"
         )
 
     presentation_context = slide_context.get("presentation_context")

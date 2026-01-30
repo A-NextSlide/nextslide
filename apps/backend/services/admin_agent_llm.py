@@ -108,7 +108,7 @@ RULES:
 
 ENTITY LINKING:
 When results contain user IDs (uuid columns from the users table), note them so the frontend can create clickable links to /admin/users/:id.
-When results contain deck UUIDs, note them for links to /admin/decks.
+When results contain deck UUIDs (the uuid column from the decks table), note them for links to /deck/:uuid.
 
 Respond with the structured QueryPlan format."""
 
@@ -157,26 +157,47 @@ _UUID_PATTERN = re.compile(
 
 
 def detect_entity_links(
-    columns: List[str], rows: List[Dict[str, Any]]
+    columns: List[str], rows: List[Dict[str, Any]], sql: Optional[str] = None
 ) -> Dict[str, str]:
     """Detect which columns contain entity IDs that should be linked in the UI.
 
     Returns a mapping of column_name -> entity_type ('user' or 'deck').
+    Uses the SQL query to determine table context for ambiguous column names.
     """
     link_map: Dict[str, str] = {}
 
-    # Heuristic: column names containing 'user_id' or just 'id' in users-related queries
-    user_id_patterns = {"user_id", "id", "admin_user_id", "target_user_id", "owner_id", "created_by"}
-    deck_id_patterns = {"deck_id", "deck_uuid", "uuid"}
+    # Determine which tables the query references
+    sql_upper = (sql or "").upper()
+    queries_users = bool(re.search(r"\bUSERS\b", sql_upper))
+    queries_decks = bool(re.search(r"\bDECKS\b", sql_upper))
+
+    # Explicit patterns — always map regardless of table context
+    explicit_user_cols = {"user_id", "admin_user_id", "target_user_id", "owner_id", "created_by"}
+    explicit_deck_cols = {"deck_id", "deck_uuid"}
 
     for col in columns:
         col_lower = col.lower()
-        if col_lower in user_id_patterns:
-            # Verify at least one value looks like a UUID
-            if any(_UUID_PATTERN.match(str(r.get(col, ""))) for r in rows[:5] if r.get(col)):
+
+        # Explicit user ID columns (always a user link)
+        if col_lower in explicit_user_cols:
+            if _has_uuid_value(col, rows):
                 link_map[col] = "user"
-        elif col_lower in deck_id_patterns:
-            if any(_UUID_PATTERN.match(str(r.get(col, ""))) for r in rows[:5] if r.get(col)):
+        # Explicit deck ID columns (always a deck link)
+        elif col_lower in explicit_deck_cols:
+            if _has_uuid_value(col, rows):
+                link_map[col] = "deck"
+        # Ambiguous "id" — only user link if primary table is users
+        elif col_lower == "id" and queries_users and not queries_decks:
+            if _has_uuid_value(col, rows):
+                link_map[col] = "user"
+        # Ambiguous "uuid" — only deck link if primary table is decks
+        elif col_lower == "uuid" and queries_decks:
+            if _has_uuid_value(col, rows):
                 link_map[col] = "deck"
 
     return link_map
+
+
+def _has_uuid_value(col: str, rows: List[Dict[str, Any]]) -> bool:
+    """Check if at least one of the first 5 rows has a UUID value in the given column."""
+    return any(_UUID_PATTERN.match(str(r.get(col, ""))) for r in rows[:5] if r.get(col))

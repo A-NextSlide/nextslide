@@ -275,10 +275,52 @@ const ImageCard: React.FC<ImageCardProps> = ({
     reader.readAsDataURL(file);
   };
 
-  const quickEdits = [
-    { label: 'Enhance', prompt: 'Enhance lighting, contrast, and clarity' },
-    { label: 'Remove BG', prompt: 'Remove background, keep subject clean' },
-    { label: 'Cinematic', prompt: 'Add cinematic lighting and depth' },
+  const editCategories = [
+    {
+      label: 'Adjust',
+      suggestions: [
+        { label: 'Enhance quality', prompt: 'Enhance lighting, contrast, and clarity' },
+        { label: 'Brighten', prompt: 'Make the image brighter and more vibrant' },
+        { label: 'Sharpen', prompt: 'Sharpen the image and increase detail' },
+        { label: 'Fix colors', prompt: 'Fix color balance and saturation' },
+      ],
+    },
+    {
+      label: 'Style',
+      suggestions: [
+        { label: 'Cinematic', prompt: 'Add cinematic lighting and depth of field' },
+        { label: 'Vintage', prompt: 'Apply a vintage film look with warm tones' },
+        { label: 'Watercolor', prompt: 'Transform into a watercolor painting style' },
+        { label: 'Minimalist', prompt: 'Simplify to a clean minimalist look' },
+      ],
+    },
+    {
+      label: 'Remove',
+      suggestions: [
+        { label: 'Background', prompt: 'Remove the background completely' },
+        { label: 'People', prompt: 'Remove all people from the image' },
+        { label: 'Text / watermarks', prompt: 'Remove all text and watermarks' },
+        { label: 'Distractions', prompt: 'Remove distracting objects from the background' },
+      ],
+    },
+    {
+      label: 'Add',
+      suggestions: [
+        { label: 'Mustache', prompt: 'Draw a fun mustache on the face in the image' },
+        { label: 'Sunglasses', prompt: 'Add cool sunglasses to the face' },
+        { label: 'Border / frame', prompt: 'Add a decorative border or frame around the image' },
+        { label: 'Hat', prompt: 'Add a fun hat to the person in the image' },
+      ],
+    },
+    {
+      label: 'Transform',
+      suggestions: [
+        { label: 'Cartoon', prompt: 'Turn into a cartoon illustration style' },
+        { label: 'Blur background', prompt: 'Blur the background, keep subject sharp' },
+        { label: 'Black & white', prompt: 'Convert to dramatic black and white' },
+        { label: 'Oil painting', prompt: 'Transform into an oil painting style' },
+      ],
+    },
   ];
 
   const fitOptions: { value: ObjectFitType; label: string }[] = [
@@ -435,19 +477,34 @@ const ImageCard: React.FC<ImageCardProps> = ({
                   ) : (
                     <>
                       <div className="flex flex-wrap gap-1">
-                        {quickEdits.map(({ label, prompt }) => (
-                          <button
-                            key={label}
-                            onClick={() => callEditApi(prompt)}
-                            disabled={isProcessing}
-                            className={cn(
-                              "px-2.5 py-1.5 rounded text-[10px] font-medium transition-colors",
-                              "bg-white border hover:bg-orange-50 hover:border-orange-200 hover:text-orange-600",
-                              isProcessing && "opacity-50"
-                            )}
-                          >
-                            {label}
-                          </button>
+                        {editCategories.map((category) => (
+                          <div key={category.label} className="relative group/edit">
+                            <button
+                              disabled={isProcessing}
+                              className={cn(
+                                "px-2 py-1 rounded text-[10px] font-medium transition-colors flex items-center gap-0.5",
+                                "bg-white border hover:bg-orange-50 hover:border-orange-200 hover:text-orange-600",
+                                isProcessing && "opacity-50"
+                              )}
+                            >
+                              {category.label}
+                              <ChevronDown className="w-2.5 h-2.5 opacity-50" />
+                            </button>
+                            <div className="absolute top-full left-0 pt-0.5 hidden group-hover/edit:block z-50">
+                              <div className="bg-white rounded-md border shadow-lg py-1 min-w-[140px]">
+                                {category.suggestions.map((s) => (
+                                  <button
+                                    key={s.label}
+                                    onClick={() => callEditApi(s.prompt)}
+                                    disabled={isProcessing}
+                                    className="w-full text-left px-3 py-1.5 text-[10px] text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors disabled:opacity-50"
+                                  >
+                                    {s.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
                         ))}
                       </div>
                       <Textarea

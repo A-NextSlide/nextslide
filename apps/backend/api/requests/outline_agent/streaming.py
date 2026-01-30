@@ -35,8 +35,9 @@ OUTLINE_AGENT_SYSTEM_PROMPT = (
     "Always include a top-level action: generate_outline, update_outline, update_theme, update_slides, scrape_media, clarify. "
     "If key details are missing (topic, audience, slide_count, tone/style, delivery format) or the request is high-stakes/educational, "
     "respond with action=clarify. ALWAYS include both: (1) a short 'message' intro, and (2) 'clarification.fields' array - NEVER omit fields. "
-    "Each field: {key,label,type,options?,value?}. "
+    "Each field: {key,label,type,options?,value?,placeholder?}. "
     "Use label for the question (markdown ok). Use value for a suggested default/prefill that is ready to submit. "
+    "ALWAYS include a placeholder string with a short example answer (e.g. 'e.g., Marketing team at Acme Corp'). "
     "When asking about slide_count, default to 15 slides unless the user requests fewer. "
     "Ask for all missing essentials in a single clarify response (avoid multi-step questioning). "
     "When style or theme is unclear, include an open-text clarification question about the visual vibe and how it will be presented (e.g., live talk with minimal text, detailed analysis doc, or interactive web experience). Avoid jargon like slideMode. "
@@ -72,6 +73,92 @@ OUTLINE_AGENT_SYSTEM_PROMPT = (
     "set it false when uploads are for reference or analysis only. "
     "Prefer user-provided facts; avoid inventing."
 )
+
+# ── agents.md compressed prompt (tool-calling architecture) ────────────────
+OUTLINE_AGENTS_MD_PROMPT = (
+    "You are a presentation outline agent. "
+    "For NEW presentations, output a JSON object with action=generate_outline. "
+    "For CLARIFICATION, output a JSON object with action=clarify. "
+    "For ALL other updates, CALL the appropriate tool — ONE tool only, no text output.\n\n"
+
+    "## Action Matrix\n"
+    "create presentation → output generate_outline JSON (title, topic, slides, stylePreferences)\n"
+    "missing details → output clarify JSON (message + clarification.fields)\n"
+    "change theme/fonts/colors/brand → CALL update_theme tool ONLY\n"
+    "edit specific slides → CALL update_slides tool ONLY\n"
+    "add slide → CALL add_slide tool ONLY\n"
+    "remove slide → CALL remove_slide tool ONLY\n"
+    "reorder slides → CALL reorder_slide tool ONLY\n"
+    "need facts/data → CALL web_search tool\n"
+    "extract from site → CALL deep_extract tool\n"
+    "pull media/gifs → CALL scrape_media tool\n\n"
+
+    "## CRITICAL: Tool-calling discipline\n"
+    "When calling tools, call EXACTLY ONE tool. Do NOT output any text alongside tool calls. "
+    "Do NOT call multiple tools unless the user explicitly requests multiple distinct actions.\n"
+    "'make it red' → call update_theme(colors={background: '#f8d7da', text: '#721c24', accent1: '#dc3545', accent2: '#85182a'}) ONLY. Nothing else.\n"
+    "'make it blue' → call update_theme(colors={background: '#dbeafe', text: '#1e3a5f', accent1: '#3b82f6', accent2: '#1d4ed8'}) ONLY. Nothing else.\n"
+    "'change slide 3 title' → call update_slides ONLY. Nothing else.\n"
+    "NEVER call update_slides, web_search, or any other tool alongside update_theme for a style request.\n"
+    "NEVER call web_search or update_slides alongside update_theme.\n\n"
+
+    "## generate_outline JSON format\n"
+    "{action: \"generate_outline\", title (2-6 words, punchy), topic, slide_count, "
+    "detail_level, tone, slides: [{title, content, key_points}], "
+    "stylePreferences: {slideMode?, brandDomain?}}\n\n"
+
+    "## clarify JSON format\n"
+    "{action: \"clarify\", message (intro), clarification: {fields: [{key, label, type, options?, value?, placeholder?}]}}\n"
+    "ALWAYS include placeholder with a short example answer for every field (e.g. 'e.g., College students').\n\n"
+
+    "## Title rules\n"
+    "SHORT PUNCHY (2-6 words). No 'A/An/The + adjectives'. No 'deep dive/overview/exploration'. "
+    "Transform: 'a nostalgic look at 90s cartoons' → 'Cartoon Network Classics'.\n\n"
+
+    "## Clarify rules\n"
+    "- Ask ALL missing essentials in ONE clarify (no multi-step)\n"
+    "- Default slide_count: 15\n"
+    "- Always include style/vibe question about how it will be presented (live talk, detailed doc, interactive web)\n"
+    "- After CLARIFICATION_ANSWERED hint → proceed to generate\n\n"
+
+    "## When CURRENT OUTLINE exists\n"
+    "- DO NOT generate_outline unless user says 'start over' / 'regenerate'\n"
+    "- Use update_slides tool ONLY for content/text changes (titles, body, key_points, speaker_notes)\n"
+    "- Use update_theme tool ONLY for visual/style changes (colors, fonts, brand, logo)\n"
+    "- Use add_slide/remove_slide/reorder_slide for structure changes\n"
+    "- Style requests like 'make it green/blue/red/dark/professional' → update_theme ONLY. "
+    "Do NOT also call update_slides, web_search, or any other tool.\n\n"
+
+    "## update_theme examples\n"
+    "'change font' → call update_theme(fonts={family: null}) [null = auto-select]\n"
+    "'make it green' → call update_theme(colors={background: '#d4edda', text: '#155724', accent1: '#28a745', accent2: '#1b4332'})\n"
+    "'make it red' → call update_theme(colors={background: '#f8d7da', text: '#721c24', accent1: '#dc3545', accent2: '#85182a'})\n"
+    "'dark blue theme' → call update_theme(colors={background: '#1a1d3b', text: '#ffffff', accent1: '#4a69bd', accent2: '#6c5ce7'})\n"
+    "'warm sunset' → call update_theme(colors={search_query: 'warm sunset'})\n"
+    "'use Nike branding' → call update_theme(brand={name: 'Nike', url: 'nike.com'})\n"
+    "'remove the logo' → call update_theme(logo={action: 'remove'})\n\n"
+    "## Color selection rules\n"
+    "When the user asks for a specific color, YOU choose the exact hex values. Pick a cohesive palette:\n"
+    "- Background: light tint of the color (for light themes) or dark shade (for dark themes)\n"
+    "- Text: high contrast against background (#1A1A1A for light bg, #FFFFFF for dark bg)\n"
+    "- Accent1: vivid version of the requested color\n"
+    "- Accent2: complementary or analogous color\n"
+    "Only use search_query for abstract/complex requests where you can't pick colors directly.\n"
+    "When you use search_query, you'll see the selected colors in the result. "
+    "If they look wrong, call update_theme again with direct hex values to fix them.\n\n"
+
+    "## Rules\n"
+    "1. generate_outline/clarify → JSON output. All updates → tool calls only (no text).\n"
+    "2. ONE tool per request. NEVER combine tools unless the user explicitly asks for multiple things.\n"
+    "3. Prefer user-provided facts; avoid inventing.\n"
+    "4. Research before factual claims (call web_search) — but ONLY when generating new outlines, NOT for style changes.\n"
+    "5. Files uploaded → decide use_uploaded_images (explicit use vs reference).\n"
+    "6. Brand mentioned without domain → confirm via clarify.\n"
+    "7. Use current year in searches.\n"
+    "8. When asking about slide_count, default to 15 slides.\n"
+    "9. If a brand or company is mentioned and no domain is confirmed, ask to confirm the brand domain."
+)
+
 
 def _merge_videos(existing: List[Dict[str, Any]], incoming: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     merged: List[Dict[str, Any]] = []
@@ -610,6 +697,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         full_response = ""
         in_json_block = False
         last_status_text = ""
+        tool_results_emitted = False
 
         def contains_json_start(text: str) -> bool:
             """Check if text contains the start of JSON (fenced or raw)."""
@@ -623,21 +711,70 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         if scrape_task and not scrape_task.done():
             extra_tasks.append(scrape_task)
 
+        # Feature-flag: agents.md prompt with tool-calling architecture
+        from agents.config import USE_OUTLINE_AGENTS_MD
+        if USE_OUTLINE_AGENTS_MD:
+            system_prompt = OUTLINE_AGENTS_MD_PROMPT
+            use_outline_tools = True
+            current_outline_data = request.context.get("current_outline") if request.context else None
+            logger.info("[OutlineAgent] Using agents.md tool-calling architecture")
+        else:
+            system_prompt = OUTLINE_AGENT_SYSTEM_PROMPT
+            use_outline_tools = False
+            current_outline_data = None
+
         async for result in call_model_with_tools(
             client,
             model,
             messages,
-            OUTLINE_AGENT_SYSTEM_PROMPT,
+            system_prompt,
             extra_context_tasks=extra_tasks,
+            outline_tools=use_outline_tools,
+            current_outline=current_outline_data,
         ):
             if isinstance(result, str) and result.startswith("data:"):
                 # This is a status event from tool calls - yield it directly
                 logger.info(f"[OutlineAgent] Yielding tool status: {result[:100]}...")
                 yield result
+            elif isinstance(result, tuple) and result[0] == "tool_result":
+                # Tool execution result from outline tools (theme, slides, media)
+                tool_name = result[1]
+                tool_data = result[2]
+                tool_results_emitted = True
+                logger.info(f"[OutlineAgent] Tool result: {tool_name} -> {tool_data.get('message', '')}")
+
+                if tool_name == "update_theme":
+                    # Emit theme_changes (original tool args) so the frontend's
+                    # existing code picks it up and calls /api/outline-theme/apply.
+                    # Also include pre-processed style_preferences/theme_updates
+                    # so the frontend can optionally skip the API call in the future.
+                    theme_event_data = {
+                        'action': 'update_theme',
+                        'message': tool_data.get('message', ''),
+                        'theme_changes': tool_data.get('_original_args', {}),
+                    }
+                    if tool_data.get('style_preferences'):
+                        theme_event_data['style_preferences'] = tool_data['style_preferences']
+                    if tool_data.get('theme_updates'):
+                        theme_event_data['theme_updates'] = tool_data['theme_updates']
+                    yield f"data: {json.dumps({'type': 'outline', 'data': theme_event_data})}\n\n"
+
+                elif tool_name in ("update_slides", "add_slide", "remove_slide", "reorder_slide"):
+                    yield f"data: {json.dumps({'type': 'outline', 'data': {'action': 'update_outline', 'message': tool_data.get('message', ''), 'slides': tool_data.get('slides')}})}\n\n"
+
+                elif tool_name == "scrape_media":
+                    yield f"data: {json.dumps({'type': 'outline', 'data': {'action': 'scrape_media', 'message': tool_data.get('message', ''), 'scraped_media': tool_data.get('scraped_media')}})}\n\n"
             elif isinstance(result, tuple) and result[0] == "text":
                 text = result[1]
                 full_response += text
                 logger.info(f"[OutlineAgent] Received text: {len(text)} chars (total: {len(full_response)} chars)")
+
+                # Suppress text streaming when tool results were already emitted.
+                # Tool-only responses (theme/slide updates) don't need text output —
+                # the SSE tool_result events are the complete response.
+                if tool_results_emitted:
+                    logger.info("[OutlineAgent] Suppressing text (tool results already emitted)")
+                    continue
 
                 # Detect JSON blocks
                 if contains_json_start(full_response) and not in_json_block:
@@ -896,7 +1033,11 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 yield f"data: {json.dumps({'type': 'outline', 'data': outline_data})}\n\n"
 
         if not outline_data:
-            if full_response.strip():
+            if tool_results_emitted:
+                # Tool results (theme/slide updates) were already emitted as SSE events.
+                # No JSON outline needed — the frontend already received the updates.
+                logger.info("[OutlineAgent] Tool results already emitted; skipping JSON extraction")
+            elif full_response.strip():
                 logger.info("[OutlineAgent] No structured JSON block found; returning clarify fallback")
                 fallback_message = full_response.strip()
                 if len(fallback_message) > 400:

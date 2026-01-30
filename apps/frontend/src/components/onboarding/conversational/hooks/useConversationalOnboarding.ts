@@ -743,6 +743,26 @@ export const useConversationalOnboarding = ({
             continue; // Don't fall through to full outline handling
           }
 
+          // Handle update_outline from tool results — backend sends the full slides
+          // array with changes baked in. Convert to granular updates so titles/content
+          // are applied directly (mergeOutline would preserve old titles).
+          if (isUpdateOutline && hasDirectSlides) {
+            console.log('[ConvOnboarding] Handling update_outline action (tool result slides)');
+            const incomingSlides = event.data.slides as any[];
+            const slideUpdates = incomingSlides.map((s: any, i: number) => ({
+              index: i,
+              title: s.title,
+              subtitle: s.subtitle,
+              content: s.content,
+              key_points: s.key_points || s.keyPoints || s.key_points,
+              keyPoints: s.key_points || s.keyPoints,
+            }));
+            outlineState.setOutlineAction('update_slides', 'Updating slides...');
+            outlineState.updateSpecificSlides(slideUpdates);
+            outlineState.clearLoadingStates();
+            continue;
+          }
+
           if (hasOutlineAction || hasDirectSlides) {
             const pendingContext = pendingContextRef.current;
             // Flatten nested data structure - backend sends slides in different locations:

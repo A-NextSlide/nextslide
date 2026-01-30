@@ -113,15 +113,22 @@ const MessageList: React.FC<MessageListProps> = ({
       )}
 
       {showInlineSlideModeSelection && stage === 'slide_mode_selection' && (
-        <div className={inlineControlsClassName}>
-          <SlideModeSelection
-            isProcessing={isProcessing}
-            isBlocking={isSlideModeBlocked}
-            blockingLabel={blockingLabel}
-            onSelect={onSlideModeSelect}
-            onContinueChat={onContinueChat}
-          />
-        </div>
+        <SlideModeSelection
+          isProcessing={isProcessing}
+          isBlocking={isSlideModeBlocked}
+          blockingLabel={blockingLabel}
+          onSelect={onSlideModeSelect}
+          onContinueChat={onContinueChat}
+          showContinueChat
+          themeData={themeBlock ? {
+            background: themeBlock.colors.primary_background,
+            text: themeBlock.colors.primary_text,
+            accent: themeBlock.colors.accent_1,
+            headingFont: themeBlock.typography.headingFont,
+            bodyFont: themeBlock.typography.bodyFont,
+          } : undefined}
+          firstSlideTitle={outlineBlock?.slides?.[0]?.title}
+        />
       )}
     </>
   );

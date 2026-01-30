@@ -158,6 +158,7 @@ async def agent_chat(
             links = detect_entity_links(
                 result.get("columns", []),
                 result.get("rows", []),
+                sql=plan.sql,
             )
 
             session["history"].append({

@@ -112,6 +112,22 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) =
         }, 300);
     };
 
+    const handleNextSlide = () => {
+        if (!activeDeck?.slides) return;
+        setSelectedSlideIndex((prev) =>
+            prev < activeDeck.slides.length - 1 ? prev + 1 : 0
+        );
+    };
+
+    const handlePrevSlide = () => {
+        if (!activeDeck?.slides) return;
+        setSelectedSlideIndex((prev) =>
+            prev > 0 ? prev - 1 : activeDeck.slides.length - 1
+        );
+    };
+
+    const totalSlides = activeDeck?.slides?.length || 0;
+
     const isOrange = activePrompt.theme === 'orange';
 
     return (
@@ -121,13 +137,13 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) =
             <div className="relative h-full w-full flex flex-col items-center justify-center overflow-visible pointer-events-none">
 
                 {/* Main Content Card Container */}
-                <div className="container relative z-10 px-4 w-full max-w-[1400px] mx-auto pointer-events-auto h-full flex flex-col justify-center">
+                <div className="container relative z-10 px-2 md:px-4 w-full max-w-[1400px] mx-auto pointer-events-auto h-full flex flex-col justify-center">
 
                     {/* The "Binder" Card */}
-                    <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-[32px] shadow-2xl shadow-black/10 border border-black/5 dark:border-white/5 p-4 sm:p-6 w-full h-[85vh] sm:h-[80vh] flex flex-col sm:flex-row gap-6 relative overflow-visible">
+                    <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-2xl md:rounded-[32px] shadow-2xl shadow-black/10 border border-black/5 dark:border-white/5 p-2 md:p-6 w-full h-[70vh] md:h-[80vh] flex flex-col md:flex-row gap-2 md:gap-6 relative overflow-visible">
 
-                        {/* LEFT SIDEBAR - Thumbnails */}
-                        <div className="w-full sm:w-[200px] md:w-[240px] flex-shrink-0 flex flex-col gap-4 h-full overflow-hidden">
+                        {/* LEFT SIDEBAR - Thumbnails (hidden on mobile/tablet) */}
+                        <div className="hidden md:flex md:w-[200px] lg:w-[240px] flex-shrink-0 flex-col gap-4 h-full overflow-hidden">
 
                             <div className="pl-2 pt-2 pb-4">
                                 <div className="text-xs font-bold text-black/40 dark:text-white/40 uppercase tracking-widest mb-1">
@@ -183,13 +199,13 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) =
                         </div>
 
                         {/* RIGHT AREA - Main Slide */}
-                        <div className="flex-1 relative h-full bg-zinc-100 dark:bg-zinc-950/50 rounded-2xl overflow-visible flex items-center justify-center p-2 sm:p-4 md:p-8 group">
+                        <div className="flex-1 relative h-full bg-zinc-100 dark:bg-zinc-950/50 rounded-2xl overflow-hidden md:overflow-visible flex items-center justify-center p-1 md:p-4 lg:p-8 group">
 
-                            {/* Prompt Card - POP OUT */}
+                            {/* Prompt Card - POP OUT (desktop only) */}
                             <div
                                 className={cn(
-                                    "absolute z-50 top-[-30px] right-[-30px] sm:top-[-48px] sm:right-[-48px] max-w-[300px] sm:max-w-[380px]",
-                                    "bg-white dark:bg-zinc-900 rounded-xl border-2 border-[#FF4301] p-4 sm:p-6"
+                                    "hidden md:block absolute z-50 md:top-[-30px] md:right-[-30px] lg:top-[-48px] lg:right-[-48px] max-w-[300px] lg:max-w-[380px]",
+                                    "bg-white dark:bg-zinc-900 rounded-xl border-2 border-[#FF4301] p-4 md:p-6"
                                 )}
                                 style={{
                                     boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)"
@@ -246,10 +262,51 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) =
                                         )}
                                     </div>
                                 )}
+
+                                {/* Mobile: Bottom overlay with navigation */}
+                                <div className="md:hidden absolute bottom-0 inset-x-0 z-30">
+                                    <div className="bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-10 pb-3 px-3">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-sm text-white text-[10px] font-bold uppercase tracking-wider">
+                                                {React.createElement(activePrompt.icon, { size: 10 })}
+                                                {activePrompt.badge}
+                                            </div>
+                                        </div>
+                                        <p className="text-white font-bold text-xs leading-snug mb-3" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                                            &ldquo;{activePrompt.text}&rdquo;
+                                        </p>
+                                        <div className="flex items-center justify-between">
+                                            {/* Slide navigation */}
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={handlePrevSlide} className="p-1.5 rounded-full bg-white/20 text-white active:bg-white/30 transition-colors">
+                                                    <ChevronLeft size={14} />
+                                                </button>
+                                                <span className="text-white/80 text-[11px] font-medium tabular-nums min-w-[3ch] text-center">
+                                                    {selectedSlideIndex + 1}/{totalSlides}
+                                                </span>
+                                                <button onClick={handleNextSlide} className="p-1.5 rounded-full bg-white/20 text-white active:bg-white/30 transition-colors">
+                                                    <ChevronRight size={14} />
+                                                </button>
+                                            </div>
+                                            {/* Deck navigation */}
+                                            <div className="flex items-center gap-1.5">
+                                                <button onClick={handlePrev} className="p-1.5 rounded-full bg-[#FF4301] text-white active:bg-[#E63901] transition-colors">
+                                                    <ChevronLeft size={14} />
+                                                </button>
+                                                <span className="text-white/60 text-[10px] font-medium tabular-nums">
+                                                    {activeIndex + 1}/{PROMPTS.length}
+                                                </span>
+                                                <button onClick={handleNext} className="p-1.5 rounded-full bg-[#FF4301] text-white active:bg-[#E63901] transition-colors">
+                                                    <ChevronRight size={14} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Interactive Hint */}
-                            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 bg-black/80 backdrop-blur-md rounded-full text-white/80 text-xs font-medium pointer-events-none opacity-0 sm:opacity-100 transition-opacity z-20">
+                            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 bg-black/80 backdrop-blur-md rounded-full text-white/80 text-xs font-medium pointer-events-none opacity-0 md:opacity-100 transition-opacity z-20">
                                 <MousePointer2 size={12} className="text-[#FF4301]" />
                                 Try clicking elements on the slide
                             </div>

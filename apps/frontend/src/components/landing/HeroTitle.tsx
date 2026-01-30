@@ -398,7 +398,7 @@ export const HeroTitle = () => {
             <div className="flex flex-col items-center gap-1">
                 {/* Line 1: Ideas to [Text] */}
                 <h1
-                    className="text-black dark:text-white relative flex items-baseline justify-center"
+                    className="text-black dark:text-white relative flex items-baseline justify-center flex-wrap"
                     style={{
                         fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
                         fontWeight: 900,
@@ -412,7 +412,7 @@ export const HeroTitle = () => {
                     <span className="ml-[0.3em]">to</span>
 
                     {/* Inserted text container */}
-                    <span className="relative inline-flex items-baseline ml-[0.3em]">
+                    <span className="relative inline-flex items-baseline ml-[0.3em] whitespace-nowrap">
                         {/* The typed text with selection highlight */}
                         <span className="relative" style={{ isolation: 'isolate' }}>
                             {/* Selection box with outline and handles - appears on click */}

@@ -66,6 +66,7 @@ interface ClarificationQuestion {
   type: QuestionType;
   options?: string[];
   defaultValue?: string;
+  placeholder?: string;
 }
 
 interface ClarificationDraftCardProps {
@@ -115,7 +116,7 @@ const buildQuestionsFromFields = (fields: ClarificationField[]): ClarificationQu
     const normalizedLabel = (overrideLabel && isFallbackLabel) ? overrideLabel : normalizeLabel(rawLabel);
     const label = normalizedLabel || fallbackLabel || `Detail ${index + 1}`;
     const responseLabel = normalizeResponseLabel(normalizedLabel || fallbackLabel || label);
-    let defaultValue = field.value !== undefined ? String(field.value) : '';
+    let defaultValue = field.value !== undefined ? String(field.value) : (field.placeholder || '');
     if (field.type === 'boolean' && typeof field.value === 'boolean') {
       defaultValue = field.value ? 'Yes' : 'No';
     }
@@ -126,6 +127,7 @@ const buildQuestionsFromFields = (fields: ClarificationField[]): ClarificationQu
       type: field.type || 'text',
       options: field.options,
       defaultValue,
+      placeholder: field.placeholder,
     };
   })
 );
@@ -348,7 +350,7 @@ const ClarificationDraftCard: React.FC<ClarificationDraftCardProps> = ({
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             className="mt-2 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow-inner focus:border-orange-400 focus:outline-none"
-            placeholder="Type your answer, press Enter, or skip"
+            placeholder={currentQuestion.placeholder || "Type your answer, press Enter, or skip"}
           />
 
           {isChoice && currentQuestion.options && (
