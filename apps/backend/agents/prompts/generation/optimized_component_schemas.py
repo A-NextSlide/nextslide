@@ -35,7 +35,11 @@ def get_optimized_component_schemas() -> str:
 
 **Image** { position, width, height, src: "placeholder", objectFit: "cover"|"contain", borderRadius, opacity }
   • Use src="placeholder" (system fills images)
-  • objectFit="cover" for backgrounds, "contain" for logos
+  • 🚨 **objectFit RULES (CRITICAL - wrong fit = ugly images):**
+    - **"cover"** → Photos, headshots, hero images, product shots, backgrounds (fills container, crops excess)
+    - **"contain"** → Logos, icons, diagrams, charts, screenshots, infographics, illustrations, badges (shows FULL image, no cropping)
+    - **When in doubt:** If the image is a PHOTO → "cover". If the image is a GRAPHIC/DIAGRAM/LOGO → "contain".
+    - **ALWAYS explicitly set objectFit** - never leave it undefined!
   • Creative borders: borderRadius can be "50%" (circle), "20px", asymmetric "20px 80px 20px 80px"
 
 **Lines** { startPoint: {x, y}, endPoint: {x, y}, stroke: {color, width, opacity}, strokeWidth, connectionType }
@@ -274,6 +278,8 @@ These "smart" components produce generic, boring designs. Always use CustomCompo
 ✅ **Use Image for:**
   • Visual content (photos, diagrams, illustrations)
   • Logo placement (objectFit="contain")
+  • Screenshots, infographics, diagrams (objectFit="contain" - show full image)
+  • Hero/feature photos, headshots (objectFit="cover" - fill frame)
 
 🚫 **NEVER USE:**
   • Chart component in creative mode (use CustomComponent)

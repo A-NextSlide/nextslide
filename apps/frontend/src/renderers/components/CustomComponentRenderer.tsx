@@ -1083,6 +1083,62 @@ body:not(.ns-overlay-mode) [role="tab"]::after {
     return result;
   };
 
+  // Inject <link rel="preload"> tags into the <head> for every image URL
+  // found in the HTML. This lets the browser start downloading images
+  // that are initially hidden (e.g. behind tabs / JS state changes) so
+  // they're already cached when the user clicks a tab.
+  const injectImagePreloadLinks = (html: string): string => {
+    if (!html) return html;
+
+    const urls = new Set<string>();
+
+    // Collect image URLs from src attributes
+    const srcRegex = /src=["'](https?:\/\/[^"']+)["']/gi;
+    let m: RegExpExecArray | null;
+    while ((m = srcRegex.exec(html)) !== null) {
+      urls.add(m[1]);
+    }
+
+    // Collect image URLs from CSS background-image
+    const bgRegex = /url\(["']?(https?:\/\/[^"')]+)["']?\)/gi;
+    while ((m = bgRegex.exec(html)) !== null) {
+      urls.add(m[1]);
+    }
+
+    // Collect image URLs from JS string literals (data arrays, variable assignments)
+    const jsUrlRegex = /["'](https?:\/\/[^"']{20,}\.(?:jpg|jpeg|png|gif|webp|svg|avif)[^"']*)["']/gi;
+    while ((m = jsUrlRegex.exec(html)) !== null) {
+      urls.add(m[1]);
+    }
+
+    // Also catch CDN URLs without file extensions (supabase, pexels, unsplash)
+    const cdnUrlRegex = /["'](https?:\/\/(?:[^"']*(?:supabase|nextslide|pexels|unsplash|images\.)[^"']*))["']/gi;
+    while ((m = cdnUrlRegex.exec(html)) !== null) {
+      urls.add(m[1]);
+    }
+
+    if (urls.size === 0) return html;
+
+    // Build preload link tags
+    const preloadTags = Array.from(urls)
+      .filter(url => !url.includes('placeholder') && !url.includes('tailwindcss') && !url.includes('.js'))
+      .map(url => `<link rel="preload" as="image" href="${url}">`)
+      .join('\n');
+
+    if (!preloadTags) return html;
+
+    // Insert before </head> if present, otherwise before <body>
+    if (html.includes('</head>')) {
+      return html.replace('</head>', `${preloadTags}\n</head>`);
+    }
+    if (html.includes('<body')) {
+      return html.replace(/<body/i, `${preloadTags}\n<body`);
+    }
+
+    // Fallback: prepend
+    return preloadTags + '\n' + html;
+  };
+
   // Create a stable string key from props for proper dependency tracking
   // This ensures useMemo detects when nested props change (e.g., image URLs from backend)
   const propsKey = useMemo(() => {
@@ -1174,6 +1230,11 @@ body:not(.ns-overlay-mode) [role="tab"]::after {
       });
       html = injectEditMode(html, component.id);
     }
+
+    // Inject <link rel="preload"> tags for ALL images found in the HTML.
+    // This makes the browser start fetching images immediately when the
+    // iframe loads, so tab-switching / hidden images are already cached.
+    html = injectImagePreloadLinks(html);
 
     // Inject image processing overlay handler script
     const processingOverlayScript = `

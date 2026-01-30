@@ -153,9 +153,20 @@ class SlideSchemaValidator:
                 props['height'] = 200
                 self.fixes_applied += 1
             
-        # Default to cover object-fit
+        # Default objectFit based on image type:
+        # - Logos, icons, diagrams → "contain" (show full image)
+        # - Photos, backgrounds, hero images → "cover" (fill container)
         if 'objectFit' not in props:
-            props['objectFit'] = 'cover'
+            if is_logo:
+                props['objectFit'] = 'contain'
+            else:
+                alt = (props.get('alt') or '').lower()
+                kind = (props.get('metadata', {}) or {}).get('kind', '').lower() if isinstance(props.get('metadata'), dict) else ''
+                is_graphic = any(kw in alt or kw in kind for kw in [
+                    'logo', 'icon', 'diagram', 'chart', 'graph', 'badge',
+                    'symbol', 'screenshot', 'infographic', 'illustration'
+                ])
+                props['objectFit'] = 'contain' if is_graphic else 'cover'
             self.fixes_applied += 1
             
         return props

@@ -14,6 +14,7 @@ COMPONENT TYPES:
 
 3. Image - Images
    props: { src: "url", position: {x, y}, width, height, objectFit: "cover"|"contain" }
+   objectFit: "cover" for photos/headshots/backgrounds, "contain" for logos/icons/diagrams/screenshots
 
 4. Video - Video embeds
    props: { src: "url", position: {x, y}, width, height, controls: bool, autoplay: bool, loop: bool, muted: bool, poster?: "url" }

@@ -5,17 +5,24 @@ Seed featured decks for the landing page using the public API.
 Generates 8 fun, unique presentations and inserts them into the
 featured_decks table for the InteractiveHero showcase.
 
+Strategy: Fire all creation requests first, then poll all in parallel.
+The server generates decks in the background so they run concurrently.
+
 Usage:
     cd apps/backend
-    python scripts/seed_featured_decks.py
+    python3 scripts/seed_featured_decks.py
 """
 
 import os
 import sys
 import time
 import asyncio
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import httpx
+
+# Force unbuffered output
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -133,8 +140,8 @@ FEATURED_DECKS = [
 ]
 
 
-async def create_deck(client: httpx.AsyncClient, deck_info: dict) -> dict:
-    """Create a deck via the API."""
+async def create_deck(client: httpx.AsyncClient, deck_info: dict) -> Optional[Dict]:
+    """Create a deck via the API. Returns immediately with deck_id."""
     payload = {
         "topic": deck_info["topic"],
         "slides": deck_info["slides"],
@@ -152,33 +159,37 @@ async def create_deck(client: httpx.AsyncClient, deck_info: dict) -> dict:
         timeout=120.0
     )
     if response.status_code != 200:
-        print(f"           API Error {response.status_code}: {response.text[:500]}")
-    response.raise_for_status()
+        print(f"    API Error {response.status_code}: {response.text[:500]}")
+        return None
     return response.json()
 
 
-async def poll_status(client: httpx.AsyncClient, deck_id: str, max_wait: int = 600) -> dict:
-    """Poll for deck completion (up to 10 minutes)."""
+async def poll_one(client: httpx.AsyncClient, deck_id: str, name: str, max_wait: int = 600) -> Optional[str]:
+    """Poll a single deck for completion. Returns status string."""
     start = time.time()
     while time.time() - start < max_wait:
-        response = await client.get(
-            f"{API_BASE}/v1/decks/{deck_id}/status",
-            headers={"X-API-Key": API_KEY},
-            timeout=60.0
-        )
-        response.raise_for_status()
-        status = response.json()
+        try:
+            response = await client.get(
+                f"{API_BASE}/v1/decks/{deck_id}/status",
+                headers={"X-API-Key": API_KEY},
+                timeout=60.0
+            )
+            response.raise_for_status()
+            status = response.json()
 
-        if status["status"] == "completed":
-            return status
-        elif status["status"] == "failed":
-            raise Exception(f"Generation failed: {status.get('error_message', 'Unknown error')}")
+            if status["status"] == "completed":
+                print(f"    DONE: {name} ({status.get('slides_count', '?')} slides)")
+                return "completed"
+            elif status["status"] == "failed":
+                print(f"    FAIL: {name} — {status.get('error_message', 'Unknown')}")
+                return "failed"
+        except Exception as e:
+            print(f"    Poll error for {name}: {type(e).__name__}")
 
-        elapsed = int(time.time() - start)
-        print(f"           ... still generating ({elapsed}s elapsed)")
-        await asyncio.sleep(8)
+        await asyncio.sleep(12)
 
-    raise Exception(f"Timeout waiting for deck {deck_id}")
+    print(f"    TIMEOUT: {name}")
+    return "timeout"
 
 
 def add_to_featured(deck_uuid: str, display_name: str, description: str, display_order: int) -> bool:
@@ -232,33 +243,6 @@ def deactivate_existing():
         print(f"  Warning: Could not deactivate existing: {e}")
 
 
-async def generate_one(
-    client: httpx.AsyncClient,
-    deck_info: dict,
-    index: int,
-    total: int
-) -> Optional[Dict]:
-    """Generate a single deck and return its UUID."""
-    try:
-        print(f"  [{index+1}/{total}] Creating: {deck_info['display_name']}")
-        result = await create_deck(client, deck_info)
-        deck_id = result["deck_id"]
-        print(f"           Deck ID: {deck_id}")
-        print(f"           Waiting for generation...")
-
-        status = await poll_status(client, deck_id)
-        print(f"           Done! ({status.get('slides_count', '?')} slides)")
-
-        return {"uuid": deck_id, "info": deck_info, "status": status}
-
-    except httpx.HTTPStatusError as e:
-        print(f"           FAILED (HTTP {e.response.status_code}): {e.response.text[:300]}")
-        return None
-    except Exception as e:
-        print(f"           FAILED: {type(e).__name__}: {e}")
-        return None
-
-
 async def main():
     print("=" * 60)
     print("Featured Decks Seeder")
@@ -267,71 +251,90 @@ async def main():
     print(f"Decks to generate: {len(FEATURED_DECKS)}")
     print()
 
-    # Step 0: Wake up the server
-    print("[Phase 0] Waking up server...")
+    # Phase 0: Wake up server
+    print("[Phase 0] Checking server...")
     async with httpx.AsyncClient() as wake_client:
         try:
             r = await wake_client.get(f"{API_BASE}/api/health", timeout=120.0)
-            print(f"  Server responded: {r.status_code}")
+            print(f"  Server OK ({r.status_code})")
         except Exception as e:
-            print(f"  Wake-up request: {type(e).__name__} (server may still be starting)")
-            print("  Waiting 30s for cold start...")
+            print(f"  {type(e).__name__} — waiting 30s for cold start...")
             await asyncio.sleep(30)
     print()
 
-    # Step 1: Generate all decks via API (batches of 2)
-    print("[Phase 1] Generating presentations via API")
+    # Phase 1: Fire all creation requests (they return immediately)
+    print("[Phase 1] Submitting all 8 deck creation requests...")
     print("-" * 60)
 
-    results = []
+    deck_jobs = []  # List of (deck_id, deck_info)
     async with httpx.AsyncClient() as client:
         for i, deck_info in enumerate(FEATURED_DECKS):
-            r = await generate_one(client, deck_info, i, len(FEATURED_DECKS))
-            if r:
-                results.append(r)
-            # Brief pause between decks
-            if i < len(FEATURED_DECKS) - 1:
-                print()
-                await asyncio.sleep(2)
+            print(f"  [{i+1}/8] Submitting: {deck_info['display_name']}...", end=" ")
+            result = await create_deck(client, deck_info)
+            if result:
+                deck_id = result["deck_id"]
+                print(f"OK ({deck_id})")
+                deck_jobs.append((deck_id, deck_info))
+            else:
+                print("FAILED")
+            await asyncio.sleep(1)  # Small gap between submissions
 
-    print()
-    print(f"  Generated {len(results)}/{len(FEATURED_DECKS)} decks")
-    print()
-
-    if not results:
-        print("No decks generated. Exiting.")
+    print(f"\n  Submitted {len(deck_jobs)}/8 decks for generation")
+    if not deck_jobs:
+        print("No decks submitted. Exiting.")
         return
 
-    # Step 2: Deactivate old featured decks and insert new ones
-    print("[Phase 2] Updating featured_decks table")
+    # Phase 2: Poll all decks in parallel
+    print()
+    print("[Phase 2] Waiting for all decks to complete (polling in parallel)...")
+    print("-" * 60)
+
+    completed_jobs = []  # List of (deck_id, deck_info)
+
+    async with httpx.AsyncClient() as client:
+        poll_tasks = [
+            poll_one(client, deck_id, deck_info["display_name"])
+            for deck_id, deck_info in deck_jobs
+        ]
+        results = await asyncio.gather(*poll_tasks)
+
+        for (deck_id, deck_info), status in zip(deck_jobs, results):
+            if status == "completed":
+                completed_jobs.append((deck_id, deck_info))
+
+    print(f"\n  Completed: {len(completed_jobs)}/{len(deck_jobs)}")
+
+    if not completed_jobs:
+        print("No decks completed. Exiting.")
+        return
+
+    # Phase 3: Update featured_decks table
+    print()
+    print("[Phase 3] Updating featured_decks table...")
     print("-" * 60)
 
     deactivate_existing()
 
     success_count = 0
-    for i, r in enumerate(results):
-        deck_info = r["info"]
-        deck_uuid = r["uuid"]
-        print(f"  [{i+1}/{len(results)}] Adding: {deck_info['display_name']}")
-
+    for i, (deck_uuid, deck_info) in enumerate(completed_jobs):
+        print(f"  [{i+1}/{len(completed_jobs)}] Featuring: {deck_info['display_name']}")
         if add_to_featured(deck_uuid, deck_info["display_name"], deck_info["description"], i + 1):
-            print(f"           Added (display_order={i+1})")
+            print(f"    Added (display_order={i+1})")
             success_count += 1
         else:
-            print(f"           Failed to add")
+            print(f"    Failed to add")
 
+    # Summary
     print()
     print("=" * 60)
-    print(f"Summary:")
-    print(f"  Generated:  {len(results)}/{len(FEATURED_DECKS)}")
-    print(f"  Featured:   {success_count}/{len(results)}")
+    print("SUMMARY")
+    print(f"  Submitted: {len(deck_jobs)}/8")
+    print(f"  Completed: {len(completed_jobs)}/{len(deck_jobs)}")
+    print(f"  Featured:  {success_count}/{len(completed_jobs)}")
     print()
-
-    # Print UUIDs for reference
     print("Deck UUIDs (in display order):")
-    for i, r in enumerate(results):
-        print(f"  {i+1}. {r['uuid']} — {r['info']['display_name']}")
-
+    for i, (deck_uuid, deck_info) in enumerate(completed_jobs):
+        print(f"  {i+1}. {deck_uuid} — {deck_info['display_name']}")
     print("=" * 60)
 
 

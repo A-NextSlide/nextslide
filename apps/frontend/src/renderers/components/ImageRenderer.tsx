@@ -360,7 +360,10 @@ export const renderImage = (
     transform: getTransformString(props),
     // Hide until the browser has decoded the image so the user never sees
     // the raw intrinsic dimensions before objectFit applies.
+    // Use a fast CSS transition so the image fades in smoothly instead of
+    // popping, which prevents the visible "resize flash" when navigating.
     opacity: imageLoaded ? 1 : 0,
+    transition: 'opacity 0.15s ease-in',
     maxWidth: 'none', // Ensure image doesn't get constrained when cropped
   };
   

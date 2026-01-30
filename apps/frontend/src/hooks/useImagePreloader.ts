@@ -13,6 +13,8 @@ const preloadedUrls = new Set<string>();
  *  - component.props.thumbnail / fallbackSrc (fallback chain)
  *  - slide.backgroundImage
  *  - img src attributes inside CustomComponent HTML
+ *  - image URLs in CustomComponent JS data (arrays, objects, variables)
+ *  - image URLs in CustomComponent nested props
  */
 function extractImageUrls(slide: SlideData): string[] {
   const urls: string[] = [];
@@ -35,35 +37,99 @@ function extractImageUrls(slide: SlideData): string[] {
       continue;
     }
 
-    // CustomComponent – images live inside the render HTML string
-    if (component.type === 'CustomComponent' && typeof props.render === 'string') {
-      const srcRegex = /src=["']([^"']+)["']/g;
-      let match: RegExpExecArray | null;
-      while ((match = srcRegex.exec(props.render)) !== null) {
-        const url = match[1];
-        if (url && (url.startsWith('http') || url.startsWith('data:'))) {
-          urls.push(url);
+    // CustomComponent – extract images from HTML, JS data, and props
+    if (component.type === 'CustomComponent') {
+      // 1. Image URLs from nested props (e.g. props.props.heroImage, props.props.image0)
+      if (props.props && typeof props.props === 'object') {
+        for (const value of Object.values(props.props)) {
+          if (typeof value === 'string' && isImageUrl(value)) {
+            urls.push(value);
+          }
+        }
+      }
+
+      // 2. Image URLs from the render HTML string
+      if (typeof props.render === 'string') {
+        const render = props.render;
+
+        // img src attributes
+        const srcRegex = /src=["']([^"']+)["']/g;
+        let match: RegExpExecArray | null;
+        while ((match = srcRegex.exec(render)) !== null) {
+          const url = match[1];
+          if (url && isImageUrl(url)) {
+            urls.push(url);
+          }
+        }
+
+        // CSS background-image: url(...)
+        const bgRegex = /url\(["']?([^"')]+)["']?\)/g;
+        while ((match = bgRegex.exec(render)) !== null) {
+          const url = match[1];
+          if (url && isImageUrl(url)) {
+            urls.push(url);
+          }
+        }
+
+        // Image URLs in JS data: strings in arrays/objects that look like URLs
+        // Catches patterns like: image: "https://...", src: 'https://...',
+        // "https://...supabase...", "https://images.pexels.com/..."
+        const jsUrlRegex = /["'](https?:\/\/[^"']{20,}\.(?:jpg|jpeg|png|gif|webp|svg|avif)[^"']*)["']/gi;
+        while ((match = jsUrlRegex.exec(render)) !== null) {
+          const url = match[1];
+          if (url && isImageUrl(url)) {
+            urls.push(url);
+          }
+        }
+
+        // Also catch URLs that don't end with an extension but are image CDN URLs
+        // (supabase storage, pexels, unsplash, etc.)
+        const cdnUrlRegex = /["'](https?:\/\/(?:[^"']*(?:supabase|nextslide|pexels|unsplash|images\.)[^"']*))["']/gi;
+        while ((match = cdnUrlRegex.exec(render)) !== null) {
+          const url = match[1];
+          if (url && isImageUrl(url)) {
+            urls.push(url);
+          }
         }
       }
     }
   }
 
-  // Filter out placeholders and empty strings
-  return urls.filter(
-    (url) =>
-      url &&
-      !url.includes('placeholder') &&
-      !url.startsWith('generating://') &&
-      url !== ''
+  // Dedupe and filter out placeholders and empty strings
+  const seen = new Set<string>();
+  return urls.filter((url) => {
+    if (
+      !url ||
+      url.includes('placeholder') ||
+      url.startsWith('generating://') ||
+      url === '' ||
+      url.startsWith('${') ||
+      seen.has(url)
+    ) {
+      return false;
+    }
+    seen.add(url);
+    return true;
+  });
+}
+
+/** Check if a string looks like a real image URL (not a placeholder or template var) */
+function isImageUrl(str: string): boolean {
+  return (
+    (str.startsWith('http') || str.startsWith('data:image')) &&
+    !str.includes('placeholder') &&
+    !str.startsWith('generating://') &&
+    !str.includes('${')
   );
 }
 
 /**
- * Preloads images for slides adjacent to the current one so they are
+ * Preloads images for the current slide and adjacent slides so they are
  * already in the browser cache when the user navigates.
  *
- * Uses `requestIdleCallback` (with `setTimeout` fallback) to avoid
- * blocking the main thread during slide transitions.
+ * Current slide images are preloaded **eagerly** (immediately) so tabbed
+ * content / image switching within a slide is instant.
+ * Adjacent slide images use `requestIdleCallback` to avoid blocking.
  *
  * @param slides       Full array of slides in the deck
  * @param currentIndex Index of the currently visible slide
@@ -79,15 +145,29 @@ export function useImagePreloader(
   useEffect(() => {
     if (!slides || slides.length === 0) return;
 
-    // Collect URLs from the current slide AND adjacent slides.
-    // Including the current slide ensures its images are in the browser
-    // decode cache, preventing the "condensed then expand" flash when
-    // objectFit is applied after the image loads.
+    // --- Phase 1: Eagerly preload the CURRENT slide's images ---
+    // This ensures all images (including those behind tabs / hidden by JS)
+    // are in the browser cache before the user interacts with the slide.
+    const currentSlide = slides[currentIndex];
+    if (currentSlide) {
+      const currentUrls = extractImageUrls(currentSlide);
+      for (const url of currentUrls) {
+        if (!preloadedUrls.has(url)) {
+          preloadedUrls.add(url);
+          const img = new Image();
+          img.decoding = 'async';
+          img.src = url;
+        }
+      }
+    }
+
+    // --- Phase 2: Preload adjacent slides on idle ---
     const urlsToPreload = new Set<string>();
     const start = Math.max(0, currentIndex - buffer);
     const end = Math.min(slides.length - 1, currentIndex + buffer);
 
     for (let i = start; i <= end; i++) {
+      if (i === currentIndex) continue; // Already handled in Phase 1
       const slideUrls = extractImageUrls(slides[i]);
       for (const url of slideUrls) {
         if (!preloadedUrls.has(url)) {
@@ -98,8 +178,8 @@ export function useImagePreloader(
 
     if (urlsToPreload.size === 0) return;
 
-    // Schedule preloading during idle time so it doesn't interfere with the
-    // current slide's rendering / transition.
+    // Schedule adjacent-slide preloading during idle time so it doesn't
+    // interfere with the current slide's rendering / transition.
     const schedule =
       typeof window.requestIdleCallback === 'function'
         ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 2000 })
