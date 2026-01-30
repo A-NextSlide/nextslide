@@ -116,7 +116,10 @@ const DropdownOutlineSlideRow: React.FC<DropdownOutlineSlideRowProps> = ({
             ? "bg-zinc-50 dark:bg-zinc-800/50"
             : "hover:bg-zinc-50 dark:hover:bg-zinc-800/30"
         )}
-        onClick={() => !isEditing && onToggle()}
+        onClick={() => {
+          if (isEditing) onSaveEdit();
+          onToggle();
+        }}
       >
         {/* Drag handle */}
         {isEditable && (
