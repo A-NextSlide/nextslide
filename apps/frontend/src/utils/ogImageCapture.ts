@@ -200,40 +200,24 @@ export async function captureOGThumbnail(
       throw new Error('Could not get canvas context');
     }
 
-    // Fill with white background first (for letterboxing)
-    finalCtx.fillStyle = '#ffffff';
-    finalCtx.fillRect(0, 0, OG_WIDTH, OG_HEIGHT);
-
-    // Calculate how to fit the captured slide into OG dimensions
+    // Cover: scale slide to fill the entire OG canvas, cropping excess from center
+    // (no white bars — same as CSS object-fit: cover)
     const sourceWidth = img.width;
     const sourceHeight = img.height;
-    const sourceAspect = sourceWidth / sourceHeight;
-    const targetAspect = OG_WIDTH / OG_HEIGHT;
+    const scaleX = OG_WIDTH / sourceWidth;
+    const scaleY = OG_HEIGHT / sourceHeight;
+    const coverScale = Math.max(scaleX, scaleY);
 
-    let drawWidth: number;
-    let drawHeight: number;
-    let offsetX: number;
-    let offsetY: number;
+    // Source region to crop (in source pixel coords, centered)
+    const srcCropWidth = OG_WIDTH / coverScale;
+    const srcCropHeight = OG_HEIGHT / coverScale;
+    const srcX = (sourceWidth - srcCropWidth) / 2;
+    const srcY = (sourceHeight - srcCropHeight) / 2;
 
-    if (sourceAspect > targetAspect) {
-      // Source is wider (16:9 slide vs 1.9:1 OG) - fit to width, letterbox vertically
-      drawWidth = OG_WIDTH;
-      drawHeight = OG_WIDTH / sourceAspect;
-      offsetX = 0;
-      offsetY = (OG_HEIGHT - drawHeight) / 2;
-    } else {
-      // Source is taller - fit to height, letterbox horizontally
-      drawHeight = OG_HEIGHT;
-      drawWidth = OG_HEIGHT * sourceAspect;
-      offsetX = (OG_WIDTH - drawWidth) / 2;
-      offsetY = 0;
-    }
-
-    // Draw the captured slide centered in the OG canvas (scaled up from tiny)
     finalCtx.drawImage(
       img,
-      0, 0, sourceWidth, sourceHeight,
-      offsetX, offsetY, drawWidth, drawHeight
+      srcX, srcY, srcCropWidth, srcCropHeight,
+      0, 0, OG_WIDTH, OG_HEIGHT
     );
 
     const dataUrl = finalCanvas.toDataURL('image/jpeg', 0.92);

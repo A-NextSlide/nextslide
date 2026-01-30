@@ -96,13 +96,14 @@ export function useCommunityThumbnailCache(): UseCommunityThumbnailCacheResult {
           timestamp: Date.now(),
         });
         console.log(`[CommunityThumbnailCache] Captured: ${deckId}`);
-        setCacheVersion(v => v + 1);
         return true;
       }
     } catch (err) {
       console.error(`[CommunityThumbnailCache] Failed to capture ${deckId}:`, err);
     } finally {
       isCapturingRef.current.delete(deckId);
+      // Always bump version so the render queue advances, even on failure
+      setCacheVersion(v => v + 1);
     }
 
     return false;

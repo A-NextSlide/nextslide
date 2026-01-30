@@ -126,6 +126,7 @@ export const VirtualizedDeckGrid = React.memo(({
   // Queue management - all refs to avoid dependency loops
   const renderQueueRef = useRef<number[]>([]);
   const activeRenderIndexRef = useRef<number | null>(null);
+  const renderStartTimeRef = useRef<number>(0);
   const visibleDecksRef = useRef<Set<number>>(new Set());
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -170,15 +171,23 @@ export const VirtualizedDeckGrid = React.memo(({
       return;
     }
 
-    // If currently rendering one, check if it's cached now
+    // If currently rendering one, check if it's cached or stale
     if (activeRenderIndexRef.current !== null) {
       const deck = safeDecksRef.current[activeRenderIndexRef.current];
       if (deck?.uuid && hasCachedThumbnailRef.current(deck.uuid)) {
         console.log(`[DeckGrid] ✅ Cached: #${activeRenderIndexRef.current}`);
         activeRenderIndexRef.current = null;
       } else {
-        // Still rendering, don't start another
-        return;
+        // Skip if the item scrolled out of view or has been stuck too long
+        const isNotVisible = !visibleDecksRef.current.has(activeRenderIndexRef.current);
+        const isTimedOut = Date.now() - renderStartTimeRef.current > 10000;
+        if (isNotVisible || isTimedOut) {
+          console.log(`[DeckGrid] ⏭ Skipping stale render #${activeRenderIndexRef.current} (${isNotVisible ? 'not visible' : 'timed out'})`);
+          activeRenderIndexRef.current = null;
+        } else {
+          // Still rendering, don't start another
+          return;
+        }
       }
     }
 
@@ -198,6 +207,7 @@ export const VirtualizedDeckGrid = React.memo(({
     if (nextIndex !== undefined) {
       console.log(`[DeckGrid] 🎬 Rendering: #${nextIndex}, queue: ${renderQueueRef.current.length}`);
       activeRenderIndexRef.current = nextIndex;
+      renderStartTimeRef.current = Date.now();
       setRenderedDecks(prev => new Set(prev).add(nextIndex));
       forceUpdate(v => v + 1);
     }
