@@ -102,7 +102,7 @@ def get_or_create_orchestrator_cache() -> Optional[str]:
 
         # Create new cache with system instruction
         cache = client.caches.create(
-            model="models/gemini-3-flash",  # Must match orchestrator model
+            model="models/gemini-3-flash-preview",  # Must match orchestrator model
             config=genai_types.CreateCachedContentConfig(
                 display_name=display_name,
                 system_instruction=ORCHESTRATOR_STATIC_CONTENT,
@@ -216,7 +216,7 @@ def invoke_with_cache(
             contents = f"{contents}\n\nRespond with JSON matching this schema:\n{json.dumps(schema, ensure_ascii=False)}"
 
         response = client.models.generate_content(
-            model="models/gemini-3-flash",
+            model="models/gemini-3-flash-preview",
             contents=contents,
             config=config,
         )
