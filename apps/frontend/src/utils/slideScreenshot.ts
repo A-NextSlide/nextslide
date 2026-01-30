@@ -229,32 +229,20 @@ export const captureTinySlideScreenshot = async (
           logScreenshotDebugFromUrl(dataUrl);
           return dataUrl;
         } catch (htmlToImageError) {
-          console.warn('[TinyScreenshot] html-to-image failed, falling back to html2canvas:', htmlToImageError);
+          console.warn('[TinyScreenshot] html-to-image failed, falling back to html2canvas on iframeBody:', htmlToImageError);
 
-          // Fallback to html2canvas if html-to-image fails
-          const rect = slideContainer.getBoundingClientRect();
-          if (rect.width < 10 || rect.height < 10) {
-            console.warn('[TinyScreenshot] Container too small:', rect.width, rect.height);
-            removeAnimationOverride(animOverride);
-            return null;
-          }
-
-          const canvas = await html2canvas(slideContainer, {
+          // Fallback: capture iframeBody directly (same-origin access works)
+          // Do NOT capture slideContainer with onclone/inlineIframeIntoClone —
+          // that path uses regex CSS resolution and produces broken output.
+          const canvas = await html2canvas(iframeBody, {
             scale: 0.8,
             backgroundColor: '#ffffff',
             logging: false,
             useCORS: true,
             allowTaint: true,
             imageTimeout: 3000,
-            width: rect.width,
-            height: rect.height,
-            scrollX: 0,
-            scrollY: 0,
-            x: 0,
-            y: 0,
-            onclone: (clonedDoc, clonedEl) => {
-              inlineIframeIntoClone(iframeDoc, clonedDoc, clonedEl);
-            }
+            width: 1920,
+            height: 1080,
           });
 
           const dataUrl = canvas.toDataURL('image/png');
