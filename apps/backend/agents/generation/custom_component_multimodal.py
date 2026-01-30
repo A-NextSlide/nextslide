@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import base64
 from typing import Any, Dict, List, Tuple, Union
 
 import requests
 
+from agents.generation.custom_component_helpers import (
+    _compress_image_for_multimodal,
+    _estimate_token_count,
+)
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)

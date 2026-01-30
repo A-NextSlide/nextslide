@@ -4,6 +4,7 @@ Applies NextSlide branding watermark to slide thumbnails.
 """
 import logging
 import io
+import re
 import httpx
 import html
 from pathlib import Path
@@ -305,6 +306,18 @@ def create_fallback_og_image(title: str = "NextSlide Presentation") -> Image.Ima
     return image
 
 
+def resize_cover(image: Image.Image, target_width: int, target_height: int) -> Image.Image:
+    """Resize image to cover target dimensions (center-crop, no white bars or distortion)."""
+    src_w, src_h = image.size
+    scale = max(target_width / src_w, target_height / src_h)
+    new_w = round(src_w * scale)
+    new_h = round(src_h * scale)
+    resized = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+    left = (new_w - target_width) // 2
+    top = (new_h - target_height) // 2
+    return resized.crop((left, top, left + target_width, top + target_height))
+
+
 def extract_first_slide_image(deck_data: dict) -> Optional[str]:
     """
     Extract the first usable image URL from the first slide of a deck.
@@ -312,6 +325,8 @@ def extract_first_slide_image(deck_data: dict) -> Optional[str]:
     Looks for:
     1. Background image on the first slide
     2. Image components in the first slide
+    3. CustomComponent backgroundImageUrl prop
+    4. Image URLs embedded in CustomComponent HTML
     """
     slides = deck_data.get('slides', [])
     if not slides:
@@ -333,12 +348,29 @@ def extract_first_slide_image(deck_data: dict) -> Optional[str]:
             if src and src.startswith('http') and 'placeholder' not in src.lower():
                 return src
 
-    # Check for CustomComponent with background image
+    # Check for CustomComponent with background image prop
     for comp in components:
         comp_props = comp.get('props', {})
         bg_url = comp_props.get('backgroundImageUrl')
         if bg_url and bg_url.startswith('http'):
             return bg_url
+
+    # Check for image URLs embedded in CustomComponent HTML
+    for comp in components:
+        if comp.get('type') == 'CustomComponent':
+            comp_html = comp.get('props', {}).get('html', '')
+            if not comp_html:
+                continue
+            # Look for img src attributes
+            src_matches = re.findall(r'src=["\']?(https?://[^"\'>\s]+)', comp_html)
+            for url in src_matches:
+                if 'placeholder' not in url.lower() and not url.endswith(('.js', '.css')):
+                    return url
+            # Look for CSS background-image urls
+            bg_matches = re.findall(r'url\(["\']?(https?://[^"\')\s]+)', comp_html)
+            for url in bg_matches:
+                if 'placeholder' not in url.lower():
+                    return url
 
     return None
 
@@ -381,26 +413,28 @@ async def get_og_image(short_code: str):
             deck_data = deck_result.data[0]
             deck_name = deck_data.get('name', 'Presentation')
 
-        # If no explicit og_image_url, try to extract from first slide
-        if not og_image_url:
-            og_image_url = extract_first_slide_image(deck_data)
-            if og_image_url:
-                logger.info(f"Extracted OG image from first slide: {og_image_url[:100]}...")
-            else:
-                logger.info(f"No OG image found for {short_code}, will use fallback")
-
-        # Try to fetch the thumbnail
-        final_image = None
-
+        # Build a list of candidate image URLs to try in priority order
+        candidate_urls = []
         if og_image_url:
-            base_image = await fetch_image_from_url(og_image_url)
+            candidate_urls.append(og_image_url)
+
+        # Always extract from slide data as a fallback candidate
+        slide_image_url = extract_first_slide_image(deck_data)
+        if slide_image_url and slide_image_url != og_image_url:
+            candidate_urls.append(slide_image_url)
+
+        if not candidate_urls:
+            logger.info(f"No OG image found for {short_code}, will use fallback")
+
+        # Try each candidate URL until one succeeds
+        final_image = None
+        for url in candidate_urls:
+            base_image = await fetch_image_from_url(url)
             if base_image:
-                # Resize to OG dimensions if needed
+                logger.info(f"Fetched OG image from: {url[:100]}...")
+                # Cover-crop to OG dimensions (no white bars, no distortion)
                 if base_image.size != (OG_WIDTH, OG_HEIGHT):
-                    base_image = base_image.resize(
-                        (OG_WIDTH, OG_HEIGHT),
-                        Image.Resampling.LANCZOS
-                    )
+                    base_image = resize_cover(base_image, OG_WIDTH, OG_HEIGHT)
 
                 # Apply watermark
                 watermark = create_brand_watermark(180, 45)
@@ -411,6 +445,9 @@ async def get_og_image(short_code: str):
                     margin=25,
                     opacity=0.95
                 )
+                break
+            else:
+                logger.warning(f"Failed to fetch OG image from: {url[:100]}")
 
         # Fallback to generated image
         if final_image is None:

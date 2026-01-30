@@ -1,5 +1,6 @@
 """Theme application for custom components."""
 
+import re
 from typing import Any, Dict, List, Tuple, Union
 import logging
 
@@ -9,6 +10,62 @@ from models.registry import ComponentRegistry
 from agents.editing.tools.struct_utils import get_attr as _get_attr
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_theme_from_components(deck_data: Dict, exclude_slide_id: str = None) -> Tuple[Dict, Dict]:
+    """Extract colors and typography from existing CustomComponent CSS as a last-resort fallback.
+
+    Scans HTML of other slides' custom components for font-family and CSS custom property colors.
+    Returns (colors_dict, typography_dict) — either may be empty.
+    """
+    fonts_found = []
+    colors = {}
+
+    for slide in (deck_data or {}).get("slides", []):
+        if exclude_slide_id and slide.get("id") == exclude_slide_id:
+            continue
+        for comp in slide.get("components", []):
+            if comp.get("type") != "CustomComponent":
+                continue
+            props = comp.get("props", {})
+
+            # Extract fonts from component props first (most reliable)
+            hero = props.get("heroFont")
+            body = props.get("bodyFont")
+            if hero and hero not in fonts_found:
+                fonts_found.append(hero)
+            if body and body not in fonts_found:
+                fonts_found.append(body)
+
+            html = props.get("render", "")
+            if not html:
+                continue
+
+            # Extract font-family from CSS if we still don't have fonts
+            if len(fonts_found) < 2:
+                for m in re.finditer(r'font-family:\s*["\']?([^;"\',]+)', html):
+                    fname = m.group(1).strip()
+                    if fname and fname not in fonts_found and fname.lower() not in (
+                        "inherit", "sans-serif", "serif", "monospace", "system-ui",
+                    ):
+                        fonts_found.append(fname)
+
+            # Extract CSS custom property colors (--accent, --primary, etc.)
+            if not colors:
+                for m in re.finditer(r'--(accent[_-]?\d*|primary[_-]?(?:text)?|secondary[_-]?(?:text)?|background[_-]?\d*|surface)\s*:\s*(#[0-9a-fA-F]{3,8}|rgb[a]?\([^)]+\))', html):
+                    key = m.group(1).replace("-", "_")
+                    colors[key] = m.group(2)
+
+        # Stop early if we have enough
+        if len(fonts_found) >= 2 and colors:
+            break
+
+    typography = {}
+    if fonts_found:
+        typography["heading"] = fonts_found[0]
+        typography["body"] = fonts_found[1] if len(fonts_found) > 1 else fonts_found[0]
+
+    return colors, typography
 
 
 # Return type that includes both DeckDiff and optional theme_updates
@@ -68,7 +125,14 @@ def apply_theme_to_custom_components(
             typography = theme.get("typography") or {}
 
     if not colors and not typography:
-        logger.warning("[apply_theme_to_custom_components] No theme colors or typography to apply")
+        # Last-resort: extract theme from existing custom components in the deck
+        logger.info("[apply_theme_to_custom_components] No theme from args or deck, trying extraction from existing components")
+        colors, typography = _extract_theme_from_components(
+            deck_data, exclude_slide_id=current_slide.get("id") if current_slide else None
+        )
+
+    if not colors and not typography:
+        logger.warning("[apply_theme_to_custom_components] No theme colors or typography to apply (even after component extraction)")
         return DeckDiff(DeckDiffBase())
 
     logger.info("[apply_theme_to_custom_components] Applying theme to all CustomComponents")

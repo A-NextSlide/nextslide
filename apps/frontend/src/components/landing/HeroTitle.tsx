@@ -411,6 +411,9 @@ export const HeroTitle = () => {
                     <span>Ideas</span>
                     <span className="ml-[0.3em]">to</span>
 
+                    {/* Force animated word to its own line on mobile */}
+                    <span className="basis-full h-0 md:hidden" />
+
                     {/* Inserted text container */}
                     <span className="relative inline-flex items-baseline ml-[0.3em] whitespace-nowrap">
                         {/* The typed text with selection highlight */}

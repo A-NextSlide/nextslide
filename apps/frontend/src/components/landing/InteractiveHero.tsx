@@ -134,13 +134,13 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) =
         <section className="relative w-full z-20 h-screen">
 
             {/* Main Content - The slides */}
-            <div className="relative h-full w-full flex flex-col items-center justify-center overflow-visible pointer-events-none">
+            <div className="relative h-full w-full flex flex-col items-center justify-start pt-2 md:pt-0 md:justify-center overflow-visible pointer-events-none">
 
                 {/* Main Content Card Container */}
-                <div className="container relative z-10 px-2 md:px-4 w-full max-w-[1400px] mx-auto pointer-events-auto h-full flex flex-col justify-center">
+                <div className="container relative z-10 px-2 md:px-4 w-full max-w-[1400px] mx-auto pointer-events-auto h-full flex flex-col justify-start pt-2 md:pt-0 md:justify-center">
 
                     {/* The "Binder" Card */}
-                    <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-2xl md:rounded-[32px] shadow-2xl shadow-black/10 border border-black/5 dark:border-white/5 p-2 md:p-6 w-full h-[70vh] md:h-[80vh] flex flex-col md:flex-row gap-2 md:gap-6 relative overflow-visible">
+                    <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-2xl md:rounded-[32px] shadow-2xl shadow-black/10 border border-black/5 dark:border-white/5 p-2 md:p-6 w-full md:h-[80vh] flex flex-col md:flex-row gap-2 md:gap-6 relative overflow-visible">
 
                         {/* LEFT SIDEBAR - Thumbnails (hidden on mobile/tablet) */}
                         <div className="hidden md:flex md:w-[200px] lg:w-[240px] flex-shrink-0 flex-col gap-4 h-full overflow-hidden">
@@ -199,7 +199,7 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) =
                         </div>
 
                         {/* RIGHT AREA - Main Slide */}
-                        <div className="flex-1 relative h-full bg-zinc-100 dark:bg-zinc-950/50 rounded-2xl overflow-hidden md:overflow-visible flex items-center justify-center p-1 md:p-4 lg:p-8 group">
+                        <div className="flex-1 relative bg-zinc-100 dark:bg-zinc-950/50 rounded-2xl overflow-hidden md:overflow-visible flex flex-col items-center justify-center p-1 md:p-4 lg:p-8 group md:h-full">
 
                             {/* Prompt Card - POP OUT (desktop only) */}
                             <div
@@ -263,46 +263,54 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) =
                                     </div>
                                 )}
 
-                                {/* Mobile: Bottom overlay with navigation */}
-                                <div className="md:hidden absolute bottom-0 inset-x-0 z-30">
-                                    <div className="bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-10 pb-3 px-3">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-sm text-white text-[10px] font-bold uppercase tracking-wider">
-                                                {React.createElement(activePrompt.icon, { size: 10 })}
-                                                {activePrompt.badge}
-                                            </div>
-                                        </div>
-                                        <p className="text-white font-bold text-xs leading-snug mb-3" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                                            &ldquo;{activePrompt.text}&rdquo;
-                                        </p>
-                                        <div className="flex items-center justify-between">
-                                            {/* Slide navigation */}
-                                            <div className="flex items-center gap-2">
-                                                <button onClick={handlePrevSlide} className="p-1.5 rounded-full bg-white/20 text-white active:bg-white/30 transition-colors">
-                                                    <ChevronLeft size={14} />
-                                                </button>
-                                                <span className="text-white/80 text-[11px] font-medium tabular-nums min-w-[3ch] text-center">
-                                                    {selectedSlideIndex + 1}/{totalSlides}
-                                                </span>
-                                                <button onClick={handleNextSlide} className="p-1.5 rounded-full bg-white/20 text-white active:bg-white/30 transition-colors">
-                                                    <ChevronRight size={14} />
-                                                </button>
-                                            </div>
-                                            {/* Deck navigation */}
-                                            <div className="flex items-center gap-1.5">
-                                                <button onClick={handlePrev} className="p-1.5 rounded-full bg-[#FF4301] text-white active:bg-[#E63901] transition-colors">
-                                                    <ChevronLeft size={14} />
-                                                </button>
-                                                <span className="text-white/60 text-[10px] font-medium tabular-nums">
-                                                    {activeIndex + 1}/{PROMPTS.length}
-                                                </span>
-                                                <button onClick={handleNext} className="p-1.5 rounded-full bg-[#FF4301] text-white active:bg-[#E63901] transition-colors">
-                                                    <ChevronRight size={14} />
-                                                </button>
-                                            </div>
-                                        </div>
+                                {/* On-slide prev/next buttons (mobile) */}
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handlePrevSlide(); }}
+                                    className={cn(
+                                        "md:hidden absolute left-2 top-1/2 -translate-y-1/2 z-30 w-8 h-8 flex items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm active:bg-black/60 transition-colors",
+                                        selectedSlideIndex === 0 && "opacity-30"
+                                    )}
+                                >
+                                    <ChevronLeft size={18} />
+                                </button>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleNextSlide(); }}
+                                    className={cn(
+                                        "md:hidden absolute right-2 top-1/2 -translate-y-1/2 z-30 w-8 h-8 flex items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm active:bg-black/60 transition-colors",
+                                        selectedSlideIndex === totalSlides - 1 && "opacity-30"
+                                    )}
+                                >
+                                    <ChevronRight size={18} />
+                                </button>
+
+                                {/* Slide counter badge (mobile) */}
+                                <div className="md:hidden absolute bottom-2 left-1/2 -translate-x-1/2 z-30 px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-sm text-white text-[11px] font-medium tabular-nums">
+                                    {selectedSlideIndex + 1} / {totalSlides}
+                                </div>
+                            </div>
+
+                            {/* Mobile: Prompt card below slide (orange outline like desktop) */}
+                            <div className="md:hidden mt-3 w-full border-2 border-[#FF4301] rounded-xl p-3 bg-white dark:bg-zinc-900">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#FF4301]/10 text-[#FF4301] text-[10px] font-bold uppercase tracking-wider">
+                                        {React.createElement(activePrompt.icon, { size: 11 })}
+                                        {activePrompt.badge}
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <button onClick={handlePrev} className="w-7 h-7 flex items-center justify-center rounded-full border border-[#FF4301]/30 bg-[#FF4301]/5 text-[#FF4301] active:bg-[#FF4301]/10 transition-colors">
+                                            <ChevronLeft size={16} />
+                                        </button>
+                                        <span className="text-black/40 dark:text-white/40 text-[10px] font-medium tabular-nums">
+                                            {activeIndex + 1}/{PROMPTS.length}
+                                        </span>
+                                        <button onClick={handleNext} className="w-7 h-7 flex items-center justify-center rounded-full border border-[#FF4301]/30 bg-[#FF4301]/5 text-[#FF4301] active:bg-[#FF4301]/10 transition-colors">
+                                            <ChevronRight size={16} />
+                                        </button>
                                     </div>
                                 </div>
+                                <p className="text-sm font-bold leading-snug text-black dark:text-white" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                                    &ldquo;{activePrompt.text}&rdquo;
+                                </p>
                             </div>
 
                             {/* Interactive Hint */}

@@ -8,6 +8,11 @@ import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { useEditorStore } from '@/stores/editorStore';
 
+/** Transparent 1×1 GIF — used as <img> src until the real image is decoded,
+ *  preventing the browser from painting at intrinsic dimensions on first mount. */
+const TRANSPARENT_PIXEL =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
 /**
  * Get filter string from preset or custom values
  */
@@ -311,17 +316,40 @@ export const renderImage = (
     height
   } = props;
 
-  // When src changes, probe the browser cache so cached images appear on the
-  // very first paint (useLayoutEffect runs before the browser paints).
-  // For uncached images, loadedSrc will differ from src, keeping the img
-  // hidden until the onLoad callback fires.
+  // When src changes, preload via a hidden Image() object.
+  // We only assign the real src to the <img> element AFTER the browser has
+  // fully decoded the image data.  This prevents the browser from ever
+  // painting the image at its intrinsic / stretched dimensions before
+  // objectFit has been composited — which causes the visible "resize flash".
   useLayoutEffect(() => {
     if (!src || src === 'placeholder') return;
+
+    // Fast-path: if the image is already in the browser's decoded cache
+    // we can show it on the very first paint.
     const probe = new Image();
     probe.src = src;
     if (probe.complete && probe.naturalWidth > 0) {
       setLoadedSrc(src);
+      return;
     }
+
+    // Slow-path: image not cached yet — preload in the background.
+    // The <img> element will have a transparent 1×1 gif as src so the
+    // browser cannot flash the image at its intrinsic dimensions.
+    let cancelled = false;
+    const loader = new Image();
+    loader.decoding = 'async';
+    loader.onload = () => {
+      if (!cancelled) setLoadedSrc(src);
+    };
+    loader.onerror = () => {
+      // Still reveal the <img> element so its own onError fallback chain
+      // (thumbnail → fallbackSrc → placeholder) can take over.
+      if (!cancelled) setLoadedSrc(src);
+    };
+    loader.src = src;
+
+    return () => { cancelled = true; };
   }, [src]);
   
   // Detect logo components early (used in styles below)
@@ -358,12 +386,14 @@ export const renderImage = (
     objectPosition: 'center center',
     filter: getFilterString(props),
     transform: getTransformString(props),
-    // Hide until the browser has decoded the image so the user never sees
-    // the raw intrinsic dimensions before objectFit applies.
-    // Use a fast CSS transition so the image fades in smoothly instead of
-    // popping, which prevents the visible "resize flash" when navigating.
+    // The <img> src is only set to the real URL once our preloader has
+    // confirmed the image is fully decoded (see useLayoutEffect above).
+    // Until then the src is a transparent 1×1 gif, so the browser never
+    // renders the image at its raw intrinsic dimensions.
+    // visibility:hidden prevents painting entirely (stronger than opacity:0
+    // which can still trigger decode+composite at wrong dimensions).
+    visibility: imageLoaded ? 'visible' : 'hidden',
     opacity: imageLoaded ? 1 : 0,
-    transition: 'opacity 0.15s ease-in',
     maxWidth: 'none', // Ensure image doesn't get constrained when cropped
   };
   
@@ -844,9 +874,9 @@ export const renderImage = (
         
         <img
           ref={imageRef}
-          src={src}
+          src={imageLoaded ? src : TRANSPARENT_PIXEL}
           alt={isLogoComponent ? (alt || 'Company logo') : alt}
-          decoding="sync"
+          decoding="async"
           style={{
             ...imageStyles,
             filter: duotoneEnabled ? `url(#duotone-${component.id}) ${imageStyles.filter}` : imageStyles.filter,
@@ -943,8 +973,13 @@ export const renderImage = (
             if (target) {
               target.dataset.errorCount = '0';
             }
-            // Mark the prop src as loaded so imageLoaded (loadedSrc === src) becomes true
-            setLoadedSrc(src);
+            // The useLayoutEffect preloader is the primary source of truth for
+            // loadedSrc. This handler fires after we swap the src from the
+            // transparent pixel to the real URL — at that point the image is
+            // already decoded, so this is a harmless no-op (loadedSrc === src).
+            if (target.src && !target.src.startsWith('data:')) {
+              setLoadedSrc(src);
+            }
           }}
         />
         

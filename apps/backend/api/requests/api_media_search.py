@@ -65,8 +65,8 @@ async def process_media_search(request: MediaSearchRequest) -> MediaSearchRespon
                         link=img.get("url", img.get("src", {}).get("original", "")),
                         thumbnail=img.get("src", {}).get("small", img.get("url", "")),
                         source=img.get("photographer", "google"),
-                        width=img.get("width", 0),
-                        height=img.get("height", 0),
+                        width=img.get("width") or 0,
+                        height=img.get("height") or 0,
                     ))
                 total = len(results)
             else:

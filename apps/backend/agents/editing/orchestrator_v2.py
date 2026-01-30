@@ -1398,7 +1398,7 @@ Respond with the tool_calls to execute."""
                 {"role": "user", "content": user_content}
             ],
             response_model=OrchestratorResponse,
-            max_tokens=4096,
+            max_tokens=16384,
         )
     except Exception as e:
         error_str = str(e).lower()
@@ -1425,7 +1425,7 @@ Respond with the tool_calls to execute."""
                     {"role": "user", "content": user_content}
                 ],
                 response_model=OrchestratorResponse,
-                max_tokens=4096,
+                max_tokens=16384,
             )
         else:
             raise
@@ -1993,7 +1993,7 @@ Respond with the tool_calls to execute."""
                     {"role": "user", "content": followup_prompt},
                 ],
                 response_model=OrchestratorResponse,
-                max_tokens=4096,
+                max_tokens=16384,
             )
             logger.info(f"[ORCHESTRATOR] 🔄 Follow-up response: tool_calls={[tc.tool_name for tc in (followup.tool_calls or [])]}")
 
@@ -2068,7 +2068,7 @@ Respond with the tool_calls to execute."""
                             {"role": "user", "content": followup_prompt_2},
                         ],
                         response_model=OrchestratorResponse,
-                        max_tokens=4096,
+                        max_tokens=16384,
                     )
                     if followup2.tool_calls:
                         logger.info(f"[ORCHESTRATOR] 🔄 Executing {len(followup2.tool_calls)} second follow-up tool calls")

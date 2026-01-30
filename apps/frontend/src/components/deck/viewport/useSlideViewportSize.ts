@@ -52,13 +52,8 @@ const computeSlideSize = (viewportWidth: number, viewportHeight: number, options
 };
 
 export const useSlideViewportSize = (viewportRef: RefObject<HTMLElement>, options?: SlideViewportSizeOptions) => {
-  const [viewportSize, setViewportSize] = useState(getViewportFallback());
+  const [viewportSize, setViewportSize] = useState(getViewportFallback);
 
-  // useLayoutEffect runs synchronously BEFORE the browser paints, so the
-  // slide is measured and rendered at the correct viewport-fitted dimensions
-  // on the very first visible frame.  Using plain useEffect here would cause
-  // a one-frame flash where the slide renders at window.innerWidth/Height
-  // (the fallback), then shrinks to the actual container size.
   useLayoutEffect(() => {
     const element = viewportRef.current;
     if (!element) return;

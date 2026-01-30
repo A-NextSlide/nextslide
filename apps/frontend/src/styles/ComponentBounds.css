@@ -41,11 +41,16 @@
   overflow: hidden;
 }
 .component-type-Image img {
-  /* Neutralise Tailwind preflight max-width:100% / height:auto which can flash
-     the image at its intrinsic aspect ratio.  Width/height come from inline styles
-     so they handle both normal (100%) and crop (scaled) cases. */
+  /* Neutralise Tailwind preflight `img { max-width:100%; height:auto }` which can
+     flash the image at its intrinsic aspect ratio before React inline styles apply.
+     max-width/max-height use !important to beat Tailwind's specificity.
+     width/height do NOT use !important so that crop inline styles (e.g. 200%)
+     can still override them. Class specificity (0,1,1) already beats Tailwind's
+     `img` selector (0,0,1). */
   max-width: none !important;
   max-height: none !important;
+  width: 100%;
+  height: 100%;
 }
 
 /* Video components */

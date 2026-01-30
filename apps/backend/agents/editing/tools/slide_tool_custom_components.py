@@ -426,7 +426,7 @@ async def _prefetch_multi_images(queries: List[str], context: str = "") -> Dict[
             search_query = f"{query} {context}".strip() if context else query
 
             async with SerpAPIService() as serpapi:
-                results = await serpapi.search_images(search_query, num_results=1)
+                results = await serpapi.search_images(search_query, per_page=1)
 
                 if not results:
                     logger.debug(f"[SLIDE_TOOLS] No image found for: {query}")
