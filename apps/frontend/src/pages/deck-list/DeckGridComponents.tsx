@@ -336,9 +336,10 @@ export const VirtualizedDeckGrid = React.memo(({
         // Check for cached thumbnail
         const cachedUrl = BROWSER.isMobile && deck.uuid ? getCachedThumbnail(deck.uuid) : null;
 
-        // Once an item enters the viewport, it stays rendered (no unmounting)
-        // MiniSlide self-virtualizes its heavy content (iframes) via its own IntersectionObserver
-        const showDeckCard = shouldRender;
+        // Mobile: always render DeckCard — MiniSlide self-virtualizes its heavy
+        // content (iframes) via its own IntersectionObserver, so the shell is lightweight.
+        // Desktop: render once scrolled into view (observer adds to renderedDecks).
+        const showDeckCard = BROWSER.isMobile || shouldRender;
 
         return (
           <div
