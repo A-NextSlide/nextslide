@@ -174,8 +174,8 @@ export const captureTinySlideScreenshot = async (
   options?: { skipIframeCapture?: boolean; waitTime?: number }
 ): Promise<string | null> => {
   try {
-    // Short wait for initial render
-    const waitTime = options?.waitTime ?? 500;
+    // Short wait for initial DOM settle (smart waits for iframe/fonts/images happen later)
+    const waitTime = options?.waitTime ?? 200;
     console.log(`[TinyScreenshot] Waiting ${waitTime}ms for content to render...`);
     await new Promise(resolve => setTimeout(resolve, waitTime));
 
