@@ -258,6 +258,7 @@ export const VirtualizedDeckGrid = React.memo(({
               }
             }
           }
+        });
       },
       { root: null, rootMargin: '200px', threshold: 0 }
     );
