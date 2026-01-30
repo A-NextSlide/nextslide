@@ -126,15 +126,14 @@ export const VirtualizedDeckGrid = React.memo(({
   const visibleDecksRef = useRef<Set<number>>(new Set());
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const visibilityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // State only for triggering re-renders
+  // State: once an item enters the viewport, it stays rendered
   const [renderedDecks, setRenderedDecks] = useState<Set<number>>(() => {
-    // On mobile, start empty; on desktop, render first few
+    // On mobile, start empty and let IntersectionObserver populate;
+    // on desktop, render first few immediately
     if (BROWSER.isMobile) return new Set();
     return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
   });
-  const [, forceUpdate] = useState(0);
 
   // Track initial visibility for animations (desktop only)
   const [initiallyVisibleDecks, setInitiallyVisibleDecks] = useState<Set<number>>(() => {
@@ -217,8 +216,6 @@ export const VirtualizedDeckGrid = React.memo(({
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       scrollTimeoutRef.current = setTimeout(() => {
         isScrollingRef.current = false;
-        // Re-render with current visibility + start capturing
-        forceUpdate(v => v + 1);
         processCaptureQueue();
       }, 150);
     };
@@ -241,16 +238,17 @@ export const VirtualizedDeckGrid = React.memo(({
 
           if (entry.isIntersecting) {
             visibleDecksRef.current.add(index);
-
-            if (!BROWSER.isMobile) {
-              // Desktop: render immediately
-              setRenderedDecks(prev => new Set(prev).add(index));
-            }
+            // Both mobile and desktop: once rendered, stay rendered
+            // MiniSlide self-virtualizes its heavy content (iframes) via its own IntersectionObserver
+            setRenderedDecks(prev => {
+              if (prev.has(index)) return prev;
+              return new Set(prev).add(index);
+            });
           } else {
             visibleDecksRef.current.delete(index);
 
             if (BROWSER.isMobile) {
-              // Capture screenshot before unmounting
+              // Capture screenshot before content unloads
               const deck = safeDecksRef.current[index];
               if (deck?.uuid) {
                 const thumbnailEl = thumbnailRefsMapRef.current.get(deck.uuid);
@@ -260,13 +258,6 @@ export const VirtualizedDeckGrid = React.memo(({
               }
             }
           }
-        });
-
-        // Mobile: debounced re-render so visible items mount/unmount
-        if (BROWSER.isMobile) {
-          if (visibilityTimerRef.current) clearTimeout(visibilityTimerRef.current);
-          visibilityTimerRef.current = setTimeout(() => forceUpdate(v => v + 1), 50);
-        }
       },
       { root: null, rootMargin: '200px', threshold: 0 }
     );
@@ -344,12 +335,9 @@ export const VirtualizedDeckGrid = React.memo(({
         // Check for cached thumbnail
         const cachedUrl = BROWSER.isMobile && deck.uuid ? getCachedThumbnail(deck.uuid) : null;
 
-        // Mobile: render live when visible (MiniSlide self-virtualizes its content)
-        // Cached items in DeckCard show a lightweight <img>, not the heavy MiniSlide
-        // Desktop: render based on scroll-into-view tracking
-        const showDeckCard = BROWSER.isMobile
-          ? visibleDecksRef.current.has(index)
-          : shouldRender;
+        // Once an item enters the viewport, it stays rendered (no unmounting)
+        // MiniSlide self-virtualizes its heavy content (iframes) via its own IntersectionObserver
+        const showDeckCard = shouldRender;
 
         return (
           <div
