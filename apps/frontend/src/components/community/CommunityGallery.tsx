@@ -451,13 +451,13 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
                   onThumbnailRef={(el) => {
                     if (el && !cachedUrl) {
                       thumbnailRefsMapRef.current.set(deck.id, el);
-                      // Capture thumbnail after render
+                      // Capture shortly after mount (captureTinySlideScreenshot has smart waits)
                       setTimeout(() => {
                         const element = thumbnailRefsMapRef.current.get(deck.id);
                         if (element) {
                           captureThumbnail(deck.id, element);
                         }
-                      }, 400);
+                      }, 50);
                     } else {
                       thumbnailRefsMapRef.current.delete(deck.id);
                     }

@@ -171,21 +171,20 @@ export const VirtualizedDeckGrid = React.memo(({
       return;
     }
 
-    // If currently rendering one, check if it's cached or stale
+    // If currently rendering one, check if it's done or stale
     if (activeRenderIndexRef.current !== null) {
       const deck = safeDecksRef.current[activeRenderIndexRef.current];
       if (deck?.uuid && hasCachedThumbnailRef.current(deck.uuid)) {
         console.log(`[DeckGrid] ✅ Cached: #${activeRenderIndexRef.current}`);
         activeRenderIndexRef.current = null;
       } else {
-        // Skip if the item scrolled out of view or has been stuck too long
+        // Immediately cancel if user scrolled away; timeout as safety net
         const isNotVisible = !visibleDecksRef.current.has(activeRenderIndexRef.current);
-        const isTimedOut = Date.now() - renderStartTimeRef.current > 10000;
+        const isTimedOut = Date.now() - renderStartTimeRef.current > 8000;
         if (isNotVisible || isTimedOut) {
-          console.log(`[DeckGrid] ⏭ Skipping stale render #${activeRenderIndexRef.current} (${isNotVisible ? 'not visible' : 'timed out'})`);
+          console.log(`[DeckGrid] ⏭ Cancelling #${activeRenderIndexRef.current} (${isNotVisible ? 'scrolled away' : 'timed out'})`);
           activeRenderIndexRef.current = null;
         } else {
-          // Still rendering, don't start another
           return;
         }
       }
@@ -208,7 +207,6 @@ export const VirtualizedDeckGrid = React.memo(({
       console.log(`[DeckGrid] 🎬 Rendering: #${nextIndex}, queue: ${renderQueueRef.current.length}`);
       activeRenderIndexRef.current = nextIndex;
       renderStartTimeRef.current = Date.now();
-      setRenderedDecks(prev => new Set(prev).add(nextIndex));
       forceUpdate(v => v + 1);
     }
   }, []); // No dependencies - uses refs
@@ -389,12 +387,10 @@ export const VirtualizedDeckGrid = React.memo(({
         // On mobile: show cached if available, otherwise check if this is the active render
         const isActiveRender = BROWSER.isMobile && activeRenderIndexRef.current === index;
 
-        // Determine what to show:
-        // - Desktop: always render full
-        // - Mobile with cache: show cached image
-        // - Mobile active render: show full DeckCard (so we can capture it)
-        // - Mobile waiting: show placeholder
-        const showDeckCard = !BROWSER.isMobile || isActiveRender || shouldRender;
+        // Mobile: ONLY mount the active render (1 DeckCard at a time to prevent crashes)
+        // Cached items show as lightweight placeholder with <img>
+        // Desktop: render normally based on visibility
+        const showDeckCard = BROWSER.isMobile ? isActiveRender : shouldRender;
 
         return (
           <div
@@ -416,14 +412,14 @@ export const VirtualizedDeckGrid = React.memo(({
                 onThumbnailRef={(el) => {
                   if (el && deck.uuid) {
                     thumbnailRefsMapRef.current.set(deck.uuid, el);
-                    // Capture after render if this is the active render and not yet cached
+                    // Capture shortly after mount (captureTinySlideScreenshot has its own smart waits)
                     if (BROWSER.isMobile && isActiveRender && !hasCachedThumbnail(deck.uuid)) {
                       setTimeout(() => {
                         const element = thumbnailRefsMapRef.current.get(deck.uuid!);
                         if (element) {
                           captureThumbnail(deck.uuid!, element);
                         }
-                      }, 400);
+                      }, 50);
                     }
                   } else if (deck.uuid) {
                     thumbnailRefsMapRef.current.delete(deck.uuid);
