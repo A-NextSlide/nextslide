@@ -3123,22 +3123,22 @@ async def estimate_costs(
     # Get models from config - use actual task mappings, not legacy aliases
     try:
         from agents.config import (
-            MODEL_HARD, MODEL_RESEARCH, CUSTOM_COMPONENT_MODEL, GEMINI_3_PRO
+            MODEL_HARD, MODEL_RESEARCH, CUSTOM_COMPONENT_MODEL, GEMINI_3_FLASH
         )
         # These are the actual models used for each operation:
-        # - Theme generation: MODEL_HARD (gemini-3-pro-preview)
-        # - Slide generation: MODEL_HARD (gemini-3-pro-preview)
+        # - Theme generation: MODEL_HARD (gemini-3-flash)
+        # - Slide generation: MODEL_HARD (gemini-3-flash)
         # - Outline/research: MODEL_RESEARCH (perplexity-sonar-pro)
-        # - Custom components: CUSTOM_COMPONENT_MODEL (gemini-3-pro-preview)
-        THEME_MODEL_ACTUAL = MODEL_HARD  # gemini-3-pro-preview
-        SLIDE_MODEL_ACTUAL = MODEL_HARD  # gemini-3-pro-preview
+        # - Custom components: CUSTOM_COMPONENT_MODEL (gemini-3-flash)
+        THEME_MODEL_ACTUAL = MODEL_HARD  # gemini-3-flash
+        SLIDE_MODEL_ACTUAL = MODEL_HARD  # gemini-3-flash
         OUTLINE_MODEL_ACTUAL = MODEL_RESEARCH  # perplexity-sonar-pro
-        CUSTOM_MODEL_ACTUAL = CUSTOM_COMPONENT_MODEL  # gemini-3-pro-preview
+        CUSTOM_MODEL_ACTUAL = CUSTOM_COMPONENT_MODEL  # gemini-3-flash
     except ImportError:
-        THEME_MODEL_ACTUAL = "gemini-3-pro-preview"
-        SLIDE_MODEL_ACTUAL = "gemini-3-pro-preview"
+        THEME_MODEL_ACTUAL = "gemini-3-flash"
+        SLIDE_MODEL_ACTUAL = "gemini-3-flash"
         OUTLINE_MODEL_ACTUAL = "perplexity-sonar-pro"
-        CUSTOM_MODEL_ACTUAL = "gemini-3-pro-preview"
+        CUSTOM_MODEL_ACTUAL = "gemini-3-flash"
 
     decks_per_month = decks_per_day * 30
     slides_per_month = decks_per_month * slides_per_deck

@@ -163,6 +163,7 @@ from api.requests.api_theme import router as theme_router
 from api.requests.api_deck_notes import router as deck_notes_router
 from api.requests.api_admin import router as admin_router
 from api.requests.api_admin_analytics import router as admin_analytics_router
+from api.requests.api_admin_agent import router as admin_agent_router
 from api.requests.api_community import router as community_router
 from api.requests.api_google_integration import router as google_router
 from api.requests.api_integrations import router as integrations_router
@@ -296,6 +297,7 @@ app.include_router(websocket_analytics_router, prefix="", tags=["Websocket Analy
 app.include_router(deck_notes_router, prefix="", tags=["Deck Notes"])
 app.include_router(admin_router)
 app.include_router(admin_analytics_router)
+app.include_router(admin_agent_router)
 app.include_router(community_router)
 app.include_router(agent_router)
 app.include_router(agent_stream_router)

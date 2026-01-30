@@ -13,7 +13,7 @@ GEMINI_FLASH = "gemini-2.5-flash"
 GEMINI_FLASH_LITE = "gemini-2.5-flash-lite"
 GEMINI_PRO = "gemini-2.5-pro"
 GEMINI_3_PRO = "gemini-3-pro-preview"
-GEMINI_3_FLASH = "gemini-3-flash-preview"  # Available but not used yet
+GEMINI_3_FLASH = "gemini-3-flash"
 GEMINI_IMAGE = "gemini-2.5-flash-image"
 
 # Claude Models
@@ -41,12 +41,13 @@ PERPLEXITY_SONAR_PRO = "perplexity-sonar-pro"
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # HARD should be the highest-quality model for creative + reasoning work.
-# We want Gemini 3 Pro for slide/design generation & editing.
-MODEL_HARD = GEMINI_3_PRO
+# TEST: Using Gemini 3 Flash instead of Pro for evaluation.
+MODEL_HARD = GEMINI_3_FLASH
 MODEL_SMART = CLAUDE_SONNET    # Smart reasoning (orchestration, planning)
 MODEL_EASY = GEMINI_3_FLASH    # Fast/simple tasks (was CLAUDE_HAIKU)
 MODEL_FALLBACK = CLAUDE_OPUS   # Rate limit fallback
 MODEL_RESEARCH = PERPLEXITY_SONAR_PRO  # Web search
+AGENT_MODEL = os.getenv('AGENT_MODEL', GEMINI_3_FLASH)
 
 def get_model(task: str) -> str:
     """Get model for a task. Single source of truth."""
@@ -89,7 +90,7 @@ EDIT_TYPE_MODELS = {
     EditType.THEME_CHANGE: GEMINI_3_FLASH,
     EditType.CONTENT_UPDATE: MODEL_SMART,      # Needs reasoning
     EditType.COMPLEX_EDIT: MODEL_SMART,        # Needs planning
-    EditType.SLIDE_CREATE: GEMINI_3_PRO,       # Creative generation
+    EditType.SLIDE_CREATE: GEMINI_3_FLASH,      # Creative generation (TEST: Flash)
     EditType.RESEARCH_EDIT: MODEL_SMART,       # Multi-step reasoning
     EditType.CHAT_ONLY: MODEL_EASY,
 }
@@ -175,8 +176,8 @@ SLIDE_STYLE_MODEL = MODEL_HARD
 CUSTOM_COMPONENT_COMPOSER = MODEL_EASY
 CUSTOM_COMPONENT_CREATIVE = MODEL_HARD
 CUSTOM_COMPONENT_FALLBACK = MODEL_FALLBACK
-# Prefer Gemini 3 Pro for CustomComponentGenerator (raw HTML generation works well even when structured output is finicky)
-CUSTOM_COMPONENT_MODEL = GEMINI_3_PRO
+# TEST: Using Gemini 3 Flash for CustomComponentGenerator instead of Pro
+CUSTOM_COMPONENT_MODEL = GEMINI_3_FLASH
 CUSTOM_COMPONENT_ALLOW_FALLBACK = os.getenv('CUSTOM_COMPONENT_ALLOW_FALLBACK', 'false').lower() == 'true'
 CUSTOM_COMPONENT_RESPECT_GLOBAL_GEMINI_COOLDOWN = os.getenv(
     'CUSTOM_COMPONENT_RESPECT_GLOBAL_GEMINI_COOLDOWN',
@@ -187,7 +188,6 @@ CUSTOM_COMPONENT_FALLBACK_MODEL = (
     if CUSTOM_COMPONENT_ALLOW_FALLBACK
     else None
 )
-CUSTOM_COMPONENT_TIMEOUT_FALLBACK_MODEL = GEMINI_3_FLASH  # Always-on fallback when primary times out
 CUSTOM_COMPONENT_EDIT_MODEL = GEMINI_3_FLASH
 CUSTOM_COMPONENT_SIMPLE_MODEL = MODEL_EASY
 CUSTOM_COMPONENT_TEMPERATURE = 0.8
@@ -235,6 +235,7 @@ USE_PERPLEXITY_FOR_OUTLINE = True
 USE_PERPLEXITY_FOR_RESEARCH = True
 USE_HYBRID_RESEARCH_MODE = True
 USE_AGENT_THEMER = os.getenv('USE_AGENT_THEMER', 'true').lower() == 'true'
+USE_AGENTS_MD = os.getenv('USE_AGENTS_MD', 'true').lower() == 'true'
 
 IMAGE_GENERATION_ENABLED = False
 AUTO_APPLY_PENDING_IMAGES = False
