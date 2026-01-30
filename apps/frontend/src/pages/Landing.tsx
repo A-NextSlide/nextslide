@@ -105,7 +105,7 @@ const Landing: React.FC = () => {
       try {
         // Fetch both in parallel
         const [showcaseResults, communityResults] = await Promise.all([
-          showcaseService.getFeaturedDecks(8),
+          showcaseService.getFeaturedDecks(11),
           communityService.getDecks({ limit: 20 }).catch(() => ({ decks: [] }))
         ]);
         setShowcaseDecks(showcaseResults);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Sparkles, Rocket, Briefcase, Microscope, Coffee, Timer, FlaskConical, BookOpen, Handshake, Globe, MousePointer2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles, Rocket, TrendingUp, Microscope, Coffee, Timer, FlaskConical, BookOpen, Handshake, Globe, Skull, Wifi, MousePointer2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ShowcaseDeck } from '@/services/showcaseService';
 import MiniSlide from '@/components/deck/MiniSlide';
@@ -20,12 +20,20 @@ const PROMPTS = [
         deckIndex: 0
     },
     {
+        id: 'investment',
+        badge: 'Investment',
+        icon: TrendingUp,
+        text: "Short-term stock analysis that reads like a Goldman memo",
+        theme: 'light' as const,
+        deckIndex: 1
+    },
+    {
         id: 'education-algebra',
         badge: 'Education',
         icon: Microscope,
         text: "Algebra for kids who ask 'when will I use this'",
         theme: 'light' as const,
-        deckIndex: 1
+        deckIndex: 2
     },
     {
         id: 'learn-coffee',
@@ -33,7 +41,7 @@ const PROMPTS = [
         icon: Coffee,
         text: "How coffee conquered the world",
         theme: 'light' as const,
-        deckIndex: 2
+        deckIndex: 3
     },
     {
         id: 'pitch',
@@ -41,7 +49,7 @@ const PROMPTS = [
         icon: Timer,
         text: "Demo day pitch that actually fits in 3 minutes",
         theme: 'light' as const,
-        deckIndex: 3
+        deckIndex: 4
     },
     {
         id: 'education-biology',
@@ -49,7 +57,7 @@ const PROMPTS = [
         icon: FlaskConical,
         text: "Cellular Respiration: From Glucose to ATP",
         theme: 'light' as const,
-        deckIndex: 4
+        deckIndex: 5
     },
     {
         id: 'learn-history',
@@ -57,7 +65,7 @@ const PROMPTS = [
         icon: BookOpen,
         text: "The French Revolution: From Monarchy to Republic",
         theme: 'light' as const,
-        deckIndex: 5
+        deckIndex: 6
     },
     {
         id: 'sales',
@@ -65,15 +73,31 @@ const PROMPTS = [
         icon: Handshake,
         text: "Client proposal that closes itself",
         theme: 'orange' as const,
-        deckIndex: 6
+        deckIndex: 7
     },
     {
-        id: 'learn-internet',
+        id: 'learn-2000s',
         badge: 'Learn',
         icon: Globe,
         text: "Interactive Presentation About 2000s Internet Culture",
         theme: 'light' as const,
-        deckIndex: 7
+        deckIndex: 8
+    },
+    {
+        id: 'science-zombie',
+        badge: 'Science',
+        icon: Skull,
+        text: "How to Survive a Zombie Apocalypse Using Science",
+        theme: 'light' as const,
+        deckIndex: 9
+    },
+    {
+        id: 'learn-90s',
+        badge: 'Culture',
+        icon: Wifi,
+        text: "Why the 90s Internet Was the Wild West of Creativity",
+        theme: 'light' as const,
+        deckIndex: 10
     }
 ];
 
