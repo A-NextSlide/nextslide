@@ -77,91 +77,15 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
   const { getCachedThumbnail, hasCachedThumbnail, captureThumbnail, cacheVersion } = useCommunityThumbnailCache();
   const thumbnailRefsMapRef = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // Progressive rendering for mobile - only render 1 thumbnail at a time
-  // Use refs to avoid dependency loops that cause multiple simultaneous renders
-  const renderQueueRef = useRef<string[]>([]);
-  const activeRenderIdRef = useRef<string | null>(null);
-  const renderStartTimeRef = useRef<number>(0);
-  const [, forceUpdate] = useState(0); // Only used to trigger re-renders when needed
-  const MAX_CONCURRENT_RENDERS = 1; // Strict limit of 1 to prevent crashes
-
-  // Get ref versions of cache functions to use in callbacks without dependencies
+  // Mobile: render all items live, MiniSlide self-virtualizes content
+  // No render queue needed — just always render
   const hasCachedThumbnailRef = useRef(hasCachedThumbnail);
   hasCachedThumbnailRef.current = hasCachedThumbnail;
 
-  // Process render queue - allows next item to render (ONE at a time)
-  const processRenderQueue = useCallback(() => {
-    if (!BROWSER.isMobile) return;
-
-    // If currently rendering one, wait for it to complete
-    if (activeRenderIdRef.current !== null) {
-      // Check if the active one is now cached
-      if (hasCachedThumbnailRef.current(activeRenderIdRef.current)) {
-        console.log(`[CommunityGallery] ✅ Cached: ${activeRenderIdRef.current}`);
-        activeRenderIdRef.current = null;
-      } else {
-        // Skip if stuck too long (capture failed silently)
-        if (Date.now() - renderStartTimeRef.current > 10000) {
-          console.log(`[CommunityGallery] ⏭ Skipping timed out render: ${activeRenderIdRef.current}`);
-          activeRenderIdRef.current = null;
-        } else {
-          // Still rendering, don't start another
-          return;
-        }
-      }
-    }
-
-    // Clean queue - remove already cached items
-    renderQueueRef.current = renderQueueRef.current.filter(
-      id => !hasCachedThumbnailRef.current(id)
-    );
-
-    if (renderQueueRef.current.length === 0) return;
-
-    // Get next item to render
-    const nextId = renderQueueRef.current[0];
-    if (nextId) {
-      console.log(`[CommunityGallery] 🎬 Rendering: ${nextId}, queue: ${renderQueueRef.current.length}`);
-      activeRenderIdRef.current = nextId;
-      renderStartTimeRef.current = Date.now();
-      forceUpdate(v => v + 1); // Trigger re-render to show the new item
-    }
-  }, []); // No dependencies - uses refs
-
-  // When cache changes (thumbnail captured), process next in queue
-  useEffect(() => {
-    if (BROWSER.isMobile) {
-      const timer = setTimeout(processRenderQueue, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [cacheVersion, processRenderQueue]);
-
-  // Add new decks to render queue when they load
-  useEffect(() => {
-    if (!BROWSER.isMobile) return;
-
-    const newIds = decks
-      .map(d => d.id)
-      .filter(id =>
-        id &&
-        !hasCachedThumbnailRef.current(id) &&
-        id !== activeRenderIdRef.current &&
-        !renderQueueRef.current.includes(id)
-      );
-
-    if (newIds.length > 0) {
-      renderQueueRef.current.push(...newIds);
-      // Small delay to batch multiple additions
-      setTimeout(processRenderQueue, 50);
-    }
-  }, [decks, processRenderQueue]);
-
-  // Check if a deck should render its full thumbnail
-  const shouldRenderThumbnail = useCallback((deckId: string): boolean => {
-    if (!BROWSER.isMobile) return true; // Desktop always renders
-    if (hasCachedThumbnail(deckId)) return true; // Already cached
-    return activeRenderIdRef.current === deckId; // Currently the ONE allowed to render
-  }, [hasCachedThumbnail]);
+  // Always render — MiniSlide self-virtualizes its content via IntersectionObserver
+  const shouldRenderThumbnail = useCallback((_deckId: string): boolean => {
+    return true;
+  }, []);
 
   // Debounce search
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -449,16 +373,9 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
                   showRemixButton={variant === 'app'}
                   cachedThumbnailUrl={cachedUrl}
                   onThumbnailRef={(el) => {
-                    if (el && !cachedUrl) {
+                    if (el && deck.id) {
                       thumbnailRefsMapRef.current.set(deck.id, el);
-                      // Capture shortly after mount (captureTinySlideScreenshot has smart waits)
-                      setTimeout(() => {
-                        const element = thumbnailRefsMapRef.current.get(deck.id);
-                        if (element) {
-                          captureThumbnail(deck.id, element);
-                        }
-                      }, 50);
-                    } else {
+                    } else if (deck.id) {
                       thumbnailRefsMapRef.current.delete(deck.id);
                     }
                   }}
