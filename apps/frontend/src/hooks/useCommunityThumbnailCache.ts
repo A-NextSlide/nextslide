@@ -35,7 +35,7 @@ export interface UseCommunityThumbnailCacheResult {
 
 export function useCommunityThumbnailCache(): UseCommunityThumbnailCacheResult {
   const [cacheVersion, setCacheVersion] = useState(0);
-  const isCapturingRef = useRef<Set<string>>(new Set());
+  const isCapturingRef = useRef(false);
 
   // Clean up expired entries periodically
   useEffect(() => {
@@ -77,12 +77,12 @@ export function useCommunityThumbnailCache(): UseCommunityThumbnailCacheResult {
   }, [getCachedThumbnail]);
 
   const captureThumbnail = useCallback(async (deckId: string, element: HTMLElement): Promise<boolean> => {
-    // Skip if not on mobile or already capturing
+    // Skip if not on mobile, already capturing another item, or already cached
     if (!BROWSER.isMobile) return false;
-    if (isCapturingRef.current.has(deckId)) return false;
-    if (thumbnailCache.has(deckId)) return true; // Already cached
+    if (isCapturingRef.current) return false;
+    if (thumbnailCache.has(deckId)) return true;
 
-    isCapturingRef.current.add(deckId);
+    isCapturingRef.current = true;
 
     try {
       const dataUrl = await captureTinySlideScreenshot(element);
@@ -98,8 +98,8 @@ export function useCommunityThumbnailCache(): UseCommunityThumbnailCacheResult {
     } catch (err) {
       console.error(`[CommunityThumbnailCache] Failed to capture ${deckId}:`, err);
     } finally {
-      isCapturingRef.current.delete(deckId);
-      // Always bump version so the render queue advances, even on failure
+      isCapturingRef.current = false;
+      // Always bump version so the capture queue advances, even on failure
       setCacheVersion(v => v + 1);
     }
 

@@ -115,21 +115,18 @@ export const VirtualizedDeckGrid = React.memo(({
   // Screenshot caching for mobile thumbnails
   const { getCachedThumbnail, hasCachedThumbnail, captureThumbnail, cacheVersion } = useDeckThumbnailCache();
 
-  // Simplified mobile rendering: use refs to avoid dependency loops
-  // Only ONE item renders at a time on mobile
+  // Mobile rendering: render ALL visible items live, capture in background
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
   const thumbnailRefsMapRef = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // Queue management - all refs to avoid dependency loops
-  const renderQueueRef = useRef<number[]>([]);
-  const activeRenderIndexRef = useRef<number | null>(null);
-  const renderStartTimeRef = useRef<number>(0);
+  // Visibility tracking
   const visibleDecksRef = useRef<Set<number>>(new Set());
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visibilityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // State only for triggering re-renders
   const [renderedDecks, setRenderedDecks] = useState<Set<number>>(() => {
@@ -161,63 +158,32 @@ export const VirtualizedDeckGrid = React.memo(({
     console.log(`[DeckGrid] BROWSER.isMobile=${BROWSER.isMobile} isIOS=${BROWSER.isIOS} isChrome=${BROWSER.isChrome} isAndroid=${BROWSER.isAndroid}`);
   }
 
-  // Process render queue - ONE item at a time
-  const processRenderQueue = useCallback(() => {
+  // Background capture: pick the first visible uncached item and screenshot it
+  const processCaptureQueue = useCallback(() => {
     if (!BROWSER.isMobile) return;
+    if (isScrollingRef.current) return;
 
-    // Pause during scroll
-    if (isScrollingRef.current) {
-      setTimeout(processRenderQueue, 200);
-      return;
-    }
-
-    // If currently rendering one, check if it's done or stale
-    if (activeRenderIndexRef.current !== null) {
-      const deck = safeDecksRef.current[activeRenderIndexRef.current];
-      if (deck?.uuid && hasCachedThumbnailRef.current(deck.uuid)) {
-        console.log(`[DeckGrid] ✅ Cached: #${activeRenderIndexRef.current}`);
-        activeRenderIndexRef.current = null;
-      } else {
-        // Immediately cancel if user scrolled away; timeout as safety net
-        const isNotVisible = !visibleDecksRef.current.has(activeRenderIndexRef.current);
-        const isTimedOut = Date.now() - renderStartTimeRef.current > 8000;
-        if (isNotVisible || isTimedOut) {
-          console.log(`[DeckGrid] ⏭ Cancelling #${activeRenderIndexRef.current} (${isNotVisible ? 'scrolled away' : 'timed out'})`);
-          activeRenderIndexRef.current = null;
-        } else {
-          return;
-        }
-      }
-    }
-
-    // Clean queue - remove cached and non-visible items
-    renderQueueRef.current = renderQueueRef.current.filter(index => {
+    for (const index of Array.from(visibleDecksRef.current).sort((a, b) => a - b)) {
       const deck = safeDecksRef.current[index];
-      if (!deck?.uuid) return false;
-      if (hasCachedThumbnailRef.current(deck.uuid)) return false;
-      if (!visibleDecksRef.current.has(index)) return false;
-      return true;
-    });
+      if (!deck?.uuid) continue;
+      if (hasCachedThumbnailRef.current(deck.uuid)) continue;
 
-    if (renderQueueRef.current.length === 0) return;
+      const element = thumbnailRefsMapRef.current.get(deck.uuid);
+      if (!element) continue;
 
-    // Get next item
-    const nextIndex = renderQueueRef.current[0];
-    if (nextIndex !== undefined) {
-      console.log(`[DeckGrid] 🎬 Rendering: #${nextIndex}, queue: ${renderQueueRef.current.length}`);
-      activeRenderIndexRef.current = nextIndex;
-      renderStartTimeRef.current = Date.now();
-      forceUpdate(v => v + 1);
+      console.log(`[DeckGrid] 📸 Background capture: #${index}`);
+      captureThumbnailRef.current(deck.uuid, element);
+      return; // One at a time — hook blocks concurrent captures
     }
-  }, []); // No dependencies - uses refs
+  }, []);
 
-  // When cache changes, process next in queue
+  // When a capture completes (success or fail), try the next one
   useEffect(() => {
     if (BROWSER.isMobile) {
-      const timer = setTimeout(processRenderQueue, 150);
+      const timer = setTimeout(processCaptureQueue, 300);
       return () => clearTimeout(timer);
     }
-  }, [cacheVersion, processRenderQueue]);
+  }, [cacheVersion, processCaptureQueue]);
 
   // Check initial visibility for desktop animations
   useEffect(() => {
@@ -243,7 +209,7 @@ export const VirtualizedDeckGrid = React.memo(({
     }
   }, [safeDecks.length]);
 
-  // Track scrolling to pause rendering
+  // Track scrolling to pause capture and batch visibility updates
   useEffect(() => {
     if (!BROWSER.isMobile) return;
     const handleScroll = () => {
@@ -251,8 +217,9 @@ export const VirtualizedDeckGrid = React.memo(({
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       scrollTimeoutRef.current = setTimeout(() => {
         isScrollingRef.current = false;
-        // Resume processing after scroll
-        processRenderQueue();
+        // Re-render with current visibility + start capturing
+        forceUpdate(v => v + 1);
+        processCaptureQueue();
       }, 150);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -260,7 +227,7 @@ export const VirtualizedDeckGrid = React.memo(({
       window.removeEventListener('scroll', handleScroll);
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     };
-  }, [processRenderQueue]);
+  }, [processCaptureQueue]);
 
   // Intersection observer for visibility
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -275,16 +242,7 @@ export const VirtualizedDeckGrid = React.memo(({
           if (entry.isIntersecting) {
             visibleDecksRef.current.add(index);
 
-            if (BROWSER.isMobile) {
-              // Queue for rendering if not cached and not already queued
-              const deck = safeDecksRef.current[index];
-              if (deck?.uuid && !hasCachedThumbnailRef.current(deck.uuid)) {
-                if (!renderQueueRef.current.includes(index) && activeRenderIndexRef.current !== index) {
-                  renderQueueRef.current.push(index);
-                  setTimeout(processRenderQueue, 50);
-                }
-              }
-            } else {
+            if (!BROWSER.isMobile) {
               // Desktop: render immediately
               setRenderedDecks(prev => new Set(prev).add(index));
             }
@@ -292,23 +250,25 @@ export const VirtualizedDeckGrid = React.memo(({
             visibleDecksRef.current.delete(index);
 
             if (BROWSER.isMobile) {
-              // Remove from queue
-              renderQueueRef.current = renderQueueRef.current.filter(i => i !== index);
-
-              // Capture screenshot before "unloading" if rendered
+              // Capture screenshot before unmounting
               const deck = safeDecksRef.current[index];
               if (deck?.uuid) {
                 const thumbnailEl = thumbnailRefsMapRef.current.get(deck.uuid);
                 if (thumbnailEl && !hasCachedThumbnailRef.current(deck.uuid)) {
-                  console.log(`[DeckGrid] 📸 Capture on exit: #${index}`);
                   captureThumbnailRef.current(deck.uuid, thumbnailEl);
                 }
               }
             }
           }
         });
+
+        // Mobile: debounced re-render so visible items mount/unmount
+        if (BROWSER.isMobile) {
+          if (visibilityTimerRef.current) clearTimeout(visibilityTimerRef.current);
+          visibilityTimerRef.current = setTimeout(() => forceUpdate(v => v + 1), 50);
+        }
       },
-      { root: null, rootMargin: '100px', threshold: 0 }
+      { root: null, rootMargin: '200px', threshold: 0 }
     );
 
     itemRefs.current.forEach((element) => {
@@ -323,7 +283,7 @@ export const VirtualizedDeckGrid = React.memo(({
       observerRef.current = null;
       observedElementsRef.current.clear();
     };
-  }, [processRenderQueue]);
+  }, [processCaptureQueue]);
 
   // Re-observe when deck count changes
   useEffect(() => {
@@ -384,13 +344,12 @@ export const VirtualizedDeckGrid = React.memo(({
         // Check for cached thumbnail
         const cachedUrl = BROWSER.isMobile && deck.uuid ? getCachedThumbnail(deck.uuid) : null;
 
-        // On mobile: show cached if available, otherwise check if this is the active render
-        const isActiveRender = BROWSER.isMobile && activeRenderIndexRef.current === index;
-
-        // Mobile: ONLY mount the active render (1 DeckCard at a time to prevent crashes)
-        // Cached items show as lightweight placeholder with <img>
-        // Desktop: render normally based on visibility
-        const showDeckCard = BROWSER.isMobile ? isActiveRender : shouldRender;
+        // Mobile: render live when visible (MiniSlide self-virtualizes its content)
+        // Cached items in DeckCard show a lightweight <img>, not the heavy MiniSlide
+        // Desktop: render based on scroll-into-view tracking
+        const showDeckCard = BROWSER.isMobile
+          ? visibleDecksRef.current.has(index)
+          : shouldRender;
 
         return (
           <div
@@ -412,15 +371,6 @@ export const VirtualizedDeckGrid = React.memo(({
                 onThumbnailRef={(el) => {
                   if (el && deck.uuid) {
                     thumbnailRefsMapRef.current.set(deck.uuid, el);
-                    // Capture shortly after mount (captureTinySlideScreenshot has its own smart waits)
-                    if (BROWSER.isMobile && isActiveRender && !hasCachedThumbnail(deck.uuid)) {
-                      setTimeout(() => {
-                        const element = thumbnailRefsMapRef.current.get(deck.uuid!);
-                        if (element) {
-                          captureThumbnail(deck.uuid!, element);
-                        }
-                      }, 50);
-                    }
                   } else if (deck.uuid) {
                     thumbnailRefsMapRef.current.delete(deck.uuid);
                   }
