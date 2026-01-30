@@ -129,11 +129,46 @@ export const VirtualizedDeckGrid = React.memo(({
 
   // State: once an item enters the viewport, it stays rendered
   const [renderedDecks, setRenderedDecks] = useState<Set<number>>(() => {
-    // On mobile, start empty and let IntersectionObserver populate;
-    // on desktop, render first few immediately
+    // On desktop, render first few immediately; mobile uses progressive timer below
     if (BROWSER.isMobile) return new Set();
     return new Set(Array.from({ length: Math.min(6, safeDecks.length) }, (_, i) => i));
   });
+
+  // Mobile: progressive render via timer (IntersectionObserver unreliable on mobile)
+  // Adds items in batches of 3 every 150ms so the browser isn't overwhelmed
+  const mobileRenderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!BROWSER.isMobile) return;
+    if (safeDecks.length === 0) return;
+
+    let batch = 0;
+    const BATCH_SIZE = 3;
+    const BATCH_DELAY = 150; // ms between batches
+
+    const addBatch = () => {
+      const start = batch * BATCH_SIZE;
+      const end = Math.min(start + BATCH_SIZE, safeDecks.length);
+      if (start >= safeDecks.length) return;
+
+      setRenderedDecks(prev => {
+        const next = new Set(prev);
+        for (let i = start; i < end; i++) next.add(i);
+        return next;
+      });
+      batch++;
+
+      if (end < safeDecks.length) {
+        mobileRenderTimerRef.current = setTimeout(addBatch, BATCH_DELAY);
+      }
+    };
+
+    // Start first batch immediately
+    addBatch();
+
+    return () => {
+      if (mobileRenderTimerRef.current) clearTimeout(mobileRenderTimerRef.current);
+    };
+  }, [safeDecks.length]);
 
   // Track initial visibility for animations (desktop only)
   const [initiallyVisibleDecks, setInitiallyVisibleDecks] = useState<Set<number>>(() => {
@@ -336,10 +371,9 @@ export const VirtualizedDeckGrid = React.memo(({
         // Check for cached thumbnail
         const cachedUrl = BROWSER.isMobile && deck.uuid ? getCachedThumbnail(deck.uuid) : null;
 
-        // Mobile: always render DeckCard — MiniSlide self-virtualizes its heavy
-        // content (iframes) via its own IntersectionObserver, so the shell is lightweight.
-        // Desktop: render once scrolled into view (observer adds to renderedDecks).
-        const showDeckCard = BROWSER.isMobile || shouldRender;
+        // Mobile: progressive timer populates renderedDecks in batches
+        // Desktop: IntersectionObserver populates renderedDecks on scroll
+        const showDeckCard = shouldRender;
 
         return (
           <div
