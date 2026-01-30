@@ -1129,6 +1129,33 @@ class AdminApi {
 
     return response.blob();
   }
+
+  // ==================== Agent Data Agent ====================
+
+  async agentChat(message: string, sessionId: string): Promise<AgentChatResponse> {
+    return this.request<AgentChatResponse>('/admin/agent/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, session_id: sessionId }),
+    });
+  }
+
+  async agentConfirm(sessionId: string, actionId: string): Promise<AgentConfirmResponse> {
+    return this.request<AgentConfirmResponse>('/admin/agent/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId, action_id: actionId }),
+    });
+  }
+
+  async agentCancel(sessionId: string, actionId: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/admin/agent/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId, action_id: actionId }),
+    });
+  }
+
+  async agentSchema(): Promise<any> {
+    return this.request<any>('/admin/agent/schema');
+  }
 }
 
 export interface Brand {
@@ -1340,6 +1367,33 @@ export interface GetShareViewersResponse {
   total: number;
   page: number;
   totalPages: number;
+}
+
+// Agent types
+export interface AgentChatResponse {
+  response_type: 'data' | 'confirmation' | 'conversation' | 'error';
+  summary: string;
+  // Data responses
+  columns?: string[];
+  rows?: Record<string, any>[];
+  row_count?: number;
+  truncated?: boolean;
+  entity_links?: Record<string, 'user' | 'deck'>;
+  // Confirmation responses
+  action_id?: string;
+  affected_rows?: number;
+  operation_type?: string;
+  // Conversation responses
+  message?: string;
+  // Error responses
+  error?: string;
+}
+
+export interface AgentConfirmResponse {
+  success: boolean;
+  affected_rows: number;
+  message: string;
+  error?: string;
 }
 
 export const adminApi = new AdminApi();

@@ -25,12 +25,14 @@ from models.deck import DeckDiff, DeckDiffBase
 from models.registry import ComponentRegistry
 from agents.ai.clients import get_client, invoke
 from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_rate_limited
-from agents.config import get_model, MODEL_FALLBACK, GEMINI_3_FLASH, GEMINI_3_PRO, MODEL_SMART, EDIT_TYPE_MODELS
+from agents.config import get_model, MODEL_FALLBACK, GEMINI_3_FLASH, GEMINI_3_PRO, MODEL_SMART, EDIT_TYPE_MODELS, USE_AGENTS_MD, AGENT_MODEL
 from services.context_cache import get_deck_context_snapshot
 from utils.summaries import summarize_chat_history
 from agents.editing.tools.code_verifier import verify_interactive_code, create_verification_context
-from agents.editing.skill_prompts import get_skill_prompt, get_skill_tools, BASE_SYSTEM_PROMPT
 from agents.editing.tool_descriptions import TOOL_DESCRIPTIONS_MAP
+
+if not USE_AGENTS_MD:
+    from agents.editing.skill_prompts import get_skill_prompt, get_skill_tools, BASE_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -472,6 +474,136 @@ NOTE: For complex/visual requests, a screenshot is included as vision content - 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# AGENTS.MD PROMPT - Compressed single-prompt architecture
+# Replaces classifier + 11 skill prompts + per-skill model routing
+# One model, one LLM call, full context always present
+# ═══════════════════════════════════════════════════════════════════════════════
+
+AGENTS_MD_PROMPT = """You are a slide deck design assistant. Speak in PAST TENSE ("I updated...", "I replaced..."). No emojis. No technical terms (HTML, CSS, component, props, render). Say "slide", "design", "layout", "style" instead.
+
+DEFAULT: EDIT IN PLACE. Use str_replace DIRECT to surgically modify existing content.
+Only use edit_slide/custom_component_rewrite when user explicitly says "redesign", "rebuild", "redo", "from scratch", or the change requires JS logic fixes.
+
+TOOL MATRIX (request pattern → tool → key args):
+(str_replace = custom_component_str_replace tool)
+text/typo/wording              → custom_component_str_replace DIRECT → old_string, new_string
+color/style/spacing            → custom_component_str_replace DIRECT → old_string, new_string
+visibility/contrast/can't see  → custom_component_str_replace DIRECT → old_string, new_string (fix the color value)
+add/remove CSS property        → custom_component_str_replace DIRECT → old_string, new_string
+font THIS slide only           → component_prop_update    → overrideBodyFont, overrideHeroFont
+font/color ALL slides          → apply_theme_to_custom_components → typography, colors
+JS logic/event handlers broken → custom_component_rewrite → instruction (ONLY for JS logic bugs)
+redesign/rebuild/redo          → edit_slide               → instruction (ONLY when user asks to recreate)
+new slide                      → create_slide             → instruction, insert_after (= current slide ID)
+replace image                  → search_images            → query (2-4 words), image_index OR target_image
+AI edit image                  → edit_image_with_ai       → instruction, image_index
+data/stats needed              → web_search THEN custom_component_str_replace (NOT edit_slide unless user says rewrite)
+site-specific URL              → deep_extract THEN custom_component_str_replace or edit tool
+@linkedin Name                 → linkedin_lookup          → name, company
+edit ALL slides                → edit_all_slides          → instruction
+delete slide                   → delete_slide             → slide_id
+duplicate slide                → duplicate_slide          → slide_id
+chat/question/thanks           → NO tools, message only
+
+DIRECT EDIT MODE (REQUIRED when SLIDE HTML is in context):
+  Pass old_string and new_string with EXACT text from the HTML. Examples:
+  color:       old_string="color: #FF0000"           new_string="color: #0066CC"
+  visibility:  old_string="color: #1a1a2e"           new_string="color: #FFFFFF"  (light text on dark bg)
+  text:        old_string=">Old Title<"               new_string=">New Title<"
+  css add:     old_string=".overlay {"                 new_string=".overlay { pointer-events: none;"
+  svg:         old_string=".vector-arrow {"            new_string=".vector-arrow { transform: scale(0.7); transform-origin: center;"
+
+  For MULTIPLE changes: emit MULTIPLE tool_calls, each with its own old_string/new_string.
+  Example "make all unselected text white": one tool_call per CSS rule that sets the text color.
+
+  DIRECT mode = instant (string replacement, no LLM call). instruction mode = slow (needs extra LLM call, can fail).
+  ONLY use instruction mode when SLIDE HTML is NOT present in the context.
+
+  WARNING: custom_component_rewrite REGENERATES THE ENTIRE SLIDE from scratch (slow, loses layout).
+  NEVER use it for color, text, visibility, spacing, or CSS changes. Those are ALL str_replace DIRECT.
+
+CSS FIX PATTERNS (buttons/clicks broken):
+  - Decorative overlays blocking clicks → add pointer-events:none
+  - Low z-index on buttons → set z-index:9999 on button containers
+  - Jitter on hover → remove transform:translate from :hover
+  - Clipped hit area → remove clip-path from interactive elements
+
+RULES:
+1. Tools only - never output raw code
+2. Current slide ID from context unless user says otherwise
+3. Past tense responses always
+4. EDIT, DON'T REPLACE. Always use str_replace DIRECT to modify the specific thing the user asked about. Do NOT use edit_slide or custom_component_rewrite unless user explicitly asks to redesign/rebuild/redo or the fix requires JS logic changes. "Make the title red" = str_replace the color value. "Add a border" = str_replace to insert the CSS. "Fix the text" = str_replace the text. Never rewrite the whole slide for a surgical change.
+5. Chat-only messages (thanks, questions, ideas) → message only, NO tool_calls
+6. Research before factual content - call web_search first, use ONLY those numbers
+7. Short image queries: 2-4 words max ("Tesla logo", "office meeting")
+8. Canvas: 1920x1080, origin top-left
+9. Multiple tools OK in one response
+10. Preserve theme unless user asks to change it
+11. Font/color requests without "this slide" → apply_theme_to_custom_components (global)
+12. Follow-up complaints → check chat history first. "can't see"/"invisible"/"contrast" = str_replace DIRECT to fix color. "can't click"/"buttons broken"/"doesn't respond" = custom_component_rewrite (JS logic only)
+13. For "latest/current" data requests, include current date in web_search query
+14. Do NOT add a specific year/season unless user explicitly says one
+
+ATTACHMENTS: If user uploaded files and asks to use them, set use_attachments:true in tool args. If reference only, don't insert.
+
+@LINKEDIN: Only call linkedin_lookup when @linkedin is explicitly in the message. Pass company from context. One lookup per person. If [SELECTED_LINKEDIN_PROFILE] is in message, use that data directly - do NOT search again.
+
+IMAGE TARGETING (use screenshot to count):
+  Position: "first image" → image_index=0, "third" → image_index=2
+  Visual: Look at screenshot, count position, use image_index
+  Content: "the logo" → target_image="logo"
+  Multiple replacements: use target_image (stable) not image_index (shifts)
+  JS-managed images (template vars like ${item.image}): use custom_component_rewrite, NOT search_images
+
+AMBIGUOUS REFERENCES: If user says "this one" and multiple similar elements exist, ask for clarification.
+
+VIDEO REQUESTS: If user mentions video + URL → deep_extract with include_videos:true, then embed.
+
+NEW SLIDE WITH DATA: web_search first if factual content needed, then create_slide. Simple slides (title, agenda, thanks) → create_slide directly.
+
+CONTENT IMPROVEMENT: web_search → ALWAYS default to str_replace DIRECT to swap in the new data. Only use edit_slide if user explicitly says "rewrite"/"redesign"/"rebuild". Updating stats or text = str_replace, NOT a full slide rewrite.
+
+VISUAL CONTEXT: Screenshot shows real rendered state. Use it to identify elements, count images, see colors/layout.
+
+CONVERSATION CONTINUITY: Check RECENT CHAT for context on vague references ("make it bigger" = what you just edited). Continue dialogue naturally.
+"""
+
+
+TOOLS_REFERENCE = """TOOLS REFERENCE (args only):
+
+custom_component_str_replace:
+  DIRECT (ALWAYS USE THIS when HTML is in context - instant, no extra LLM call):
+    { slide_id, component_id, old_string, new_string }
+  INSTRUCTION (ONLY when HTML is NOT in context - slower, needs extra LLM call):
+    { slide_id, component_id, instruction }
+
+custom_component_rewrite: { slide_id, component_id, instruction }
+edit_slide: { slide_id, instruction, use_attachments? }
+create_slide: { instruction, insert_after }
+delete_slide: { slide_id }
+duplicate_slide: { slide_id, insert_after? }
+reorder_slides: { slide_id, new_index } OR { slide_order: [ids] }
+edit_all_slides: { instruction }
+edit_component: { slide_id, component_id, instruction }
+create_component: { slide_id, component_type, instruction }
+delete_component: { slide_id, component_id }
+apply_theme: { instruction }
+apply_theme_to_custom_components: { colors?, typography? }
+  colors: { accent_1, primary_text, primary_background, ... }
+  typography: { heading: { family }, body: { family } }
+component_prop_update: { slide_id, component_id, updates: { overrideBodyFont?, overrideHeroFont?, ... } }
+view_component: { slide_id, component_id }
+view_slide: { slide_id }
+search_images: { query, image_index?, target_image? }
+replace_image: { image_url, image_index?, old_url? }
+edit_image_with_ai: { instruction, image_index? }
+web_search: { query }
+deep_extract: { query, url?, urls?, include_videos?, schema? }
+linkedin_lookup: { name, company?, title? }
+"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # TOOL CALL MODELS
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -479,7 +611,7 @@ class ToolCall(BaseModel):
     """A single tool invocation from the LLM."""
     tool_name: str = Field(description="Name of the tool to call")
     tool_args: Dict[str, Any] = Field(description="Arguments for the tool")
-    summary: str = Field(description="Brief description of what this edit does")
+    summary: str = Field(default="", description="Brief description of what this edit does")
 
 
 class OrchestratorResponse(BaseModel):
@@ -758,8 +890,11 @@ def build_context(
         if sel_lines:
             sel_str = "\n\n🎯 SELECTED (user refers to this as 'this'):\n" + "\n".join(sel_lines) + full_html_str
 
-    # If no selection but slide has CustomComponent, still include full HTML for targeted edits
+    # If no selection but slide has CustomComponent, include ALL CustomComponent HTMLs (budget: 40k chars)
     if not full_html_str and has_custom:
+        html_parts = []
+        html_budget = 40000
+        html_used = 0
         for c in components:
             if _get_attr(c, 'type') == 'CustomComponent':
                 cid = _get_attr(c, 'id', 'no-id')
@@ -769,8 +904,13 @@ def build_context(
                 else:
                     full_html = str(getattr(props, "render", ""))
                 if full_html:
-                    full_html_str = f"\n\n📄 CUSTOMCOMPONENT HTML (component_id={cid}):\n```html\n{full_html}\n```\n⚠️ For targeted edits, use custom_component_str_replace with EXACT old_string/new_string from this HTML."
-                    break  # Only include first CustomComponent's HTML
+                    if html_used + len(full_html) > html_budget:
+                        html_parts.append(f"\n(remaining components omitted - budget exceeded)")
+                        break
+                    html_parts.append(f"\n\nSLIDE HTML (component_id={cid}, use for DIRECT old_string/new_string edits):\n```html\n{full_html}\n```")
+                    html_used += len(full_html)
+        if html_parts:
+            full_html_str = "".join(html_parts)
 
     # Attachments
     att_str = ""
@@ -1136,62 +1276,84 @@ def orchestrate(
         )
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # SKILL-BASED ROUTING
+    # ROUTING: agents.md (single prompt) vs skill-based (classifier)
     # ═══════════════════════════════════════════════════════════════════════════
 
-    # Get skill and scope from classification for model selection and prompt
-    skill = "complex_edit"  # Default
-    scope = "slide"  # Default to current slide only
-    if classification:
-        skill = getattr(classification, 'skill', None) or getattr(classification, 'type', 'complex_edit')
-        scope = getattr(classification, 'scope', 'slide')
-        if skill == "simple_edit":
-            skill = "text_edit"  # Map legacy type to skill
+    if USE_AGENTS_MD:
+        # agents.md mode: one model, one prompt, no classifier needed
+        model = AGENT_MODEL
+        system_prompt = AGENTS_MD_PROMPT
+        tool_section = TOOLS_REFERENCE
 
-    # SCOPE-BASED ROUTING: If scope is "slide" but skill is "theme_change", use color_edit instead
-    # This ensures slide-specific font/color changes don't affect the whole deck
-    if scope == "slide" and skill == "theme_change":
-        logger.info(f"[ORCHESTRATOR] Rerouting theme_change to color_edit (scope=slide)")
-        skill = "color_edit"
+        logger.info(f"[ORCHESTRATOR] agents.md mode -> Model: {model}")
 
-    # Get model based on skill
-    model = EDIT_TYPE_MODELS.get(skill, GEMINI_3_FLASH)
+        if event_cb:
+            try:
+                event_cb("agent.thinking", {"model": model})
+            except Exception:
+                pass
 
-    # Log the routing decision
-    logger.info(f"[ORCHESTRATOR] Skill: {skill}, Scope: {scope} -> Model: {model}")
+        # Full prompt
+        prompt = f"""{context}
 
-    # Emit thinking step - just skill info, don't repeat user message (they can see it already)
-    if event_cb:
-        try:
-            event_cb("agent.thinking", {"skill": skill, "scope": scope, "model": model})
-        except Exception:
-            pass
+{video_hint}
+{tool_section}
 
-    # Get skill-specific tool descriptions
-    skill_tools = get_skill_tools(skill)
-    skill_tool_descriptions = "\n\n".join(
-        f"- {TOOL_DESCRIPTIONS_MAP[t]}" for t in skill_tools if t in TOOL_DESCRIPTIONS_MAP
-    )
+USER REQUEST: {clean_message}
 
-    # Use skill-specific system prompt for simple skills, full prompt for complex
-    if skill in ["text_edit", "color_edit", "image_search", "theme_change", "slide_delete"]:
-        # Simple skills - use focused prompt
-        system_prompt = get_skill_prompt(skill)
-        tool_section = f"TOOLS:\n{skill_tool_descriptions}" if skill_tool_descriptions else ""
+Respond with the tool_calls to execute."""
     else:
-        # Complex skills - use full prompt
-        system_prompt = SYSTEM_PROMPT
-        tool_section = TOOL_DESCRIPTIONS
+        # Legacy skill-based routing (kept for rollback)
+        from agents.editing.skill_prompts import get_skill_prompt, get_skill_tools
 
-    # Scope hint for the LLM
-    scope_hint = ""
-    if scope == "slide":
-        scope_hint = "SCOPE: Current slide only. Do NOT apply changes to all slides."
-    elif scope == "deck":
-        scope_hint = "SCOPE: All slides. Apply changes globally across the entire deck."
+        # Get skill and scope from classification for model selection and prompt
+        skill = "complex_edit"  # Default
+        scope = "slide"  # Default to current slide only
+        if classification:
+            skill = getattr(classification, 'skill', None) or getattr(classification, 'type', 'complex_edit')
+            scope = getattr(classification, 'scope', 'slide')
+            if skill == "simple_edit":
+                skill = "text_edit"  # Map legacy type to skill
 
-    # Full prompt
-    prompt = f"""{context}
+        # SCOPE-BASED ROUTING: If scope is "slide" but skill is "theme_change", use color_edit instead
+        if scope == "slide" and skill == "theme_change":
+            logger.info(f"[ORCHESTRATOR] Rerouting theme_change to color_edit (scope=slide)")
+            skill = "color_edit"
+
+        # Get model based on skill
+        model = EDIT_TYPE_MODELS.get(skill, GEMINI_3_FLASH)
+
+        logger.info(f"[ORCHESTRATOR] Skill: {skill}, Scope: {scope} -> Model: {model}")
+
+        if event_cb:
+            try:
+                event_cb("agent.thinking", {"skill": skill, "scope": scope, "model": model})
+            except Exception:
+                pass
+
+        # Get skill-specific tool descriptions
+        skill_tools = get_skill_tools(skill)
+        skill_tool_descriptions = "\n\n".join(
+            f"- {TOOL_DESCRIPTIONS_MAP[t]}" for t in skill_tools if t in TOOL_DESCRIPTIONS_MAP
+        )
+
+        # Use skill-specific system prompt for simple skills, full prompt for complex
+        if skill in ["text_edit", "color_edit", "image_search", "theme_change", "slide_delete"]:
+            system_prompt = get_skill_prompt(skill)
+            tool_section = f"TOOLS:\n{skill_tool_descriptions}" if skill_tool_descriptions else ""
+        else:
+            system_prompt = SYSTEM_PROMPT
+            tool_section = TOOL_DESCRIPTIONS
+
+        # Scope hint for the LLM
+        scope_hint = ""
+        if scope == "slide":
+            scope_hint = "SCOPE: Current slide only. Do NOT apply changes to all slides."
+        elif scope == "deck":
+            scope_hint = "SCOPE: All slides. Apply changes globally across the entire deck."
+
+        # Full prompt
+        prompt = f"""{context}
 
 {video_hint}
 {scope_hint}
@@ -1796,10 +1958,11 @@ Respond with the tool_calls to execute."""
     if all_observations and _is_empty_deckdiff(deck_diff):
         logger.info(f"[ORCHESTRATOR] 🔄 Starting follow-up pass - agent only viewed, need actionable edits")
         try:
+            followup_tool_section = tool_section if USE_AGENTS_MD else TOOL_DESCRIPTIONS
             followup_prompt = f"""{context}
 
 {video_hint}
-{TOOL_DESCRIPTIONS}
+{followup_tool_section}
 
 USER REQUEST: {clean_message}
 
@@ -1826,7 +1989,7 @@ Respond with the tool_calls to execute."""
                 client=client,
                 model=actual_model,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": followup_prompt},
                 ],
                 response_model=OrchestratorResponse,
@@ -1883,7 +2046,7 @@ Respond with the tool_calls to execute."""
                     followup_prompt_2 = f"""{context}
 
 {video_hint}
-{TOOL_DESCRIPTIONS}
+{followup_tool_section}
 
 USER REQUEST: {clean_message}
 
@@ -1901,7 +2064,7 @@ Respond with the tool_calls to execute."""
                         client=client,
                         model=actual_model,
                         messages=[
-                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "system", "content": system_prompt},
                             {"role": "user", "content": followup_prompt_2},
                         ],
                         response_model=OrchestratorResponse,

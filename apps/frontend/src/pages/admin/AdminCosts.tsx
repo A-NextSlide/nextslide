@@ -15,7 +15,7 @@ import {
 
 // Model pricing (per 1M tokens) - Dec 2025
 const MODEL_COSTS = {
-  gemini: { input: 2.00, output: 12.00, name: 'Gemini 2.0 Flash' },
+  gemini: { input: 0.15, output: 0.60, name: 'Gemini 3 Flash' },
   perplexity: { input: 1.00, output: 5.00, name: 'Perplexity Sonar Pro' },
   haiku: { input: 0.80, output: 4.00, name: 'Claude Haiku' },
 };

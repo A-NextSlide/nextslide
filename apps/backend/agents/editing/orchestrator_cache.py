@@ -19,8 +19,12 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-# Import the static prompts
+# Import the static prompts (agents.md or legacy)
+from agents.config import USE_AGENTS_MD
 from agents.editing.orchestrator_v2 import SYSTEM_PROMPT, TOOL_DESCRIPTIONS
+
+if USE_AGENTS_MD:
+    from agents.editing.orchestrator_v2 import AGENTS_MD_PROMPT, TOOLS_REFERENCE
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CACHE CONFIGURATION
@@ -29,8 +33,13 @@ from agents.editing.orchestrator_v2 import SYSTEM_PROMPT, TOOL_DESCRIPTIONS
 # Cache TTL: 24 hours (prompts rarely change)
 ORCHESTRATOR_CACHE_TTL = 86400
 
-# Combined static content to cache
-ORCHESTRATOR_STATIC_CONTENT = f"""{SYSTEM_PROMPT}
+# Combined static content to cache (uses agents.md prompt when enabled)
+if USE_AGENTS_MD:
+    ORCHESTRATOR_STATIC_CONTENT = f"""{AGENTS_MD_PROMPT}
+
+{TOOLS_REFERENCE}"""
+else:
+    ORCHESTRATOR_STATIC_CONTENT = f"""{SYSTEM_PROMPT}
 
 {TOOL_DESCRIPTIONS}"""
 
@@ -93,7 +102,7 @@ def get_or_create_orchestrator_cache() -> Optional[str]:
 
         # Create new cache with system instruction
         cache = client.caches.create(
-            model="models/gemini-3-flash-preview",  # Must match orchestrator model
+            model="models/gemini-3-flash",  # Must match orchestrator model
             config=genai_types.CreateCachedContentConfig(
                 display_name=display_name,
                 system_instruction=ORCHESTRATOR_STATIC_CONTENT,
@@ -207,7 +216,7 @@ def invoke_with_cache(
             contents = f"{contents}\n\nRespond with JSON matching this schema:\n{json.dumps(schema, ensure_ascii=False)}"
 
         response = client.models.generate_content(
-            model="models/gemini-3-flash-preview",
+            model="models/gemini-3-flash",
             contents=contents,
             config=config,
         )

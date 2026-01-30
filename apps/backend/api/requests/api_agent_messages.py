@@ -529,7 +529,8 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
     # Classification is only used to select the appropriate model (Flash vs Pro).
 
     classification = None
-    if ENABLE_FAST_PATH:
+    from agents.config import USE_AGENTS_MD
+    if not USE_AGENTS_MD and ENABLE_FAST_PATH:
         try:
             from agents.editing.classifier import classify_message
             # Get recent message texts for classifier context
@@ -547,6 +548,8 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
         except Exception as classify_error:
             logger.warning(f"[AgentChat] Classification failed, using default model: {classify_error}")
             classification = None
+    elif USE_AGENTS_MD:
+        logger.info(f"[AgentChat] agents.md mode - skipping classifier")
 
     # Determine screenshot inclusion based on classification (or fallback to keyword-based)
     # DEBUG: Force include screenshot when available to verify capture is working

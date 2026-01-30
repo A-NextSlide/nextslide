@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Plug,
   Mail,
+  Bot,
 } from 'lucide-react';
 
 interface AdminLayoutV2Props {
@@ -23,7 +24,8 @@ interface AdminLayoutV2Props {
 }
 
 const navItems = [
-  { title: 'Overview', href: '/admin', icon: LayoutDashboard },
+  { title: 'Agent', href: '/admin', icon: Bot },
+  { title: 'Overview', href: '/admin/overview', icon: LayoutDashboard },
   { title: 'Users', href: '/admin/users', icon: Users },
   { title: 'Decks', href: '/admin/decks', icon: FileStack },
   { title: 'Leads', href: '/admin/leads', icon: Mail },

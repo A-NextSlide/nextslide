@@ -47,6 +47,7 @@ import AdminBrands from './pages/admin/AdminBrands';
 import AdminServices from './pages/admin/AdminServices';
 import AdminCosts from './pages/admin/AdminCosts';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
+import AdminAgent from './pages/admin/AdminAgent';
 import AdminIntegrations from './pages/admin/AdminIntegrations';
 import AdminLeads from './pages/admin/AdminLeads';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
@@ -435,19 +436,27 @@ const AppContent = () => {
                   </ProtectedRoute>
                 }
               />
-              {/* Admin routes - Analytics is now the main dashboard */}
+              {/* Admin routes - Agent is now the main dashboard */}
               <Route
                 path="/admin"
+                element={
+                  <AdminProtectedRoute>
+                    <AdminAgent />
+                  </AdminProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/overview"
                 element={
                   <AdminProtectedRoute>
                     <AdminAnalytics />
                   </AdminProtectedRoute>
                 }
               />
-              {/* Redirect old analytics path to new dashboard */}
+              {/* Redirect old analytics path to overview */}
               <Route
                 path="/admin/analytics"
-                element={<Navigate to="/admin" replace />}
+                element={<Navigate to="/admin/overview" replace />}
               />
               <Route
                 path="/admin/users"
