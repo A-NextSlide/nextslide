@@ -27,7 +27,6 @@ logger = get_logger(__name__)
 
 # Minimum tokens required for caching by model
 MIN_CACHE_TOKENS = {
-    "gemini-3-flash": 1024,
     "gemini-3-flash-preview": 1024,
     "gemini-3-pro-preview": 4096,
     "gemini-2.5-flash": 1024,
