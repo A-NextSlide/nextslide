@@ -120,9 +120,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   const slideId = slide?.id || 'unknown';
 
   // LAZY LOADING: Only render when first visible, then stay rendered
-  // On mobile: render immediately (grid-level controls which DeckCards mount)
-  // Skip observer if forceRender is true
-  const [shouldRender, setShouldRender] = useState(forceRender || BROWSER.isMobile);
+  // Skip if forceRender is true
+  const [shouldRender, setShouldRender] = useState(forceRender);
   // Track when content has mounted for fade-in animation (always starts false for smooth transition)
   const [isContentMounted, setIsContentMounted] = useState(false);
 
