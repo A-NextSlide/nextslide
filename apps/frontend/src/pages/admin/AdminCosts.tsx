@@ -17,7 +17,7 @@ import {
 } from 'recharts';
 import {
   RefreshCw, Loader2, DollarSign, Users, TrendingUp, Target, Zap, Globe, Share2,
-  MessageSquare, Mail, Megaphone, Search, Rocket, RotateCcw, ChevronRight,
+  MessageSquare, Mail, Megaphone, Search, Rocket, ChevronRight,
   ArrowUpRight, ArrowDownRight, Award, BarChart3, PieChart as PieChartIcon,
   ChevronUp, ChevronDown,
 } from 'lucide-react';
@@ -1197,70 +1197,74 @@ const AdminCosts: React.FC = () => {
         {activeTab === 'growth' && (
           <div className="space-y-3">
             {/* Channel Attribution + Conversion Funnel — side by side */}
-            <div className="grid grid-cols-12 gap-3">
-              <div className="col-span-7">
-                <div className={cn(cd, "p-3")}>
+            <div className="grid grid-cols-12 gap-3 items-stretch">
+              <div className="col-span-6">
+                <div className={cn(cd, "p-3 h-full flex flex-col")}>
                   <div className="flex items-center justify-between mb-2">
                     <span className={sH} style={hk}>Growth Channel Attribution</span>
-                    <div className="flex items-center gap-2 text-[8px]">
+                    <div className="flex items-center gap-2 text-[9px]">
                       <span className="text-[#888]">CAC: <span className="font-medium text-[#FF4301]">${blendedCAC.toFixed(2)}</span></span>
                       <span className="text-[#888]">Conv: <span className="font-medium text-emerald-600">{weightedConv.toFixed(1)}%</span></span>
                     </div>
                   </div>
-                  <div className="grid grid-cols-[16px_1fr_42px_42px_38px_48px_48px_52px] gap-0.5 text-[7px] text-[#888] font-medium pb-1 border-b border-[#eaeaea] dark:border-[#333]">
-                    <span></span><span>Channel</span><span className="text-right">%</span><span className="text-right">CAC</span><span className="text-right">Cv%</span><span className="text-right">Sign</span><span className="text-right">Paid</span><span className="text-right">Cost</span>
-                  </div>
-                  {channelMetrics.map((ch, i) => (
-                    <div key={ch.id} className="grid grid-cols-[16px_1fr_42px_42px_38px_48px_48px_52px] gap-0.5 py-0.5 border-b border-[#eaeaea]/50 dark:border-[#333]/50 items-center text-[8px]">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ch.color }} />
-                      <span className="font-medium flex items-center gap-0.5 truncate">{ch.icon}<span className="truncate">{ch.name}</span></span>
-                      <Input type="number" value={ch.pctOfSignups} onChange={e => uc(i, 'pctOfSignups', Number(e.target.value))} className="h-4 text-[8px] text-right px-0.5" />
-                      <div className="relative">
-                        <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-[7px] text-[#888] pointer-events-none">$</span>
-                        <Input type="number" value={ch.cac} onChange={e => uc(i, 'cac', Number(e.target.value))} className="h-4 text-[8px] text-right pr-0.5 pl-2.5" step={0.5} />
-                      </div>
-                      <Input type="number" value={ch.convToPaid} onChange={e => uc(i, 'convToPaid', Number(e.target.value))} className="h-4 text-[8px] text-right px-0.5" />
-                      <Input type="number" value={ch.signups} onChange={e => uc(i, 'signupsManual', Number(e.target.value))} className={cn("h-4 text-[8px] text-right px-0.5", channels[i]?.signupsManual !== undefined && "border-blue-500 bg-blue-500/5")} />
-                      <Input type="number" value={ch.paidUsers} onChange={e => uc(i, 'paidUsersManual', Number(e.target.value))} className={cn("h-4 text-[8px] text-right px-0.5 font-medium text-emerald-600", channels[i]?.paidUsersManual !== undefined && "border-blue-500 bg-blue-500/5")} />
-                      <span className="text-right tabular-nums text-red-600 text-[8px]">{ch.monthlyCost > 0 ? `$${fmtMoney(ch.monthlyCost)}` : '$0'}</span>
+                  <div className="flex-1">
+                    <div className="grid grid-cols-[16px_1fr_44px_50px_40px_52px_52px_56px] gap-1 text-[8px] text-[#888] font-medium pb-1 border-b border-[#eaeaea] dark:border-[#333]">
+                      <span></span><span>Channel</span><span className="text-right">%</span><span className="text-right">CAC</span><span className="text-right">Cv%</span><span className="text-right">Sign</span><span className="text-right">Paid</span><span className="text-right">Cost</span>
                     </div>
-                  ))}
-                  <div className="grid grid-cols-[16px_1fr_42px_42px_38px_48px_48px_52px] gap-0.5 pt-1 text-[8px] font-medium">
-                    <span></span><span>Total</span>
-                    <span className="text-right">{channels.reduce((s, c) => s + c.pctOfSignups, 0)}%</span>
-                    <span className="text-right text-[#FF4301]">${blendedCAC.toFixed(2)}</span>
-                    <span className="text-right text-emerald-600">{weightedConv.toFixed(1)}%</span>
-                    <span className="text-right tabular-nums">{channelMetrics.reduce((s, c) => s + c.signups, 0)}</span>
-                    <span className="text-right tabular-nums text-emerald-600">{channelMetrics.reduce((s, c) => s + c.paidUsers, 0)}</span>
-                    <span className="text-right tabular-nums text-red-600">${fmtMoney(channelMetrics.reduce((s, c) => s + c.monthlyCost, 0))}</span>
+                    {channelMetrics.map((ch, i) => (
+                      <div key={ch.id} className="grid grid-cols-[16px_1fr_44px_50px_40px_52px_52px_56px] gap-1 py-1 border-b border-[#eaeaea]/50 dark:border-[#333]/50 items-center text-[9px]">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ch.color }} />
+                        <span className="font-medium flex items-center gap-1 truncate text-[9px]">{ch.icon}<span className="truncate">{ch.name}</span></span>
+                        <Input type="number" value={ch.pctOfSignups} onChange={e => uc(i, 'pctOfSignups', Number(e.target.value))} className="h-5 text-[9px] text-right px-1" />
+                        <div className="relative">
+                          <span className="absolute left-1 top-1/2 -translate-y-1/2 text-[8px] text-[#888] pointer-events-none">$</span>
+                          <Input type="number" value={ch.cac} onChange={e => uc(i, 'cac', Number(e.target.value))} className="h-5 text-[9px] text-right pr-1 pl-3" step={0.5} />
+                        </div>
+                        <Input type="number" value={ch.convToPaid} onChange={e => uc(i, 'convToPaid', Number(e.target.value))} className="h-5 text-[9px] text-right px-1" />
+                        <Input type="number" value={ch.signups} onChange={e => uc(i, 'signupsManual', Number(e.target.value))} className={cn("h-5 text-[9px] text-right px-1", channels[i]?.signupsManual !== undefined && "border-blue-500 bg-blue-500/5")} />
+                        <Input type="number" value={ch.paidUsers} onChange={e => uc(i, 'paidUsersManual', Number(e.target.value))} className={cn("h-5 text-[9px] text-right px-1 font-medium text-emerald-600", channels[i]?.paidUsersManual !== undefined && "border-blue-500 bg-blue-500/5")} />
+                        <span className="text-right tabular-nums text-red-600 text-[9px]">{ch.monthlyCost > 0 ? `$${fmtMoney(ch.monthlyCost)}` : '$0'}</span>
+                      </div>
+                    ))}
+                    <div className="grid grid-cols-[16px_1fr_44px_50px_40px_52px_52px_56px] gap-1 pt-1.5 text-[9px] font-medium">
+                      <span></span><span>Total</span>
+                      <span className="text-right">{channels.reduce((s, c) => s + c.pctOfSignups, 0)}%</span>
+                      <span className="text-right text-[#FF4301]">${blendedCAC.toFixed(2)}</span>
+                      <span className="text-right text-emerald-600">{weightedConv.toFixed(1)}%</span>
+                      <span className="text-right tabular-nums">{channelMetrics.reduce((s, c) => s + c.signups, 0)}</span>
+                      <span className="text-right tabular-nums text-emerald-600">{channelMetrics.reduce((s, c) => s + c.paidUsers, 0)}</span>
+                      <span className="text-right tabular-nums text-red-600">${fmtMoney(channelMetrics.reduce((s, c) => s + c.monthlyCost, 0))}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-              <div className="col-span-5">
-                <div className={cn(cd, "p-3 h-full")}>
+              <div className="col-span-6">
+                <div className={cn(cd, "p-3 h-full flex flex-col")}>
                   <div className="flex items-center justify-between mb-2">
                     <span className={sH} style={hk}>Conversion Funnel</span>
-                    <span className="text-[8px] font-medium text-[#FF4301] tabular-nums">
-                      {funnelData.length > 0 ? ((funnelData[funnelData.length - 1].count / funnelData[0].count) * 100).toFixed(2) : 0}%
+                    <span className="text-[9px] font-medium text-[#FF4301] tabular-nums">
+                      {funnelData.length > 0 ? ((funnelData[funnelData.length - 1].count / funnelData[0].count) * 100).toFixed(2) : 0}% end-to-end
                     </span>
                   </div>
-                  <div className="flex items-center gap-1 text-[8px] text-[#888] mb-2">
+                  <div className="flex items-center gap-1.5 text-[9px] text-[#888] mb-3">
                     <span>Visitors/mo:</span>
-                    <Input type="number" value={visitorBaseline} onChange={e => { setVisitorBaseline(Number(e.target.value)); if (activeScenario !== 'custom') setActiveScenario('custom'); }} className="h-4 w-20 text-[8px] text-right px-1" />
+                    <Input type="number" value={visitorBaseline} onChange={e => { setVisitorBaseline(Number(e.target.value)); if (activeScenario !== 'custom') setActiveScenario('custom'); }} className="h-5 w-24 text-[9px] text-right px-1.5" />
                   </div>
-                  <FunnelChart data={funnelData} />
-                  <div className="space-y-1 mt-2 pt-2 border-t border-[#eaeaea] dark:border-[#333]">
-                    <div className="text-[7px] text-[#888] font-medium uppercase tracking-wider mb-1">Stage Rates</div>
+                  <div className="flex-1">
+                    <FunnelChart data={funnelData} />
+                  </div>
+                  <div className="space-y-1.5 mt-3 pt-2 border-t border-[#eaeaea] dark:border-[#333]">
+                    <div className="text-[8px] text-[#888] font-medium uppercase tracking-wider mb-1">Stage Rates</div>
                     {funnel.slice(1).map((stage, i) => (
-                      <div key={stage.name} className="flex items-center justify-between gap-1">
-                        <span className="text-[8px] text-[#888] truncate">{stage.name.split('(')[0].trim()}</span>
-                        <div className="flex items-center gap-0.5">
+                      <div key={stage.name} className="flex items-center justify-between gap-2">
+                        <span className="text-[9px] text-[#888] truncate">{stage.name.split('(')[0].trim()}</span>
+                        <div className="flex items-center gap-1">
                           <Input type="number" value={stage.rate} onChange={e => {
                             const v = Number(e.target.value);
                             setFunnel(prev => { const u = [...prev]; u[i + 1] = { ...u[i + 1], rate: v }; return u; });
                             if (activeScenario !== 'custom') setActiveScenario('custom');
-                          }} className="h-4 w-10 text-[8px] text-right px-0.5" step={1} />
-                          <span className="text-[7px] text-[#888]">%</span>
+                          }} className="h-5 w-14 text-[9px] text-right px-1.5" step={1} />
+                          <span className="text-[8px] text-[#888]">%</span>
                         </div>
                       </div>
                     ))}
@@ -1351,9 +1355,6 @@ const AdminCosts: React.FC = () => {
             <div className={cn(cd, "p-3 overflow-x-auto")}>
               <div className="flex items-center justify-between mb-2">
                 <span className={sH} style={hk}>Monthly Breakdown</span>
-                {userBreakdown.some(b => b?.isManual) && (
-                  <button onClick={() => setUserBreakdown([])} className="text-[8px] text-[#888] hover:text-[#666] flex items-center gap-1"><RotateCcw className="h-2.5 w-2.5" /> Reset</button>
-                )}
               </div>
               <div className="min-w-[800px] space-y-0.5">
                 <div className="flex items-center gap-1">
