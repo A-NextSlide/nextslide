@@ -1,7 +1,8 @@
 import React from 'react';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { Button } from '@/components/ui/button';
-import { Trash2, Edit, Users, Eye, Loader2 } from 'lucide-react';
+import { Trash2, Edit, Users, Eye, Loader2, BarChart3 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import DeckThumbnail from '@/components/deck/DeckThumbnail';
 import { formatDistanceToNow } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +34,7 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
   onThumbnailRef,
   forceRender = false
 }) => {
+  const navigate = useNavigate();
   const touchHandledRef = React.useRef(false);
   const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
 
@@ -169,6 +171,18 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
         {!deck.data?.isGenerating && (
           <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-end p-2">
             <div className="flex gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/analytics/${deck.uuid}`);
+                }}
+                title="View Analytics"
+              >
+                <BarChart3 size={14} />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"

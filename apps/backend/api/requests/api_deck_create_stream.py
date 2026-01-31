@@ -389,7 +389,16 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 yield _sse(response_data)
                 composition_completed = True
                 logger.info("Sent composition_complete event for deck %s", deck_uuid)
-                
+
+                # Activate referral if this is the user's first deck
+                if user_id:
+                    try:
+                        from services.referral_service import get_referral_service
+                        referral_svc = get_referral_service()
+                        await referral_svc.activate_referral(user_id)
+                    except Exception as ref_err:
+                        logger.warning(f"Referral activation check failed (non-fatal): {ref_err}")
+
             except asyncio.CancelledError:
                 # Client likely disconnected or server is shutting down; just log and exit quietly
                 logger.info(f"Client disconnected during deck composition for {deck_uuid}; cancelling stream")

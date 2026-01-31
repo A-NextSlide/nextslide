@@ -6,6 +6,7 @@
 
 import { authService } from './authService';
 import { API_BASE } from '@/config/environment';
+import { extractApiError } from '@/utils/extractErrorMessage';
 
 // =============================================================================
 // Types
@@ -107,7 +108,7 @@ class DeveloperApiService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to get developer status');
+      throw new Error(extractApiError(error.detail, 'Failed to get developer status'));
     }
 
     return response.json();
@@ -126,7 +127,7 @@ class DeveloperApiService {
         throw new Error('Pro subscription required');
       }
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to list API keys');
+      throw new Error(extractApiError(error.detail, 'Failed to list API keys'));
     }
 
     return response.json();
@@ -148,7 +149,7 @@ class DeveloperApiService {
         throw new Error('Pro subscription required');
       }
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to create API key');
+      throw new Error(extractApiError(error.detail, 'Failed to create API key'));
     }
 
     return response.json();
@@ -164,7 +165,7 @@ class DeveloperApiService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to get API key');
+      throw new Error(extractApiError(error.detail, 'Failed to get API key'));
     }
 
     return response.json();
@@ -182,7 +183,7 @@ class DeveloperApiService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to update API key');
+      throw new Error(extractApiError(error.detail, 'Failed to update API key'));
     }
 
     return response.json();
@@ -199,7 +200,7 @@ class DeveloperApiService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to delete API key');
+      throw new Error(extractApiError(error.detail, 'Failed to delete API key'));
     }
   }
 
@@ -214,7 +215,7 @@ class DeveloperApiService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to revoke API key');
+      throw new Error(extractApiError(error.detail, 'Failed to revoke API key'));
     }
   }
 
@@ -242,7 +243,7 @@ class DeveloperApiService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to upload image');
+      throw new Error(extractApiError(error.detail, 'Failed to upload image'));
     }
 
     return response.json();
@@ -262,7 +263,7 @@ class DeveloperApiService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to delete image');
+      throw new Error(extractApiError(error.detail, 'Failed to delete image'));
     }
   }
 }

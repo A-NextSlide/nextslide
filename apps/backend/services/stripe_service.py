@@ -67,8 +67,9 @@ def _ensure_stripe_configured():
     return False
 
 
-# Log initial configuration status
-if _ensure_stripe_configured():
+# Check initial configuration status (exposed for startup display)
+STRIPE_CONFIGURED = _ensure_stripe_configured()
+if STRIPE_CONFIGURED:
     logger.info("Stripe configured successfully")
 else:
     logger.warning(f"Stripe not configured - env_path={env_path}, exists={env_path.exists()}")
@@ -689,10 +690,25 @@ class StripeService:
 
         try:
             if at_period_end:
-                stripe.Subscription.modify(
+                updated_sub = stripe.Subscription.modify(
                     result.data["stripe_subscription_id"],
                     cancel_at_period_end=True
                 )
+                # Update local DB immediately so the frontend gets correct data
+                # without waiting for the Stripe webhook
+                update_data = {
+                    "cancel_at_period_end": True,
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+                if updated_sub.current_period_start:
+                    update_data["current_period_start"] = datetime.fromtimestamp(
+                        updated_sub.current_period_start
+                    ).isoformat()
+                if updated_sub.current_period_end:
+                    update_data["current_period_end"] = datetime.fromtimestamp(
+                        updated_sub.current_period_end
+                    ).isoformat()
+                db.table("subscriptions").update(update_data).eq("user_id", user_id).execute()
             else:
                 stripe.Subscription.cancel(result.data["stripe_subscription_id"])
 

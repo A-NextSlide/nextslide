@@ -54,9 +54,13 @@ class EnhancedFontService:
         self.tag_index = self._build_tag_index()
         self.best_for_index = self._build_best_for_index()
 
-        logger.info(f"Total fonts available: {len(self.all_fonts)}")
+        # Store summary for startup display (caller reads these)
+        self.font_count = len(self.all_fonts)
+        self.tag_count = len(self.tag_index)
+
+        logger.info(f"Total fonts available: {self.font_count}")
         logger.info(f"Loaded metadata for {len(self.font_metadata)} fonts")
-        logger.info(f"Built index with {len(self.tag_index)} tags")
+        logger.info(f"Built index with {self.tag_count} tags")
     
     def _load_font_metadata(self) -> Dict:
         """Load complete font metadata with descriptions, tags, and best_for info"""

@@ -95,6 +95,22 @@ class AIImageOrchestrator:
         except Exception:
             pass
 
+    async def wait_and_stop(self, timeout: float = 60) -> None:
+        """Await all pending image tasks then unsubscribe.
+
+        Call this after the deck generator finishes so the process/container
+        doesn't hang on orphaned tasks.
+        """
+        if self._tasks:
+            import asyncio
+            logger.info("[AIImageOrchestrator] Waiting for %d pending image tasks", len(self._tasks))
+            done, pending = await asyncio.wait(self._tasks, timeout=timeout)
+            for t in pending:
+                t.cancel()
+            if pending:
+                logger.warning("[AIImageOrchestrator] %d image tasks timed out after %.0fs", len(pending), timeout)
+        self.stop()
+
     def _get_slide_context_texts(self, slide_data: Dict[str, Any]) -> str:
         title = slide_data.get('title') or ''
         # Optionally collect some text content from text components

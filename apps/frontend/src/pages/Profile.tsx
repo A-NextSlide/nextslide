@@ -44,10 +44,12 @@ import {
   Clock,
   Pencil,
   MessageCircle,
-  HelpCircle
+  HelpCircle,
+  Gift
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { useCredits } from '@/context/CreditsContext';
 import { googleIntegrationApi } from '@/services/googleIntegrationApi';
 import { billingApi, type CreditBalance, type Subscription, type UsageStats } from '@/services/billingApi';
 import { developerApiService, type ApiKey, type CreateApiKeyResponse } from '@/services/developerApiService';
@@ -81,9 +83,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { teamsApi, Team, TeamMember } from '@/services/teamsApi';
 import ThemeChatBlock from '@/components/chat/blocks/ThemeChatBlock';
+import NotificationPreferences from '@/components/notifications/NotificationPreferences';
+import ReferralDashboard from '@/components/referral/ReferralDashboard';
+import BadgeGrid from '@/components/gamification/BadgeGrid';
+import StreakDisplay from '@/components/gamification/StreakDisplay';
+import Leaderboard from '@/components/gamification/Leaderboard';
+import { gamificationApi, type BadgesResponse, type StreakData } from '@/services/gamificationApi';
+import { useReward } from '@/context/RewardContext';
 import { API_CONFIG } from '@/config/environment';
 
-type SettingsTab = 'profile' | 'security' | 'notifications' | 'billing' | 'integrations' | 'api' | 'team' | 'support';
+type SettingsTab = 'profile' | 'security' | 'notifications' | 'billing' | 'integrations' | 'api' | 'team' | 'referrals' | 'badges' | 'support';
 
 type TeamRole = 'owner' | 'admin' | 'member';
 
@@ -96,8 +105,132 @@ interface PendingInvitation {
   token: string;
 }
 
+// Badges tab content as a separate component to keep state isolated
+const BadgesTab: React.FC = () => {
+  const [badgeData, setBadgeData] = useState<BadgesResponse | null>(null);
+  const [streakData, setStreakData] = useState<StreakData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { showBadgeUnlock, triggerBadgeCheck } = useReward();
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [badges, streak] = await Promise.all([
+        gamificationApi.getBadges(),
+        gamificationApi.getStreak(),
+      ]);
+      setBadgeData(badges);
+      setStreakData(streak);
+    } catch (err) {
+      console.error('[BadgesTab] Failed to load gamification data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+    // Background badge check — if anything new is earned, the toast fires
+    // and the next loadData() (or manual refresh) will show it in the grid
+    triggerBadgeCheck().then(() => loadData());
+  }, [loadData, triggerBadgeCheck]);
+
+  const handleClaimReward = async (milestone: number) => {
+    try {
+      const result = await gamificationApi.claimStreakReward(milestone);
+      if (result.success) {
+        toast({ title: 'Reward claimed!', description: `+${result.credits_awarded} credits` });
+        loadData();
+      }
+    } catch (err) {
+      toast({ title: 'Failed to claim', description: 'Try again later', variant: 'destructive' });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-6 lg:p-8 flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 lg:p-8 space-y-8 animate-in fade-in duration-200">
+      {/* Header */}
+      <div>
+        <h2 className="text-lg font-black font-['HK_Grotesk_Wide'] text-black dark:text-white">Badges & Achievements</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Earn badges by creating presentations, building streaks, and engaging with the community.
+          {badgeData && ` ${badgeData.total_earned} of ${badgeData.total_available} earned.`}
+        </p>
+      </div>
+
+      {/* Streak */}
+      {streakData && (
+        <div>
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">Your Streak</h3>
+          <StreakDisplay streak={streakData} onClaimReward={handleClaimReward} />
+        </div>
+      )}
+
+      {/* Badge Grid */}
+      {badgeData && (
+        <div>
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+            All Badges ({badgeData.total_earned}/{badgeData.total_available})
+          </h3>
+          <BadgeGrid badges={badgeData.all_badges} />
+        </div>
+      )}
+
+      {/* Leaderboard */}
+      <div>
+        <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">Leaderboard</h3>
+        <Leaderboard />
+      </div>
+
+      {/* Preview Notifications */}
+      <div className="rounded-2xl border-2 border-[#eaeaea] dark:border-[#333] p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Eye className="w-4 h-4 text-muted-foreground" />
+          <h3 className="text-sm font-medium text-black dark:text-white">Preview Notifications</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">See how notifications look when you earn badges</p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => showBadgeUnlock({
+              badge_type: 'first_deck',
+              name: 'First Creation',
+              description: 'Created your first presentation',
+              icon: 'sparkles',
+              credits: 10,
+            })}
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-[#eaeaea] dark:border-[#333] bg-white dark:bg-[#111] text-black dark:text-white hover:border-[#FF4301] hover:text-[#FF4301] transition-colors"
+          >
+            Preview Badge Unlock
+          </button>
+          <button
+            onClick={() => showBadgeUnlock({
+              badge_type: 'streak_7',
+              name: '7-Day Streak',
+              description: 'Created presentations 7 days in a row',
+              icon: 'flame',
+              credits: 25,
+            })}
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-[#eaeaea] dark:border-[#333] bg-white dark:bg-[#111] text-black dark:text-white hover:border-[#FF4301] hover:text-[#FF4301] transition-colors"
+          >
+            Preview Streak Milestone
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Profile: React.FC = () => {
-  const { user, signOut, isLoading: authLoading } = useAuth();
+  const { user, signOut, isLoading: authLoading, isAdmin, adminRole } = useAuth();
+  const { balance: creditsBalance } = useCredits();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -235,7 +368,8 @@ const Profile: React.FC = () => {
       const refreshBillingData = async () => {
         setBillingLoading(true);
         try {
-          // Load fresh billing data after upgrade
+          // Clear cache to ensure fresh data after upgrade
+          billingApi.invalidateCache();
           const [balance, subscription, usage] = await Promise.all([
             billingApi.getBalance(),
             billingApi.getSubscription(),
@@ -299,7 +433,8 @@ const Profile: React.FC = () => {
         }
 
         try {
-          // Load fresh billing data
+          // Clear cache to ensure fresh data after checkout
+          billingApi.invalidateCache();
           const [balance, subscription, usage] = await Promise.all([
             billingApi.getBalance(),
             billingApi.getSubscription(),
@@ -331,50 +466,30 @@ const Profile: React.FC = () => {
     }
   }, [searchParams, authLoading, user, setSearchParams]);
 
-  // Load billing data when auth is ready
+  // Load billing data only when billing tab is active (lazy loading)
   useEffect(() => {
-    // Skip if we're handling checkout success or upgrade
+    // Skip if we're handling checkout success or upgrade (those have their own fetch)
     if (searchParams.get('billing') === 'success') return;
     if (searchParams.get('upgraded') === 'true') return;
-
-    // If still loading auth or no user, keep loading state but don't fetch
-    if (authLoading) return;
-    if (!user) {
+    if (activeTab !== 'billing') return;
+    if (authLoading || !user) {
       setBillingLoading(false);
       return;
     }
+    // Skip if already loaded
+    if (billingBalance && billingSubscription) return;
 
     const loadBillingData = async () => {
       setBillingLoading(true);
       try {
-        console.log('[Profile] Loading billing data...');
-        // Load each independently to avoid one failure blocking all
         const [balanceResult, subscriptionResult, usageResult] = await Promise.allSettled([
           billingApi.getBalance(),
           billingApi.getSubscription(),
           billingApi.getUsageStats()
         ]);
-
-        if (balanceResult.status === 'fulfilled') {
-          console.log('[Profile] Balance loaded:', balanceResult.value);
-          setBillingBalance(balanceResult.value);
-        } else {
-          console.error('[Profile] Balance failed:', balanceResult.reason);
-        }
-
-        if (subscriptionResult.status === 'fulfilled') {
-          console.log('[Profile] Subscription loaded:', subscriptionResult.value);
-          setBillingSubscription(subscriptionResult.value);
-        } else {
-          console.error('[Profile] Subscription failed:', subscriptionResult.reason);
-        }
-
-        if (usageResult.status === 'fulfilled') {
-          console.log('[Profile] Usage loaded:', usageResult.value);
-          setBillingUsage(usageResult.value);
-        } else {
-          console.error('[Profile] Usage failed:', usageResult.reason);
-        }
+        if (balanceResult.status === 'fulfilled') setBillingBalance(balanceResult.value);
+        if (subscriptionResult.status === 'fulfilled') setBillingSubscription(subscriptionResult.value);
+        if (usageResult.status === 'fulfilled') setBillingUsage(usageResult.value);
       } catch (err) {
         console.error('[Profile] Failed to load billing data:', err);
       } finally {
@@ -382,7 +497,8 @@ const Profile: React.FC = () => {
       }
     };
     loadBillingData();
-  }, [authLoading, user, searchParams]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, authLoading, user]);
 
   // Handle manage billing click
   const handleManageBilling = async () => {
@@ -813,8 +929,8 @@ const Profile: React.FC = () => {
     setShowBrandSettings(false);
   };
 
-  const currentPlan = billingSubscription?.plan_id || billingBalance?.plan_id;
-  const isPro = currentPlan === 'pro' || currentPlan === 'enterprise' || billingBalance?.is_friends_family;
+  const currentPlan = billingSubscription?.plan_id || billingBalance?.plan_id || creditsBalance?.plan_id;
+  const isPro = currentPlan === 'pro' || currentPlan === 'enterprise' || billingBalance?.is_friends_family || creditsBalance?.is_friends_family;
 
   // Team-related computed values
   const selfUserId = user?.id;
@@ -1148,6 +1264,8 @@ const Profile: React.FC = () => {
     { id: 'profile' as const, label: 'Profile', icon: User },
     { id: 'security' as const, label: 'Security', icon: Shield },
     { id: 'billing' as const, label: 'Billing', icon: CreditCard },
+    { id: 'referrals' as const, label: 'Referrals', icon: Gift },
+    { id: 'badges' as const, label: 'Badges', icon: Zap },
     { id: 'team' as const, label: 'Team', icon: Users },
     { id: 'integrations' as const, label: 'Integrations', icon: Link2 },
     { id: 'api' as const, label: 'Developer API', icon: Code },
@@ -1156,9 +1274,9 @@ const Profile: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+    <div className="min-h-screen bg-[#FCFBF8] dark:bg-[#0a0a0a]">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+      <header className="sticky top-0 z-50 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-black/10 dark:border-white/10">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button
@@ -1194,10 +1312,10 @@ const Profile: React.FC = () => {
           {/* Sidebar */}
           <aside className="lg:w-64 flex-shrink-0">
             {/* User Card */}
-            <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-5 mb-6">
+            <div className="rounded-2xl border-2 border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 p-5 mb-6">
               <div className="flex items-center gap-4">
-                <Avatar className="h-12 w-12">
-                  <AvatarFallback className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-medium">
+                <Avatar className="h-12 w-12 ring-2 ring-[#FF4301]/20 ring-offset-2 ring-offset-white dark:ring-offset-zinc-900">
+                  <AvatarFallback className="bg-[#FF4301] text-white font-medium">
                     {getInitials(user?.user_metadata?.full_name)}
                   </AvatarFallback>
                 </Avatar>
@@ -1212,18 +1330,11 @@ const Profile: React.FC = () => {
               <Separator className="my-4" />
 
               <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Plan</span>
-                  {billingLoading ? (
-                    <div className="flex items-center gap-1.5">
-                      <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Loading...</span>
-                    </div>
-                  ) : (
-                    <Badge variant="secondary" className="font-normal">
-                      {billingSubscription?.plan_name || billingBalance?.plan_name || 'Free'}
-                    </Badge>
-                  )}
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#FF4301]/10 text-[#FF4301]">
+                    {creditsBalance?.plan_name || '—'}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Member since</span>
@@ -1247,30 +1358,51 @@ const Profile: React.FC = () => {
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
                     className={cn(
-                      "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                      "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
                       isActive
-                        ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
-                        : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100"
+                        ? "bg-[#FF4301]/5 text-[#FF4301] border-l-2 border-[#FF4301]"
+                        : "text-zinc-600 dark:text-zinc-400 hover:bg-black/[0.03] dark:hover:bg-white/[0.03] hover:text-zinc-900 dark:hover:text-zinc-100"
                     )}
                   >
-                    <Icon className="h-4 w-4" />
+                    <div className={cn(
+                      "h-7 w-7 rounded-full flex items-center justify-center shrink-0 transition-colors duration-200",
+                      isActive
+                        ? "bg-[#FF4301]/10"
+                        : "bg-black/[0.04] dark:bg-white/[0.06]"
+                    )}>
+                      <Icon className="h-3.5 w-3.5" />
+                    </div>
                     {item.label}
                     {isActive && <ChevronRight className="h-4 w-4 ml-auto" />}
                   </button>
                 );
               })}
             </nav>
+
+            {/* Admin Panel Button */}
+            {(isAdmin || adminRole === 'admin' || adminRole === 'super_admin' || adminRole === 'superadmin') && (
+              <button
+                onClick={() => navigate('/admin')}
+                className="w-full flex items-center gap-3 px-4 py-2.5 mt-4 rounded-xl text-sm font-medium border-2 border-dashed border-amber-300/50 dark:border-amber-700/50 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+              >
+                <div className="h-7 w-7 rounded-full flex items-center justify-center shrink-0 bg-amber-100 dark:bg-amber-900/30">
+                  <Shield className="h-3.5 w-3.5" />
+                </div>
+                Admin Panel
+                <ExternalLink className="h-3 w-3 ml-auto opacity-50" />
+              </button>
+            )}
           </aside>
 
           {/* Main Content */}
           <main className="flex-1 min-w-0">
-            <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
+            <div className="rounded-2xl border-2 border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 transition-opacity duration-200">
               {/* Profile Tab */}
               {activeTab === 'profile' && (
-                <div className="p-6 lg:p-8">
+                <div className="p-6 lg:p-8 animate-in fade-in duration-200">
                   <div className="mb-8">
-                    <h2 className="text-xl font-semibold mb-1">Profile</h2>
-                    <p className="text-sm text-muted-foreground">
+                    <h2 className="text-lg font-black font-['HK_Grotesk_Wide'] text-black dark:text-white">Profile</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
                       Manage your personal information
                     </p>
                   </div>
@@ -1329,10 +1461,10 @@ const Profile: React.FC = () => {
 
               {/* Security Tab */}
               {activeTab === 'security' && (
-                <div className="p-6 lg:p-8">
+                <div className="p-6 lg:p-8 animate-in fade-in duration-200">
                   <div className="mb-8">
-                    <h2 className="text-xl font-semibold mb-1">Security</h2>
-                    <p className="text-sm text-muted-foreground">
+                    <h2 className="text-lg font-black font-['HK_Grotesk_Wide'] text-black dark:text-white">Security</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
                       Manage your password and security settings
                     </p>
                   </div>
@@ -1402,10 +1534,10 @@ const Profile: React.FC = () => {
 
                   <div className="max-w-md">
                     <h3 className="font-medium mb-4">Two-factor authentication</h3>
-                    <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
+                    <div className="flex items-center justify-between p-4 rounded-2xl border-2 border-black/10 dark:border-white/10">
                       <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center">
-                          <Shield className="h-5 w-5 text-muted-foreground" />
+                        <div className="h-10 w-10 rounded-full bg-[#FF4301]/10 flex items-center justify-center">
+                          <Shield className="h-5 w-5 text-[#FF4301]" />
                         </div>
                         <div>
                           <p className="font-medium text-sm">2FA is not enabled</p>
@@ -1422,22 +1554,26 @@ const Profile: React.FC = () => {
 
               {/* Billing Tab */}
               {activeTab === 'billing' && (
-                <div className="p-6 lg:p-8">
+                <div className="p-6 lg:p-8 animate-in fade-in duration-200">
                   <div className="mb-8">
-                    <h2 className="text-xl font-semibold mb-1">Billing & Subscription</h2>
-                    <p className="text-sm text-muted-foreground">
+                    <h2 className="text-lg font-black font-['HK_Grotesk_Wide'] text-black dark:text-white">Billing & Subscription</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
                       Manage your subscription and credits
                     </p>
                   </div>
 
                   {billingLoading ? (
-                    <div className="flex items-center justify-center py-16">
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <div className="space-y-6">
+                      <div className="h-40 bg-black/5 dark:bg-white/5 rounded-2xl animate-pulse" />
+                      <div className="grid grid-cols-3 gap-4">
+                        {[...Array(3)].map((_, i) => <div key={i} className="h-20 bg-black/5 dark:bg-white/5 rounded-2xl animate-pulse" />)}
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-8">
                       {/* Current Plan Card */}
-                      <div className="p-6 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
+                      <div className="p-6 rounded-2xl border-2 border-black/10 dark:border-white/10 relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-[#FF4301]" />
                         <div className="flex items-center justify-between mb-6">
                           <div>
                             <div className="flex items-center gap-2 mb-1">
@@ -1447,7 +1583,7 @@ const Profile: React.FC = () => {
                               </Badge>
                             </div>
                             <h3 className="text-xl font-semibold">
-                              {billingSubscription?.plan_name || billingBalance?.plan_name || 'Free'}
+                              {billingSubscription?.plan_name || billingBalance?.plan_name || '—'}
                             </h3>
                           </div>
 
@@ -1532,9 +1668,9 @@ const Profile: React.FC = () => {
                                   )}
                                 </div>
 
-                                <div className="h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                <div className="h-2 bg-black/[0.06] dark:bg-white/[0.06] rounded-full overflow-hidden">
                                   <div
-                                    className="h-full bg-zinc-900 dark:bg-zinc-300 rounded-full transition-all duration-500"
+                                    className="h-full bg-[#FF4301] rounded-full transition-all duration-500"
                                     style={{
                                       width: `${Math.min(100, (billingBalance.remaining_credits / (billingBalance.monthly_credits + billingBalance.purchased_credits)) * 100)}%`
                                     }}
@@ -1621,19 +1757,19 @@ const Profile: React.FC = () => {
                             Usage this period
                           </h3>
                           <div className="grid grid-cols-3 gap-4">
-                            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg text-center">
+                            <div className="p-4 rounded-2xl border-2 border-black/10 dark:border-white/10 text-center">
                               <p className="text-xl font-medium tabular-nums">
                                 {billingUsage.slides_generated}
                               </p>
                               <p className="text-xs text-muted-foreground mt-1">Slides</p>
                             </div>
-                            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg text-center">
+                            <div className="p-4 rounded-2xl border-2 border-black/10 dark:border-white/10 text-center">
                               <p className="text-xl font-medium tabular-nums">
                                 {billingUsage.chats_sent}
                               </p>
                               <p className="text-xs text-muted-foreground mt-1">Chats</p>
                             </div>
-                            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg text-center">
+                            <div className="p-4 rounded-2xl border-2 border-black/10 dark:border-white/10 text-center">
                               <p className="text-xl font-medium tabular-nums">
                                 {billingUsage.edits_made}
                               </p>
@@ -1707,18 +1843,18 @@ const Profile: React.FC = () => {
 
               {/* Integrations Tab */}
               {activeTab === 'integrations' && (
-                <div className="p-6 lg:p-8">
+                <div className="p-6 lg:p-8 animate-in fade-in duration-200">
                   <div className="mb-8">
-                    <h2 className="text-xl font-semibold mb-1">Integrations</h2>
-                    <p className="text-sm text-muted-foreground">
+                    <h2 className="text-lg font-black font-['HK_Grotesk_Wide'] text-black dark:text-white">Integrations</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
                       Connect third-party services
                     </p>
                   </div>
 
                   <div className="space-y-4 max-w-lg">
-                    <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
+                    <div className="flex items-center justify-between p-4 rounded-2xl border-2 border-black/10 dark:border-white/10">
                       <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
+                        <div className="h-10 w-10 rounded-full bg-[#FF4301]/10 flex items-center justify-center">
                           <svg className="h-5 w-5" viewBox="0 0 24 24">
                             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -1739,64 +1875,26 @@ const Profile: React.FC = () => {
 
               {/* Notifications Tab */}
               {activeTab === 'notifications' && (
-                <div className="p-6 lg:p-8">
+                <div className="p-6 lg:p-8 animate-in fade-in duration-200">
                   <div className="mb-8">
-                    <h2 className="text-xl font-semibold mb-1">Notifications</h2>
-                    <p className="text-sm text-muted-foreground">
+                    <h2 className="text-lg font-black font-['HK_Grotesk_Wide'] text-black dark:text-white">Notifications</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
                       Choose what updates you receive
                     </p>
                   </div>
 
-                  <div className="space-y-6 max-w-lg">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-sm">Email notifications</p>
-                        <p className="text-xs text-muted-foreground">
-                          Receive updates about your presentations
-                        </p>
-                      </div>
-                      <Switch disabled />
-                    </div>
-
-                    <Separator />
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-sm">Product updates</p>
-                        <p className="text-xs text-muted-foreground">
-                          Stay informed about new features
-                        </p>
-                      </div>
-                      <Switch disabled />
-                    </div>
-
-                    <Separator />
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-sm">Collaboration alerts</p>
-                        <p className="text-xs text-muted-foreground">
-                          Get notified when someone shares with you
-                        </p>
-                      </div>
-                      <Switch disabled />
-                    </div>
-
-                    <p className="text-sm text-muted-foreground pt-4">
-                      Notification preferences coming soon
-                    </p>
-                  </div>
+                  <NotificationPreferences />
                 </div>
               )}
 
               {/* Developer API Tab */}
               {activeTab === 'api' && (
-                <div className="p-6 lg:p-8">
+                <div className="p-6 lg:p-8 animate-in fade-in duration-200">
                   <div className="mb-8">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h2 className="text-xl font-semibold mb-1">Developer API</h2>
-                        <p className="text-sm text-muted-foreground">
+                        <h2 className="text-lg font-black font-['HK_Grotesk_Wide'] text-black dark:text-white">Developer API</h2>
+                        <p className="text-sm text-muted-foreground mt-1">
                           Build integrations with the NextSlide API
                         </p>
                       </div>
@@ -1812,10 +1910,10 @@ const Profile: React.FC = () => {
                   {/* Pro-only gate */}
                   {!isPro ? (
                     <div className="max-w-lg">
-                      <div className="p-6 bg-gradient-to-r from-zinc-100 to-zinc-50 dark:from-zinc-800/50 dark:to-zinc-800/30 rounded-xl border border-zinc-200 dark:border-zinc-700">
+                      <div className="p-6 rounded-2xl border-2 border-black/10 dark:border-white/10">
                         <div className="flex items-start gap-4">
-                          <div className="h-12 w-12 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
-                            <Code className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                          <div className="h-12 w-12 rounded-full bg-[#FF4301]/10 flex items-center justify-center flex-shrink-0">
+                            <Code className="h-6 w-6 text-[#FF4301]" />
                           </div>
                           <div className="flex-1">
                             <h3 className="font-semibold mb-1">Developer API</h3>
@@ -1837,7 +1935,7 @@ const Profile: React.FC = () => {
                                 Webhook notifications on completion
                               </li>
                             </ul>
-                            <Button onClick={() => navigate('/pricing?from=api')}>
+                            <Button onClick={() => navigate('/pricing?from=api')} className="bg-[#FF4301] text-white hover:bg-[#E63901] rounded-xl">
                               <Zap className="h-4 w-4 mr-2" />
                               Upgrade to Pro
                             </Button>
@@ -1861,7 +1959,7 @@ const Profile: React.FC = () => {
                           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                         </div>
                       ) : apiKeys.length === 0 ? (
-                        <div className="p-8 text-center bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border border-dashed border-zinc-200 dark:border-zinc-700">
+                        <div className="p-8 text-center rounded-2xl border-2 border-dashed border-black/10 dark:border-white/10">
                           <Key className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                           <p className="text-sm font-medium mb-1">No API keys yet</p>
                           <p className="text-xs text-muted-foreground mb-4">
@@ -1877,7 +1975,7 @@ const Profile: React.FC = () => {
                           {apiKeys.map((key) => (
                             <div
                               key={key.id}
-                              className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border border-zinc-200 dark:border-zinc-700"
+                              className="p-4 rounded-2xl border-2 border-black/10 dark:border-white/10"
                             >
                               <div className="flex items-start justify-between">
                                 <div className="flex-1 min-w-0">
@@ -1968,143 +2066,111 @@ const Profile: React.FC = () => {
                 </div>
               )}
 
+              {/* Referrals Tab */}
+              {activeTab === 'referrals' && (
+                <div className="p-6 lg:p-8 animate-in fade-in duration-200">
+                  <ReferralDashboard />
+                </div>
+              )}
+
+              {/* Badges Tab */}
+              {activeTab === 'badges' && (
+                <BadgesTab />
+              )}
+
               {/* Team Tab */}
               {activeTab === 'team' && (
-                <div className="p-6 lg:p-8">
+                <div className="p-6 lg:p-8 animate-in fade-in duration-200">
                   <div className="mb-8">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h2 className="text-xl font-semibold mb-1">Team</h2>
-                        <p className="text-sm text-muted-foreground">
-                          Manage your teams and collaborate with others
-                        </p>
-                      </div>
-                      <Button size="sm" onClick={() => setShowCreateTeamDialog(true)}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        New Team
-                      </Button>
-                    </div>
+                    <h2 className="text-lg font-black font-['HK_Grotesk_Wide'] text-black dark:text-white">Team</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Collaborate on presentations together — share, edit, and present as a team.
+                    </p>
                   </div>
 
                   {isTeamsLoading ? (
-                    <div className="flex items-center justify-center py-16">
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : teams.length === 0 ? (
-                    <div className="text-center py-12">
-                      <Building2 className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
-                      <h3 className="text-lg font-semibold mb-2">No teams yet</h3>
-                      <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                        Create a team to start collaborating with others on presentations.
-                      </p>
-                      <Button onClick={() => setShowCreateTeamDialog(true)}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create your first team
-                      </Button>
+                    <div className="space-y-4">
+                      {[...Array(3)].map((_, i) => (
+                        <div key={i} className="rounded-2xl border-2 border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 p-6 animate-pulse">
+                          <div className="h-5 w-32 bg-black/5 dark:bg-white/5 rounded mb-3" />
+                          <div className="h-3 w-48 bg-black/5 dark:bg-white/5 rounded" />
+                        </div>
+                      ))}
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      {/* Team Selector */}
-                      <div className="flex flex-wrap gap-2">
-                        {teams.map((team) => (
-                          <button
-                            key={team.id}
-                            onClick={() => setSelectedTeam(team)}
-                            className={cn(
-                              'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors',
-                              selectedTeam?.id === team.id
-                                ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
-                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                            )}
-                          >
-                            <div
-                              className={cn(
-                                'h-6 w-6 rounded flex items-center justify-center text-xs font-medium',
-                                selectedTeam?.id === team.id
-                                  ? 'bg-white/20 dark:bg-zinc-900/20'
-                                  : 'bg-zinc-200 dark:bg-zinc-700'
-                              )}
-                            >
-                              {team.name.substring(0, 2).toUpperCase()}
+                      {/* Value Prop Banner — always visible */}
+                      {teams.length === 0 && (
+                        <div className="rounded-2xl border-2 border-[#FF4301]/20 bg-gradient-to-br from-[#FF4301]/5 to-transparent p-6">
+                          <div className="flex items-start gap-4">
+                            <div className="h-12 w-12 rounded-full bg-[#FF4301]/10 flex items-center justify-center shrink-0">
+                              <Users className="h-6 w-6 text-[#FF4301]" />
                             </div>
-                            <span className="font-medium">{team.name}</span>
-                            {selectedTeam?.id === team.id && <Check className="h-4 w-4" />}
-                          </button>
-                        ))}
-                      </div>
-
-                      {selectedTeam && (
-                        <>
-                          {/* Team Header */}
-                          <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className="h-12 w-12 rounded-xl bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center text-lg font-semibold">
-                                  {selectedTeam.name.substring(0, 2).toUpperCase()}
-                                </div>
-                                <div>
-                                  <h3 className="font-semibold">{selectedTeam.name}</h3>
-                                  <p className="text-sm text-muted-foreground">
-                                    {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
-                                    {pendingInvitations.length > 0 && ` · ${pendingInvitations.length} pending`}
-                                  </p>
-                                </div>
+                            <div className="flex-1">
+                              <h3 className="font-bold text-base mb-1">Better Together</h3>
+                              <p className="text-sm text-muted-foreground mb-4">
+                                Teams let your whole group create, share, and iterate on presentations in one workspace. Everyone stays in sync.
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+                                {[
+                                  { icon: Users, label: 'Shared workspace', desc: 'All decks in one place' },
+                                  { icon: Zap, label: 'Real-time collaboration', desc: 'Edit together, no conflicts' },
+                                  { icon: Crown, label: 'Role-based access', desc: 'Owner, admin, member roles' },
+                                ].map(({ icon: Icon, label, desc }) => (
+                                  <div key={label} className="flex items-start gap-2.5">
+                                    <div className="h-8 w-8 rounded-full bg-[#FF4301]/10 flex items-center justify-center shrink-0 mt-0.5">
+                                      <Icon className="h-4 w-4 text-[#FF4301]" />
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-medium">{label}</p>
+                                      <p className="text-xs text-muted-foreground">{desc}</p>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-
-                              {isTeamOwner && (
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="outline" size="icon">
-                                      <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem
-                                      onClick={() => {
-                                        setEditTeamName(selectedTeam.name);
-                                        setShowEditTeamDialog(true);
-                                      }}
-                                    >
-                                      <Pencil className="h-4 w-4 mr-2" />
-                                      Rename team
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      onClick={() => setShowDeleteTeamDialog(true)}
-                                      className="text-red-600 dark:text-red-400"
-                                    >
-                                      <Trash2 className="h-4 w-4 mr-2" />
-                                      Delete team
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              )}
+                              <Button
+                                onClick={() => setShowCreateTeamDialog(true)}
+                                className="bg-[#FF4301] text-white hover:bg-[#E63901] rounded-xl px-6"
+                              >
+                                <Plus className="h-4 w-4 mr-2" />
+                                Create Your Team
+                              </Button>
                             </div>
                           </div>
+                        </div>
+                      )}
 
-                          {/* Invite Members */}
-                          {canManageMembers && (
-                            <div className="space-y-3">
-                              <h3 className="text-sm font-medium">Invite Members</h3>
-                              <div className="flex flex-col sm:flex-row gap-3">
-                                <div className="flex-1">
-                                  <Input
-                                    type="email"
-                                    placeholder="colleague@company.com"
-                                    value={inviteEmail}
-                                    onChange={(e) => setInviteEmail(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter' && inviteEmail.trim()) {
-                                        handleInviteMember();
-                                      }
-                                    }}
-                                  />
-                                </div>
-                                <Select
-                                  value={inviteRole}
-                                  onValueChange={(v) => setInviteRole(v as 'admin' | 'member')}
-                                >
-                                  <SelectTrigger className="w-full sm:w-[140px]">
+                      {teams.length > 0 && (
+                        <>
+                          {/* Quick Invite Bar */}
+                          <div className="rounded-2xl border-2 border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 p-5">
+                            <div className="flex items-center gap-3 mb-4">
+                              <div className="h-8 w-8 rounded-full bg-[#FF4301]/10 flex items-center justify-center">
+                                <UserPlus className="h-4 w-4 text-[#FF4301]" />
+                              </div>
+                              <div className="flex-1">
+                                <h3 className="font-semibold text-sm">Invite teammates</h3>
+                                <p className="text-xs text-muted-foreground">Add people to {selectedTeam?.name || 'your team'}</p>
+                              </div>
+                              <Button size="sm" onClick={() => setShowCreateTeamDialog(true)} variant="outline" className="rounded-xl border-2 border-black/10 dark:border-white/10 hover:border-[#FF4301] text-xs">
+                                <Plus className="h-3 w-3 mr-1" />
+                                New Team
+                              </Button>
+                            </div>
+                            {selectedTeam && canManageMembers && (
+                              <div className="flex flex-col sm:flex-row gap-2">
+                                <Input
+                                  type="email"
+                                  placeholder="colleague@company.com"
+                                  value={inviteEmail}
+                                  onChange={(e) => setInviteEmail(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && inviteEmail.trim()) handleInviteMember();
+                                  }}
+                                  className="flex-1 rounded-xl border-2 border-black/10 dark:border-white/10"
+                                />
+                                <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as 'admin' | 'member')}>
+                                  <SelectTrigger className="w-full sm:w-[120px] rounded-xl border-2 border-black/10 dark:border-white/10">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
@@ -2115,193 +2181,189 @@ const Profile: React.FC = () => {
                                 <Button
                                   onClick={handleInviteMember}
                                   disabled={!inviteEmail.trim() || isAddingMember}
+                                  className="bg-[#FF4301] text-white hover:bg-[#E63901] rounded-xl"
                                 >
-                                  {isAddingMember ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <>
-                                      <UserPlus className="h-4 w-4 mr-2" />
-                                      Invite
-                                    </>
-                                  )}
+                                  {isAddingMember ? <Loader2 className="h-4 w-4 animate-spin" /> : <><UserPlus className="h-4 w-4 mr-1.5" />Send</>}
                                 </Button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Members List */}
-                          <div>
-                            <h3 className="text-sm font-medium mb-3">Members</h3>
-                            {isMembersLoading ? (
-                              <div className="flex items-center justify-center py-8">
-                                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                              </div>
-                            ) : teamMembers.length === 0 ? (
-                              <div className="p-6 text-center text-muted-foreground bg-zinc-50 dark:bg-zinc-800/50 rounded-lg">
-                                <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
-                                <p>No members yet</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-2">
-                                {teamMembers.map((member) => {
-                                  const isSelf = member.user_id === selfUserId;
-                                  const canEditMember = canManageMembers && !isSelf && member.role !== 'owner';
-                                  const canRemoveMember = canManageMembers && !isSelf && !(member.role === 'owner' && !isTeamOwner);
-
-                                  return (
-                                    <div
-                                      key={member.user_id}
-                                      className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg"
-                                    >
-                                      <div className="flex items-center gap-3">
-                                        <Avatar className="h-9 w-9">
-                                          <AvatarFallback className="bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 text-xs font-medium">
-                                            {getTeamMemberInitials(member.email, member.full_name)}
-                                          </AvatarFallback>
-                                        </Avatar>
-                                        <div>
-                                          <div className="flex items-center gap-2">
-                                            <span className="font-medium text-sm">
-                                              {member.full_name || member.email}
-                                            </span>
-                                            {isSelf && (
-                                              <Badge variant="outline" className="text-xs">You</Badge>
-                                            )}
-                                          </div>
-                                          <p className="text-xs text-muted-foreground">{member.email}</p>
-                                        </div>
-                                      </div>
-
-                                      <div className="flex items-center gap-2">
-                                        {canEditMember ? (
-                                          <Select
-                                            value={member.role}
-                                            onValueChange={(v) => handleUpdateMemberRole(member, v as TeamRole)}
-                                          >
-                                            <SelectTrigger className="w-[110px] h-8 text-xs">
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="member">Member</SelectItem>
-                                              <SelectItem value="admin">Admin</SelectItem>
-                                              {isTeamOwner && <SelectItem value="owner">Owner</SelectItem>}
-                                            </SelectContent>
-                                          </Select>
-                                        ) : (
-                                          <Badge variant={getRoleBadgeVariant(member.role as TeamRole)} className="gap-1 capitalize">
-                                            <RoleIcon role={member.role as TeamRole} />
-                                            {member.role}
-                                          </Badge>
-                                        )}
-
-                                        {canRemoveMember && (
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 text-muted-foreground hover:text-red-600"
-                                            onClick={() => setMemberToRemove(member)}
-                                          >
-                                            <X className="h-4 w-4" />
-                                          </Button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
                               </div>
                             )}
                           </div>
 
-                          {/* Pending Invitations */}
-                          {pendingInvitations.length > 0 && (
-                            <div>
-                              <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                                <Clock className="h-4 w-4 text-muted-foreground" />
-                                Pending Invitations
-                              </h3>
-                              <div className="space-y-2">
-                                {pendingInvitations.map((inv) => (
-                                  <div
-                                    key={inv.id}
-                                    className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg"
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <div className="h-9 w-9 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                                        <Mail className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                                      </div>
-                                      <div>
-                                        <p className="font-medium text-sm">{inv.email}</p>
-                                        <p className="text-xs text-muted-foreground">
-                                          Expires {new Date(inv.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                        </p>
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-2">
-                                      <Badge variant="outline" className="capitalize">{inv.role}</Badge>
-                                      {inv.token && (
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8"
-                                          onClick={() => copyInviteLink(inv.token)}
-                                          title="Copy invite link"
-                                        >
-                                          <Copy className="h-4 w-4" />
-                                        </Button>
-                                      )}
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8 text-muted-foreground hover:text-red-600"
-                                        onClick={() => handleCancelInvitation(inv)}
-                                        title="Cancel invitation"
-                                      >
-                                        <X className="h-4 w-4" />
-                                      </Button>
-                                    </div>
+                          {/* Team Tabs */}
+                          {teams.length > 1 && (
+                            <div className="flex flex-wrap gap-2">
+                              {teams.map((team) => (
+                                <button
+                                  key={team.id}
+                                  onClick={() => setSelectedTeam(team)}
+                                  className={cn(
+                                    'flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium transition-all border-2',
+                                    selectedTeam?.id === team.id
+                                      ? 'bg-[#FF4301]/5 text-[#FF4301] border-[#FF4301]/30'
+                                      : 'border-black/10 dark:border-white/10 text-zinc-600 dark:text-zinc-400 hover:border-[#FF4301]/30'
+                                  )}
+                                >
+                                  <div className={cn(
+                                    'h-6 w-6 rounded-lg flex items-center justify-center text-xs font-bold',
+                                    selectedTeam?.id === team.id
+                                      ? 'bg-[#FF4301]/10 text-[#FF4301]'
+                                      : 'bg-black/[0.04] dark:bg-white/[0.06]'
+                                  )}>
+                                    {team.name.substring(0, 2).toUpperCase()}
                                   </div>
-                                ))}
-                              </div>
+                                  {team.name}
+                                </button>
+                              ))}
                             </div>
                           )}
 
-                          {/* Role Permissions Info */}
-                          <div className="p-4 bg-zinc-50 dark:bg-zinc-800/30 rounded-lg">
-                            <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                              <Shield className="h-4 w-4 text-muted-foreground" />
-                              Role Permissions
-                            </h3>
-                            <div className="grid gap-3 sm:grid-cols-3">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <Crown className="h-4 w-4 text-amber-500" />
-                                  <span className="font-medium text-sm">Owner</span>
+                          {selectedTeam && (
+                            <>
+                              {/* Team Header Card */}
+                              <div className="rounded-2xl border-2 border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 p-5">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#FF4301]/20 to-[#FF4301]/5 flex items-center justify-center text-lg font-bold text-[#FF4301]">
+                                      {selectedTeam.name.substring(0, 2).toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <h3 className="font-semibold">{selectedTeam.name}</h3>
+                                      <p className="text-sm text-muted-foreground">
+                                        {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
+                                        {pendingInvitations.length > 0 && (
+                                          <span className="text-amber-600 dark:text-amber-400"> · {pendingInvitations.length} pending</span>
+                                        )}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  {isTeamOwner && (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="outline" size="icon" className="rounded-xl border-2 border-black/10 dark:border-white/10">
+                                          <MoreHorizontal className="h-4 w-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={() => { setEditTeamName(selectedTeam.name); setShowEditTeamDialog(true); }}>
+                                          <Pencil className="h-4 w-4 mr-2" /> Rename team
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem onClick={() => setShowDeleteTeamDialog(true)} className="text-red-600 dark:text-red-400">
+                                          <Trash2 className="h-4 w-4 mr-2" /> Delete team
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  )}
                                 </div>
-                                <p className="text-xs text-muted-foreground">
-                                  Full access. Can delete team and transfer ownership.
-                                </p>
                               </div>
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <Shield className="h-4 w-4 text-blue-500" />
-                                  <span className="font-medium text-sm">Admin</span>
+
+                              {/* Members */}
+                              <div className="rounded-2xl border-2 border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 p-5">
+                                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                                  <Users className="h-4 w-4 text-muted-foreground" />
+                                  Members
+                                </h3>
+                                {isMembersLoading ? (
+                                  <div className="flex items-center justify-center py-8">
+                                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                  </div>
+                                ) : teamMembers.length === 0 ? (
+                                  <div className="p-6 text-center text-muted-foreground rounded-xl border-2 border-dashed border-black/10 dark:border-white/10">
+                                    <Users className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                                    <p className="text-sm">No members yet — invite someone above!</p>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {teamMembers.map((member) => {
+                                      const isSelf = member.user_id === selfUserId;
+                                      const canEditMember = canManageMembers && !isSelf && member.role !== 'owner';
+                                      const canRemoveMember = canManageMembers && !isSelf && !(member.role === 'owner' && !isTeamOwner);
+                                      return (
+                                        <div key={member.user_id} className="flex items-center justify-between p-3 rounded-xl hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+                                          <div className="flex items-center gap-3">
+                                            <Avatar className="h-9 w-9">
+                                              <AvatarFallback className="bg-[#FF4301]/10 text-[#FF4301] text-xs font-medium">
+                                                {getTeamMemberInitials(member.email, member.full_name)}
+                                              </AvatarFallback>
+                                            </Avatar>
+                                            <div>
+                                              <div className="flex items-center gap-2">
+                                                <span className="font-medium text-sm">{member.full_name || member.email}</span>
+                                                {isSelf && <Badge variant="outline" className="text-[10px] px-1.5 py-0">You</Badge>}
+                                              </div>
+                                              <p className="text-xs text-muted-foreground">{member.email}</p>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            {canEditMember ? (
+                                              <Select value={member.role} onValueChange={(v) => handleUpdateMemberRole(member, v as TeamRole)}>
+                                                <SelectTrigger className="w-[100px] h-8 text-xs rounded-lg">
+                                                  <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  <SelectItem value="member">Member</SelectItem>
+                                                  <SelectItem value="admin">Admin</SelectItem>
+                                                  {isTeamOwner && <SelectItem value="owner">Owner</SelectItem>}
+                                                </SelectContent>
+                                              </Select>
+                                            ) : (
+                                              <Badge variant={getRoleBadgeVariant(member.role as TeamRole)} className="gap-1 capitalize text-xs">
+                                                <RoleIcon role={member.role as TeamRole} />
+                                                {member.role}
+                                              </Badge>
+                                            )}
+                                            {canRemoveMember && (
+                                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-600" onClick={() => setMemberToRemove(member)}>
+                                                <X className="h-3.5 w-3.5" />
+                                              </Button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Pending Invitations */}
+                              {pendingInvitations.length > 0 && (
+                                <div className="rounded-2xl border-2 border-amber-200/50 dark:border-amber-800/30 bg-amber-50/50 dark:bg-amber-900/10 p-5">
+                                  <h3 className="text-sm font-semibold mb-3 flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                                    <Clock className="h-4 w-4" />
+                                    Pending Invitations
+                                  </h3>
+                                  <div className="space-y-2">
+                                    {pendingInvitations.map((inv) => (
+                                      <div key={inv.id} className="flex items-center justify-between p-3 bg-white/60 dark:bg-black/20 rounded-xl">
+                                        <div className="flex items-center gap-3">
+                                          <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                                            <Mail className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                                          </div>
+                                          <div>
+                                            <p className="font-medium text-sm">{inv.email}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                              Expires {new Date(inv.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                          <Badge variant="outline" className="capitalize text-xs">{inv.role}</Badge>
+                                          {inv.token && (
+                                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyInviteLink(inv.token)} title="Copy invite link">
+                                              <Copy className="h-3.5 w-3.5" />
+                                            </Button>
+                                          )}
+                                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-600" onClick={() => handleCancelInvitation(inv)} title="Cancel">
+                                            <X className="h-3.5 w-3.5" />
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                                <p className="text-xs text-muted-foreground">
-                                  Can invite members and manage roles.
-                                </p>
-                              </div>
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <Users className="h-4 w-4 text-zinc-500" />
-                                  <span className="font-medium text-sm">Member</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  Can view and edit team presentations.
-                                </p>
-                              </div>
-                            </div>
-                          </div>
+                              )}
+                            </>
+                          )}
                         </>
                       )}
                     </div>
@@ -2311,20 +2373,20 @@ const Profile: React.FC = () => {
 
               {/* Support Tab */}
               {activeTab === 'support' && (
-                <div className="p-6 lg:p-8">
+                <div className="p-6 lg:p-8 animate-in fade-in duration-200">
                   <div className="mb-8">
-                    <h2 className="text-xl font-semibold mb-1">Help & Support</h2>
-                    <p className="text-sm text-muted-foreground">
+                    <h2 className="text-lg font-black font-['HK_Grotesk_Wide'] text-black dark:text-white">Help & Support</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
                       Get help with NextSlide or chat with our support team
                     </p>
                   </div>
 
                   <div className="space-y-6">
                     {/* Help Center Card */}
-                    <div className="p-6 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+                    <div className="p-6 rounded-2xl border-2 border-black/10 dark:border-white/10">
                       <div className="flex items-start gap-4">
-                        <div className="h-12 w-12 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center flex-shrink-0">
-                          <HelpCircle className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+                        <div className="h-12 w-12 rounded-full bg-[#FF4301]/10 flex items-center justify-center flex-shrink-0">
+                          <HelpCircle className="h-6 w-6 text-[#FF4301]" />
                         </div>
                         <div className="flex-1">
                           <h3 className="font-semibold mb-1">Help Center</h3>
@@ -2344,9 +2406,9 @@ const Profile: React.FC = () => {
                     </div>
 
                     {/* Live Chat Card */}
-                    <div className="p-6 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+                    <div className="p-6 rounded-2xl border-2 border-black/10 dark:border-white/10">
                       <div className="flex items-start gap-4">
-                        <div className="h-12 w-12 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                        <div className="h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
                           <MessageCircle className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                         </div>
                         <div className="flex-1">
@@ -2362,10 +2424,10 @@ const Profile: React.FC = () => {
                     </div>
 
                     {/* Contact Info */}
-                    <div className="p-4 bg-zinc-50 dark:bg-zinc-800/30 rounded-lg">
+                    <div className="p-4 rounded-2xl border-2 border-black/10 dark:border-white/10">
                       <h3 className="text-sm font-medium mb-2">Other ways to reach us</h3>
                       <p className="text-sm text-muted-foreground">
-                        Email us at <a href="mailto:support@nextslide.ai" className="text-orange-600 dark:text-orange-400 hover:underline">support@nextslide.ai</a>
+                        Email us at <a href="mailto:support@nextslide.ai" className="text-[#FF4301] hover:underline">support@nextslide.ai</a>
                       </p>
                     </div>
                   </div>

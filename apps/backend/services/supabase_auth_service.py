@@ -85,7 +85,6 @@ class SupabaseAuthService:
         # Check for service key to bypass RLS if needed
         service_key = os.getenv("SUPABASE_SERVICE_KEY")
         if service_key:
-            print("[SupabaseAuth] Using service key - RLS bypassed")
             url = os.getenv("SUPABASE_URL")
             if not url:
                 raise ValueError("SUPABASE_URL must be set")
@@ -628,33 +627,19 @@ class SupabaseAuthService:
             List of deck records
         """
         try:
-            print(f"[get_user_decks] Getting decks for user: {user_id} (limit={limit}, offset={offset}, search={search_query})")
+            logger.debug(f"[get_user_decks] user={user_id} limit={limit} offset={offset} search={search_query}")
 
-            # When searching, fetch more decks and filter in Python
-            # This avoids issues with Supabase/Cloudflare ilike queries
             if search_query:
-                print(f"[get_user_decks] Fetching decks for search: '{search_query}'")
-                # Use first_slide and slide_count instead of full slides array
                 select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,data"
-                # Fetch a larger batch and filter locally
-                query = self.supabase.table("decks").select(select_columns).eq("user_id", user_id).order("created_at", desc=True).limit(200)
-                owned_response = query.execute()
-
-                # Filter locally by name (case-insensitive)
-                search_lower = search_query.lower()
-                filtered_data = [d for d in owned_response.data if search_lower in (d.get("name") or "").lower()]
-                print(f"[get_user_decks] Search found {len(filtered_data)} matches out of {len(owned_response.data)} decks")
-
-                # Apply pagination to filtered results
-                paginated_data = filtered_data[offset:offset + limit]
-
-                # Create a mock response object
-                class MockResponse:
-                    def __init__(self, data, count):
-                        self.data = data
-                        self.count = count
-
-                owned_response = MockResponse(paginated_data, len(filtered_data))
+                # Use database-level ilike for case-insensitive search across ALL decks
+                search_pattern = f"%{search_query}%"
+                try:
+                    query = self.supabase.table("decks_optimized").select(select_columns, count="planned").eq("user_id", user_id).ilike("name", search_pattern)
+                    owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+                except Exception as e:
+                    logger.debug(f"[get_user_decks] Optimized view search failed, using decks table: {e}")
+                    query = self.supabase.table("decks").select(select_columns, count="planned").eq("user_id", user_id).ilike("name", search_pattern)
+                    owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
             else:
                 # Try to use optimized view first, fallback to regular table
                 # Use first_slide and slide_count columns instead of full slides array
@@ -663,16 +648,14 @@ class SupabaseAuthService:
                     select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,data"
                     query = self.supabase.table("decks_optimized").select(select_columns, count="planned").eq("user_id", user_id)
                     owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
-                    print(f"[get_user_decks] Using optimized view")
                 except Exception as e:
                     # Fallback to regular table - use first_slide and slide_count columns
-                    print(f"[get_user_decks] Optimized view unavailable or timed out, using fallback on decks: {str(e)}")
+                    logger.debug(f"[get_user_decks] Optimized view fallback: {e}")
                     select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,data"
                     query = self.supabase.table("decks").select(select_columns, count="planned").eq("user_id", user_id)
                     owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
-            
+
             total_count = owned_response.count if hasattr(owned_response, 'count') else 0
-            print(f"[get_user_decks] Found {len(owned_response.data)} owned decks for user {user_id} (total: {total_count})")
             
             # Process decks - use first_slide and slide_count columns directly
             decks = []
@@ -696,16 +679,14 @@ class SupabaseAuthService:
 
                 decks.append(deck_data)
             
-            print(f"[get_user_decks] Returning {len(decks)} decks (total: {total_count})")
-            
             return {
                 "decks": decks,
                 "total": total_count,
                 "has_more": (offset + len(decks)) < total_count
             }
-            
+
         except Exception as e:
-            print(f"[get_user_decks] ERROR: {str(e)}")
+            logger.error(f"[get_user_decks] {e}", exc_info=True)
             return {"decks": [], "total": 0, "has_more": False}
 
     def get_user_decks_filtered(self, user_id: str, filter_type: str = "owned", limit: int = 20, offset: int = 0, search_query: Optional[str] = None) -> Dict[str, Any]:
@@ -723,8 +704,6 @@ class SupabaseAuthService:
             Dict with decks list and pagination info
         """
         try:
-            print(f"[get_user_decks_filtered] Getting {filter_type} decks for user: {user_id}, search: {search_query}")
-
             if filter_type == "owned":
                 # Return only owned decks (current behavior)
                 return self.get_user_decks(user_id, limit, offset, search_query=search_query)
@@ -755,7 +734,7 @@ class SupabaseAuthService:
                 raise ValueError(f"Invalid filter type: {filter_type}")
                 
         except Exception as e:
-            print(f"[get_user_decks_filtered] ERROR: {str(e)}")
+            logger.error(f"[get_user_decks_filtered] {e}", exc_info=True)
             return {"decks": [], "total": 0, "has_more": False}
 
 
@@ -774,9 +753,6 @@ class SupabaseAuthService:
             Dict with shared decks list and pagination info
         """
         try:
-            print(f"[get_shared_decks] Getting shared decks for user: {user_id}, search: {search_query}")
-            logger.info(f"[get_shared_decks] Getting shared decks for user: {user_id}")
-            
             # Get user's email - first try from users table with a timeout
             user_email = None
             try:
@@ -784,8 +760,6 @@ class SupabaseAuthService:
                 users_response = self.supabase.table("users").select("email").eq("id", user_id).execute()
                 if users_response.data and len(users_response.data) > 0:
                     user_email = users_response.data[0].get("email")
-                    print(f"[get_shared_decks] User email from users table: {user_email}")
-                    logger.info(f"[get_shared_decks] User email from users table: {user_email}")
                 else:
                     # If not in users table, try auth.admin API with timeout
                     # Use ThreadPoolExecutor for cross-platform timeout support
@@ -796,33 +770,22 @@ class SupabaseAuthService:
                         except Exception as e:
                             logger.warning(f"[get_shared_decks] Admin API error: {e}")
                             return None
-                    
+
                     # Run with timeout using ThreadPoolExecutor
                     with ThreadPoolExecutor(max_workers=1) as executor:
                         future = executor.submit(get_user_email_from_admin)
                         try:
                             # Wait maximum 2 seconds for the result
                             user_email = future.result(timeout=2.0)
-                            print(f"[get_shared_decks] User email from admin API: {user_email}")
                         except (FutureTimeoutError, Exception) as e:
-                            print(f"[get_shared_decks] Admin API timeout after 2 seconds: {e}")
-                            logger.warning(f"[get_shared_decks] Admin API timeout after 2 seconds, continuing without email")
+                            logger.warning(f"[get_shared_decks] Admin API timeout: {e}")
                             user_email = None
                             # Cancel the future to prevent it from running in background
                             future.cancel()
-                        
+
             except Exception as e:
-                print(f"[get_shared_decks] Error getting user email: {e}")
                 logger.error(f"[get_shared_decks] Error getting user email: {e}")
                 user_email = None
-            
-            print(f"[get_shared_decks] User email: {user_email}")
-            logger.info(f"[get_shared_decks] User email: {user_email}")
-            
-            # First check if deck_collaborators table has any data
-            test_query = self.supabase.table("deck_collaborators").select("id", count="exact").execute()
-            print(f"[get_shared_decks] Total records in deck_collaborators table: {test_query.count if hasattr(test_query, 'count') else 'unknown'}")
-            logger.info(f"[get_shared_decks] Total records in deck_collaborators table: {test_query.count if hasattr(test_query, 'count') else 'unknown'}")
             
             # Query deck_collaborators table
             # Avoid PostgREST schema-qualified joins which can fail across versions.
@@ -862,14 +825,7 @@ class SupabaseAuthService:
             except Exception as e:
                 logger.warning(f"[get_shared_decks] Could not fetch inviter user details: {e}")
             
-            print(f"[get_shared_decks] Query response data count: {len(collaborator_response.data)}")
-            logger.info(f"[get_shared_decks] Query response data count: {len(collaborator_response.data)}")
-            
-            if len(collaborator_response.data) > 0:
-                print(f"[get_shared_decks] First collaboration record: {collaborator_response.data[0]}")
-                logger.info(f"[get_shared_decks] First collaboration record sample")
-            
-            print(f"[get_shared_decks] Found {len(collaborator_response.data)} shared decks")
+            logger.debug(f"[get_shared_decks] Query returned {len(collaborator_response.data)} records")
             
             # Process shared decks
             shared_decks = []
@@ -939,19 +895,14 @@ class SupabaseAuthService:
             else:
                 total_count = total_response.count if hasattr(total_response, 'count') else len(shared_decks)
 
-            print(f"[get_shared_decks] Returning {len(shared_decks)} shared decks (total: {total_count})")
-            logger.info(f"[get_shared_decks] Returning {len(shared_decks)} shared decks (total: {total_count})")
-
             return {
                 "decks": shared_decks,
                 "total": total_count,
                 "has_more": (offset + len(shared_decks)) < total_count
             }
-            
+
         except Exception as e:
-            print(f"[get_shared_decks] ERROR: {str(e)}")
-            logger.error(f"[get_shared_decks] ERROR: {str(e)}")
-            logger.error(f"[get_shared_decks] Full exception: ", exc_info=True)
+            logger.error(f"[get_shared_decks] {e}", exc_info=True)
             return {"decks": [], "total": 0, "has_more": False}
     
     def share_deck(self, deck_uuid: str, with_user_email: str, permissions: List[str] = None) -> Dict[str, Any]:

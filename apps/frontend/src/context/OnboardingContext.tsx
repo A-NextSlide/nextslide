@@ -12,7 +12,7 @@
  * - feature_hints_dismissed: List of feature hints the user has dismissed
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { authService } from '@/services/authService';
 import { useAuth } from '@/context/SupabaseAuthContext';
 
@@ -69,14 +69,19 @@ const OnboardingContext = createContext<OnboardingContextType | null>(null);
 
 export function OnboardingProvider({ children }: { children: ReactNode }) {
   const { user, isLoading: authLoading } = useAuth();
+  const userId = user?.id;
   const [state, setState] = useState<OnboardingState | null>(null);
   const [loading, setLoading] = useState(false);
+  const fetchingRef = useRef(false);
 
   const refreshState = useCallback(async () => {
-    if (authLoading || !user) {
+    if (authLoading || !userId) {
       setState(null);
       return;
     }
+
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
 
     setLoading(true);
     try {
@@ -103,15 +108,16 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       setState(prev => prev ?? defaultState);
     } finally {
       setLoading(false);
+      fetchingRef.current = false;
     }
-  }, [user, authLoading]);
+  }, [userId, authLoading]);
 
   // Load state when auth is ready
   useEffect(() => {
     if (!authLoading) {
       refreshState();
     }
-  }, [refreshState, authLoading]);
+  }, [userId, authLoading]);
 
   const markWelcomeShown = useCallback(async () => {
     try {

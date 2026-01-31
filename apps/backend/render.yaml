@@ -7,7 +7,7 @@ services:
     rootDirectory: apps/backend
     region: oregon 
     plan: free
-    buildCommand: "pip install -r requirements.txt"
+    buildCommand: "pip install -r requirements.txt && modal deploy modal_app.py"
     startCommand: "uvicorn api.chat_server:app --host 0.0.0.0 --port $PORT"
     # For debugging: startCommand: "uvicorn api.test_server:app --host 0.0.0.0 --port $PORT"
     envVars:

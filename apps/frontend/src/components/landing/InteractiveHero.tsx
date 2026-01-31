@@ -1,13 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Sparkles, Rocket, TrendingUp, Microscope, Coffee, Timer, FlaskConical, BookOpen, Handshake, Globe, Skull, Wifi, MousePointer2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles, Rocket, TrendingUp, Microscope, Coffee, Timer, FlaskConical, BookOpen, Handshake, Globe, Skull, Wifi, Megaphone, MousePointer2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ShowcaseDeck } from '@/services/showcaseService';
 import MiniSlide from '@/components/deck/MiniSlide';
 import { Button } from '@/components/ui/button';
 
+export interface PromptItem {
+    id: string;
+    badge: string;
+    icon: React.ComponentType<{ size?: number; className?: string }>;
+    text: string;
+    theme: 'light' | 'orange';
+    deckIndex: number;
+}
+
 interface InteractiveHeroProps {
     decks: ShowcaseDeck[];
     isLoading: boolean;
+    prompts?: PromptItem[];
+    compact?: boolean;
 }
 
 const PROMPTS = [
@@ -98,17 +109,26 @@ const PROMPTS = [
         text: "Why the 90s Internet Was the Wild West of Creativity",
         theme: 'light' as const,
         deckIndex: 10
+    },
+    {
+        id: 'marketing',
+        badge: 'Marketing',
+        icon: Megaphone,
+        text: "Social media strategy that actually converts",
+        theme: 'light' as const,
+        deckIndex: 11
     }
 ];
 
-const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) => {
+const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, prompts: customPrompts, compact }) => {
+    const effectivePrompts = customPrompts || PROMPTS;
     const [activeIndex, setActiveIndex] = useState(0);
     const [slideTransitioning, setSlideTransitioning] = useState(false);
 
     // Track selected slide within the active deck
     const [selectedSlideIndex, setSelectedSlideIndex] = useState(0);
 
-    const activePrompt = PROMPTS[activeIndex];
+    const activePrompt = effectivePrompts[activeIndex];
 
     // Safe deck retrieval
     const activeDeck = decks.length > 0
@@ -123,7 +143,7 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) =
     const handleNext = () => {
         setSlideTransitioning(true);
         setTimeout(() => {
-            setActiveIndex((prev) => (prev + 1) % PROMPTS.length);
+            setActiveIndex((prev) => (prev + 1) % effectivePrompts.length);
             setSlideTransitioning(false);
         }, 300);
     };
@@ -131,7 +151,7 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) =
     const handlePrev = () => {
         setSlideTransitioning(true);
         setTimeout(() => {
-            setActiveIndex((prev) => (prev - 1 + PROMPTS.length) % PROMPTS.length);
+            setActiveIndex((prev) => (prev - 1 + effectivePrompts.length) % effectivePrompts.length);
             setSlideTransitioning(false);
         }, 300);
     };
@@ -155,16 +175,16 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) =
     const isOrange = activePrompt.theme === 'orange';
 
     return (
-        <section className="relative w-full z-20 h-screen">
+        <section className={cn("relative w-full z-20", compact ? "py-8" : "h-screen")}>
 
             {/* Main Content - The slides */}
-            <div className="relative h-full w-full flex flex-col items-center justify-start pt-2 md:pt-0 md:justify-center overflow-visible pointer-events-none">
+            <div className={cn("relative w-full flex flex-col items-center overflow-visible pointer-events-none", compact ? "justify-start" : "h-full justify-start pt-2 md:pt-0 md:justify-center")}>
 
                 {/* Main Content Card Container */}
-                <div className="container relative z-10 px-2 md:px-4 w-full max-w-[1400px] mx-auto pointer-events-auto h-full flex flex-col justify-start pt-2 md:pt-0 md:justify-center">
+                <div className={cn("container relative z-10 px-2 md:px-4 w-full max-w-[1400px] mx-auto pointer-events-auto", compact ? "" : "h-full flex flex-col justify-start pt-2 md:pt-0 md:justify-center")}>
 
                     {/* The "Binder" Card */}
-                    <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-2xl md:rounded-[32px] shadow-2xl shadow-black/10 border border-black/5 dark:border-white/5 p-2 md:p-6 w-full md:h-[80vh] flex flex-col md:flex-row gap-2 md:gap-6 relative overflow-visible">
+                    <div className={cn("bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-2xl md:rounded-[32px] shadow-2xl shadow-black/10 border border-black/5 dark:border-white/5 p-2 md:p-6 w-full flex flex-col md:flex-row gap-2 md:gap-6 relative overflow-visible", compact ? "md:h-[65vh]" : "md:h-[80vh]")}>
 
                         {/* LEFT SIDEBAR - Thumbnails (hidden on mobile/tablet) */}
                         <div className="hidden md:flex md:w-[200px] lg:w-[240px] flex-shrink-0 flex-col gap-4 h-full overflow-hidden">
@@ -325,7 +345,7 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) =
                                             <ChevronLeft size={16} />
                                         </button>
                                         <span className="text-black/40 dark:text-white/40 text-[10px] font-medium tabular-nums">
-                                            {activeIndex + 1}/{PROMPTS.length}
+                                            {activeIndex + 1}/{effectivePrompts.length}
                                         </span>
                                         <button onClick={handleNext} className="w-7 h-7 flex items-center justify-center rounded-full border border-[#FF4301]/30 bg-[#FF4301]/5 text-[#FF4301] active:bg-[#FF4301]/10 transition-colors">
                                             <ChevronRight size={16} />
@@ -352,4 +372,4 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading }) =
     );
 };
 
-export default InteractiveHero;
+export default React.memo(InteractiveHero);

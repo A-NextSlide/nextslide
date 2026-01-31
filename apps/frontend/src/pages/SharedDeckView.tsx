@@ -1,9 +1,20 @@
-import React, { useEffect, useState, useRef, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useEffect, useState, useRef, useCallback, Component, ErrorInfo, ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { shareService } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Lock, AlertCircle, Edit } from 'lucide-react';
+import { Loader2, Lock, AlertCircle, Edit, Share2 } from 'lucide-react';
+import DynamicMeta from '@/components/seo/DynamicMeta';
+import RelatedPresentations from '@/components/seo/RelatedPresentations';
+import CreateYourOwnCTA from '@/components/seo/CreateYourOwnCTA';
+import ShareDialog from '@/components/sharing/ShareDialog';
+import { trackEvent } from '@/services/analytics';
+import {
+  trackView as trackAnalyticsView,
+  trackSlideEngagement as trackAnalyticsSlide,
+  flushPendingEngagement,
+  parseUtmParams,
+} from '@/services/analyticsApi';
 
 // Simple console logging for debugging
 const debugLog = (level: 'log' | 'error' | 'warn', message: string, data?: any) => {
@@ -39,6 +50,7 @@ import { NavigationProvider } from '@/context/NavigationContext';
 import { ActiveSlideProvider, StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { EditorStateProvider } from '@/context/EditorStateContext';
 import Slide from '@/components/Slide';
+import MadeWithBadge from '@/components/badges/MadeWithBadge';
 
 // Error boundary to catch component rendering errors and prevent page crashes
 interface ErrorBoundaryProps {
@@ -127,6 +139,17 @@ const SharedDeckView: React.FC = () => {
   const [isSubmittingEmail, setIsSubmittingEmail] = useState(false);
   const [deckName, setDeckName] = useState('');
 
+  // Share dialog state
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+
+  // OG Meta state (populated from API when deck loads)
+  const [ogMeta, setOgMeta] = useState<{
+    title: string;
+    description: string;
+    image?: string;
+    url?: string;
+  } | null>(null);
+
   // Debug: Log store access
   console.log('[SharedDeckView] Accessing presentation store...');
   let isPresenting: boolean;
@@ -161,6 +184,12 @@ const SharedDeckView: React.FC = () => {
     const prevSlideIndex = lastSlideIndexRef.current;
     const existingTime = slideTimesRef.current.get(prevSlideIndex) || 0;
     slideTimesRef.current.set(prevSlideIndex, existingTime + timeSpent);
+
+    // Send to analytics API
+    const deckUuid = deck?.uuid || deck?.id;
+    if (deckUuid && timeSpent >= 100) {
+      trackAnalyticsSlide(deckUuid, prevSlideIndex, timeSpent, sessionIdRef.current);
+    }
 
     // Reset for new slide
     currentSlideStartRef.current = now;
@@ -215,13 +244,36 @@ const SharedDeckView: React.FC = () => {
     // Also send on page unload
     const handleBeforeUnload = () => {
       sendTrackingData();
+      flushPendingEngagement(); // Flush any pending analytics slide engagement data
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      flushPendingEngagement(); // Flush on component unmount too
     };
+  }, [shareCode]);
+
+  // Fetch OG metadata from backend for DynamicMeta
+  useEffect(() => {
+    if (!shareCode) return;
+    const apiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : 'https://nextslide-backend.onrender.com/api');
+    fetch(`${apiBase}/public/og-meta/${shareCode}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          setOgMeta({
+            title: data.title,
+            description: data.description,
+            image: data.image_url,
+            url: data.url,
+          });
+        }
+      })
+      .catch(() => {
+        // Non-critical: DynamicMeta will use fallback from deckName
+      });
   }, [shareCode]);
 
   useEffect(() => {
@@ -416,6 +468,25 @@ const SharedDeckView: React.FC = () => {
         } catch (e) {
           console.warn('[SharedDeckView] startViewSession failed:', e);
         }
+
+        // Track view in presentation analytics system
+        const deckUuid = deckData?.uuid || deckData?.id;
+        if (deckUuid) {
+          try {
+            const utm = parseUtmParams();
+            trackAnalyticsView(
+              deckUuid,
+              utm.source,
+              utm.platform,
+              sessionIdRef.current,
+              deviceType,
+            );
+            console.log('[SharedDeckView] Analytics view tracked for deck:', deckUuid);
+          } catch (e) {
+            console.warn('[SharedDeckView] Analytics trackView failed:', e);
+          }
+        }
+
         viewStartTimeRef.current = Date.now();
         currentSlideStartRef.current = Date.now();
 
@@ -498,6 +569,15 @@ const SharedDeckView: React.FC = () => {
       });
     }
   };
+
+  // Compute the share URL for social sharing
+  const shareBaseUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/p/${shareCode}`
+    : `https://nextslide.ai/p/${shareCode}`;
+
+  const handleShareComplete = useCallback((platform: string) => {
+    trackEvent('social_share_completed', { platform, shareCode });
+  }, [shareCode]);
 
   // Helper to extract background from slide
   const getSlideBackground = (slide: SlideData): string | undefined => {
@@ -832,48 +912,102 @@ const SharedDeckView: React.FC = () => {
     isPresenting
   });
   return (
-    <div
-      className="w-screen overflow-hidden relative touch-manipulation"
-      style={{
-        height: '100dvh',
-        // Prevent pull-to-refresh and overscroll on mobile
-        overscrollBehavior: 'none',
-        WebkitOverflowScrolling: 'touch',
-      }}
-    >
-      {/* Presentation Mode */}
-      <NavigationProvider
-        initialSlideIndex={0}
-        onSlideChange={(index) => setCurrentSlideIndex(index)}
-      >
-        <EditorStateProvider initialEditingState={false} slideSizeOverride={deckSlideSize}>
-          <ActiveSlideProvider>
-            <PresentationMode
-              slides={deck.slides}
-              currentSlideIndex={currentSlideIndex}
-              renderSlide={renderSlide}
-              isViewOnly={!canEdit}
-              slideSize={deckSlideSize}
-            />
-          </ActiveSlideProvider>
-        </EditorStateProvider>
+    <>
+      {/* Dynamic SEO meta tags for browsers and crawlers */}
+      {ogMeta && (
+        <DynamicMeta
+          title={ogMeta.title}
+          description={ogMeta.description}
+          image={ogMeta.image}
+          url={ogMeta.url}
+        />
+      )}
+      {!ogMeta && deckName && (
+        <DynamicMeta
+          title={`${deckName} | NextSlide`}
+          description="View this AI-generated presentation on NextSlide."
+          url={`https://nextslide.ai/p/${shareCode}`}
+        />
+      )}
 
-        {/* Optional edit button if user has permissions */}
-        {canEdit && (
-          <div className="absolute top-4 right-4 z-50">
+      <div
+        className="w-screen overflow-hidden relative touch-manipulation"
+        style={{
+          height: '100dvh',
+          // Prevent pull-to-refresh and overscroll on mobile
+          overscrollBehavior: 'none',
+          WebkitOverflowScrolling: 'touch',
+        }}
+      >
+        {/* Presentation Mode */}
+        <NavigationProvider
+          initialSlideIndex={0}
+          onSlideChange={(index) => setCurrentSlideIndex(index)}
+        >
+          <EditorStateProvider initialEditingState={false} slideSizeOverride={deckSlideSize}>
+            <ActiveSlideProvider>
+              <PresentationMode
+                slides={deck.slides}
+                currentSlideIndex={currentSlideIndex}
+                renderSlide={renderSlide}
+                isViewOnly={!canEdit}
+                slideSize={deckSlideSize}
+              />
+            </ActiveSlideProvider>
+          </EditorStateProvider>
+
+          {/* Top-right action buttons */}
+          <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+            {/* Share button */}
             <Button
-              onClick={handleSwitchToEdit}
+              onClick={() => setShareDialogOpen(true)}
               size="sm"
               variant="secondary"
               className="shadow-lg min-w-[44px] min-h-[44px] touch-manipulation"
             >
-              <Edit size={14} className="mr-2" />
-              Edit Deck
+              <Share2 size={14} className="mr-2" />
+              Share
             </Button>
+
+            {/* Optional edit button if user has permissions */}
+            {canEdit && (
+              <Button
+                onClick={handleSwitchToEdit}
+                size="sm"
+                variant="secondary"
+                className="shadow-lg min-w-[44px] min-h-[44px] touch-manipulation"
+              >
+                <Edit size={14} className="mr-2" />
+                Edit Deck
+              </Button>
+            )}
           </div>
-        )}
-      </NavigationProvider>
-    </div>
+
+          {/* Made with NextSlide badge */}
+          {shareCode && (
+            <MadeWithBadge shareCode={shareCode} />
+          )}
+        </NavigationProvider>
+
+        {/* Share Dialog */}
+        <ShareDialog
+          open={shareDialogOpen}
+          onOpenChange={setShareDialogOpen}
+          title={deck?.name || deckName || 'Presentation'}
+          shareUrl={shareBaseUrl}
+          onShareComplete={handleShareComplete}
+        />
+      </div>
+
+      {/* SEO content below the presentation viewport - visible to crawlers,
+          accessible if users scroll past the full-screen presentation */}
+      {shareCode && (
+        <div className="seo-below-fold">
+          <RelatedPresentations shareCode={shareCode} limit={4} />
+          <CreateYourOwnCTA />
+        </div>
+      )}
+    </>
   );
 };
 

@@ -95,4 +95,4 @@ const PixelGridBackground: React.FC<PixelGridBackgroundProps> = ({
     );
 };
 
-export default PixelGridBackground;
+export default React.memo(PixelGridBackground);

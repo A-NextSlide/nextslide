@@ -23,6 +23,7 @@ class ApiKeyRecord:
     id: str
     user_id: str
     key_prefix: str
+    key_hash: str
     name: str
     context_instructions: Optional[str]
     context_images: List[str]
@@ -382,6 +383,7 @@ class ApiKeyService:
             id=data["id"],
             user_id=data["user_id"],
             key_prefix=data["key_prefix"],
+            key_hash=data.get("key_hash", ""),
             name=data.get("name", "Default"),
             context_instructions=data.get("context_instructions"),
             context_images=data.get("context_images") or [],

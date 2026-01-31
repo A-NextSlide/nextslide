@@ -4,6 +4,25 @@ Rate limit configuration for API calls.
 Adjust these settings based on your API tier and usage patterns.
 """
 
+# =============================================================================
+# Public Developer API v1 Rate Limits
+# =============================================================================
+
+# Per-API-key concurrency: max simultaneous deck generations
+API_MAX_CONCURRENT_PER_KEY = 20
+
+# Per-API-key request rate: requests per minute
+API_RATE_LIMIT = "60/minute"
+
+# Stale generation cleanup: mark decks stuck in 'generating' as failed after N minutes
+API_STALE_GENERATION_TIMEOUT_MINUTES = 15
+
+# Periodic cleanup interval (seconds)
+API_STALE_CLEANUP_INTERVAL_SECONDS = 300  # 5 minutes
+
+# Request deduplication window (seconds)
+API_DEDUP_WINDOW_SECONDS = 60
+
 # Anthropic API rate limits (adjust based on your tier)
 ANTHROPIC_RATE_LIMITS = {
     "input_tokens_per_minute": 400000,  # Default tier

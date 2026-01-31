@@ -920,6 +920,98 @@ body:not(.ns-overlay-mode) [role="tab"]::after {
     return result + scriptBlock;
   };
 
+  /**
+   * Prevent "flash" where images render at intrinsic size before CSS/object-fit
+   * has been applied inside iframe-based HTML. We hide images by default and
+   * reveal them only after decode/load so the first paint is already correct.
+   */
+  const injectImageStabilityFixes = (html: string): string => {
+    if (!html || isThumbnail) return html;
+    if (html.includes('ns-image-stability-fix')) return html; // Already injected
+
+    const stabilityScript = `
+<style>
+/* === NextSlide Image Stability Fix === */
+img { 
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+  /* Override Tailwind preflight if present */
+  max-width: none !important;
+  max-height: none !important;
+}
+img.ns-img-ready { 
+  visibility: visible;
+  opacity: 1;
+}
+</style>
+<script>
+(function() {
+  if (window.__nsImageStabilityInstalled) return;
+  window.__nsImageStabilityInstalled = true;
+
+  function reveal(img) {
+    if (!img || img.classList.contains('ns-img-ready')) return;
+    img.classList.add('ns-img-ready');
+  }
+
+  function handleImage(img) {
+    if (!img) return;
+    if (img.complete && img.naturalWidth > 0) {
+      reveal(img);
+      return;
+    }
+    if (img.decode) {
+      img.decode().then(function() { reveal(img); }).catch(function() { reveal(img); });
+    } else {
+      img.addEventListener('load', function() { reveal(img); }, { once: true });
+      img.addEventListener('error', function() { reveal(img); }, { once: true });
+    }
+  }
+
+  function scan() {
+    var images = document.querySelectorAll('img');
+    images.forEach(handleImage);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', scan);
+  } else {
+    scan();
+  }
+
+  // Watch for dynamically inserted images
+  var observer = new MutationObserver(function(mutations) {
+    mutations.forEach(function(m) {
+      m.addedNodes && m.addedNodes.forEach(function(node) {
+        if (!node) return;
+        if (node.tagName && node.tagName.toLowerCase() === 'img') {
+          handleImage(node);
+          return;
+        }
+        if (node.querySelectorAll) {
+          node.querySelectorAll('img').forEach(handleImage);
+        }
+      });
+    });
+  });
+  observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+})();
+</script>
+<!-- ns-image-stability-fix -->`;
+
+    if (html.includes('</head>')) {
+      return html.replace('</head>', stabilityScript + '\n</head>');
+    } else if (html.includes('<body')) {
+      return html.replace('<body', stabilityScript + '\n<body');
+    } else if (html.includes('</body>')) {
+      return html.replace('</body>', stabilityScript + '\n</body>');
+    } else if (html.includes('</html>')) {
+      return html.replace('</html>', stabilityScript + '\n</html>');
+    }
+    return html + stabilityScript;
+  };
+
   // Inject image props into HTML by replacing placeholder src attributes
   const injectImageProps = (html: string, props: Record<string, any>): string => {
     if (!html || !props) return html;
@@ -1217,6 +1309,7 @@ body:not(.ns-overlay-mode) [role="tab"]::after {
     html = injectZoomRelay(html, component.id);
 
     // Inject interactivity safety net — fixes decorative overlays blocking button clicks
+    html = injectImageStabilityFixes(html);
     html = injectInteractivityFixes(html);
 
     // Inject element-level edit mode when in edit mode (not just when selected)

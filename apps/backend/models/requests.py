@@ -318,3 +318,35 @@ class CommunityCategoryCount(BaseModel):
 class RejectCommunitySubmissionRequest(BaseModel):
     """Request to reject a community submission"""
     reason: str = Field(description="Reason for rejection")
+
+
+# ============================================================================
+# Showcase Models
+# ============================================================================
+
+class ShowcaseDeckResponse(BaseModel):
+    """Response model for a showcase deck (includes upvote data)"""
+    id: str
+    title: str
+    description: Optional[str] = None
+    category: str
+    tags: List[str] = []
+    slide_count: int = 0
+    first_slide: Optional[Dict[str, Any]] = None
+    author_name: Optional[str] = None
+    remix_count: int = 0
+    view_count: int = 0
+    upvote_count: int = 0
+    is_featured: bool = False
+    has_upvoted: bool = False
+    approved_at: Optional[str] = None
+    submitted_at: Optional[str] = None
+
+
+class ShowcaseListResponse(BaseModel):
+    """Paginated list of showcase decks"""
+    decks: List[ShowcaseDeckResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool

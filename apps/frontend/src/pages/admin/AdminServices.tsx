@@ -1,11 +1,21 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
 import { Button } from '@/components/ui/button';
 import { adminApi, ServiceHealthResponse, ModelConfigResponse } from '@/services/adminApi';
 import { RefreshCw, CheckCircle, XCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import AdminIntegrationsPanel from '@/components/admin/AdminIntegrationsPanel';
+
+const systemTabs = [
+  { id: 'health', label: 'Health' },
+  { id: 'integrations', label: 'Integrations' },
+];
 
 const AdminServices: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const initialTab = systemTabs.some(t => t.id === searchParams.get('tab')) ? searchParams.get('tab')! : 'health';
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [healthData, setHealthData] = useState<ServiceHealthResponse | null>(null);
   const [modelConfig, setModelConfig] = useState<ModelConfigResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,30 +57,25 @@ const AdminServices: React.FC = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <AdminLayoutV2>
-        <div className="w-full flex items-center justify-center h-[60vh]">
-          <Loader2 className="h-5 w-5 animate-spin text-[#666]" />
-        </div>
-      </AdminLayoutV2>
-    );
-  }
-
   const operationalCount = healthData?.services.filter(s => s.status === 'operational').length || 0;
   const totalCount = healthData?.services.length || 0;
 
-  return (
-    <AdminLayoutV2>
-      <div className="w-full space-y-6">
-        {/* Header */}
+  const renderHealth = () => {
+    if (loading) {
+      return (
+        <div className="w-full flex items-center justify-center h-[40vh]">
+          <Loader2 className="h-5 w-5 animate-spin text-[#666]" />
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        {/* Health Header */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">Services</h1>
-            <p className="text-sm text-[#666] dark:text-[#888]">
-              {operationalCount}/{totalCount} operational
-            </p>
-          </div>
+          <p className="text-sm text-[#666] dark:text-[#888]">
+            {operationalCount}/{totalCount} operational
+          </p>
           <Button
             variant="outline"
             size="sm"
@@ -170,6 +175,40 @@ const AdminServices: React.FC = () => {
             </div>
           </div>
         )}
+      </div>
+    );
+  };
+
+  return (
+    <AdminLayoutV2>
+      <div className="w-full space-y-6">
+        {/* Header */}
+        <div>
+          <h1 className="text-lg font-semibold">System</h1>
+          <p className="text-sm text-[#666] dark:text-[#888]">Service health, models, and integrations</p>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="border-b border-[#eaeaea] dark:border-[#333]">
+          <div className="flex gap-0 -mb-px">
+            {systemTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-black dark:border-white text-black dark:text-white'
+                    : 'border-transparent text-[#666] dark:text-[#888] hover:text-black dark:hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'health' ? renderHealth() : <AdminIntegrationsPanel />}
       </div>
     </AdminLayoutV2>
   );

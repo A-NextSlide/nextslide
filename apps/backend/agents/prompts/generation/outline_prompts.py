@@ -196,8 +196,8 @@ def get_slide_content_prompt(
     if slide_type:
         lines.append(f"Slide type: {slide_type}")
     lines.append(
-        "Create presentation-ready content appropriate for the slide type and context. "
-        "Keep it concise and clear."
+        "Write for a presentation slide — let the content decide density: "
+        "data-heavy analysis can be detailed, but most slides should be concise and visual."
     )
     lines.append("Return only slide content text; no extra metadata.")
     return "\n".join(lines)

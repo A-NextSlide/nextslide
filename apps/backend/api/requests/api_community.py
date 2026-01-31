@@ -6,7 +6,7 @@ import logging
 import os
 import uuid
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Header, Request
 from pydantic import BaseModel
@@ -22,6 +22,8 @@ from models.requests import (
     CommunitySubmissionResponse,
     CommunityCategoryCount,
     RejectCommunitySubmissionRequest,
+    ShowcaseDeckResponse,
+    ShowcaseListResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -568,6 +570,296 @@ async def get_submission_status(
     except Exception as e:
         logger.error(f"Error checking submission status: {e}")
         raise HTTPException(status_code=500, detail="Failed to check submission status")
+
+
+# ============================================================================
+# Showcase Endpoints
+# ============================================================================
+
+def _build_showcase_deck(deck: Dict[str, Any], has_upvoted: bool = False) -> ShowcaseDeckResponse:
+    """Build a ShowcaseDeckResponse from a raw deck dict."""
+    return ShowcaseDeckResponse(
+        id=deck['id'],
+        title=deck['title'],
+        description=deck.get('description'),
+        category=deck['category'],
+        tags=deck.get('tags', []),
+        slide_count=deck.get('slide_count', 0),
+        first_slide=deck.get('first_slide'),
+        author_name=deck.get('author_name'),
+        remix_count=deck.get('remix_count', 0),
+        view_count=deck.get('view_count', 0),
+        upvote_count=deck.get('upvote_count', 0),
+        is_featured=deck.get('is_featured', False),
+        has_upvoted=has_upvoted,
+        approved_at=deck.get('approved_at'),
+        submitted_at=deck.get('submitted_at'),
+    )
+
+
+@router.get("/showcase", response_model=ShowcaseListResponse)
+async def get_showcase(
+    category: Optional[str] = Query(None, description="Filter by category"),
+    sort: Optional[str] = Query("trending", description="Sort: trending, newest, most_popular, most_remixed"),
+    tab: Optional[str] = Query(None, description="Tab filter: featured, trending, new"),
+    search: Optional[str] = Query(None, description="Search in title, description, tags"),
+    limit: int = Query(12, ge=1, le=50, description="Items per page"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    user: Optional[Dict[str, Any]] = Depends(get_current_user_optional),
+):
+    """
+    Enhanced showcase listing with filtering, sorting, and upvote status.
+    Public endpoint - auth optional for upvote status.
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Build query - only approved decks
+        select_fields = (
+            'id, title, description, category, tags, slide_count, first_slide, '
+            'author_name, remix_count, view_count, upvote_count, is_featured, '
+            'approved_at, submitted_at'
+        )
+
+        query = supabase.table('community_decks').select(
+            select_fields, count='exact'
+        ).eq('status', 'approved')
+
+        # Tab filter
+        if tab == 'featured':
+            query = query.eq('is_featured', True)
+        elif tab == 'new':
+            # New = approved in last 14 days
+            two_weeks_ago = (datetime.utcnow() - timedelta(days=14)).isoformat()
+            query = query.gte('approved_at', two_weeks_ago)
+
+        # Category filter
+        if category:
+            query = query.eq('category', category)
+
+        # Search filter
+        if search:
+            query = query.or_(
+                f"title.ilike.%{search}%,description.ilike.%{search}%"
+            )
+
+        # Sorting
+        if sort == 'newest':
+            query = query.order('approved_at', desc=True)
+        elif sort == 'most_popular':
+            query = query.order('view_count', desc=True)
+        elif sort == 'most_remixed':
+            query = query.order('remix_count', desc=True)
+        else:
+            # trending = upvote_count desc (default)
+            query = query.order('upvote_count', desc=True).order('approved_at', desc=True)
+
+        # Pagination
+        query = query.range(offset, offset + limit - 1)
+
+        result = query.execute()
+        total = result.count if result.count else 0
+
+        # Get upvote status for current user
+        user_upvoted_ids: set = set()
+        if user and result.data:
+            deck_ids = [d['id'] for d in result.data]
+            try:
+                upvotes = supabase.table('showcase_upvotes').select(
+                    'community_deck_id'
+                ).eq('user_id', user['id']).in_('community_deck_id', deck_ids).execute()
+                user_upvoted_ids = {u['community_deck_id'] for u in (upvotes.data or [])}
+            except Exception as e:
+                logger.warning(f"Failed to get upvote status: {e}")
+
+        decks = [
+            _build_showcase_deck(deck, has_upvoted=deck['id'] in user_upvoted_ids)
+            for deck in (result.data or [])
+        ]
+
+        return ShowcaseListResponse(
+            decks=decks,
+            total=total,
+            limit=limit,
+            offset=offset,
+            has_more=offset + limit < total,
+        )
+
+    except Exception as e:
+        logger.error(f"Error fetching showcase: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch showcase")
+
+
+@router.get("/showcase/weekly-top", response_model=List[ShowcaseDeckResponse])
+async def get_weekly_top(
+    user: Optional[Dict[str, Any]] = Depends(get_current_user_optional),
+):
+    """
+    Get top 5 most upvoted decks this week.
+    Public endpoint - auth optional for upvote status.
+    """
+    try:
+        supabase = get_supabase_client()
+        one_week_ago = (datetime.utcnow() - timedelta(days=7)).isoformat()
+
+        # Get upvotes from this week grouped by deck
+        upvotes_result = supabase.table('showcase_upvotes').select(
+            'community_deck_id'
+        ).gte('created_at', one_week_ago).execute()
+
+        # Count upvotes per deck
+        deck_upvote_counts: Dict[str, int] = {}
+        for row in (upvotes_result.data or []):
+            did = row['community_deck_id']
+            deck_upvote_counts[did] = deck_upvote_counts.get(did, 0) + 1
+
+        if not deck_upvote_counts:
+            # Fallback: return top 5 by total upvote_count
+            fallback = supabase.table('community_decks').select(
+                'id, title, description, category, tags, slide_count, first_slide, '
+                'author_name, remix_count, view_count, upvote_count, is_featured, '
+                'approved_at, submitted_at'
+            ).eq('status', 'approved').order('upvote_count', desc=True).limit(5).execute()
+
+            user_upvoted_ids: set = set()
+            if user and fallback.data:
+                deck_ids = [d['id'] for d in fallback.data]
+                try:
+                    uv = supabase.table('showcase_upvotes').select(
+                        'community_deck_id'
+                    ).eq('user_id', user['id']).in_('community_deck_id', deck_ids).execute()
+                    user_upvoted_ids = {u['community_deck_id'] for u in (uv.data or [])}
+                except Exception:
+                    pass
+
+            return [
+                _build_showcase_deck(d, has_upvoted=d['id'] in user_upvoted_ids)
+                for d in (fallback.data or [])
+            ]
+
+        # Sort by weekly count, take top 5
+        top_ids = sorted(deck_upvote_counts.keys(), key=lambda x: deck_upvote_counts[x], reverse=True)[:5]
+
+        # Fetch deck details
+        decks_result = supabase.table('community_decks').select(
+            'id, title, description, category, tags, slide_count, first_slide, '
+            'author_name, remix_count, view_count, upvote_count, is_featured, '
+            'approved_at, submitted_at'
+        ).eq('status', 'approved').in_('id', top_ids).execute()
+
+        # Get user upvote status
+        user_upvoted_ids = set()
+        if user and decks_result.data:
+            try:
+                uv = supabase.table('showcase_upvotes').select(
+                    'community_deck_id'
+                ).eq('user_id', user['id']).in_('community_deck_id', top_ids).execute()
+                user_upvoted_ids = {u['community_deck_id'] for u in (uv.data or [])}
+            except Exception:
+                pass
+
+        # Sort by weekly count
+        decks_map = {d['id']: d for d in (decks_result.data or [])}
+        sorted_decks = [decks_map[did] for did in top_ids if did in decks_map]
+
+        return [
+            _build_showcase_deck(d, has_upvoted=d['id'] in user_upvoted_ids)
+            for d in sorted_decks
+        ]
+
+    except Exception as e:
+        logger.error(f"Error fetching weekly top: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch weekly top")
+
+
+@router.post("/{deck_id}/upvote")
+async def toggle_upvote(
+    deck_id: str,
+    user: Dict[str, Any] = Depends(get_current_user_required),
+):
+    """
+    Toggle upvote on a community deck.
+    If already upvoted, removes the upvote. Otherwise adds one.
+    """
+    try:
+        supabase = get_supabase_client()
+        user_id = user['id']
+
+        # Verify deck exists and is approved
+        deck = supabase.table('community_decks').select(
+            'id, upvote_count'
+        ).eq('id', deck_id).eq('status', 'approved').execute()
+
+        if not deck.data:
+            raise HTTPException(status_code=404, detail="Community deck not found")
+
+        current_count = deck.data[0].get('upvote_count', 0)
+
+        # Check if already upvoted
+        existing = supabase.table('showcase_upvotes').select('id').eq(
+            'community_deck_id', deck_id
+        ).eq('user_id', user_id).execute()
+
+        if existing.data:
+            # Remove upvote
+            supabase.table('showcase_upvotes').delete().eq(
+                'community_deck_id', deck_id
+            ).eq('user_id', user_id).execute()
+            new_count = max(0, current_count - 1)
+            upvoted = False
+        else:
+            # Add upvote
+            supabase.table('showcase_upvotes').insert({
+                'community_deck_id': deck_id,
+                'user_id': user_id,
+            }).execute()
+            new_count = current_count + 1
+            upvoted = True
+
+        # Update count on deck
+        try:
+            supabase.table('community_decks').update({
+                'upvote_count': new_count
+            }).eq('id', deck_id).execute()
+        except Exception:
+            pass  # Don't fail if count sync fails
+
+        return {
+            "success": True,
+            "upvoted": upvoted,
+            "upvote_count": new_count,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling upvote: {e}")
+        raise HTTPException(status_code=500, detail="Failed to toggle upvote")
+
+
+@router.get("/{deck_id}/upvote-status")
+async def get_upvote_status(
+    deck_id: str,
+    user: Dict[str, Any] = Depends(get_current_user_required),
+):
+    """
+    Check if the current user has upvoted a specific deck.
+    """
+    try:
+        supabase = get_supabase_client()
+        user_id = user['id']
+
+        existing = supabase.table('showcase_upvotes').select('id').eq(
+            'community_deck_id', deck_id
+        ).eq('user_id', user_id).execute()
+
+        return {
+            "has_upvoted": bool(existing.data),
+        }
+
+    except Exception as e:
+        logger.error(f"Error checking upvote status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to check upvote status")
 
 
 # ============================================================================

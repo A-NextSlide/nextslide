@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, Suspense, lazy } from 'react';
+import React, { useEffect, useState, useRef, useCallback, Suspense, lazy } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import BrandWordmark from '@/components/common/BrandWordmark';
@@ -8,7 +8,8 @@ import {
   Zap, Palette, Brain, ChevronDown, ChevronUp,
   ChevronLeft, ChevronRight, Bot, Layers, Settings, Crown, Star,
   Search, FileText, Image, Users, Share2, Code, MessageSquare,
-  Sparkles, MousePointer2, BookOpen, BarChart3, Wand2, PenTool
+  Sparkles, MousePointer2, BookOpen, BarChart3, Wand2, PenTool,
+  Loader2
 } from 'lucide-react';
 import { showcaseService, ShowcaseDeck } from '@/services/showcaseService';
 import InteractiveHero from '@/components/landing/InteractiveHero';
@@ -27,12 +28,17 @@ import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { StaticEditorStateProvider } from '@/context/EditorStateContext';
 import { StaticNavigationProvider } from '@/context/NavigationContext';
+import { generatePreview, PreviewResult, PreviewRateLimitError } from '@/services/previewApi';
+import { trackEvent } from '@/services/analytics';
 
 // Lazy load Slide component for the main viewer
 const Slide = lazy(() => import('@/components/Slide'));
 
 // Lazy load MiniSlide
 const MiniSlide = lazy(() => import('@/components/deck/MiniSlide'));
+
+// Lazy load PreviewCarousel (only needed after generation)
+const PreviewCarousel = lazy(() => import('@/components/landing/PreviewCarousel'));
 
 const Landing: React.FC = () => {
   const navigate = useNavigate();
@@ -55,6 +61,12 @@ const Landing: React.FC = () => {
   const [isHeroInputFocused, setIsHeroInputFocused] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
 
+  // Preview state (Try Without Signup)
+  const [previewData, setPreviewData] = useState<PreviewResult | null>(null);
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewSectionRef = useRef<HTMLDivElement>(null);
+
   // Typewriter effect
   const typewriterText = useTypewriter({
     phrases: [
@@ -69,6 +81,81 @@ const Landing: React.FC = () => {
     pauseDuration: 2500,
     paused: !heroInView || isHeroInputFocused || !!heroInput,
   });
+
+  // ------------------------------------------------------------------
+  // Preview generation handler (Try Without Signup)
+  // ------------------------------------------------------------------
+  const handleGeneratePreview = useCallback(async () => {
+    const prompt = heroInput.trim();
+
+    // If user is signed in, use the original flow (redirect to /app)
+    if (isSignedIn) {
+      if (prompt) localStorage.setItem('landing_prompt', prompt);
+      navigate('/app');
+      return;
+    }
+
+    // Need a prompt to generate
+    if (!prompt) {
+      heroTextareaRef.current?.focus();
+      return;
+    }
+
+    // Already generating
+    if (isGeneratingPreview) return;
+
+    // Track analytics
+    trackEvent('landing_preview_started', { prompt_length: prompt.length });
+
+    setIsGeneratingPreview(true);
+    setPreviewError(null);
+    setPreviewData(null);
+
+    try {
+      const result = await generatePreview(prompt);
+
+      setPreviewData(result);
+
+      // Store preview ID for post-signup association
+      sessionStorage.setItem('preview_id', result.id);
+      sessionStorage.setItem('preview_prompt', prompt);
+
+      trackEvent('landing_preview_completed', {
+        slide_count: result.slides.length,
+        preview_id: result.id,
+      });
+
+      // Scroll to preview section after a brief delay for render
+      setTimeout(() => {
+        previewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 200);
+
+      // Track signup prompt shown (the locked slides act as prompts)
+      trackEvent('landing_preview_signup_prompted', { preview_id: result.id });
+    } catch (err) {
+      if (err instanceof PreviewRateLimitError) {
+        setPreviewError(err.message);
+        // On rate limit, fall back to showing the auth dialog
+        setShowAuthDialog(true);
+      } else {
+        const message = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+        setPreviewError(message);
+      }
+      trackEvent('landing_preview_failed', {
+        error: err instanceof Error ? err.message : 'unknown',
+      });
+    } finally {
+      setIsGeneratingPreview(false);
+    }
+  }, [heroInput, isSignedIn, isGeneratingPreview, navigate]);
+
+  // Handler for signup clicks from the preview carousel
+  const handlePreviewSignupClick = useCallback(() => {
+    trackEvent('landing_preview_signup_clicked', {
+      preview_id: previewData?.id,
+    });
+    setShowAuthDialog(true);
+  }, [previewData]);
 
 
   // Track hero visibility
@@ -105,7 +192,7 @@ const Landing: React.FC = () => {
       try {
         // Fetch both in parallel
         const [showcaseResults, communityResults] = await Promise.all([
-          showcaseService.getFeaturedDecks(11),
+          showcaseService.getFeaturedDecks(12),
           communityService.getDecks({ limit: 20 }).catch(() => ({ decks: [] }))
         ]);
         setShowcaseDecks(showcaseResults);
@@ -423,13 +510,7 @@ const Landing: React.FC = () => {
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey && heroInput.trim()) {
                         e.preventDefault();
-                        if (isSignedIn) {
-                          localStorage.setItem('landing_prompt', heroInput.trim());
-                          navigate('/app');
-                        } else {
-                          localStorage.setItem('landing_prompt', heroInput.trim());
-                          setShowAuthDialog(true);
-                        }
+                        handleGeneratePreview();
                       }
                     }}
                     className="w-full bg-transparent border-none outline-none text-black dark:text-white placeholder-transparent caret-[#FF4301] text-2xl sm:text-3xl font-semibold leading-tight resize-none m-0 relative z-20"
@@ -447,21 +528,22 @@ const Landing: React.FC = () => {
 
                   <Button
                     size="lg"
-                    onClick={() => {
-                      const prompt = heroInput.trim();
-                      if (isSignedIn) {
-                        if (prompt) localStorage.setItem('landing_prompt', prompt);
-                        navigate('/app');
-                      } else {
-                        if (prompt) localStorage.setItem('landing_prompt', prompt);
-                        setShowAuthDialog(true);
-                      }
-                    }}
+                    onClick={handleGeneratePreview}
+                    disabled={isGeneratingPreview}
                     className={cn(
                       "bg-[#FF4301] hover:bg-[#E63901] text-white rounded-xl px-8 py-6 text-lg font-bold shadow-lg shadow-orange-500/20 transition-all duration-300",
+                      isGeneratingPreview && "opacity-80 cursor-not-allowed"
                     )}
                   >
-                    Generate <ArrowRight className="ml-2 w-5 h-5" />
+                    {isGeneratingPreview ? (
+                      <>
+                        <Loader2 className="mr-2 w-5 h-5 animate-spin" /> Generating...
+                      </>
+                    ) : (
+                      <>
+                        Generate <ArrowRight className="ml-2 w-5 h-5" />
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>
@@ -480,6 +562,82 @@ const Landing: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Preview Section (appears after generation) */}
+          {(isGeneratingPreview || previewData) && (
+            <div ref={previewSectionRef} className="relative z-30 pb-16 pt-4 scroll-mt-24">
+              <Suspense fallback={null}>
+                <PreviewCarousel
+                  slides={previewData?.slides ?? []}
+                  title={previewData?.title ?? ''}
+                  onSignupClick={handlePreviewSignupClick}
+                  isLoading={isGeneratingPreview}
+                />
+              </Suspense>
+
+              {/* CTA section after preview loads */}
+              {previewData && !isGeneratingPreview && (
+                <div className="mt-10 max-w-[520px] mx-auto px-4">
+                  <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-black/10 dark:border-white/10 p-6 sm:p-8 shadow-xl text-center">
+                    <h4
+                      className="text-base sm:text-lg font-bold text-black dark:text-white mb-2"
+                      style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}
+                    >
+                      Save, edit & share your presentation
+                    </h4>
+                    <p className="text-sm text-black/60 dark:text-white/60 mb-5">
+                      Sign up to unlock all slides, use the AI editor, and get a shareable link.
+                    </p>
+
+                    {/* Google OAuth -- primary CTA */}
+                    <Button
+                      className="w-full h-11 bg-[#FF4301] hover:bg-[#E63901] text-white font-semibold mb-3"
+                      onClick={handlePreviewSignupClick}
+                    >
+                      <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                        <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                        <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                        <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                        <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                      </svg>
+                      Continue with Google
+                    </Button>
+
+                    {/* Email signup */}
+                    <Button
+                      variant="outline"
+                      className="w-full h-10 border-zinc-200 dark:border-zinc-700 text-sm"
+                      onClick={handlePreviewSignupClick}
+                    >
+                      Sign up with email
+                    </Button>
+
+                    <p className="text-[11px] text-black/40 dark:text-white/40 mt-4">
+                      Free forever, no credit card required
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Preview error display */}
+              {previewError && !isGeneratingPreview && !previewData && (
+                <div className="mt-6 max-w-[520px] mx-auto px-4 text-center">
+                  <p className="text-sm text-red-600 dark:text-red-400">{previewError}</p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 text-[#FF4301]"
+                    onClick={() => {
+                      setPreviewError(null);
+                      heroTextareaRef.current?.focus();
+                    }}
+                  >
+                    Try again
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {/* New Interactive Hero Section (used as Showcase) */}
@@ -1099,7 +1257,11 @@ const Landing: React.FC = () => {
         onOpenChange={setShowAuthDialog}
         initialMode="signup"
         onSuccess={() => {
-          // After successful auth, navigate to /app with the stored prompt
+          // Persist the preview prompt so the app can pick it up after signup
+          const previewPrompt = sessionStorage.getItem('preview_prompt') || heroInput.trim();
+          if (previewPrompt) {
+            localStorage.setItem('landing_prompt', previewPrompt);
+          }
           navigate('/app');
         }}
       />

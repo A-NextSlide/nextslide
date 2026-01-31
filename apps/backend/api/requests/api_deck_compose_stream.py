@@ -209,8 +209,10 @@ def create_deck_compose_stream(
         except asyncio.CancelledError:
             cancelled = True
             logger.info("Client disconnected during deck compose stream; cancelling gracefully")
-            # Optionally continue generation in background per config
-            if CONTINUE_GENERATION_ON_DISCONNECT:
+            # When Modal is enabled, the container persists independently — no need
+            # to restart generation locally, which would dispatch a duplicate container.
+            from agents.config import USE_MODAL
+            if CONTINUE_GENERATION_ON_DISCONNECT and not USE_MODAL:
                 async def _continue_in_background():
                     try:
                         logger.info(f"[COMPOSE_STREAM] Continuing generation in background for deck {deck_id}")
@@ -230,6 +232,8 @@ def create_deck_compose_stream(
                     asyncio.create_task(_continue_in_background())
                 except Exception:
                     pass
+            elif USE_MODAL:
+                logger.info(f"[COMPOSE_STREAM] Modal container persists for deck {deck_id}; skipping local background restart")
             return
         except Exception as e:
             logger.error(f"Error in deck composition stream: {e}", exc_info=True)

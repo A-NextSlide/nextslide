@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { API_CONFIG } from '@/config/environment';
+import { extractApiError } from '@/utils/extractErrorMessage';
 
 // Types
 export interface UserSummary {
@@ -873,7 +874,7 @@ class AdminApi {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Logo upload failed');
+        throw new Error(extractApiError(errorData.detail, 'Logo upload failed'));
       }
 
       return await response.json();
@@ -1156,6 +1157,131 @@ class AdminApi {
   async agentSchema(): Promise<any> {
     return this.request<any>('/admin/agent/schema');
   }
+
+  // ==================== Growth Dashboard ====================
+
+  async getGrowthStats(): Promise<GrowthStats> {
+    const raw = await this.request<any>('/admin/growth/stats');
+    return {
+      referrals: {
+        total_codes: raw.total_referral_codes ?? 0,
+        total_signups: raw.total_referral_signups ?? 0,
+        total_activated: raw.activated_referrals ?? 0,
+        total_credits: raw.total_referral_credits ?? 0,
+      },
+      gamification: {
+        total_badges_earned: raw.total_badges_earned ?? 0,
+        active_streaks: raw.active_streaks ?? 0,
+      },
+      community: {
+        pending: raw.community_pending ?? 0,
+        approved: raw.community_approved ?? 0,
+        rejected: raw.community_rejected ?? 0,
+      },
+      notifications: { sent_last_7d: raw.notifications_last_7d ?? 0 },
+      pqa: { total_domains: raw.total_pqa_domains ?? 0, pqa_domains: raw.total_pqa_domains ?? 0 },
+      viral: { shared_decks: 0, embeds: 0 },
+    };
+  }
+
+  async getGrowthReferrals(): Promise<GrowthReferrals> {
+    const raw = await this.request<any>('/admin/growth/referrals');
+    return {
+      stats: raw.stats ?? { total_codes: 0, total_signups: 0, total_activated: 0, total_credits: 0 },
+      top_referrers: (raw.top_referrers ?? []).map((r: any) => ({
+        user_id: r.user_id,
+        name: r.full_name || r.email || 'Unknown',
+        email: r.email || '',
+        referral_count: r.referral_count ?? 0,
+        credits_earned: r.credits_earned ?? 0,
+      })),
+      config: raw.config ?? { enabled: true, referee_signup_credits: 25, referrer_activation_credits: 50 },
+    };
+  }
+
+  async getGrowthGamification(): Promise<GrowthGamification> {
+    const raw = await this.request<any>('/admin/growth/gamification');
+    return {
+      enabled: raw.enabled ?? true,
+      badge_stats: raw.badge_stats ?? {
+        total_earned: raw.badges?.total_earned ?? 0,
+        by_type: raw.badges?.by_type ?? {},
+      },
+      badge_config: raw.badge_config ?? raw.badges?.credit_config ?? {},
+      streak_stats: raw.streak_stats ?? {
+        active_streaks: raw.streaks?.total_active ?? 0,
+        avg_streak: raw.streaks?.avg_length ?? 0,
+      },
+      streak_config: raw.streak_config ?? raw.streaks?.milestone_config ?? {},
+      reward_config: raw.reward_config ?? {},
+      leaderboard_preview: raw.leaderboard_preview ?? (raw.leaderboard ?? []).map((e: any, i: number) => ({
+        name: e.full_name || e.email || 'Unknown',
+        score: e.views ?? 0,
+        rank: i + 1,
+      })),
+    };
+  }
+
+  async getGrowthNotifications(): Promise<GrowthNotifications> {
+    const raw = await this.request<any>('/admin/growth/notifications');
+    return {
+      stats: raw.stats ?? { total_last_7d: 0, by_type: {} },
+      preference_stats: raw.preferences ?? {},
+      config: {
+        enabled: raw.config?.enabled ?? true,
+        view_threshold: raw.config?.view_threshold ?? 5,
+        email_on_views: raw.config?.email_on_views ?? true,
+        weekly_digest_enabled: raw.config?.weekly_digest_enabled ?? true,
+      },
+    };
+  }
+
+  async updateGrowthConfig(key: string, value: any): Promise<{ success: boolean; key: string; value: any }> {
+    return this.request<{ success: boolean; key: string; value: any }>('/admin/growth/config', {
+      method: 'PUT',
+      body: JSON.stringify({ key, value }),
+    });
+  }
+
+  async sendTestEmail(email: string, template: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/admin/growth/test-email', {
+      method: 'POST',
+      body: JSON.stringify({ email, template }),
+    });
+  }
+
+  async getGrowthPqa(): Promise<GrowthPqa> {
+    return this.request<GrowthPqa>('/admin/growth/pqa');
+  }
+
+  async getGrowthViral(): Promise<GrowthViral> {
+    const raw = await this.request<any>('/admin/growth/viral');
+    return {
+      stats: {
+        shared_decks: raw.stats?.shared_decks ?? 0,
+        embeds: raw.stats?.embed_views ?? raw.stats?.embeds ?? 0,
+        badge_impressions: raw.stats?.badge_impressions ?? 0,
+      },
+      config: raw.config ?? { badge_enabled: true, embed_enabled: true, og_previews_enabled: true },
+    };
+  }
+
+  async broadcastNotification(data: {
+    title: string;
+    message: string;
+    image_url?: string;
+    target?: string;
+    notification_type?: string;
+  }): Promise<{ success: boolean; sent_to: number; title: string }> {
+    return this.request<{ success: boolean; sent_to: number; title: string }>('/admin/growth/notifications/broadcast', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getNotificationHistory(page = 1, limit = 50): Promise<NotificationHistoryResponse> {
+    return this.request<NotificationHistoryResponse>(`/admin/growth/notifications/history?page=${page}&limit=${limit}`);
+  }
 }
 
 export interface Brand {
@@ -1397,3 +1523,61 @@ export interface AgentConfirmResponse {
 }
 
 export const adminApi = new AdminApi();
+
+// Growth Dashboard types
+export interface GrowthStats {
+  referrals: { total_codes: number; total_signups: number; total_activated: number; total_credits: number };
+  gamification: { total_badges_earned: number; active_streaks: number };
+  community: { pending: number; approved: number; rejected: number };
+  notifications: { sent_last_7d: number };
+  pqa: { total_domains: number; pqa_domains: number };
+  viral: { shared_decks: number; embeds: number };
+}
+
+export interface GrowthReferrals {
+  stats: { total_codes: number; total_signups: number; total_activated: number; total_credits: number };
+  top_referrers: Array<{ user_id: string; name: string; email: string; referral_count: number; credits_earned: number }>;
+  config: { enabled: boolean; referee_signup_credits: number; referrer_activation_credits: number };
+}
+
+export interface GrowthGamification {
+  badge_stats: { total_earned: number; by_type: Record<string, number> };
+  badge_config: Record<string, number>;
+  streak_stats: { active_streaks: number; avg_streak: number };
+  streak_config: Record<string, number>;
+  reward_config: Record<string, number>;
+  leaderboard_preview: Array<{ name: string; score: number; rank: number }>;
+}
+
+export interface GrowthNotifications {
+  stats: { total_last_7d: number; by_type: Record<string, number> };
+  preference_stats: Record<string, number>;
+  config: { enabled: boolean; view_threshold: number; email_on_views: boolean; weekly_digest_enabled: boolean };
+}
+
+export interface GrowthPqa {
+  domains: Array<{ domain: string; user_count: number; total_decks: number; is_pqa: boolean; notified: boolean }>;
+  config: { threshold: number; enabled: boolean };
+}
+
+export interface GrowthViral {
+  stats: { shared_decks: number; embeds: number; badge_impressions: number };
+  config: { badge_enabled: boolean; embed_enabled: boolean; og_previews_enabled: boolean };
+}
+
+export interface NotificationHistoryResponse {
+  notifications: Array<{
+    id: string;
+    type: string;
+    title: string;
+    message: string;
+    data: Record<string, any>;
+    created_at: string;
+    read: boolean;
+    user_id: string;
+  }>;
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}

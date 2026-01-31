@@ -12,7 +12,9 @@
     "build:frontend": "npm run build --workspace=apps/frontend",
     "test:frontend": "npm run test --workspace=apps/frontend",
     "kill": "cd apps/backend && make kill-all",
-    "restart": "npm run kill && npm run dev"
+    "restart": "npm run kill && npm run dev",
+    "nextslide": "npm-run-all --parallel dev:frontend dev:backend",
+    "nextslide:restart": "npm run kill && npm run nextslide"
   },
   "devDependencies": {},
   "description": "NextSlide monorepo - AI-powered slide generation platform",

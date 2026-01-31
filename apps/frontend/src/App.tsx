@@ -31,35 +31,44 @@ import TestCollaboration from './yjs/TestCollaboration';
 import SlideTagging from './pages/SlideTagging';
 import SharedDeckView from './pages/SharedDeckView';
 import SharedDeckEdit from './pages/SharedDeckEdit';
+const EmbedView = lazy(() => import('./pages/EmbedView'));
 import CommunityDeckView from './pages/CommunityDeckView';
+import WebpageViewer from './pages/WebpageViewer';
+import BadgeLanding from './pages/BadgeLanding';
 import { API_CONFIG } from './config/environment';
 import { DeckStoreInitializer } from './components/DeckStoreInitializer';
 // Removed font optimization hook
 import { useEnsureUserRecord } from './hooks/useEnsureUserRecord';
 const DevPerformanceHUD = import.meta.env.PROD ? null : React.lazy(() => import('./components/dev/PerformanceHUD'));
 
-// Admin imports
-import AdminUsers from './pages/admin/AdminUsers';
-import AdminUserDetail from './pages/admin/AdminUserDetail';
-import AdminDecks from './pages/admin/AdminDecks';
-import AdminCommunity from './pages/admin/AdminCommunity';
-import AdminBrands from './pages/admin/AdminBrands';
-import AdminServices from './pages/admin/AdminServices';
-import AdminCosts from './pages/admin/AdminCosts';
-import AdminAnalytics from './pages/admin/AdminAnalytics';
-import AdminAgent from './pages/admin/AdminAgent';
-import AdminIntegrations from './pages/admin/AdminIntegrations';
-import AdminLeads from './pages/admin/AdminLeads';
+// Admin imports (lazy-loaded to reduce bundle size for non-admin users)
+const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
+const AdminUserDetail = lazy(() => import('./pages/admin/AdminUserDetail'));
+const AdminDecks = lazy(() => import('./pages/admin/AdminDecks'));
+const AdminBrands = lazy(() => import('./pages/admin/AdminBrands'));
+const AdminServices = lazy(() => import('./pages/admin/AdminServices'));
+const AdminCosts = lazy(() => import('./pages/admin/AdminCosts'));
+const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics'));
+const AdminAgent = lazy(() => import('./pages/admin/AdminAgent'));
+const AdminGrowth = lazy(() => import('./pages/admin/AdminGrowth'));
 import AdminProtectedRoute from './components/AdminProtectedRoute';
 import TemporaryPasswordGate from './components/TemporaryPasswordGate';
 import SmartGallery from './pages/SmartGallery';
+import Showcase from './pages/Showcase';
+import TemplateGallery from './pages/TemplateGallery';
+import TemplateDetail from './pages/TemplateDetail';
 import Pricing from './pages/Pricing';
 import DeveloperAPI from './pages/DeveloperAPI';
 import Help from './pages/Help';
+import ReferralLanding from './pages/ReferralLanding';
 import { CreditsProvider } from './context/CreditsContext';
 import { OnboardingProvider } from './context/OnboardingContext';
 import UpgradePrompt from './components/billing/UpgradePrompt';
 import { RewardProvider } from './context/RewardContext';
+import AnalyticsDashboard from './pages/AnalyticsDashboard';
+import DeckAnalytics from './pages/DeckAnalytics';
+import PublicProfile from './pages/PublicProfile';
+import LandingPageRouter from './pages/LandingPageRouter';
 
 // Component to initialize font optimization
 // Removed FontOptimizationInitializer
@@ -161,8 +170,6 @@ class GlobalErrorBoundary extends Component<{ children: ReactNode }, ErrorBounda
   }
 }
 
-// Lazy load the Renderer component only when needed
-const LazyRenderer = lazy(() => import('./pages/Renderer'));
 
 // Create a new client with default options
 const queryClient = new QueryClient({
@@ -248,6 +255,13 @@ const ServerMonitor = () => {
   return null;
 };
 
+// Minimal loading shell for lazy-loaded admin pages
+const AdminLoadingShell = () => (
+  <div className="min-h-screen w-full bg-[#fafafa] dark:bg-[#0a0a0a] flex items-center justify-center">
+    <div className="w-5 h-5 border-2 border-[#eaeaea] dark:border-[#333] border-t-black dark:border-t-white rounded-full animate-spin" />
+  </div>
+);
+
 // Wrapper component to handle conditional collaboration
 const AppContent = () => {
   const location = useLocation();
@@ -313,10 +327,10 @@ const AppContent = () => {
           <DeckMonitor onChange={handleDeckDataChange} />
           <TemporaryPasswordGate enabled={false} password={import.meta.env.VITE_TEMP_GATE_PASSWORD || 'NextBeta'}>
             <Routes>
-              {/* Legacy alias: redirect settings/integrations to admin integrations page */}
-              <Route path="/settings/integrations" element={<RouteRedirect to="/admin/integrations" />} />
-              {/* Redirect old /integrations to admin */}
-              <Route path="/integrations" element={<RouteRedirect to="/admin/integrations" />} />
+              {/* Legacy alias: redirect settings/integrations to system integrations tab */}
+              <Route path="/settings/integrations" element={<Navigate to="/admin/services?tab=integrations" replace />} />
+              {/* Redirect old /integrations to system integrations tab */}
+              <Route path="/integrations" element={<Navigate to="/admin/services?tab=integrations" replace />} />
               <Route path="/" element={<Landing />} />
               <Route
                 path="/app"
@@ -371,17 +385,6 @@ const AppContent = () => {
                   </ProtectedRoute>
                 }
               />
-              {/* Add renderer route, only available when RENDERER env var is set */}
-              {import.meta.env.VITE_RENDERER === 'true' && (
-                <Route
-                  path="/renderer"
-                  element={
-                    <React.Suspense fallback={<div>Loading renderer...</div>}>
-                      <LazyRenderer />
-                    </React.Suspense>
-                  }
-                />
-              )}
               <Route
                 path="/profile"
                 element={
@@ -408,10 +411,24 @@ const AppContent = () => {
                 path="/e/:shareCode"
                 element={<SharedDeckEdit />}
               />
+              {/* Embeddable presentation viewer (minimal, iframe-friendly) */}
+              <Route
+                path="/embed/:shareCode"
+                element={
+                  <React.Suspense fallback={<div style={{ background: '#09090b', width: '100vw', height: '100vh' }} />}>
+                    <EmbedView />
+                  </React.Suspense>
+                }
+              />
               {/* Community deck view route */}
               <Route
                 path="/community/:deckId"
                 element={<CommunityDeckView />}
+              />
+              {/* Badge landing page - brought by "Made with NextSlide" badge */}
+              <Route
+                path="/from/:deckCode"
+                element={<BadgeLanding />}
               />
               {/* Email verification route */}
               <Route
@@ -441,7 +458,9 @@ const AppContent = () => {
                 path="/admin"
                 element={
                   <AdminProtectedRoute>
-                    <AdminAgent />
+                    <React.Suspense fallback={<AdminLoadingShell />}>
+                      <AdminAgent />
+                    </React.Suspense>
                   </AdminProtectedRoute>
                 }
               />
@@ -449,7 +468,9 @@ const AppContent = () => {
                 path="/admin/overview"
                 element={
                   <AdminProtectedRoute>
-                    <AdminAnalytics />
+                    <React.Suspense fallback={<AdminLoadingShell />}>
+                      <AdminAnalytics />
+                    </React.Suspense>
                   </AdminProtectedRoute>
                 }
               />
@@ -462,7 +483,9 @@ const AppContent = () => {
                 path="/admin/users"
                 element={
                   <AdminProtectedRoute>
-                    <AdminUsers />
+                    <React.Suspense fallback={<AdminLoadingShell />}>
+                      <AdminUsers />
+                    </React.Suspense>
                   </AdminProtectedRoute>
                 }
               />
@@ -470,7 +493,9 @@ const AppContent = () => {
                 path="/admin/users/:userId"
                 element={
                   <AdminProtectedRoute>
-                    <AdminUserDetail />
+                    <React.Suspense fallback={<AdminLoadingShell />}>
+                      <AdminUserDetail />
+                    </React.Suspense>
                   </AdminProtectedRoute>
                 }
               />
@@ -478,31 +503,32 @@ const AppContent = () => {
                 path="/admin/decks"
                 element={
                   <AdminProtectedRoute>
-                    <AdminDecks />
+                    <React.Suspense fallback={<AdminLoadingShell />}>
+                      <AdminDecks />
+                    </React.Suspense>
                   </AdminProtectedRoute>
                 }
               />
+              {/* Redirects for consolidated admin pages */}
               <Route
                 path="/admin/community"
-                element={
-                  <AdminProtectedRoute>
-                    <AdminCommunity />
-                  </AdminProtectedRoute>
-                }
+                element={<Navigate to="/admin/growth?tab=community" replace />}
+              />
+              <Route
+                path="/admin/leads"
+                element={<Navigate to="/admin/growth?tab=leads" replace />}
               />
               <Route
                 path="/admin/integrations"
-                element={
-                  <AdminProtectedRoute>
-                    <AdminIntegrations />
-                  </AdminProtectedRoute>
-                }
+                element={<Navigate to="/admin/services?tab=integrations" replace />}
               />
               <Route
                 path="/admin/brands"
                 element={
                   <AdminProtectedRoute>
-                    <AdminBrands />
+                    <React.Suspense fallback={<AdminLoadingShell />}>
+                      <AdminBrands />
+                    </React.Suspense>
                   </AdminProtectedRoute>
                 }
               />
@@ -510,7 +536,9 @@ const AppContent = () => {
                 path="/admin/services"
                 element={
                   <AdminProtectedRoute>
-                    <AdminServices />
+                    <React.Suspense fallback={<AdminLoadingShell />}>
+                      <AdminServices />
+                    </React.Suspense>
                   </AdminProtectedRoute>
                 }
               />
@@ -518,18 +546,64 @@ const AppContent = () => {
                 path="/admin/costs"
                 element={
                   <AdminProtectedRoute>
-                    <AdminCosts />
+                    <React.Suspense fallback={<AdminLoadingShell />}>
+                      <AdminCosts />
+                    </React.Suspense>
                   </AdminProtectedRoute>
                 }
               />
               <Route
-                path="/admin/leads"
+                path="/admin/growth"
                 element={
                   <AdminProtectedRoute>
-                    <AdminLeads />
+                    <React.Suspense fallback={<AdminLoadingShell />}>
+                      <AdminGrowth />
+                    </React.Suspense>
                   </AdminProtectedRoute>
                 }
               />
+              {/* Referral landing page (public) */}
+              <Route path="/r/:code" element={<ReferralLanding />} />
+              {/* Showcase gallery (public) */}
+              <Route path="/showcase" element={<Showcase />} />
+              <Route path="/showcase/:category" element={<Showcase />} />
+              {/* Analytics routes */}
+              <Route
+                path="/analytics"
+                element={
+                  <ProtectedRoute>
+                    <AnalyticsDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/analytics/:deckId"
+                element={
+                  <ProtectedRoute>
+                    <DeckAnalytics />
+                  </ProtectedRoute>
+                }
+              />
+              {/* Template gallery (public) */}
+              <Route path="/templates" element={<TemplateGallery />} />
+              <Route path="/templates/category/:category" element={<TemplateGallery />} />
+              <Route path="/templates/:slug" element={<TemplateDetail />} />
+              {/* Public profile / creator page */}
+              <Route path="/u/:username" element={<PublicProfile />} />
+              {/* Use-case landing pages */}
+              <Route path="/pitch-deck" element={<LandingPageRouter />} />
+              <Route path="/sales-deck" element={<LandingPageRouter />} />
+              <Route path="/education" element={<LandingPageRouter />} />
+              <Route path="/marketing" element={<LandingPageRouter />} />
+              {/* Industry landing pages (SEO-friendly flat routes) */}
+              <Route path="/for-startups" element={<LandingPageRouter />} />
+              <Route path="/for-educators" element={<LandingPageRouter />} />
+              <Route path="/for-marketers" element={<LandingPageRouter />} />
+              <Route path="/for-consultants" element={<LandingPageRouter />} />
+              {/* Legacy /for/:slug redirect */}
+              <Route path="/for/:slug" element={<LandingPageRouter />} />
+              {/* Published webpage viewer (public, no auth required) */}
+              <Route path="/s/:slug" element={<WebpageViewer />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/smart-gallery" element={<SmartGallery />} />
@@ -614,12 +688,3 @@ function App() {
 };
 
 export default App;
-
-// Simple redirect element for route aliases
-function RouteRedirect({ to }: { to: string }) {
-  const location = useLocation();
-  useEffect(() => {
-    window.history.replaceState({}, "", to);
-  }, [to, location]);
-  return null;
-}

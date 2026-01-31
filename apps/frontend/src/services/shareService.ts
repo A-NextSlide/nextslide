@@ -1,5 +1,6 @@
 import { API_ENDPOINTS } from '@/config/apiEndpoints';
 import { authService } from '@/services/authService';
+import { extractApiError } from '@/utils/extractErrorMessage';
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -287,7 +288,7 @@ class ShareService {
       if (!response.ok) {
         return {
           success: false,
-          error: data.error || data.detail || 'Failed to fetch share analytics'
+          error: data.error || extractApiError(data.detail, 'Failed to fetch share analytics')
         };
       }
 
@@ -400,7 +401,7 @@ class ShareService {
       if (!response.ok || !data) {
         return {
           success: false,
-          error: data?.error || data?.detail || 'Failed to access shared deck'
+          error: data?.error || extractApiError(data?.detail, 'Failed to access shared deck')
         };
       }
 
@@ -490,7 +491,7 @@ class ShareService {
       if (!response.ok || !data) {
         return {
           success: false,
-          error: data?.error || data?.detail || 'Failed to check share link'
+          error: data?.error || extractApiError(data?.detail, 'Failed to check share link')
         };
       }
 
@@ -519,7 +520,7 @@ class ShareService {
       if (!response.ok || !data) {
         return {
           success: false,
-          error: data?.error || data?.detail || 'Failed to register'
+          error: data?.error || extractApiError(data?.detail, 'Failed to register')
         };
       }
 
@@ -546,7 +547,7 @@ class ShareService {
       if (!response.ok) {
         return {
           success: false,
-          error: data.error || data.detail || 'Failed to get viewers'
+          error: data.error || extractApiError(data.detail, 'Failed to get viewers')
         };
       }
 

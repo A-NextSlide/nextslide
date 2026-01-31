@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { IconButton } from '../ui/IconButton';
-import { Edit, Plus, ChevronLeft, Undo, Redo, History, ZoomIn, ZoomOut, Search, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileText, Loader2, Sun, Moon, MessageSquare, Settings, Plug, LogOut, Share2, Lock } from 'lucide-react';
+import { Edit, Plus, ChevronLeft, Undo, Redo, History, ZoomIn, ZoomOut, Search, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileText, Loader2, Sun, Moon, Monitor, MessageSquare, Settings, LogOut, Share2, Lock, Download, Palette } from 'lucide-react';
 import { useLockedSlides } from '@/hooks/useLockedSlides';
 import { useVersionHistory } from '@/context/VersionHistoryContext';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
@@ -26,7 +26,7 @@ import { exportDeckToPDF } from '@/utils/pdfExport';
 import { exportDeckToHTML } from '@/utils/htmlExport';
 import { trackDeckExported } from '@/services/analytics';
 import { useAuth } from '@/context/SupabaseAuthContext';
-import { IntegrationsDialog } from '@/components/integrations';
+
 import { useIsMobile } from '@/hooks/use-mobile';
 import MobileShareSheet from './MobileShareSheet';
 
@@ -70,8 +70,8 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
   const { setTheme } = useTheme();
   const deckData = useDeckStore(state => state.deckData);
   const [isExporting, setIsExporting] = useState(false);
-  const [integrationsOpen, setIntegrationsOpen] = useState(false);
-  const { signOut } = useAuth();
+
+  const { signOut, user } = useAuth();
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
@@ -483,142 +483,180 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
                 <Menu size={16} />
               </IconButton>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => { try { window.dispatchEvent(new CustomEvent('notes:open')); } catch { } }}>
-                <NotepadText size={14} className="mr-2" />
-                Narrative/Notes
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setHistoryPanelOpen(!isHistoryPanelOpen)}>
-                <History size={14} className="mr-2" />
-                Version history
-              </DropdownMenuItem>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <Search size={14} className="mr-2" />
-                  Zoom
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="w-64 p-2">
-                  <div className="flex items-center space-x-2">
-                    <IconButton
-                      variant="ghost"
-                      size="xs"
-                      onClick={() => {
-                        const z = useEditorSettingsStore.getState().zoomLevel;
-                        if (z > ZOOM_LIMITS.min) {
-                          useEditorSettingsStore.getState().setZoomLevel(Math.max(ZOOM_LIMITS.min, z - ZOOM_STEP));
-                        }
-                      }}
-                      aria-label="Zoom Out"
-                    >
-                      <ZoomOut size={14} />
-                    </IconButton>
-                    <Slider
-                      value={[useEditorSettingsStore.getState().zoomLevel]}
-                      min={ZOOM_LIMITS.min}
-                      max={ZOOM_LIMITS.max}
-                      step={5}
-                      onValueChange={(value) => useEditorSettingsStore.getState().setZoomLevel(value[0])}
-                      className="flex-1"
-                    />
-                    <IconButton
-                      variant="ghost"
-                      size="xs"
-                      onClick={() => {
-                        const z = useEditorSettingsStore.getState().zoomLevel;
-                        if (z < ZOOM_LIMITS.max) {
-                          useEditorSettingsStore.getState().setZoomLevel(Math.min(ZOOM_LIMITS.max, z + ZOOM_STEP));
-                        }
-                      }}
-                      aria-label="Zoom In"
-                    >
-                      <ZoomIn size={14} />
-                    </IconButton>
+            <DropdownMenuContent align="end" className="w-64 p-0 rounded-xl shadow-[0_16px_70px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.5)] border border-gray-200/80 dark:border-white/10 bg-white dark:bg-zinc-900 overflow-hidden">
+
+              {/* User header — click to go to settings */}
+              <DropdownMenuItem
+                onClick={() => navigate('/profile')}
+                className="!p-0 focus:bg-transparent cursor-pointer"
+              >
+                <div className="w-full px-4 py-3 border-b border-gray-100 dark:border-white/[0.06] bg-gradient-to-r from-orange-50/80 to-amber-50/40 dark:from-orange-950/20 dark:to-transparent hover:from-orange-50 hover:to-amber-50/60 dark:hover:from-orange-950/30 dark:hover:to-orange-950/10 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center text-white text-xs font-semibold shadow-sm">
+                      {(user?.user_metadata?.full_name || user?.email || '?')[0].toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      {user?.user_metadata?.full_name && (
+                        <p className="text-[13px] font-semibold text-gray-900 dark:text-gray-100 truncate">{user.user_metadata.full_name}</p>
+                      )}
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
+                    </div>
                   </div>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-
-              <DropdownMenuSeparator />
-
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger disabled={isExporting}>
-                  {isExporting ? (
-                    <Loader2 size={14} className="mr-2 animate-spin" />
-                  ) : (
-                    <FileText size={14} className="mr-2" />
-                  )}
-                  Export
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  <DropdownMenuItem onClick={handleExportHTML} disabled={isExporting}>
-                    <FileText size={14} className="mr-2" />
-                    Export to NextSlide (Offline)
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleExportPDF} disabled={isExporting}>
-                    <FileText size={14} className="mr-2" />
-                    Export to PDF
-                  </DropdownMenuItem>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-
-              <DropdownMenuSeparator />
-
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <Sun size={14} className="mr-2" />
-                  Theme
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  <DropdownMenuItem onClick={() => setTheme('light')}>
-                    <Sun size={14} className="mr-2" />
-                    Light
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTheme('dark')}>
-                    <Moon size={14} className="mr-2" />
-                    Dark
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTheme('system')}>
-                    System
-                  </DropdownMenuItem>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-
-              <DropdownMenuSeparator />
-
-              <DropdownMenuItem onClick={() => navigate('/team')}>
-                <Users size={14} className="mr-2" />
-                Team Settings
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/profile')}>
-                <Settings size={14} className="mr-2" />
-                Profile Settings
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setIntegrationsOpen(true)}>
-                <Plug size={14} className="mr-2" />
-                Integrations
+                </div>
               </DropdownMenuItem>
 
-              <DropdownMenuSeparator />
+              {/* Editor section */}
+              <div className="p-1.5">
+                <p className="px-2.5 pt-2 pb-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Editor</p>
+                <DropdownMenuItem
+                  onClick={() => { try { window.dispatchEvent(new CustomEvent('notes:open')); } catch { } }}
+                  className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 focus:text-gray-900 dark:focus:text-gray-100 cursor-pointer"
+                >
+                  <NotepadText size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                  Narrative/Notes
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setHistoryPanelOpen(!isHistoryPanelOpen)}
+                  className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 focus:text-gray-900 dark:focus:text-gray-100 cursor-pointer"
+                >
+                  <History size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                  Version history
+                </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 focus:text-gray-900 dark:focus:text-gray-100 data-[state=open]:bg-orange-50 dark:data-[state=open]:bg-orange-500/10 cursor-pointer">
+                    <Search size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                    Zoom
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-64 p-3 rounded-xl shadow-[0_16px_70px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.5)] border border-gray-200/80 dark:border-white/10 bg-white dark:bg-zinc-900">
+                    <div className="flex items-center space-x-2">
+                      <IconButton
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => {
+                          const z = useEditorSettingsStore.getState().zoomLevel;
+                          if (z > ZOOM_LIMITS.min) {
+                            useEditorSettingsStore.getState().setZoomLevel(Math.max(ZOOM_LIMITS.min, z - ZOOM_STEP));
+                          }
+                        }}
+                        aria-label="Zoom Out"
+                      >
+                        <ZoomOut size={14} />
+                      </IconButton>
+                      <Slider
+                        value={[useEditorSettingsStore.getState().zoomLevel]}
+                        min={ZOOM_LIMITS.min}
+                        max={ZOOM_LIMITS.max}
+                        step={5}
+                        onValueChange={(value) => useEditorSettingsStore.getState().setZoomLevel(value[0])}
+                        className="flex-1"
+                      />
+                      <IconButton
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => {
+                          const z = useEditorSettingsStore.getState().zoomLevel;
+                          if (z < ZOOM_LIMITS.max) {
+                            useEditorSettingsStore.getState().setZoomLevel(Math.min(ZOOM_LIMITS.max, z + ZOOM_STEP));
+                          }
+                        }}
+                        aria-label="Zoom In"
+                      >
+                        <ZoomIn size={14} />
+                      </IconButton>
+                    </div>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </div>
 
-              <DropdownMenuItem onClick={() => { try { window.dispatchEvent(new CustomEvent('tour:start')); } catch { } }}>
-                <HelpCircle size={14} className="mr-2" />
-                Quick tour
-              </DropdownMenuItem>
+              <div className="mx-3 h-px bg-gray-100 dark:bg-white/[0.06]" />
 
-              <DropdownMenuSeparator />
+              {/* Export & Appearance section */}
+              <div className="p-1.5">
+                <p className="px-2.5 pt-2 pb-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Appearance</p>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger
+                    disabled={isExporting}
+                    className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 focus:text-gray-900 dark:focus:text-gray-100 data-[state=open]:bg-orange-50 dark:data-[state=open]:bg-orange-500/10 cursor-pointer"
+                  >
+                    {isExporting ? (
+                      <Loader2 size={15} className="mr-2.5 text-gray-400 dark:text-gray-500 animate-spin" />
+                    ) : (
+                      <Download size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                    )}
+                    Export
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="rounded-xl shadow-[0_16px_70px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.5)] border border-gray-200/80 dark:border-white/10 bg-white dark:bg-zinc-900 p-1.5">
+                    <DropdownMenuItem onClick={handleExportHTML} disabled={isExporting} className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 cursor-pointer">
+                      <FileText size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                      NextSlide (Offline)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleExportPDF} disabled={isExporting} className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 cursor-pointer">
+                      <FileText size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                      Export to PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 focus:text-gray-900 dark:focus:text-gray-100 data-[state=open]:bg-orange-50 dark:data-[state=open]:bg-orange-500/10 cursor-pointer">
+                    <Palette size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                    Theme
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="rounded-xl shadow-[0_16px_70px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.5)] border border-gray-200/80 dark:border-white/10 bg-white dark:bg-zinc-900 p-1.5">
+                    <DropdownMenuItem onClick={() => setTheme('light')} className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 cursor-pointer">
+                      <Sun size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                      Light
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setTheme('dark')} className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 cursor-pointer">
+                      <Moon size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                      Dark
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setTheme('system')} className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 cursor-pointer">
+                      <Monitor size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                      System
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </div>
 
-              <DropdownMenuItem onClick={signOut} className="text-red-600 dark:text-red-500">
-                <LogOut size={14} className="mr-2" />
-                Sign Out
-              </DropdownMenuItem>
+              <div className="mx-3 h-px bg-gray-100 dark:bg-white/[0.06]" />
+
+              {/* Settings section */}
+              <div className="p-1.5">
+                <p className="px-2.5 pt-2 pb-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Settings</p>
+                <DropdownMenuItem onClick={() => navigate('/team')} className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 focus:text-gray-900 dark:focus:text-gray-100 cursor-pointer">
+                  <Users size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                  Team
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('/profile')} className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 focus:text-gray-900 dark:focus:text-gray-100 cursor-pointer">
+                  <Settings size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                  Profile
+                </DropdownMenuItem>
+              </div>
+
+              <div className="mx-3 h-px bg-gray-100 dark:bg-white/[0.06]" />
+
+              {/* Footer actions */}
+              <div className="p-1.5">
+                <DropdownMenuItem
+                  onClick={() => { try { window.dispatchEvent(new CustomEvent('tour:start')); } catch { } }}
+                  className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 focus:text-gray-900 dark:focus:text-gray-100 cursor-pointer"
+                >
+                  <HelpCircle size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
+                  Quick tour
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={signOut}
+                  className="rounded-lg px-2.5 py-2 text-[13px] text-red-600 dark:text-red-400 focus:bg-red-50 dark:focus:bg-red-500/10 focus:text-red-700 dark:focus:text-red-300 cursor-pointer"
+                >
+                  <LogOut size={15} className="mr-2.5" />
+                  Sign out
+                </DropdownMenuItem>
+              </div>
+
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
-      <IntegrationsDialog
-        open={integrationsOpen}
-        onOpenChange={setIntegrationsOpen}
-      />
       {/* Mobile share sheet - only rendered on mobile */}
       {isMobile && deckData?.uuid && (
         <MobileShareSheet

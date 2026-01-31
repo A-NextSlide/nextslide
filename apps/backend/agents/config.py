@@ -237,6 +237,7 @@ USE_HYBRID_RESEARCH_MODE = True
 USE_AGENT_THEMER = os.getenv('USE_AGENT_THEMER', 'true').lower() == 'true'
 USE_AGENTS_MD = os.getenv('USE_AGENTS_MD', 'true').lower() == 'true'
 USE_OUTLINE_AGENTS_MD = os.getenv('USE_OUTLINE_AGENTS_MD', 'true').lower() == 'true'
+USE_MODAL = os.getenv('USE_MODAL', 'false').lower() == 'true'
 
 IMAGE_GENERATION_ENABLED = False
 AUTO_APPLY_PENDING_IMAGES = False
@@ -301,5 +302,5 @@ OPENAI_EMBEDDINGS_MODEL = OPENAI_EMBEDDINGS
 CLAUDE_SONNET_4 = "claude-sonnet-4"
 CLAUDE_SONNET_4_ID = "claude-sonnet-4-20250514"
 
-# Startup log
-print(f"[CONFIG] Strategy: HARD={MODEL_HARD} | EASY={MODEL_EASY} | FALLBACK={MODEL_FALLBACK}")
+# Startup summary (read by chat_server for startup display)
+CONFIG_SUMMARY = f"{MODEL_HARD} / {MODEL_EASY} / {MODEL_FALLBACK}"

@@ -74,6 +74,7 @@ import { cn } from '@/lib/utils';
 import QRCode from 'qrcode';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useReward } from '@/context/RewardContext';
 import { communityService, COMMUNITY_CATEGORIES, SubmissionStatus } from '@/services/communityService';
 import { Textarea } from '../ui/textarea';
 
@@ -108,6 +109,7 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
   const { toast } = useToast();
   const { user } = useAuth();
   const isMobile = useIsMobile();
+  const { triggerBadgeCheck } = useReward();
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'links' | 'collaborators' | 'analytics' | 'community'>('links');
@@ -301,6 +303,7 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
       if (response.success && response.data) {
         // Track share link created in PostHog
         trackDeckShared({ deckId: deckUuid, shareType: 'link' });
+        triggerBadgeCheck();
 
         toast({
           title: "Share link created",
@@ -740,6 +743,7 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
         title: 'Submitted!',
         description: 'Your deck has been submitted for community review',
       });
+      triggerBadgeCheck();
 
       setSubmissionStatus('pending');
     } catch (error: any) {

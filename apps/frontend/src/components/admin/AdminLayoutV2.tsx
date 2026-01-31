@@ -5,7 +5,6 @@ import { useAuth } from '@/context/SupabaseAuthContext';
 import {
   LayoutDashboard,
   Users,
-  Users2,
   FileStack,
   LogOut,
   Menu,
@@ -14,9 +13,8 @@ import {
   Server,
   DollarSign,
   ExternalLink,
-  Plug,
-  Mail,
   Bot,
+  TrendingUp,
 } from 'lucide-react';
 
 interface AdminLayoutV2Props {
@@ -28,11 +26,9 @@ const navItems = [
   { title: 'Overview', href: '/admin/overview', icon: LayoutDashboard },
   { title: 'Users', href: '/admin/users', icon: Users },
   { title: 'Decks', href: '/admin/decks', icon: FileStack },
-  { title: 'Leads', href: '/admin/leads', icon: Mail },
-  { title: 'Community', href: '/admin/community', icon: Users2 },
-  { title: 'Integrations', href: '/admin/integrations', icon: Plug },
+  { title: 'Growth', href: '/admin/growth', icon: TrendingUp },
   { title: 'Brands', href: '/admin/brands', icon: Palette },
-  { title: 'Services', href: '/admin/services', icon: Server },
+  { title: 'System', href: '/admin/services', icon: Server },
   { title: 'Costs', href: '/admin/costs', icon: DollarSign },
 ];
 
@@ -58,7 +54,7 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
   }, [location.pathname]);
 
   return (
-    <div className="min-h-screen w-full bg-[#fafafa] dark:bg-[#0a0a0a] flex flex-col">
+    <div className="h-screen w-full bg-[#fafafa] dark:bg-[#0a0a0a] flex flex-col overflow-hidden">
       {/* Top Bar */}
       <header className="h-12 bg-white dark:bg-[#111] border-b border-[#eaeaea] dark:border-[#333] fixed top-0 left-0 right-0 z-40">
         <div className="h-full flex items-center justify-between px-4">
@@ -150,8 +146,8 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
       )}
 
       {/* Main Content */}
-      <main ref={mainRef} className="pt-12 flex-1 w-full h-[calc(100vh-3rem)] overflow-auto">
-        <div className="w-full h-full px-4 py-4">
+      <main ref={mainRef} className="pt-12 flex-1 w-full min-h-0 overflow-auto">
+        <div className="w-full px-4 py-4">
           {children}
         </div>
       </main>

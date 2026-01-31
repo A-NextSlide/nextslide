@@ -10,6 +10,8 @@ import { handleImageEvents } from '@/hooks/slideGeneration/imageEvents';
 import { applySlideDataToDeck, extractSlideUpdate } from '@/hooks/slideGeneration/slideUpdates';
 import { useThemeEventRelay } from '@/hooks/slideGeneration/themeRelay';
 import { handleOutlineStructureEvent } from '@/hooks/slideGeneration/outlinePlaceholders';
+import { API_ENDPOINTS } from '@/config/apiEndpoints';
+import { authService } from '@/services/authService';
 
 const postSystemMessage = (message: string, metadata: any = {}) => {
   try {
@@ -670,7 +672,7 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
     setDeckStatus(null);
     setLastSystemMessage(null);
 
-    // Check if new deck has an active generation
+    // Check if new deck has an active generation (via coordinator or DB status)
     if (deckId && coordinator.isGenerating(deckId)) {
       setIsGenerating(true);
       setDeckStatus({
@@ -681,6 +683,18 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
         totalSlides: 0,
         startedAt: new Date().toISOString()
       });
+    } else if (deckId) {
+      // Check if deck is mid-generation in Supabase (recovery after page reload)
+      const storeData = useDeckStore.getState().deckData;
+      const dbSt = storeData?.status;
+      const stState = typeof dbSt === 'object' ? (dbSt as any)?.state
+        : typeof dbSt === 'string' ? dbSt : null;
+      if ((stState === 'generating' || stState === 'creating') && storeData?.uuid === deckId) {
+        // Don't set isGenerating=false — the recovery effect will handle it
+        setIsGenerating(true);
+      } else {
+        setIsGenerating(false);
+      }
     } else {
       setIsGenerating(false);
     }
@@ -704,6 +718,130 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
       coordinator.removeEventListener('generation:progress', onProgressEvent as EventListener);
     };
   }, [coordinator, deckId, handleProgress]);
+
+  // Recovery polling: detect in-progress generation after page reload / navigation back.
+  // When Modal is running, the container persists independently. The frontend needs to
+  // detect that and poll the status endpoint until generation completes.
+  const recoveryActiveRef = useRef(false);
+  useEffect(() => {
+    if (!deckId) return;
+    // If the coordinator already tracks this generation (SSE still connected), skip recovery
+    if (coordinator.isGenerating(deckId)) return;
+
+    // Check deck data from the store to see if generation is in progress
+    const deckData = useDeckStore.getState().deckData;
+    const dbStatus = deckData?.status;
+    const statusState = typeof dbStatus === 'object' ? (dbStatus as any)?.state
+      : typeof dbStatus === 'string' ? dbStatus
+      : null;
+
+    if (statusState !== 'generating' && statusState !== 'creating') return;
+
+    // Also verify this deck matches the one in the store
+    if (deckData?.uuid && deckData.uuid !== deckId) return;
+
+    console.log('[useSlideGeneration] Recovery: detected in-progress generation for', deckId);
+    recoveryActiveRef.current = true;
+    setIsGenerating(true);
+
+    // Infer initial progress from existing slides
+    const slides = deckData?.slides || [];
+    const completedCount = slides.filter((s: any) => s.components && s.components.length > 0).length;
+    const totalCount = slides.length || 0;
+    const initialPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+    startedAtRef.current = startedAtRef.current || new Date().toISOString();
+    setDeckStatus({
+      state: 'generating',
+      progress: initialPct,
+      message: completedCount > 0
+        ? `Generating slides (${completedCount}/${totalCount})...`
+        : 'Generation in progress...',
+      currentSlide: completedCount,
+      totalSlides: totalCount,
+      startedAt: startedAtRef.current
+    });
+
+    // Post a system message so ChatPanel shows the progress
+    postSystemMessage(
+      completedCount > 0
+        ? `Resuming — ${completedCount} of ${totalCount} slides generated...`
+        : 'Generation in progress...',
+      { type: 'generation_status', state: 'generating', progress: initialPct, isStreamingUpdate: true, stage: 'slide_generation' }
+    );
+
+    let cancelled = false;
+    const poll = async () => {
+      while (!cancelled) {
+        await new Promise(r => setTimeout(r, 3000));
+        if (cancelled) break;
+
+        try {
+          const headers: Record<string, string> = {};
+          const token = authService.getAuthToken();
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+
+          const res = await fetch(
+            API_ENDPOINTS.getFullUrl(`/deck/${deckId}/status`),
+            { headers }
+          );
+          if (!res.ok) continue;
+          const status = await res.json();
+
+          const pct = status.progress?.percentage ?? 0;
+          const done = status.progress?.slides_completed ?? 0;
+          const total = status.progress?.total_slides ?? 0;
+          const isComplete = status.status === 'completed';
+
+          setDeckStatus({
+            state: isComplete ? 'completed' : 'generating',
+            progress: isComplete ? 100 : pct,
+            message: isComplete
+              ? 'Your presentation is ready!'
+              : `Generating slides (${done}/${total})...`,
+            currentSlide: done,
+            totalSlides: total,
+            startedAt: startedAtRef.current || new Date().toISOString()
+          });
+
+          if (isComplete) {
+            console.log('[useSlideGeneration] Recovery: generation completed for', deckId);
+            setIsGenerating(false);
+            recoveryActiveRef.current = false;
+
+            // Reload deck data from backend to get all completed slides
+            try {
+              const { loadDeck } = useDeckStore.getState() as any;
+              if (typeof loadDeck === 'function') {
+                await loadDeck(deckId);
+              }
+            } catch (e) {
+              console.warn('[useSlideGeneration] Recovery: failed to reload deck', e);
+            }
+
+            postSystemMessage('Your presentation is ready!', {
+              type: 'generation_complete',
+              stage: 'generation_complete',
+              progress: 100,
+              isStreamingUpdate: false,
+              streamed: true,
+              deckId
+            });
+
+            window.dispatchEvent(new CustomEvent('deck_generation_complete', {
+              detail: { deckId, timestamp: Date.now() }
+            }));
+            break;
+          }
+        } catch (e) {
+          console.warn('[useSlideGeneration] Recovery poll error:', e);
+        }
+      }
+    };
+
+    poll();
+    return () => { cancelled = true; recoveryActiveRef.current = false; };
+  }, [deckId, coordinator]);
 
   return {
     isGenerating,

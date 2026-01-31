@@ -2,6 +2,7 @@
 API endpoint for serving OG (Open Graph) images for shared decks.
 Applies NextSlide branding watermark to slide thumbnails.
 """
+import json as json_module
 import logging
 import io
 import re
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Response, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.responses import StreamingResponse
 from PIL import Image, ImageDraw, ImageFont
 
@@ -584,21 +585,287 @@ async def get_share_meta_html(short_code: str):
 
 
 # =============================================================================
+# OG Meta JSON API + Schema.org JSON-LD
+# =============================================================================
+
+def _extract_slide_text(deck_data: dict, max_length: int = 160) -> str:
+    """
+    Extract a plain-text description from the first few slides.
+    Used as the OG description for social previews.
+    """
+    slides = deck_data.get('slides', [])
+    texts: list[str] = []
+
+    for slide in slides[:3]:  # Only look at first 3 slides
+        components = slide.get('components', [])
+        for comp in components:
+            comp_type = comp.get('type', '')
+            props = comp.get('props', {})
+
+            # Text / Heading / Paragraph components
+            text = props.get('text', '') or props.get('content', '') or ''
+            if text:
+                # Strip HTML tags if present
+                clean = re.sub(r'<[^>]+>', ' ', str(text)).strip()
+                if clean:
+                    texts.append(clean)
+
+            # CustomComponent - try to extract visible text from HTML
+            if comp_type == 'CustomComponent':
+                comp_html = props.get('html', '')
+                if comp_html:
+                    clean = re.sub(r'<[^>]+>', ' ', comp_html)
+                    clean = re.sub(r'\s+', ' ', clean).strip()
+                    if clean and len(clean) > 10:
+                        texts.append(clean)
+
+    combined = ' '.join(texts).strip()
+    if len(combined) > max_length:
+        combined = combined[:max_length - 3].rsplit(' ', 1)[0] + '...'
+    return combined or "View this presentation on NextSlide - AI-Powered Presentation Builder"
+
+
+@router.get("/og-meta/{short_code}")
+async def get_og_meta_json(short_code: str):
+    """
+    Return OG metadata as JSON for the frontend DynamicMeta component.
+
+    Response:
+    {
+        "title": "Deck Name | NextSlide",
+        "description": "First ~160 chars of slide content",
+        "image_url": "/api/public/og/{short_code}.png",
+        "type": "article",
+        "url": "https://nextslide.ai/p/{short_code}",
+        "json_ld": { ... Schema.org PresentationDigitalDocument ... }
+    }
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Fetch share link
+        share_result = supabase.table('deck_shares').select(
+            'id, deck_uuid, metadata, share_type'
+        ).eq('short_code', short_code).eq('is_active', True).execute()
+
+        if not share_result.data:
+            raise HTTPException(status_code=404, detail="Share link not found")
+
+        share_data = share_result.data[0]
+        share_type = share_data.get('share_type', 'view')
+
+        # Fetch deck info (name + slides for description extraction)
+        deck_result = supabase.table('decks').select('name, slides').eq(
+            'uuid', share_data['deck_uuid']
+        ).execute()
+
+        deck_name = "Presentation"
+        deck_data: dict = {}
+        slide_count = 0
+        if deck_result.data:
+            deck_data = deck_result.data[0]
+            deck_name = deck_data.get('name', 'Presentation')
+            slides = deck_data.get('slides', [])
+            slide_count = len(slides) if isinstance(slides, list) else 0
+
+        title = f"{deck_name} | NextSlide"
+        description = _extract_slide_text(deck_data)
+        path_prefix = "p" if share_type == "view" else "e"
+        canonical_url = f"{FRONTEND_BASE_URL}/{path_prefix}/{short_code}"
+        og_image_url = f"{API_BASE_URL}/api/public/og/{short_code}.png"
+
+        # Schema.org JSON-LD for PresentationDigitalDocument
+        json_ld = {
+            "@context": "https://schema.org",
+            "@type": "PresentationDigitalDocument",
+            "name": deck_name,
+            "description": description,
+            "url": canonical_url,
+            "thumbnailUrl": og_image_url,
+            "provider": {
+                "@type": "Organization",
+                "name": "NextSlide",
+                "url": "https://nextslide.ai",
+            },
+        }
+
+        if slide_count > 0:
+            json_ld["numberOfPages"] = slide_count
+
+        return JSONResponse(
+            content={
+                "title": title,
+                "description": description,
+                "image_url": og_image_url,
+                "type": "article",
+                "url": canonical_url,
+                "json_ld": json_ld,
+            },
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating OG meta JSON: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate OG metadata")
+
+
+# =============================================================================
+# Enhanced Meta HTML with Schema.org JSON-LD
+# =============================================================================
+
+# Enhance the existing meta HTML endpoint to include JSON-LD.
+# We do this by patching get_share_meta_html to inject Schema.org markup.
+# The original function is kept as-is above; the share_router handlers
+# call it directly so the injection happens via the new _build_meta_html helper.
+
+def _build_meta_html(
+    deck_name: str,
+    short_code: str,
+    share_type: str = "view",
+    description: str = "",
+    slide_count: int = 0,
+) -> str:
+    """Build the full OG meta HTML including Schema.org JSON-LD."""
+    deck_name_escaped = html.escape(deck_name[:100])
+    desc_escaped = html.escape(description[:300]) if description else \
+        "View this presentation on NextSlide - AI-Powered Presentation Builder"
+
+    path_prefix = "p" if share_type == "view" else "e"
+    canonical_url = f"{FRONTEND_BASE_URL}/{path_prefix}/{short_code}"
+    og_image_url = f"{API_BASE_URL}/api/public/og/{short_code}.png"
+
+    # Schema.org JSON-LD
+    json_ld = {
+        "@context": "https://schema.org",
+        "@type": "PresentationDigitalDocument",
+        "name": deck_name,
+        "description": desc_escaped,
+        "url": canonical_url,
+        "thumbnailUrl": og_image_url,
+        "provider": {
+            "@type": "Organization",
+            "name": "NextSlide",
+            "url": "https://nextslide.ai",
+        },
+    }
+    if slide_count > 0:
+        json_ld["numberOfPages"] = slide_count
+
+    json_ld_str = json_module.dumps(json_ld, ensure_ascii=False)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{deck_name_escaped} | NextSlide</title>
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="{canonical_url}">
+    <meta property="og:title" content="{deck_name_escaped}">
+    <meta property="og:description" content="{desc_escaped}">
+    <meta property="og:image" content="{og_image_url}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:site_name" content="NextSlide">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="{canonical_url}">
+    <meta name="twitter:title" content="{deck_name_escaped}">
+    <meta name="twitter:description" content="{desc_escaped}">
+    <meta name="twitter:image" content="{og_image_url}">
+
+    <!-- Schema.org JSON-LD -->
+    <script type="application/ld+json">{json_ld_str}</script>
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="{canonical_url}">
+
+    <!-- Redirect for browsers (crawlers won't follow this) -->
+    <meta http-equiv="refresh" content="0;url={canonical_url}">
+    <script>window.location.href = "{canonical_url}";</script>
+</head>
+<body>
+    <p>Redirecting to <a href="{canonical_url}">{deck_name_escaped}</a>...</p>
+</body>
+</html>"""
+
+
+# =============================================================================
 # Share Route Handlers (mounted at root level for /p/ and /e/ routes)
 # =============================================================================
+
+async def _serve_bot_meta_html(short_code: str, share_type_override: str = "view") -> HTMLResponse:
+    """
+    Serve enhanced meta HTML (with JSON-LD) for bot/crawler requests.
+    Reuses the same DB queries as get_share_meta_html but includes
+    Schema.org markup and a richer description.
+    """
+    try:
+        supabase = get_supabase_client()
+
+        share_result = supabase.table('deck_shares').select(
+            'id, deck_uuid, metadata, share_type'
+        ).eq('short_code', short_code).eq('is_active', True).execute()
+
+        if not share_result.data:
+            raise HTTPException(status_code=404, detail="Share link not found")
+
+        share_data = share_result.data[0]
+        share_type = share_data.get('share_type', share_type_override)
+
+        deck_result = supabase.table('decks').select('name, slides').eq(
+            'uuid', share_data['deck_uuid']
+        ).execute()
+
+        deck_name = "Presentation"
+        deck_data: dict = {}
+        slide_count = 0
+        if deck_result.data:
+            deck_data = deck_result.data[0]
+            deck_name = deck_data.get('name', 'Presentation')
+            slides = deck_data.get('slides', [])
+            slide_count = len(slides) if isinstance(slides, list) else 0
+
+        description = _extract_slide_text(deck_data)
+        html_content = _build_meta_html(
+            deck_name=deck_name,
+            short_code=short_code,
+            share_type=share_type,
+            description=description,
+            slide_count=slide_count,
+        )
+
+        return HTMLResponse(
+            content=html_content,
+            status_code=200,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating enhanced meta HTML: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate meta page")
+
 
 @share_router.get("/p/{short_code}")
 async def handle_view_share(short_code: str, request: Request):
     """
     Handle view share routes.
-    - Bots/crawlers get meta HTML with OG tags
+    - Bots/crawlers get meta HTML with OG tags + Schema.org JSON-LD
     - Regular browsers get redirected to the frontend SPA
     """
     user_agent = request.headers.get('user-agent', '')
 
     if is_bot_request(user_agent):
         logger.info(f"Bot detected for /p/{short_code}: {user_agent[:100]}")
-        return await get_share_meta_html(short_code)
+        return await _serve_bot_meta_html(short_code, "view")
 
     # Redirect to frontend for regular browsers
     return RedirectResponse(
@@ -611,14 +878,14 @@ async def handle_view_share(short_code: str, request: Request):
 async def handle_edit_share(short_code: str, request: Request):
     """
     Handle edit share routes.
-    - Bots/crawlers get meta HTML with OG tags
+    - Bots/crawlers get meta HTML with OG tags + Schema.org JSON-LD
     - Regular browsers get redirected to the frontend SPA
     """
     user_agent = request.headers.get('user-agent', '')
 
     if is_bot_request(user_agent):
         logger.info(f"Bot detected for /e/{short_code}: {user_agent[:100]}")
-        return await get_share_meta_html(short_code)
+        return await _serve_bot_meta_html(short_code, "edit")
 
     # Redirect to frontend for regular browsers
     return RedirectResponse(

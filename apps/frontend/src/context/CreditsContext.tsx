@@ -5,7 +5,7 @@
  * Handles credit checking before AI operations.
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { billingApi, type CreditBalance } from '@/services/billingApi';
 import { useAuth } from '@/context/SupabaseAuthContext';
 
@@ -32,12 +32,14 @@ const CreditsContext = createContext<CreditsContextType | null>(null);
 
 export function CreditsProvider({ children }: { children: ReactNode }) {
   const { user, isLoading: authLoading } = useAuth();
+  const userId = user?.id;
   const [balance, setBalance] = useState<CreditBalance | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [insufficientCreditsAction, setInsufficientCreditsAction] = useState<string | null>(null);
   const [upgradePromptMetadata, setUpgradePromptMetadata] = useState<UpgradePromptMetadata | null>(null);
+  const fetchingRef = useRef(false);
 
   // Trigger upgrade prompt with custom action and metadata
   const triggerUpgradePrompt = useCallback((action: string, metadata?: UpgradePromptMetadata) => {
@@ -48,10 +50,13 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
 
   const refreshBalance = useCallback(async () => {
     // Wait for auth to finish loading and require user to be logged in
-    if (authLoading || !user) {
+    if (authLoading || !userId) {
       setBalance(null);
       return;
     }
+
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
 
     setLoading(true);
     setError(null);
@@ -66,15 +71,16 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
       setBalance(null);
     } finally {
       setLoading(false);
+      fetchingRef.current = false;
     }
-  }, [user, authLoading]);
+  }, [userId, authLoading]);
 
   // Load balance when auth is ready and user changes
   useEffect(() => {
     if (!authLoading) {
       refreshBalance();
     }
-  }, [refreshBalance, authLoading]);
+  }, [userId, authLoading]);
 
   // Check credits before an action
   const checkCredits = useCallback(async (action: string) => {

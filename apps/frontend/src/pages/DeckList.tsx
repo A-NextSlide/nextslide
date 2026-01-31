@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ModeToggle } from "@/components/ui/ModeToggle";
 import { UserMenu } from "@/components/ui/UserMenu";
+import NotificationBell from '@/components/notifications/NotificationBell';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -248,6 +249,9 @@ const DeckList: React.FC = () => {
       setIsPopupSearching(false);
       return;
     }
+
+    // Mark as searching immediately to prevent "no results" flash
+    setIsPopupSearching(true);
 
     // Debounce server search
     popupSearchTimerRef.current = setTimeout(() => {
@@ -1862,6 +1866,7 @@ const DeckList: React.FC = () => {
       // Reset search when closing
       setPopupSearchQuery('');
       setPopupSearchResults(null);
+      setIsPopupSearching(false);
       if (popupSearchTimerRef.current) {
         clearTimeout(popupSearchTimerRef.current);
       }
@@ -1943,6 +1948,7 @@ const DeckList: React.FC = () => {
             </div>
           )}
           <ModeToggle />
+          <NotificationBell />
           <UserMenu />
         </div>
       </header>
@@ -2867,7 +2873,7 @@ const DeckList: React.FC = () => {
                           <div className="relative mt-6">
                             <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 via-transparent to-orange-500/5 rounded-xl blur-xl" />
                             <div className="relative flex items-center">
-                              <SearchIcon className="absolute left-4 h-4 w-4 text-zinc-400 dark:text-zinc-500" />
+                              <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 dark:text-zinc-500" />
                               <Input
                                 type="text"
                                 placeholder="Search all presentations..."
@@ -2875,17 +2881,21 @@ const DeckList: React.FC = () => {
                                 onChange={(e) => handlePopupSearchChange(e.target.value)}
                                 autoFocus={false}
                                 tabIndex={-1}
-                                className="w-full bg-white/80 dark:bg-zinc-800/50 border-zinc-200/80 dark:border-zinc-700/50 hover:border-orange-300/50 dark:hover:border-orange-500/30 focus:border-orange-400 dark:focus:border-orange-500/50 text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 pl-11 pr-4 rounded-xl h-11 text-sm shadow-sm focus-visible:ring-2 focus-visible:ring-orange-500/20 focus-visible:ring-offset-0 transition-all duration-200"
+                                className="w-full bg-white/80 dark:bg-zinc-800/50 border-zinc-200/80 dark:border-zinc-700/50 hover:border-orange-300/50 dark:hover:border-orange-500/30 focus:border-orange-400 dark:focus:border-orange-500/50 text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 pl-11 pr-10 rounded-xl h-11 text-sm shadow-sm focus-visible:ring-2 focus-visible:ring-orange-500/20 focus-visible:ring-offset-0 transition-all duration-200"
                               />
                               {isPopupSearching ? (
-                                <Loader2 className="absolute right-4 h-4 w-4 text-orange-500 animate-spin" />
+                                <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-orange-500 animate-spin" />
                               ) : popupSearchQuery ? (
                                 <button
                                   onClick={() => {
                                     setPopupSearchQuery('');
                                     setPopupSearchResults(null);
+                                    setIsPopupSearching(false);
+                                    if (popupSearchTimerRef.current) {
+                                      clearTimeout(popupSearchTimerRef.current);
+                                    }
                                   }}
-                                  className="absolute right-4 p-0.5 rounded-full hover:bg-zinc-200/80 dark:hover:bg-zinc-700/80 transition-colors"
+                                  className="absolute right-4 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-zinc-200/80 dark:hover:bg-zinc-700/80 transition-colors"
                                 >
                                   <X className="h-3.5 w-3.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" />
                                 </button>

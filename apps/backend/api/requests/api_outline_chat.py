@@ -2,21 +2,16 @@
 API endpoint for outline chat editing functionality.
 """
 import logging
-import re
 from typing import Dict, Any, List, Optional
-from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from agents.ai.clients import get_client, invoke
-from agents.config import OUTLINE_CONTENT_MODEL
 from services.supabase_auth_service import get_auth_service
 from api.requests.api_auth import get_auth_header
 from setup_logging_optimized import get_logger
 from models.narrative_flow import NarrativeFlow, NarrativeFlowChanges
-from services.narrative_flow_analyzer import NarrativeFlowAnalyzer
-from services.outline.chart_normalization import normalize_slide_chart_fields
 
 logger = get_logger(__name__)
 
@@ -103,257 +98,49 @@ async def edit_outline_chat(
         if token:
             auth_service = get_auth_service()
             user = auth_service.get_user_with_token(token)
-        
+
         logger.info(f"Outline chat edit request: {request.message[:100]}...")
-        
-        # Build context for AI
-        context_prompt = _build_context_prompt(request)
-        
-        # Create the AI prompt
-        system_prompt = (
-            "You edit presentation outlines. Return ONLY JSON with {updatedOutline, changes}. "
-            "Preserve IDs and fields from the input; apply edits in place and keep tone/structure unless asked to change. "
-            "If target_slide_index is provided, only modify that slide and leave all others unchanged. "
-            "Each slide must include id, title, content, slide_type, narrative_role, speaker_notes, deepResearch, taggedMedia. "
-            "If you add chart data, include extractedData with {chartType, title, data, metadata} using real numbers when available."
+
+        # Route through Modal (with built-in local fallback) or run locally
+        from agents.config import USE_MODAL
+        if USE_MODAL:
+            from services.modal_dispatch import edit_outline_via_modal
+            result_dict = await edit_outline_via_modal(request.model_dump())
+        else:
+            from services.outline.outline_editing import edit_outline_core
+            result_dict = await edit_outline_core(request)
+
+        # Convert dict result → response models
+        updated = OutlineData(**(result_dict.get("updatedOutline") or {}))
+        changes = OutlineChanges(
+            **(result_dict.get("changes") or {"summary": "Applied outline edits", "modifiedSlides": []})
         )
+        updated_narrative_flow = None
+        narrative_changes = None
+        if result_dict.get("updatedNarrativeFlow"):
+            updated_narrative_flow = NarrativeFlow(**result_dict["updatedNarrativeFlow"])
+        if result_dict.get("narrativeChanges"):
+            narrative_changes = NarrativeFlowChanges(**result_dict["narrativeChanges"])
 
-        # Build a compact chat history block to provide original message context
-        history_lines: List[str] = []
-        try:
-            if request.chatHistory:
-                for msg in request.chatHistory[-6:]:
-                    role = (msg.get('role') or '').lower()
-                    text = (msg.get('content') or '').strip()
-                    if role in ("user", "assistant") and text:
-                        history_lines.append(f"[{role}] {text}")
-        except Exception:
-            pass
-        chat_history_block = ("\n\nChat history (most recent last):\n" + "\n".join(history_lines)) if history_lines else ""
-
-        target_label = (
-            f"Slide {request.target_slide_index + 1} only"
-            if request.target_slide_index is not None
-            else "Any relevant slides"
-        )
-        user_prompt = f"""Current outline:
-{_format_outline_for_prompt(request.outline)}
-
-User request: "{request.message}"
-{chat_history_block}
-
-{context_prompt}
-
-Target: {target_label}
-
-Return updatedOutline and changes JSON only."""
-
-        # Tool-powered outline editing
-        from pydantic import create_model
-        from typing import Union
-        from models.tools import get_tools_descriptions
-        from agents.outline.tools import (
-            UpdateSlideContentArgs, update_slide_content,
-            AddSlideArgs, add_slide,
-            RemoveSlideArgs, remove_slide_outline,
-            MoveSlideArgs, move_slide_outline,
-            ResearchSlideArgs, research_slide_outline,
-            FirecrawlOutlineArgs, firecrawl_outline_fetch,
-            DeepExtractArgs, deep_extract,
-        )
-
-        tools = [
-            UpdateSlideContentArgs,
-            AddSlideArgs,
-            RemoveSlideArgs,
-            MoveSlideArgs,
-            ResearchSlideArgs,
-            FirecrawlOutlineArgs,
-            DeepExtractArgs,
-        ]
-
-        descriptions = get_tools_descriptions(tools)
-        ToolCall = create_model(
-            "OutlineToolCall",
-            tool=(Union[tuple(tools)], Field(description="The tool call for outline editing")),
-            summary=(str, Field(description="What this tool call does"))
-        )
-        ToolPlan = create_model(
-            "OutlineToolPlan",
-            tool_calls=(List[ToolCall], Field(description="List of tool calls to apply"))
-        )
-
-        tool_system = f"""You are an outline editor. Choose tool calls to modify the outline based on the user's message.\n\nAvailable tools:\n{descriptions}\n\nRules:\n- Keep edits minimal and targeted\n- Maintain all required slide fields\n- When research or external data/images are requested, prefer firecrawl_outline_fetch for quick single-page grabs\n- When the user requests deep, multi-page, or site-specific extraction, use deep_extract\n- When research is requested, you may also use research_slide_outline to add supporting bullets or chart data\n- If the user asks to add/remove/reorder slides, pick the appropriate tool\n- If the user asks to change a specific slide, prefer update_slide_content\n"""
-
-        client, model_name = get_client(OUTLINE_CONTENT_MODEL)
-        try:
-            plan = invoke(
-                client=client,
-                model=model_name,
-                max_tokens=2000,
-                response_model=ToolPlan,
-                messages=[
-                    {"role": "system", "content": tool_system},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
-        except Exception as typed_err:
-            # Perplexity often returns unstructured text for typed prompts. Fallback to Claude for tool planning.
-            logger.warning(f"Typed tool plan generation failed on {model_name}: {typed_err}. Falling back to Claude.")
+        # Save narrative flow to deck if applicable
+        deck_id = getattr(request, "deck_id", None)
+        if deck_id and updated_narrative_flow:
             try:
-                from agents.config import OUTLINE_AGENT_MODEL
-                claude_client, claude_model = get_client(OUTLINE_AGENT_MODEL)
-                plan = invoke(
-                    client=claude_client,
-                    model=claude_model,
-                    max_tokens=1500,
-                    response_model=ToolPlan,
-                    messages=[
-                        {"role": "system", "content": tool_system},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                )
-            except Exception as claude_err:
-                # Final fallback: request JSON plan freeform and parse manually
-                logger.warning(f"Claude fallback for tool planning also failed: {claude_err}. Using freeform JSON fallback.")
-                try:
-                    freeform_system = tool_system + "\nReturn ONLY a valid JSON object matching the OutlineToolPlan schema."
-                    response = await _invoke_ai_with_retry(
-                        client,
-                        model_name,
-                        freeform_system,
-                        user_prompt,
-                        max_retries=2
-                    )
-                    parsed = _parse_ai_response(response)
-                    # Try to coerce into ToolPlan model if possible
-                    plan = ToolPlan(**parsed)
-                except Exception as last_err:
-                    logger.error(f"All tool planning strategies failed: {last_err}")
-                    raise
+                from utils.supabase import get_supabase_client
+                supabase = get_supabase_client()
+                supabase.table("decks").update({
+                    "notes": updated_narrative_flow.model_dump()
+                }).eq("uuid", deck_id).execute()
+            except Exception:
+                pass
 
-            updated_outline_dict = request.outline.model_dump() if hasattr(request.outline, 'model_dump') else dict(request.outline)
-            applied_summaries: List[str] = []
-            for call in getattr(plan, 'tool_calls', []) or []:
-                tool = getattr(call, 'tool', None)
-                if not tool:
-                    continue
-                tname = getattr(tool, 'tool_name', '')
-                try:
-                    if tname == 'update_slide_content':
-                        updated_outline_dict, s = update_slide_content(tool, updated_outline_dict)
-                    elif tname == 'add_slide':
-                        updated_outline_dict, s = add_slide(tool, updated_outline_dict)
-                    elif tname == 'remove_slide_outline':
-                        updated_outline_dict, s = remove_slide_outline(tool, updated_outline_dict)
-                    elif tname == 'move_slide_outline':
-                        updated_outline_dict, s = move_slide_outline(tool, updated_outline_dict)
-                    elif tname == 'research_slide_outline':
-                        updated_outline_dict, s = research_slide_outline(tool, updated_outline_dict)
-                    elif tname == 'firecrawl_outline_fetch':
-                        updated_outline_dict, s = firecrawl_outline_fetch(tool, updated_outline_dict)
-                    elif tname == 'deep_extract':
-                        updated_outline_dict, s = deep_extract(tool, updated_outline_dict)
-                    else:
-                        s = f"Skipped unknown tool {tname}"
-                    applied_summaries.append(getattr(call, 'summary', None) or s)
-                except Exception as _:
-                    applied_summaries.append(f"Failed {tname}")
+        return EditOutlineResponse(
+            updatedOutline=updated,
+            changes=changes,
+            updatedNarrativeFlow=updated_narrative_flow,
+            narrativeChanges=narrative_changes,
+        )
 
-            # Normalize and return in the existing response shape
-            # Ensure required outline fields are present using the original as fallback
-            def _ensure_outline_shape(updated: Dict[str, Any], original_model) -> OutlineData:
-                try:
-                    merged = dict(updated or {})
-                    # Preserve original outline id and metadata fields when missing
-                    if hasattr(original_model, 'model_dump'):
-                        original = original_model.model_dump()
-                    else:
-                        original = dict(original_model)
-                    merged.setdefault('id', original.get('id'))
-                    merged.setdefault('title', original.get('title'))
-                    merged.setdefault('topic', original.get('topic'))
-                    merged.setdefault('tone', original.get('tone'))
-                    merged.setdefault('narrative_arc', original.get('narrative_arc'))
-                    merged.setdefault('metadata', original.get('metadata') or {})
-                    # Ensure slides exist and normalize chart fields
-                    if not isinstance(merged.get('slides'), list):
-                        merged['slides'] = original.get('slides') or []
-                    normalized_slides: List[Any] = []
-                    for slide in merged.get('slides', []):
-                        slide_dict = (
-                            slide.model_dump() if hasattr(slide, 'model_dump')
-                            else slide.dict() if hasattr(slide, 'dict')
-                            else slide
-                        )
-                        if isinstance(slide_dict, dict):
-                            normalize_slide_chart_fields(slide_dict)
-                        normalized_slides.append(slide_dict)
-                    merged['slides'] = normalized_slides
-                    return OutlineData(**merged)
-                except Exception:
-                    return OutlineData(**(original_model.model_dump() if hasattr(original_model, 'model_dump') else dict(original_model)))
-
-            updated = _ensure_outline_shape(updated_outline_dict, request.outline)
-            changes = OutlineChanges(
-                summary="; ".join(applied_summaries) or "Applied outline edits",
-                modifiedSlides=[]
-            )
-
-            updated_narrative_flow = None
-            narrative_changes = None
-            try:
-                flow_analyzer = NarrativeFlowAnalyzer()
-                original_outline_dict = (
-                    request.outline.model_dump() if hasattr(request.outline, 'model_dump') else dict(request.outline)
-                )
-                updated_outline_dict = updated.model_dump() if hasattr(updated, 'model_dump') else dict(updated)
-                needs_update, flow_adjustments = await flow_analyzer.detect_narrative_changes(
-                    original_outline_dict,
-                    updated_outline_dict
-                )
-                if needs_update:
-                    updated_narrative_flow = await flow_analyzer.analyze_narrative_flow(
-                        updated_outline_dict,
-                        context=request.message
-                    )
-                    impact = "high" if len(flow_adjustments) >= 3 else "medium" if len(flow_adjustments) >= 2 else "low"
-                    narrative_changes = NarrativeFlowChanges(
-                        narrative_impact=impact,
-                        flow_adjustments=flow_adjustments
-                    )
-                    logger.info(f"Narrative flow updated with {impact} impact: {flow_adjustments}")
-
-                    deck_id = getattr(request, "deck_id", None)
-                    if deck_id:
-                        try:
-                            from utils.supabase import get_supabase_client
-                            supabase = get_supabase_client()
-                            supabase.table("decks").update({
-                                "notes": updated_narrative_flow.model_dump()
-                            }).eq("uuid", deck_id).execute()
-                            logger.info(f"Updated deck {deck_id} with new narrative flow notes")
-                        except Exception as save_error:
-                            logger.warning(f"Failed to save narrative flow to deck: {save_error}")
-                else:
-                    logger.info("No narrative flow update needed for these changes")
-            except Exception as e:
-                logger.warning(f"Failed to analyze narrative flow changes: {e}")
-
-            return EditOutlineResponse(
-                updatedOutline=updated,
-                changes=changes,
-                updatedNarrativeFlow=updated_narrative_flow,
-                narrativeChanges=narrative_changes
-            )
-            
-        except Exception as e:
-            logger.error(f"AI processing error: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to process outline edit: {str(e)}"
-            )
-        
     except HTTPException:
         raise
     except Exception as e:

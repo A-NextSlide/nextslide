@@ -6,11 +6,13 @@ import { Label } from '@/components/ui/label';
 import { ArrowLeft, Mail, Lock, User, ChevronDown, ChevronUp, AlertCircle, X } from 'lucide-react';
 import BrandWordmark from '@/components/common/BrandWordmark';
 import { useAuth } from '@/context/SupabaseAuthContext';
+import { referralApi } from '@/services/referralApi';
+import { trackEvent } from '@/services/analytics';
 
 const Signup: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signUp, signInWithGoogle } = useAuth();
+  const { signUp, signInWithGoogle, user } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -95,6 +97,33 @@ const Signup: React.FC = () => {
     }
     return isValid;
   };
+
+  // Track referral after signup completes and user is available
+  useEffect(() => {
+    if (!user) return;
+
+    try {
+      const referralCode = localStorage.getItem('referral_code');
+      if (referralCode) {
+        // Fire and forget - don't block the user
+        referralApi
+          .trackReferralSignup(user.id, referralCode)
+          .then((result) => {
+            if (result.success) {
+              trackEvent('referral_signup_completed', { code: referralCode });
+            }
+          })
+          .catch(() => {
+            // Non-critical - don't show error to user
+          })
+          .finally(() => {
+            localStorage.removeItem('referral_code');
+          });
+      }
+    } catch {
+      // localStorage not available
+    }
+  }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

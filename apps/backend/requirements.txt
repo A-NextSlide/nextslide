@@ -56,3 +56,14 @@ resend==2.11.0  # For professional email sending
 # boto3==1.34.0     # Uncomment if using AWS SES
 
 PyMuPDF==1.26.6
+
+# PDF generation for carousel export
+reportlab>=4.0.0
+
+# Developer API v1: Rate limiting, Redis queue
+slowapi>=0.1.9
+redis[hiredis]>=5.0.0
+arq>=0.26.0
+
+# Serverless compute (Modal)
+modal>=0.73.0

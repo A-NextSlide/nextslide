@@ -129,16 +129,20 @@ def invalidate_orchestrator_cache():
     logger.info("[OrchestratorCache] Cache invalidated")
 
 
-def warmup_orchestrator_cache():
-    """Pre-create the orchestrator cache on startup."""
+def warmup_orchestrator_cache() -> str:
+    """Pre-create the orchestrator cache on startup.
+
+    Returns a short status string for startup display.
+    """
     try:
         cache_name = get_or_create_orchestrator_cache()
         if cache_name:
-            logger.info(f"[OrchestratorCache] Warmed up: {cache_name}")
+            return "warmed up"
         else:
-            logger.warning("[OrchestratorCache] Warmup failed")
+            return "warmup failed"
     except Exception as e:
         logger.error(f"[OrchestratorCache] Warmup error: {e}")
+        return f"error: {e}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

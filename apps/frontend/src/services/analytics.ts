@@ -288,6 +288,35 @@ export function trackPaymentCompleted(properties: {
   trackEvent('payment_completed', properties);
 }
 
+// --- Referral Events ---
+
+export function trackReferralCodeCopied(code: string): void {
+  trackEvent('referral_code_copied', { code });
+}
+
+export function trackReferralLinkShared(properties: {
+  platform: 'email' | 'twitter' | 'copy';
+  code: string;
+}): void {
+  trackEvent('referral_link_shared', properties);
+}
+
+export function trackReferralLandingViewed(code: string): void {
+  trackEvent('referral_landing_viewed', { code });
+}
+
+export function trackReferralSignupCompleted(code: string): void {
+  trackEvent('referral_signup_completed', { code });
+}
+
+export function trackReferralPromptShown(variant: string): void {
+  trackEvent('referral_prompt_shown', { variant });
+}
+
+export function trackReferralPromptDismissed(variant: string): void {
+  trackEvent('referral_prompt_dismissed', { variant });
+}
+
 // --- Feature Usage Events ---
 
 export function trackFeatureUsed(properties: {
@@ -322,6 +351,237 @@ export function trackPageView(pageName: string, properties?: Record<string, any>
     page_name: pageName,
     ...properties,
   });
+}
+
+// --- Badge Events ---
+
+export function trackBadgeImpression(shareCode: string): void {
+  trackEvent('badge_impression', { shareCode });
+}
+
+export function trackBadgeClick(shareCode: string): void {
+  trackEvent('badge_click', { shareCode });
+}
+
+export function trackBadgeLandingViewed(deckCode?: string): void {
+  trackEvent('badge_landing_viewed', { deckCode });
+}
+
+export function trackBadgeLandingCtaClicked(properties: {
+  deckCode?: string;
+  method: 'google' | 'create';
+}): void {
+  trackEvent('badge_landing_cta_clicked', properties);
+}
+
+// --- Embed Events ---
+
+export function trackEmbedCodeCopied(properties: {
+  shareCode: string;
+  size: string;
+}): void {
+  trackEvent('embed_code_copied', properties);
+}
+
+export function trackEmbedViewed(shareCode: string): void {
+  trackEvent('embed_viewed', { shareCode });
+}
+
+export function trackEmbedSlideNavigated(properties: {
+  shareCode: string;
+  slideIndex: number;
+}): void {
+  trackEvent('embed_slide_navigated', properties);
+}
+
+// --- Social Sharing Events ---
+
+export function trackSocialShareClicked(platform: 'linkedin' | 'twitter' | 'email' | 'whatsapp' | 'copy_link'): void {
+  trackEvent('social_share_clicked', { platform });
+}
+
+export function trackSocialShareCompleted(platform: 'linkedin' | 'twitter' | 'email' | 'whatsapp' | 'copy_link'): void {
+  trackEvent('social_share_completed', { platform });
+}
+
+export function trackShareDialogOpened(properties?: {
+  title?: string;
+  shareCode?: string;
+}): void {
+  trackEvent('share_dialog_opened', properties);
+}
+
+// --- Showcase Events ---
+
+export function trackShowcaseViewed(properties: {
+  category?: string;
+  tab: string;
+}): void {
+  trackEvent('showcase_viewed', properties);
+}
+
+export function trackShowcaseUpvoted(deckId: string): void {
+  trackEvent('showcase_upvoted', { deckId });
+}
+
+export function trackShowcaseRemixed(deckId: string): void {
+  trackEvent('showcase_remixed', { deckId });
+}
+
+export function trackShowcaseSearch(query: string): void {
+  trackEvent('showcase_search', { query });
+}
+
+export function trackShowcaseSubmitted(category: string): void {
+  trackEvent('showcase_submitted', { category });
+}
+
+// --- Gamification Events ---
+
+export function trackBadgeEarned(properties: {
+  badgeType: string;
+  badgeName: string;
+  credits: number;
+}): void {
+  trackEvent('badge_earned', properties);
+}
+
+export function trackStreakUpdated(properties: {
+  currentStreak: number;
+  isNewDay: boolean;
+}): void {
+  trackEvent('streak_updated', properties);
+}
+
+export function trackStreakRewardClaimed(properties: {
+  milestone: number;
+  credits: number;
+}): void {
+  trackEvent('streak_reward_claimed', properties);
+}
+
+export function trackLeaderboardViewed(properties: {
+  period: string;
+  metric: string;
+}): void {
+  trackEvent('leaderboard_viewed', properties);
+}
+
+// --- Analytics Dashboard Events ---
+
+export function trackAnalyticsDashboardViewed(): void {
+  trackEvent('analytics_dashboard_viewed');
+}
+
+export function trackAnalyticsDeckViewed(deckId: string): void {
+  trackEvent('analytics_deck_viewed', { deckId });
+}
+
+export function trackAnalyticsPeriodChanged(properties: {
+  period: string;
+  deckId?: string;
+}): void {
+  trackEvent('analytics_period_changed', properties);
+}
+
+// --- Export Events ---
+
+export function trackLinkedInCarouselExported(properties: {
+  format: string;
+  slideCount: number;
+  deckId: string;
+}): void {
+  trackEvent('linkedin_carousel_exported', properties);
+}
+
+// --- Profile Events ---
+
+export function trackProfileViewed(username: string): void {
+  trackEvent('profile_viewed', { username });
+}
+
+export function trackProfileFollowed(username: string): void {
+  trackEvent('profile_followed', { username });
+}
+
+export function trackProfileUnfollowed(username: string): void {
+  trackEvent('profile_unfollowed', { username });
+}
+
+export function trackProfileUpdated(fields: string[]): void {
+  trackEvent('profile_updated', { fields });
+}
+
+// --- Landing Page Events ---
+
+export function trackLandingPageViewed(properties: { slug: string; type: 'use_case' | 'industry' }): void {
+  trackEvent('landing_page_viewed', properties);
+}
+
+export function trackLandingPageCtaClicked(properties: { slug: string; cta: string }): void {
+  trackEvent('landing_page_cta_clicked', properties);
+}
+
+// --- Team Sharing Events ---
+
+export function trackDeckSharedWithUser(properties: { deckId: string; permission: string }): void {
+  trackEvent('deck_shared_with_user', properties);
+}
+
+export function trackSharedDeckViewed(properties: { deckId: string; shareId: string }): void {
+  trackEvent('shared_deck_viewed', properties);
+}
+
+export function trackTeamInvitePromptShown(variant: string): void {
+  trackEvent('team_invite_prompt_shown', { variant });
+}
+
+export function trackTeamInvitePromptDismissed(variant: string): void {
+  trackEvent('team_invite_prompt_dismissed', { variant });
+}
+
+export function trackTeamInvitePromptClicked(variant: string): void {
+  trackEvent('team_invite_prompt_clicked', { variant });
+}
+
+// --- Webpage Publishing Events ---
+
+export function trackWebpagePublished(properties: { deckId: string; slug: string }): void {
+  trackEvent('webpage_published', properties);
+}
+
+export function trackWebpageViewed(slug: string): void {
+  trackEvent('webpage_viewed', { slug });
+}
+
+export function trackWebpageLeadCaptured(slug: string): void {
+  trackEvent('webpage_lead_captured', { slug });
+}
+
+export function trackWebpageScrollDepth(properties: { slug: string; depth: number; totalSections: number }): void {
+  trackEvent('webpage_scroll_depth', properties);
+}
+
+// --- Enterprise / PQA Events ---
+
+export function trackPqaPromptShown(properties: { domain: string; userCount: number }): void {
+  trackEvent('pqa_prompt_shown', properties);
+}
+
+export function trackPqaPromptDismissed(properties: { domain: string }): void {
+  trackEvent('pqa_prompt_dismissed', properties);
+}
+
+export function trackPqaPromptClicked(properties: { domain: string; destination: string }): void {
+  trackEvent('pqa_prompt_clicked', properties);
+}
+
+export function trackEnterpriseFeatureGated(properties: { feature: string; currentPlan: string }): void {
+  trackEvent('enterprise_feature_gated', properties);
+}
+
+export function trackEnterpriseUpgradeClicked(properties: { feature: string; currentPlan: string }): void {
+  trackEvent('enterprise_upgrade_clicked', properties);
 }
 
 // ============================================================================

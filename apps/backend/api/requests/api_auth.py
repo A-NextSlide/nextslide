@@ -338,7 +338,6 @@ async def get_user_decks(
         
         # Get auth service for deck operations (uses service key for RLS bypass)
         auth_service = get_auth_service()
-        logger.info(f"[get_user_decks] Search query: '{search}', filter: {filter}, limit: {limit}, offset: {offset}")
         result = auth_service.get_user_decks_filtered(
             user["id"],
             filter_type=filter,
@@ -346,7 +345,6 @@ async def get_user_decks(
             offset=offset,
             search_query=search
         )
-        logger.info(f"[get_user_decks] Found {len(result.get('decks', []))} decks")
 
         return {
             "decks": result.get("decks", []),

@@ -95,6 +95,43 @@ interface Transaction {
 }
 
 class BillingApi {
+  // TTL cache with in-flight request deduplication
+  private cache = new Map<string, { data: unknown; timestamp: number }>();
+  private inflight = new Map<string, Promise<unknown>>();
+  private readonly CACHE_TTL = 30_000; // 30 seconds
+
+  /** Cached fetch with deduplication — concurrent calls share one request */
+  private async cachedFetch<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+    // Return cached data if fresh
+    const entry = this.cache.get(key);
+    if (entry && Date.now() - entry.timestamp < this.CACHE_TTL) {
+      return entry.data as T;
+    }
+
+    // Deduplicate: if a request is already in-flight, share its promise
+    const existing = this.inflight.get(key);
+    if (existing) return existing as Promise<T>;
+
+    const promise = fetcher()
+      .then((data) => {
+        this.cache.set(key, { data, timestamp: Date.now() });
+        this.inflight.delete(key);
+        return data;
+      })
+      .catch((err) => {
+        this.inflight.delete(key);
+        throw err;
+      });
+
+    this.inflight.set(key, promise);
+    return promise;
+  }
+
+  /** Clear cached billing data (call after mutations like checkout, cancel, sync) */
+  invalidateCache(): void {
+    this.cache.clear();
+  }
+
   private getHeaders(): Record<string, string> {
     let token: string | null = null;
     try {
@@ -109,14 +146,13 @@ class BillingApi {
   }
 
   async getBalance(): Promise<CreditBalance> {
-    const response = await fetch(`${API_BASE}/api/billing/balance`, {
-      headers: this.getHeaders(),
+    return this.cachedFetch('balance', async () => {
+      const response = await fetch(`${API_BASE}/api/billing/balance`, {
+        headers: this.getHeaders(),
+      });
+      if (!response.ok) throw new Error('Failed to fetch balance');
+      return this.safeJsonParse<CreditBalance>(response);
     });
-    if (!response.ok) throw new Error('Failed to fetch balance');
-    // Safe JSON parsing for Safari compatibility
-    const text = await response.text();
-    if (!text || !text.trim()) throw new Error('Empty response');
-    return JSON.parse(text);
   }
 
   // Helper for safe JSON parsing (Safari compatibility)
@@ -127,19 +163,23 @@ class BillingApi {
   }
 
   async getUsageStats(): Promise<UsageStats> {
-    const response = await fetch(`${API_BASE}/api/billing/usage`, {
-      headers: this.getHeaders(),
+    return this.cachedFetch('usage', async () => {
+      const response = await fetch(`${API_BASE}/api/billing/usage`, {
+        headers: this.getHeaders(),
+      });
+      if (!response.ok) throw new Error('Failed to fetch usage stats');
+      return this.safeJsonParse<UsageStats>(response);
     });
-    if (!response.ok) throw new Error('Failed to fetch usage stats');
-    return this.safeJsonParse(response);
   }
 
   async getSubscription(): Promise<Subscription> {
-    const response = await fetch(`${API_BASE}/api/billing/subscription`, {
-      headers: this.getHeaders(),
+    return this.cachedFetch('subscription', async () => {
+      const response = await fetch(`${API_BASE}/api/billing/subscription`, {
+        headers: this.getHeaders(),
+      });
+      if (!response.ok) throw new Error('Failed to fetch subscription');
+      return this.safeJsonParse<Subscription>(response);
     });
-    if (!response.ok) throw new Error('Failed to fetch subscription');
-    return this.safeJsonParse(response);
   }
 
   async getPricingPlans(): Promise<PricingPlan[]> {
@@ -203,6 +243,7 @@ class BillingApi {
       }),
     });
     if (!response.ok) throw new Error('Failed to cancel subscription');
+    this.invalidateCache();
     return response.json();
   }
 
@@ -230,6 +271,7 @@ class BillingApi {
       headers: this.getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to sync subscription');
+    this.invalidateCache();
     return response.json();
   }
 }

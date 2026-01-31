@@ -14,6 +14,7 @@ import {
 import { teamsApi } from '@/services/teamsApi';
 import { toast } from '@/hooks/use-toast';
 import BrandWordmark from '@/components/common/BrandWordmark';
+import { extractApiError } from '@/utils/extractErrorMessage';
 
 const TeamInvite: React.FC = () => {
   const { token } = useParams<{ token: string }>();
@@ -62,7 +63,7 @@ const TeamInvite: React.FC = () => {
       let errorMessage = 'Failed to accept invitation';
       try {
         const errorData = JSON.parse(err.message);
-        errorMessage = errorData.detail || errorMessage;
+        errorMessage = extractApiError(errorData.detail, errorMessage);
       } catch {
         errorMessage = err.message || errorMessage;
       }

@@ -575,20 +575,36 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
 
     try:
         logger.info(f"[AgentChat] 🚀 About to call edit_deck with event_cb={bool(_event_cb)} (callable={callable(_event_cb)})")
-        result = await run_in_threadpool(
-            thread_pool,
-            edit_deck,
-            deck_data=deck_data_for_agent,
-            current_slide=current_slide_for_agent,
-            registry=registry,
-            message=llm_message,
-            chat_history=chat_history,
-            run_uuid=str(uuid.uuid4()),
-            event_cb=_event_cb,
-            attachments=normalized_attachments,
-            slide_screenshot=slide_screenshot_data if include_screenshot else None,
-            classification=classification,  # Pass classification for model selection
-        )
+        from agents.config import USE_MODAL
+        if USE_MODAL:
+            from services.modal_dispatch import edit_deck_via_modal
+            result = await edit_deck_via_modal(
+                deck_data=deck_data_for_agent,
+                current_slide=current_slide_for_agent,
+                registry=registry,
+                message=llm_message,
+                chat_history=chat_history,
+                run_uuid=str(uuid.uuid4()),
+                event_cb=_event_cb,
+                attachments=normalized_attachments,
+                slide_screenshot=slide_screenshot_data if include_screenshot else None,
+                classification=classification,
+            )
+        else:
+            result = await run_in_threadpool(
+                thread_pool,
+                edit_deck,
+                deck_data=deck_data_for_agent,
+                current_slide=current_slide_for_agent,
+                registry=registry,
+                message=llm_message,
+                chat_history=chat_history,
+                run_uuid=str(uuid.uuid4()),
+                event_cb=_event_cb,
+                attachments=normalized_attachments,
+                slide_screenshot=slide_screenshot_data if include_screenshot else None,
+                classification=classification,
+            )
     except Exception as edit_error:
         logger.error(f"[AgentChat] edit_deck failed: {edit_error}")
         # Send completion event even on error so frontend doesn't stay stuck

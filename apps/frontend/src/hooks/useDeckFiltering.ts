@@ -66,6 +66,9 @@ export const useDeckFiltering = (decks: CompleteDeckData[]): UseDeckFilteringRet
       return;
     }
 
+    // Mark as searching immediately to prevent "no results" flash
+    setIsSearching(true);
+
     // Debounce the search
     debounceTimerRef.current = setTimeout(() => {
       performSearch(query);

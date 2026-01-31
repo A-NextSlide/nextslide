@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Seed 11 featured decks for the landing page.
+Seed 12 featured decks for the landing page.
 
 Submits all creation requests, polls all in parallel,
-and only updates featured_decks if ALL 11 complete successfully.
+and only updates featured_decks if ALL 12 complete successfully.
 
 Usage:
     cd apps/backend
@@ -27,55 +27,66 @@ load_dotenv()
 
 from services.supabase import get_supabase_client
 
-API_KEY = "ns_live_Lwd5HS7g4O7jJCZT2yr1OrU6wQdlCElt"
-API_BASE = "https://nextslide-backend.onrender.com"
+API_KEY = os.getenv("SEED_API_KEY", "ns_live_Lwd5HS7g4O7jJCZT2yr1OrU6wQdlCElt")
+API_BASE = os.getenv("API_BASE", "https://nextslide-backend.onrender.com")
 
-# Existing deck to reuse (already generated)
-EXISTING_90S_UUID = "f83af87c-9611-42df-a448-4e27c48711da"
+# ── DESIGN PHILOSOPHY ─────────────────────────────────────────────
+# Every prompt below bakes in:
+#   - "Keep text minimal" — max 3-4 bullet points or one short paragraph per slide
+#   - "Favour large imagery" — hero images, full-bleed backgrounds, icon grids
+#   - "Use readable fonts" — clean sans-serifs for serious, bolder/rounded for fun
+#   - Fun decks get playful, slightly silly energy
+#   - All decks get 6–8 slides (fewer = punchier for a showcase)
+# ──────────────────────────────────────────────────────────────────
 
-# ── All 11 presentations in display order ──────────────────────────
+# ── All 12 presentations in display order ──────────────────────────
 DECKS = [
     # 1. Startup pitch
     {
         "topic": (
-            "Create a sharp, visually striking startup pitch deck for VCs who have already seen 500 pitches this month. "
-            "Make it impossible to ignore. Cover: the massive problem, the elegant solution, TAM/SAM/SOM market sizing, "
-            "traction metrics with hockey-stick charts, business model, competitive moat, the founding team, "
-            "and a bold funding ask. Use punchy one-liners, dramatic data visuals, and a confident tone. "
-            "This should feel like the pitch deck that actually gets a callback."
+            "Startup pitch deck for VCs. "
+            "DESIGN: Bold, clean, confident. Big hero numbers on each slide. "
+            "Keep body text to ONE punchy sentence per slide — let the visuals do the talking. "
+            "Use large data visualisations, full-bleed background imagery, and dramatic whitespace. "
+            "Slides: hook (one-liner problem), solution (show-don't-tell), market size (one big number), "
+            "traction (single hockey-stick chart), business model (simple diagram), team (headshots + titles), "
+            "the ask (bold number, center-screen)."
         ),
-        "slides": 10,
+        "slides": 8,
         "style": "corporate",
         "display_name": "Pitch deck for VCs who've already seen 500 this month",
         "description": "A startup pitch deck designed to stand out from the crowd",
         "generate": True,
     },
-    # 2. Banking / Short-term stock analysis (NEW)
+    # 2. Banking / Investment analysis
     {
         "topic": (
-            "Create a professional banking and investment analysis presentation on short-term stock trading strategies. "
-            "Cover: current market conditions and volatility indicators, technical analysis basics (RSI, MACD, Bollinger Bands), "
-            "sector rotation strategies, momentum vs. mean-reversion approaches, risk management and position sizing, "
-            "case studies of recent short-term trades, and key economic indicators to watch. "
-            "Use financial charts, clean data visualizations, and a professional Wall Street aesthetic. "
-            "Make it feel like a Goldman Sachs research briefing."
+            "Short-term stock trading strategies — professional Wall Street briefing style. "
+            "DESIGN: Dark background, clean data visuals, minimal text. "
+            "Each slide should be ONE chart or ONE key insight with a short headline. "
+            "Use candlestick charts, heat maps, and clean financial graphics. "
+            "Slides: market overview (single volatility chart), technical signals (RSI + MACD visual), "
+            "sector rotation (flow diagram), momentum strategies (visual comparison), "
+            "risk management (position sizing visual), outlook (one bold takeaway)."
         ),
-        "slides": 10,
+        "slides": 7,
         "style": "corporate",
         "display_name": "Short-term stock analysis that reads like a Goldman memo",
         "description": "Professional banking analysis of short-term stock trading strategies",
         "generate": True,
     },
-    # 3. Education - Algebra
+    # 3. Education - Algebra (FUN)
     {
         "topic": (
-            "Create a fun, engaging educational presentation about algebra for kids who always ask 'when will I ever use this?' "
-            "Show real-world algebra in action: video game physics, Spotify recommendation algorithms, cooking recipe scaling, "
-            "sports statistics, TikTok's algorithm, budgeting for a dream purchase, and building Minecraft redstone circuits. "
-            "Each slide should connect an algebra concept to something kids actually care about. "
-            "Use colorful visuals, relatable examples, and a tone that's enthusiastic without being condescending."
+            "Algebra for kids who ask 'when will I ever use this?' "
+            "DESIGN: Bright, bold, and playful — like a fun magazine spread, not a textbook. "
+            "Use HUGE icons, colourful backgrounds, and minimal text (max 2 short sentences per slide). "
+            "Each slide = one real-world example: video game physics, Spotify algorithm, "
+            "recipe scaling, sports stats, budgeting for a PS5. "
+            "Make the equations BIG and visual, embedded in fun illustrations. "
+            "The vibe is energetic, slightly silly, and makes math feel cool."
         ),
-        "slides": 8,
+        "slides": 7,
         "style": "creative",
         "display_name": "Algebra for kids who ask 'when will I use this'",
         "description": "Real-world algebra that kids actually want to learn",
@@ -84,14 +95,14 @@ DECKS = [
     # 4. Learn - Coffee
     {
         "topic": (
-            "Create a rich, visually stunning presentation about how coffee conquered the world. "
-            "Cover: the Ethiopian origin legend, the Ottoman coffee houses as centers of revolution, "
-            "the Boston Tea Party making America a coffee nation, the Italian espresso revolution, "
-            "Starbucks and the third-wave coffee movement, the $500 billion global coffee economy, "
-            "and the science of caffeine addiction. Mix fascinating history with surprising economics. "
-            "Make it warm, inviting, and sophisticated — like a great cup of coffee."
+            "How coffee conquered the world — from Ethiopia to your morning latte. "
+            "DESIGN: Warm earthy tones, rich full-bleed coffee photography, elegant and inviting. "
+            "Keep each slide to a short headline + one gorgeous visual. Almost no bullet points. "
+            "Tell the story visually: Ethiopian origin, Ottoman coffeehouses, "
+            "espresso revolution in Italy, Starbucks era, the $500B global economy, "
+            "and the science of caffeine. Make it feel like a beautifully designed coffee-table book."
         ),
-        "slides": 8,
+        "slides": 7,
         "style": "creative",
         "display_name": "How coffee conquered the world",
         "description": "The fascinating journey of coffee from Ethiopian legend to global obsession",
@@ -100,15 +111,14 @@ DECKS = [
     # 5. Pitch - Demo Day
     {
         "topic": (
-            "Create a razor-sharp demo day pitch that actually fits in 3 minutes. "
-            "This is a template for the perfect YC-style demo day presentation. "
-            "Cover: the one-liner hook, the problem in human terms, the live product demo moment, "
-            "the key metric that proves traction, the 'why now' slide, the team's unfair advantage, "
-            "and the crisp funding ask. Every slide should be one idea, one visual, zero fluff. "
-            "Use bold typography, clean layouts, and a pace that builds urgency. "
-            "Make it feel like the pitch that closes the round on stage."
+            "YC demo day pitch — 3 minutes, zero fluff. "
+            "DESIGN: One idea per slide. Giant typography for the key message. "
+            "Minimal body text — each slide should be readable from the back of the room. "
+            "Clean white/dark backgrounds, maximum contrast. "
+            "Slides: one-liner hook, problem, product screenshot, key metric (huge number), "
+            "why now, team photo, the ask. Every slide = 5 seconds to absorb."
         ),
-        "slides": 8,
+        "slides": 7,
         "style": "corporate",
         "display_name": "Demo day pitch that actually fits in 3 minutes",
         "description": "A razor-sharp YC-style demo day pitch with zero fluff",
@@ -117,15 +127,15 @@ DECKS = [
     # 6. Education - Biology
     {
         "topic": (
-            "Create a clear, beautifully designed educational presentation about Cellular Respiration: From Glucose to ATP. "
-            "Cover: what is cellular respiration and why it matters, glycolysis step by step, "
-            "the Krebs cycle with clear diagrams, the electron transport chain, "
-            "ATP yield comparison, aerobic vs anaerobic respiration, "
-            "and real-world connections (why you breathe harder during exercise). "
-            "Use clean scientific diagrams, gradient color schemes, and make complex biology accessible. "
-            "Think Khan Academy meets beautiful design."
+            "Cellular Respiration: From Glucose to ATP — beautiful science education. "
+            "DESIGN: Clean, modern scientific aesthetic. Gradient colour schemes. "
+            "Each slide = one diagram or one concept with a SHORT explanation (2 sentences max). "
+            "Let the diagrams be the star. Big, clear, labelled process diagrams. "
+            "Slides: what is cellular respiration (one visual), glycolysis, "
+            "Krebs cycle, electron transport chain, total ATP yield (big number), "
+            "real-world connection (why you pant when running)."
         ),
-        "slides": 8,
+        "slides": 7,
         "style": "creative",
         "display_name": "Cellular Respiration: From Glucose to ATP",
         "description": "Beautiful biology that makes cellular respiration click",
@@ -134,15 +144,15 @@ DECKS = [
     # 7. Learn - History
     {
         "topic": (
-            "Create a dramatic, visually rich presentation about The French Revolution: From Monarchy to Republic. "
-            "Cover: the extravagance of Versailles vs starving Paris, the storming of the Bastille, "
-            "the Declaration of the Rights of Man, the Reign of Terror and Robespierre, "
-            "Marie Antoinette's trial, Napoleon's rise from the chaos, "
-            "and the revolution's lasting impact on democracy worldwide. "
-            "Use dramatic imagery descriptions, timeline visuals, and a narrative arc. "
-            "Make history feel like a thriller."
+            "The French Revolution: From Monarchy to Republic — history as a thriller. "
+            "DESIGN: Dramatic and cinematic. Rich, dark backgrounds with bold accent colours. "
+            "Each slide = one dramatic moment with a powerful headline + striking image. "
+            "Minimal body text — two sentences maximum, like movie captions. "
+            "Slides: Versailles excess vs starving Paris, storming the Bastille, "
+            "Declaration of Rights, the Reign of Terror, Marie Antoinette, "
+            "Napoleon rises, lasting impact on democracy."
         ),
-        "slides": 10,
+        "slides": 8,
         "style": "creative",
         "display_name": "The French Revolution: From Monarchy to Republic",
         "description": "The dramatic story of how France changed the world",
@@ -151,12 +161,13 @@ DECKS = [
     # 8. Sales - Client proposal
     {
         "topic": (
-            "Create a sleek, persuasive client proposal presentation that practically closes itself. "
-            "Cover: the client's specific pain points (mirror their language), the proposed solution with clear deliverables, "
-            "a phased implementation timeline, ROI projections with hard numbers, "
-            "social proof (case studies and testimonials), pricing tiers presented as investments not costs, "
-            "and a next-steps slide with urgency. Use premium design, trust-building layouts, "
-            "and persuasion psychology throughout. Make it feel like saying 'no' would be the risky choice."
+            "Client proposal that practically closes itself. "
+            "DESIGN: Premium, trust-building, polished. Clean layouts with lots of breathing room. "
+            "Each slide = one clear message. Use icons, diagrams, and social proof screenshots. "
+            "Keep body text to 3 short bullets MAX per slide. "
+            "Slides: client pain points (mirror their language), proposed solution (clear visual), "
+            "implementation timeline (simple Gantt), ROI projection (one big chart), "
+            "case studies (logos + one-line quotes), pricing as investment, next steps."
         ),
         "slides": 8,
         "style": "corporate",
@@ -164,52 +175,81 @@ DECKS = [
         "description": "A sales proposal so persuasive it practically signs itself",
         "generate": True,
     },
-    # 9. Learn - 2000s Internet
+    # 9. Learn - 2000s Internet (FUN)
     {
         "topic": (
-            "Create a fun, nostalgic interactive presentation about 2000s internet culture. "
-            "Cover: the rise of MySpace and custom profile pages, early YouTube and viral videos (Charlie Bit My Finger, Numa Numa), "
-            "AIM and MSN Messenger culture, Newgrounds and Flash games, the birth of memes (lolcats, rickrolling), "
-            "early social media (Friendster, Hi5), the blog revolution (LiveJournal, Blogspot), "
-            "and how 2000s internet DNA lives on in today's platforms. "
-            "Use retro web aesthetics, nostalgic references, and a tone of fond remembrance."
+            "2000s internet culture — a nostalgic trip through the golden age of the weird web. "
+            "DESIGN: Retro, playful, slightly chaotic on purpose. Bold rounded fonts, bright neon-on-dark. "
+            "Keep text to short fun captions — let the nostalgia imagery carry each slide. "
+            "Slides: MySpace profile pages, early YouTube viral hits, AIM/MSN away messages, "
+            "Newgrounds & Flash games, birth of memes (lolcats, rickroll), "
+            "the blog era, how 2000s DNA lives in today's internet. "
+            "Make it feel like browsing the internet on a chunky laptop in 2006."
         ),
-        "slides": 8,
+        "slides": 7,
         "style": "creative",
         "display_name": "Interactive Presentation About 2000s Internet Culture",
         "description": "A nostalgic trip through the weird and wonderful 2000s internet",
         "generate": True,
     },
-    # 10. Science - Zombie Apocalypse (NEW)
+    # 10. Science - Zombie Apocalypse (FUN)
     {
         "topic": (
-            "Create an exciting STEM education presentation: 'How to Survive a Zombie Apocalypse Using Science.' "
-            "Cover: epidemiology (how the virus would spread using R0 values and SIR models), "
-            "physics of fortification (structural engineering for safe houses), "
-            "chemistry of improvised supplies (water purification, fire starting), "
-            "biology of decomposition (zombies have an expiry date — calculate it), "
-            "game theory for group survival decisions, statistics of your actual survival odds, "
-            "and a final 'your survival plan' action slide. "
-            "Make it fun and educational — teach real STEM through zombie scenarios."
+            "How to Survive a Zombie Apocalypse Using Science — real STEM, ridiculous premise. "
+            "DESIGN: Bold, punchy, and funny. Comic-book energy with big dramatic fonts. "
+            "Each slide = one survival tip backed by real science + a fun zombie illustration. "
+            "Keep text to a catchy headline + 2 short lines. The vibe is entertaining education. "
+            "Slides: virus spread (R0 chart), fortification physics, "
+            "chemistry of water purification, biology of decomposition (zombies expire!), "
+            "game theory (who to trust), your actual survival odds (statistics), "
+            "your personal survival action plan."
         ),
-        "slides": 10,
+        "slides": 8,
         "style": "creative",
         "display_name": "How to Survive a Zombie Apocalypse Using Science",
         "description": "Real STEM education disguised as zombie apocalypse survival training",
         "generate": True,
     },
-    # 11. Culture - 90s Internet Wild West (EXISTING — skip generation)
+    # 11. Culture - 90s Internet Wild West (FUN)
     {
-        "existing_uuid": EXISTING_90S_UUID,
+        "topic": (
+            "Why the 90s Internet Was the Wild West of Creativity — a love letter to GeoCities. "
+            "DESIGN: Deliberately retro. Bright garish colours, pixel-art vibes, fun chunky fonts. "
+            "Each slide = one beautiful mess of 90s web culture with a playful caption. "
+            "Keep text super short — let the imagery and nostalgia do the work. "
+            "Slides: the homepage era (blinking text, visitor counters), dial-up sounds, "
+            "GeoCities/Angelfire masterpieces, early chat rooms (A/S/L?), "
+            "Napster and the music revolution, the dot-com boom, and the wild west spirit that built today's web."
+        ),
+        "slides": 7,
+        "style": "creative",
         "display_name": "Why the 90s Internet Was the Wild West of Creativity",
         "description": "A nostalgic trip through the beautifully chaotic early internet",
-        "generate": False,
+        "generate": True,
+    },
+    # 12. Marketing - Social Media Strategy
+    {
+        "topic": (
+            "Social media strategy that actually converts — not just likes. "
+            "DESIGN: Modern, bold, scroll-stopping. Bright gradients, clean icons, punchy typography. "
+            "Each slide = one key tactic with a striking visual and a single headline. "
+            "Keep text to one short sentence per slide — think Instagram carousel energy. "
+            "Slides: the hook (why most strategies fail), content pillars (visual diagram), "
+            "platform-specific playbook (icons + one-liners), posting cadence (simple calendar visual), "
+            "engagement tactics (community > followers), analytics that matter (one dashboard mockup), "
+            "your 30-day launch plan (timeline graphic)."
+        ),
+        "slides": 7,
+        "style": "creative",
+        "display_name": "Social media strategy that actually converts",
+        "description": "A no-fluff social media playbook built for real results",
+        "generate": True,
     },
 ]
 
 
-async def create_deck(client: httpx.AsyncClient, deck_info: dict) -> Optional[str]:
-    """Create a deck via API. Returns deck_id or None."""
+async def create_deck(client: httpx.AsyncClient, deck_info: dict, retry: int = 2) -> Optional[str]:
+    """Create a deck via API. Returns deck_id or None. Retries on 429."""
     payload = {
         "topic": deck_info["topic"],
         "slides": deck_info["slides"],
@@ -217,23 +257,38 @@ async def create_deck(client: httpx.AsyncClient, deck_info: dict) -> Optional[st
     if deck_info.get("style"):
         payload["style"] = deck_info["style"]
 
-    try:
-        response = await client.post(
-            f"{API_BASE}/v1/decks",
-            headers={"X-API-Key": API_KEY, "Content-Type": "application/json"},
-            json=payload,
-            timeout=120.0
-        )
-        if response.status_code != 200:
-            print(f"      API Error {response.status_code}: {response.text[:300]}")
+    for attempt in range(1, retry + 2):
+        try:
+            response = await client.post(
+                f"{API_BASE}/v1/decks",
+                headers={"X-API-Key": API_KEY, "Content-Type": "application/json"},
+                json=payload,
+                timeout=120.0
+            )
+            if response.status_code == 200:
+                return response.json()["deck_id"]
+            if response.status_code == 429:
+                wait = int(response.headers.get("Retry-After", "30"))
+                print(f"429 (waiting {wait}s)...", end=" ", flush=True)
+                await asyncio.sleep(wait)
+                continue
+            if response.status_code == 409:
+                # Dedup — deck already exists from a previous run
+                body = response.json()
+                existing = body.get("existing_deck_id")
+                if existing:
+                    print(f"409 (reusing {existing[:8]}...)", end=" ", flush=True)
+                    return existing
+            print(f"API Error {response.status_code}: {response.text[:200]}")
             return None
-        return response.json()["deck_id"]
-    except Exception as e:
-        print(f"      Create error: {type(e).__name__}: {e}")
-        return None
+        except Exception as e:
+            print(f"Create error: {type(e).__name__}: {e}")
+            if attempt <= retry:
+                await asyncio.sleep(5)
+    return None
 
 
-async def poll_one(client: httpx.AsyncClient, deck_id: str, name: str, max_wait: int = 900) -> bool:
+async def poll_one(client: httpx.AsyncClient, deck_id: str, name: str, max_wait: int = 1800) -> bool:
     """Poll a single deck until completed/failed/timeout. Returns True if completed."""
     start = time.time()
     last_print = 0
@@ -271,14 +326,14 @@ async def poll_one(client: httpx.AsyncClient, deck_id: str, name: str, max_wait:
 
 async def main():
     total = len(DECKS)
-    to_generate = [d for d in DECKS if d["generate"]]
-    existing = [d for d in DECKS if not d["generate"]]
+    to_generate = [d for d in DECKS if d.get("generate", True)]
 
     print("=" * 65)
-    print("  Featured Decks Seeder — 11 Landing Page Presentations")
+    print(f"  Featured Decks Seeder — {total} Landing Page Presentations")
+    print("  (visual, minimal-text, nice fonts, fun energy)")
     print("=" * 65)
     print(f"  API: {API_BASE}")
-    print(f"  To generate: {len(to_generate)} | Existing: {len(existing)}")
+    print(f"  To generate: {len(to_generate)}")
     print()
 
     # ── Phase 0: Health check ──────────────────────────────────────
@@ -292,7 +347,8 @@ async def main():
             await asyncio.sleep(30)
     print()
 
-    # ── Phase 1: Submit all creation requests ──────────────────────
+    # ── Phase 1: Submit all creation requests ────────────────────
+    # (API allows up to 20 concurrent per key)
     print(f"[Phase 1] Submitting {len(to_generate)} deck creation requests...")
     print("-" * 65)
 
@@ -304,24 +360,26 @@ async def main():
             order = i + 1
             name = deck_info["display_name"]
 
-            if not deck_info["generate"]:
-                uuid = deck_info["existing_uuid"]
-                print(f"  [{order:2d}/11] EXISTING: {name} ({uuid[:8]}...)")
-                all_decks[order] = (uuid, deck_info)
+            if not deck_info.get("generate", True):
+                uuid = deck_info.get("existing_uuid", "")
+                if uuid:
+                    print(f"  [{order:2d}/{total}] EXISTING: {name} ({uuid[:8]}...)")
+                    all_decks[order] = (uuid, deck_info)
                 continue
 
-            print(f"  [{order:2d}/11] Submitting: {name}...", end=" ", flush=True)
+            print(f"  [{order:2d}/{total}] Submitting: {name}...", end=" ", flush=True)
             deck_id = await create_deck(client, deck_info)
             if deck_id:
                 print(f"OK ({deck_id[:8]}...)")
                 all_decks[order] = (deck_id, deck_info)
             else:
                 print("FAILED")
+
             await asyncio.sleep(1)
 
     submitted = len(all_decks)
-    print(f"\n  Submitted/registered: {submitted}/11")
-    if submitted < 11:
+    print(f"\n  Submitted/registered: {submitted}/{total}")
+    if submitted < total:
         print(f"  WARNING: Only {submitted} decks available. Missing decks will cause abort.")
 
     # ── Phase 2: Poll all decks in parallel ────────────────────────
@@ -347,15 +405,15 @@ async def main():
     print(f"\n  Completed: {len(completed_orders)}/{submitted}")
 
     # ── Gate: ALL must succeed ─────────────────────────────────────
-    if len(completed_orders) < 11:
+    if len(completed_orders) < submitted:
         missing = []
         for order, (uuid, info) in sorted(all_decks.items()):
             if order not in completed_orders:
                 missing.append(f"  #{order} {info['display_name']} ({uuid[:8]}...)")
-        not_submitted = [i+1 for i in range(11) if (i+1) not in all_decks]
+        not_submitted = [i+1 for i in range(total) if (i+1) not in all_decks]
 
         print()
-        print("ABORT: Not all 11 decks completed.")
+        print(f"ABORT: Not all {total} decks completed.")
         if missing:
             print("  Failed/timed out:")
             for m in missing:
@@ -368,7 +426,7 @@ async def main():
 
     # ── Phase 3: Update featured_decks ─────────────────────────────
     print()
-    print("[Phase 3] All 11 complete! Updating featured_decks table...")
+    print(f"[Phase 3] All {total} complete! Updating featured_decks table...")
     print("-" * 65)
 
     supabase = get_supabase_client()
@@ -418,7 +476,7 @@ async def main():
     print()
     print("=" * 65)
     print("DONE!")
-    print(f"  Featured: {success}/11")
+    print(f"  Featured: {success}/{total}")
     print()
     print("Display order:")
     for order in sorted(all_decks.keys()):

@@ -4,6 +4,7 @@
  */
 import { API_ENDPOINTS } from '@/config/apiEndpoints';
 import { authService } from '@/services/authService';
+import { extractApiError } from '@/utils/extractErrorMessage';
 
 // ============================================================================
 // Types
@@ -220,7 +221,7 @@ class CommunityService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to submit deck');
+      throw new Error(extractApiError(error.detail, 'Failed to submit deck'));
     }
 
     const data = await response.json();
@@ -239,7 +240,7 @@ class CommunityService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to remix deck');
+      throw new Error(extractApiError(error.detail, 'Failed to remix deck'));
     }
 
     const data = await response.json();
@@ -290,7 +291,7 @@ class CommunityService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to withdraw submission');
+      throw new Error(extractApiError(error.detail, 'Failed to withdraw submission'));
     }
   }
 

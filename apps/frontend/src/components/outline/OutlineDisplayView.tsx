@@ -1637,8 +1637,10 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             errorMessage = errorData.detail.map((err: any) =>
               typeof err === 'object' ? err.msg || JSON.stringify(err) : err
             ).join(', ');
-          } else {
+          } else if (typeof errorData.detail === 'string') {
             errorMessage = errorData.detail;
+          } else {
+            errorMessage = JSON.stringify(errorData.detail);
           }
         }
         throw new Error(errorMessage);

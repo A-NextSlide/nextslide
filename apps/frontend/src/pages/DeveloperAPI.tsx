@@ -23,7 +23,8 @@ import {
   Braces,
   Activity,
   Lock,
-  Globe
+  Globe,
+  Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
@@ -33,7 +34,7 @@ const DeveloperAPI: React.FC = () => {
   const { user, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
-  const [isPro, setIsPro] = useState(false);
+  const [isPro, setIsPro] = useState<boolean | null>(null);
 
   // Enable scrolling on this page (reset any overflow:hidden from other pages)
   useEffect(() => {
@@ -127,7 +128,12 @@ const DeveloperAPI: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              {isPro ? (
+              {isPro === null ? (
+                <Button disabled className="gap-2" variant="outline">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading...
+                </Button>
+              ) : isPro ? (
                 <Button
                   onClick={() => navigate('/profile?tab=api')}
                   className="gap-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-50 dark:hover:bg-zinc-200 dark:text-zinc-900"

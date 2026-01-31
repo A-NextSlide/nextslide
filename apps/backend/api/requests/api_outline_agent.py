@@ -28,8 +28,16 @@ async def outline_agent_chat(
     """Chat with the outline generation agent (SSE)."""
     try:
         logger.info("[OutlineAgent] Received chat request: %s", request.message[:100])
+
+        from agents.config import USE_MODAL
+        if USE_MODAL:
+            from services.modal_dispatch import stream_outline_via_modal
+            generator = stream_outline_via_modal(request)
+        else:
+            generator = stream_agent_response(request)
+
         return StreamingResponse(
-            stream_agent_response(request),
+            generator,
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

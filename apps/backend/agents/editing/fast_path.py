@@ -35,12 +35,14 @@ def should_include_full_context(classification: MessageClassification) -> bool:
 # WARMUP
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def warmup_fast_path():
-    """Warmup caches on server startup."""
+def warmup_fast_path() -> dict:
+    """Warmup caches on server startup.
+
+    Returns dict with 'classifier' and 'cache' status strings.
+    """
     from agents.editing.classifier import warmup_classifier_cache
     from agents.editing.orchestrator_cache import warmup_orchestrator_cache
 
-    logger.info("[FastPath] Warming up caches...")
-    warmup_classifier_cache()
-    warmup_orchestrator_cache()
-    logger.info("[FastPath] Cache warmup complete")
+    classifier_status = warmup_classifier_cache()
+    cache_status = warmup_orchestrator_cache()
+    return {"classifier": classifier_status, "cache": cache_status}

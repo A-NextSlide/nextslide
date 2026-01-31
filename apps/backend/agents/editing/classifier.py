@@ -434,16 +434,20 @@ def _classify_fallback(message: str) -> MessageClassification:
 # WARMUP (no caching needed - prompt is too small for Gemini's 4096 token minimum)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def warmup_classifier_cache():
+def warmup_classifier_cache() -> str:
     """
     Classifier warmup - verifies API connectivity.
     Note: Classifier doesn't use caching (prompt too small for 4096 token minimum).
+
+    Returns a short status string for startup display.
     """
     try:
         api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         if api_key:
-            logger.info("[Classifier] API key found, classifier ready (no caching - prompt too small)")
+            return "ready"
         else:
             logger.warning("[Classifier] No Gemini API key found")
+            return "no API key"
     except Exception as e:
         logger.error(f"[Classifier] Warmup error: {e}")
+        return f"error: {e}"

@@ -164,6 +164,7 @@ from api.requests.api_deck_notes import router as deck_notes_router
 from api.requests.api_admin import router as admin_router
 from api.requests.api_admin_analytics import router as admin_analytics_router
 from api.requests.api_admin_agent import router as admin_agent_router
+from api.requests.api_admin_growth import router as admin_growth_router
 from api.requests.api_community import router as community_router
 from api.requests.api_google_integration import router as google_router
 from api.requests.api_integrations import router as integrations_router
@@ -171,16 +172,28 @@ from api.requests.api_file_analysis import router as file_analysis_router
 from api.requests.api_billing import router as billing_router
 from api.requests.api_speech_to_text import router as speech_to_text_router
 from api.requests.api_developer import router as developer_router
-from api.requests.api_public_v1 import router as public_api_v1_router
+from api.requests.api_public_v1 import router as public_api_v1_router, start_cleanup_task, cleanup_stale_generations
 from api.requests.api_followup import router as followup_router
 from api.requests.api_chatbase import router as chatbase_router, help_router as chatbase_help_router
+from api.requests.api_referral import router as referral_router
+from api.requests.api_gamification import router as gamification_router
+from api.requests.api_sitemap import router as sitemap_router
+from api.requests.api_preview import router as preview_router
+from api.requests.api_notifications import router as notifications_router
+from api.requests.api_oembed import router as oembed_router
+from api.requests.api_analytics_dashboard import router as analytics_dashboard_router
+from api.requests.api_templates import router as templates_router
+from api.requests.api_carousel_export import router as carousel_export_router
+from api.requests.api_profiles import router as profiles_router
+from api.requests.api_sharing import router as sharing_router
+from api.requests.api_webpage import router as webpage_router
+from api.requests.api_pqa import router as pqa_router
 from fastapi import Depends
 
 # Middleware imports removed - files were deleted
 
 # Set up logging
 logger = logging.getLogger(__name__)
-logger.info("Chat server starting up...")
 
 # Disable output buffering for real-time streaming
 os.environ['PYTHONUNBUFFERED'] = '1'
@@ -245,6 +258,36 @@ app.add_middleware(
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 
+# ---------------------------------------------------------------------------
+# Developer API v1: Rate limiter (slowapi) + stale generation cleanup
+# ---------------------------------------------------------------------------
+try:
+    from services.api_rate_limiter import limiter, rate_limit_exceeded_handler
+    from slowapi import _rate_limit_exceeded_handler as _slowapi_default_handler
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.middleware import SlowAPIMiddleware
+
+    app.state.limiter = limiter
+    app.add_middleware(SlowAPIMiddleware)
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+except Exception as _rl_err:
+    logger.warning(f"Could not initialise slowapi rate limiter (non-fatal): {_rl_err}")
+
+
+import warnings as _warnings
+_warnings.filterwarnings("ignore", message=".*on_event is deprecated.*")
+
+@app.on_event("startup")
+async def _api_v1_startup():
+    """Run one-time stale cleanup and start the periodic background task."""
+    try:
+        await cleanup_stale_generations()
+        start_cleanup_task()
+        logger.info("API v1 stale-generation cleanup initialised")
+    except Exception as e:
+        logger.warning(f"API v1 startup cleanup failed (non-fatal): {e}")
+
+
 # Global exception handler to ensure CORS headers are always sent even on 500 errors
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -298,6 +341,7 @@ app.include_router(deck_notes_router, prefix="", tags=["Deck Notes"])
 app.include_router(admin_router)
 app.include_router(admin_analytics_router)
 app.include_router(admin_agent_router)
+app.include_router(admin_growth_router)
 app.include_router(community_router)
 app.include_router(agent_router)
 app.include_router(agent_stream_router)
@@ -313,6 +357,27 @@ app.include_router(developer_router, tags=["Developer API"])
 app.include_router(followup_router, prefix="/api", tags=["Follow-up Messages"])
 app.include_router(chatbase_router, tags=["Chatbase Support"])
 app.include_router(chatbase_help_router, tags=["Chatbase Help Center"])
+app.include_router(referral_router, tags=["Referral Program"])
+app.include_router(gamification_router, tags=["Gamification"])
+app.include_router(notifications_router, tags=["Notifications"])
+app.include_router(analytics_dashboard_router, tags=["Analytics Dashboard"])
+# SEO: sitemap.xml, robots.txt, SEO meta, related presentations
+app.include_router(sitemap_router, tags=["SEO"])
+app.include_router(oembed_router, tags=["oEmbed"])
+# Template gallery (public browsing, auth for "use template")
+app.include_router(templates_router, tags=["Templates"])
+# Landing page preview (no auth required)
+app.include_router(preview_router, tags=["Preview (No Auth)"])
+# LinkedIn carousel export
+app.include_router(carousel_export_router, tags=["Export"])
+# Public profiles and creator pages
+app.include_router(profiles_router, tags=["Profiles"])
+# Webpage publishing (publish decks as scrollable websites)
+app.include_router(webpage_router, tags=["Webpage Publishing"])
+# Deck sharing and team invite prompts
+app.include_router(sharing_router, tags=["Sharing"])
+# Enterprise PQA detection and upgrade prompts
+app.include_router(pqa_router, tags=["PQA Enterprise"])
 # Mount public API at /v1 (clean URLs for api.nextslide.ai) and /api/v1 (backward compatibility)
 app.include_router(public_api_v1_router, prefix="/v1", tags=["Public API v1"])
 app.include_router(public_api_v1_router, prefix="/api/v1", tags=["Public API v1"])
@@ -336,27 +401,25 @@ def load_registry_on_startup():
         try:
             with open(schemas_path, 'r') as f:
                 schemas = json.load(f)
-            
+
             REGISTRY = ComponentRegistry(schemas)
             set_global_registry(REGISTRY)  # Make available globally
-            if not QUIET_REGISTRY:
-                print(f"✅ Registry loaded from {schemas_path} ({len(schemas)} schemas)")
-            return True
+            return len(schemas)
         except Exception as e:
-            print(f"⚠️  Failed to load registry from {schemas_path}: {e}")
-    
-    return False
+            logger.warning(f"Failed to load registry from {schemas_path}: {e}")
+
+    return 0
 
 # Try to load registry on startup
-load_registry_on_startup()
+_registry_count = load_registry_on_startup()
 
 # Warmup Gemini context caches for fast-path routing
+_warmup_info: dict = {}
 try:
     from agents.editing.fast_path import warmup_fast_path
-    warmup_fast_path()
-    print("✅ Fast-path caches warmed up")
+    _warmup_info = warmup_fast_path()
 except Exception as e:
-    print(f"⚠️  Failed to warmup fast-path caches: {e}")
+    logger.warning(f"Failed to warmup fast-path caches: {e}")
 
 # In-memory storage for frontend debug logs (last 100 entries)
 _frontend_debug_logs: List[Dict[str, Any]] = []
@@ -1080,6 +1143,19 @@ async def api_deck_create_endpoint(request: DeckComposeRequest):
             timestamp=datetime.now()
         )
 
+@app.get("/api/deck/{deck_id}/status")
+async def api_deck_status_endpoint(deck_id: str, token: Optional[str] = Depends(get_auth_header)):
+    """Get current generation status for a deck (used by frontend recovery polling)."""
+    from api.requests.api_deck_status import get_deck_status
+    try:
+        return await get_deck_status(deck_id, auth_token=token)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error getting deck status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @app.post("/api/deck/create-from-outline")
 async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[str] = Depends(get_auth_header)):
     """
@@ -1336,17 +1412,66 @@ async def api_deck_create_from_outline_debug_endpoint(request: dict):
     return {"message": "Debug info printed to console", "received": request}
 
 if __name__ == "__main__":
-    # Run the server with uvicorn
-    logger.info("Starting Slide Sorcery Chat API on http://127.0.0.1:9090")
-    logger.info(f"Image Debug Visualization: {'ENABLED' if DEBUG_VISUALIZE_IMAGES else 'DISABLED'}")
-    logger.info("Press CTRL+C to quit")
-    
+    from utils.startup_display import banner, step, done
+    from setup_logging_optimized import startup_complete
+    from agents.config import CONFIG_SUMMARY
+
     # Get environment variables with defaults
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "9090"))
-    
-    logger.info(f"Server configured to run on {host}:{port}")
-    
-    # Set workers=1 (process) but enable multiple concurrent requests within the process
-    # Enable reload for development
+    env = ENVIRONMENT
+
+    # --- Startup banner ---
+    banner(host, port, env)
+
+    # Config step
+    step("Config", CONFIG_SUMMARY)
+
+    # Fonts (loaded by font_server router at import time)
+    try:
+        from api.font_server import font_service as _fs
+        step("Fonts", f"{_fs.font_count} fonts · {_fs.tag_count} tags")
+    except Exception:
+        step("Fonts", "unavailable", status="warn")
+
+    # Stripe
+    try:
+        from services.stripe_service import STRIPE_CONFIGURED
+        step("Stripe", "connected" if STRIPE_CONFIGURED else "not configured",
+             status="ok" if STRIPE_CONFIGURED else "warn")
+    except Exception:
+        step("Stripe", "unavailable", status="warn")
+
+    # Rate limiter
+    try:
+        from services.api_rate_limiter import RATE_LIMITER_BACKEND
+        step("Rate limiter", RATE_LIMITER_BACKEND)
+    except Exception:
+        step("Rate limiter", "unavailable", status="warn")
+
+    # Sentry
+    sentry_dsn = os.getenv("SENTRY_DSN")
+    if sentry_dsn:
+        step("Sentry", f"enabled (10% sampling)")
+    else:
+        step("Sentry", "disabled", status="skip")
+
+    # Registry
+    if _registry_count:
+        step("Registry", f"{_registry_count} schemas")
+    else:
+        step("Registry", "not loaded", status="warn")
+
+    # Classifier + Cache
+    step("Classifier", _warmup_info.get("classifier", "unknown"))
+    cache_status = _warmup_info.get("cache", "unknown")
+    step("Cache", cache_status)
+
+    # Final ready line
+    done(host, port)
+
+    # Restore normal log levels now that startup display is done
+    startup_complete()
+
+    # Run the server with uvicorn (reload=True, workers=1)
     uvicorn.run("api.chat_server:app", host=host, port=port, reload=True, workers=1, access_log=False)

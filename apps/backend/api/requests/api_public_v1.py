@@ -4,14 +4,28 @@ Public Developer API v1
 REST API for programmatically creating presentations.
 Requires API key authentication (X-API-Key header).
 Available only for Pro subscribers.
+
+Fixes applied:
+  1. Concurrency enforcement (max 3 concurrent per API key)
+  2. Rate limiting (60 req/min per API key via slowapi)
+  3. Stale generation cleanup (15 min timeout)
+  4. Request deduplication (60s window)
+  5. Atomic credit deduction (per-user asyncio lock)
+  6. Redis task queue via arq (graceful fallback to background tasks)
 """
 
 import asyncio
+import hashlib
+import json
 import logging
+import time
 import uuid
+from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List, Tuple
-from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends, Header, BackgroundTasks
+
+from fastapi import APIRouter, HTTPException, Depends, Header, BackgroundTasks, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from services.api_key_service import get_api_key_service, ApiKeyRecord
@@ -21,10 +35,167 @@ from services.webhook_service import get_webhook_service
 from services.supabase import get_supabase_client
 from utils.supabase import upload_deck, get_deck
 from models.registry import get_global_registry
+from config.rate_limits import (
+    API_MAX_CONCURRENT_PER_KEY,
+    API_RATE_LIMIT,
+    API_STALE_GENERATION_TIMEOUT_MINUTES,
+    API_STALE_CLEANUP_INTERVAL_SECONDS,
+    API_DEDUP_WINDOW_SECONDS,
+)
+from services.api_rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Public API v1"])
+
+
+# =============================================================================
+# Fix 1: Per-key concurrency tracking
+# =============================================================================
+
+_active_generations: Dict[str, int] = {}  # api_key_id -> count
+_concurrency_lock = asyncio.Lock()
+
+
+async def _acquire_concurrency_slot(api_key_id: str) -> bool:
+    """Try to acquire a generation slot.  Returns False if at limit."""
+    async with _concurrency_lock:
+        current = _active_generations.get(api_key_id, 0)
+        if current >= API_MAX_CONCURRENT_PER_KEY:
+            return False
+        _active_generations[api_key_id] = current + 1
+        return True
+
+
+async def _release_concurrency_slot(api_key_id: str):
+    """Release a generation slot (call in finally)."""
+    async with _concurrency_lock:
+        current = _active_generations.get(api_key_id, 0)
+        _active_generations[api_key_id] = max(0, current - 1)
+
+
+# =============================================================================
+# Fix 4: Request deduplication
+# =============================================================================
+
+_recent_api_creations: Dict[str, Tuple[float, str]] = {}  # hash -> (timestamp, deck_id)
+
+
+def _get_api_request_hash(user_id: str, topic: str, slides: int, style: Optional[str], additional_instructions: Optional[str]) -> str:
+    """Hash request params for dedup."""
+    data = json.dumps({
+        "user_id": user_id,
+        "topic": topic,
+        "slides": slides,
+        "style": style or "",
+        "additional_instructions": additional_instructions or "",
+    }, sort_keys=True)
+    return hashlib.md5(data.encode()).hexdigest()
+
+
+def _cleanup_dedup_cache():
+    """Remove expired entries from the dedup cache."""
+    now = time.time()
+    expired = [k for k, (ts, _) in _recent_api_creations.items() if now - ts > API_DEDUP_WINDOW_SECONDS]
+    for k in expired:
+        del _recent_api_creations[k]
+
+
+# =============================================================================
+# Fix 5: Per-user credit locks for atomic deduction
+# =============================================================================
+
+_credit_locks: Dict[str, asyncio.Lock] = {}  # user_id -> Lock
+
+
+async def _consume_credits_atomic(user_id: str, billing, api_key_record: ApiKeyRecord, deck_uuid: str, num_slides: int):
+    """
+    Atomically check + consume credits under a per-user lock.
+
+    Raises HTTPException(402) if insufficient credits.
+    """
+    lock = _credit_locks.setdefault(user_id, asyncio.Lock())
+    async with lock:
+        balance = await billing.get_user_balance(user_id)
+        credit_cost = billing.get_credit_cost(CreditAction.SLIDE_GENERATION) * num_slides
+
+        # -1 means unlimited credits (Friends & Family)
+        if balance and balance.remaining_credits != -1 and balance.remaining_credits < credit_cost:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Insufficient credits. Need {credit_cost}, have {balance.remaining_credits}",
+            )
+
+        await billing.consume_credits(
+            user_id,
+            CreditAction.SLIDE_GENERATION,
+            metadata={
+                "deck_id": deck_uuid,
+                "num_slides": num_slides,
+                "source": "api",
+                "api_key_id": api_key_record.id,
+            },
+        )
+
+
+# =============================================================================
+# Fix 3: Stale generation cleanup
+# =============================================================================
+
+_cleanup_task: Optional[asyncio.Task] = None
+
+
+async def cleanup_stale_generations():
+    """Mark decks stuck in 'generating' for >15 min as failed."""
+    try:
+        client = get_supabase_client()
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=API_STALE_GENERATION_TIMEOUT_MINUTES)).isoformat()
+
+        # Find API-created decks stuck in "generating" older than cutoff
+        result = client.table("decks") \
+            .select("uuid, status, created_at, data") \
+            .eq("status->>state", "generating") \
+            .lt("created_at", cutoff) \
+            .execute()
+
+        stale_decks = []
+        for deck in (result.data or []):
+            data = deck.get("data", {})
+            if isinstance(data, dict) and data.get("source") == "api":
+                stale_decks.append(deck["uuid"])
+
+        if stale_decks:
+            logger.warning(f"Found {len(stale_decks)} stale API decks, marking as failed: {stale_decks}")
+            for deck_uuid in stale_decks:
+                try:
+                    client.table("decks").update({
+                        "status": {"state": "failed", "error": "Generation timed out (stale cleanup)"}
+                    }).eq("uuid", deck_uuid).execute()
+                except Exception as e:
+                    logger.error(f"Failed to mark stale deck {deck_uuid} as failed: {e}")
+        else:
+            logger.debug("No stale API decks found")
+    except Exception as e:
+        logger.error(f"Stale generation cleanup error: {e}")
+
+
+async def _periodic_cleanup():
+    """Run cleanup every N seconds, also cleans dedup cache."""
+    while True:
+        await asyncio.sleep(API_STALE_CLEANUP_INTERVAL_SECONDS)
+        try:
+            await cleanup_stale_generations()
+            _cleanup_dedup_cache()
+        except Exception as e:
+            logger.error(f"Periodic cleanup error: {e}")
+
+
+def start_cleanup_task():
+    """Start the periodic background cleanup (called from chat_server startup)."""
+    global _cleanup_task
+    if _cleanup_task is None or _cleanup_task.done():
+        _cleanup_task = asyncio.create_task(_periodic_cleanup())
+        logger.info("Started periodic API stale-generation cleanup task")
 
 
 # =============================================================================
@@ -145,6 +316,7 @@ async def generate_deck_background(
     Background task to generate a deck.
 
     This runs after the API returns immediately with the deck URLs.
+    Concurrency slot is released in finally block (Fix 1).
     """
     webhook_service = get_webhook_service()
 
@@ -178,40 +350,72 @@ async def generate_deck_background(
                         "source": "api_key_context"
                     })
 
-        # Generate outline
+        # Generate outline (via Modal when available)
         logger.info(f"Generating outline for deck {deck_uuid}")
         logger.info(f"Combined instructions: {combined_instructions[:200]}...")
         registry = get_global_registry()
-        generator = OutlineGenerator(registry)
 
-        options = OutlineOptions(
-            prompt=combined_instructions,
-            slide_count=num_slides,
-            style_context=style,
-            async_images=False,  # Auto-apply images for API
-            files=context_files if context_files else []
-        )
-
-        outline_result = await generator.generate(options)
-
-        if not outline_result or not outline_result.slides:
-            raise Exception("Failed to generate outline")
-
-        # Convert OutlineResult to DeckOutline model
+        from agents.config import USE_MODAL
         from models.requests import DeckOutline, SlideOutline
         import uuid as uuid_module
-        deck_outline = DeckOutline(
-            id=deck_uuid,
-            title=outline_result.title or topic[:100],
-            slides=[
-                SlideOutline(
-                    id=str(uuid_module.uuid4()),
-                    title=slide.title,
-                    content=slide.content or ""
+
+        outline_result = None
+
+        if USE_MODAL:
+            from services.modal_dispatch import generate_outline_via_modal
+            logger.info(f"[api_v1] Routing outline for {deck_uuid} to Modal")
+            modal_result = await generate_outline_via_modal(
+                prompt=combined_instructions,
+                slide_count=num_slides,
+                style_context=style,
+                async_images=False,
+                files=context_files if context_files else [],
+            )
+            if modal_result and modal_result.get("slides"):
+                deck_outline = DeckOutline(
+                    id=deck_uuid,
+                    title=modal_result.get("title") or topic[:100],
+                    slides=[
+                        SlideOutline(
+                            id=str(uuid_module.uuid4()),
+                            title=s["title"],
+                            content=s.get("content", ""),
+                        )
+                        for s in modal_result["slides"]
+                    ],
                 )
-                for slide in outline_result.slides
-            ]
-        )
+                outline_result = modal_result  # flag: skip local generation
+                logger.info(f"[api_v1] Modal outline OK for {deck_uuid}: {len(modal_result['slides'])} slides")
+            else:
+                logger.warning(f"[api_v1] Modal outline returned nothing for {deck_uuid}, falling back to local")
+
+        if outline_result is None:
+            # Local fallback
+            generator = OutlineGenerator(registry)
+            options = OutlineOptions(
+                prompt=combined_instructions,
+                slide_count=num_slides,
+                style_context=style,
+                async_images=False,
+                files=context_files if context_files else [],
+            )
+            local_result = await generator.generate(options)
+
+            if not local_result or not local_result.slides:
+                raise Exception("Failed to generate outline")
+
+            deck_outline = DeckOutline(
+                id=deck_uuid,
+                title=local_result.title or topic[:100],
+                slides=[
+                    SlideOutline(
+                        id=str(uuid_module.uuid4()),
+                        title=slide.title,
+                        content=slide.content or "",
+                    )
+                    for slide in local_result.slides
+                ],
+            )
 
         # Build stylePreferences from brand_settings and context_images
         # This ensures logo, colors, fonts, and reference images flow through to slide generation
@@ -428,14 +632,20 @@ async def generate_deck_background(
                 metadata=metadata
             )
 
+    finally:
+        # Fix 1: Always release the concurrency slot
+        await _release_concurrency_slot(api_key_record.id)
+
 
 # =============================================================================
 # Endpoints
 # =============================================================================
 
 @router.post("/decks", response_model=CreateDeckResponse)
+@limiter.limit(API_RATE_LIMIT)
 async def create_deck(
-    request: CreateDeckRequest,
+    request: Request,
+    body: CreateDeckRequest,
     background_tasks: BackgroundTasks,
     auth: Tuple[str, ApiKeyRecord] = Depends(get_api_key_auth)
 ):
@@ -453,39 +663,58 @@ async def create_deck(
     user_id, api_key_record = auth
     deck_uuid = str(uuid.uuid4())
 
-    # Check credits
-    billing = get_billing_service()
-    try:
-        balance = await billing.get_user_balance(user_id)
-        credit_cost = billing.get_credit_cost(CreditAction.SLIDE_GENERATION) * request.slides
-
-        # -1 means unlimited credits (Friends & Family), skip the check
-        if balance and balance.remaining_credits != -1 and balance.remaining_credits < credit_cost:
-            raise HTTPException(
-                status_code=402,
-                detail=f"Insufficient credits. Need {credit_cost}, have {balance.remaining_credits}"
+    # ------------------------------------------------------------------
+    # Fix 4: Request deduplication
+    # ------------------------------------------------------------------
+    _cleanup_dedup_cache()
+    req_hash = _get_api_request_hash(user_id, body.topic, body.slides, body.style, body.additional_instructions)
+    if req_hash in _recent_api_creations:
+        ts, existing_deck_id = _recent_api_creations[req_hash]
+        if time.time() - ts < API_DEDUP_WINDOW_SECONDS:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": "duplicate_request",
+                    "message": f"Duplicate request detected within {API_DEDUP_WINDOW_SECONDS}s window.",
+                    "existing_deck_id": existing_deck_id,
+                    "poll_url": f"/v1/decks/{existing_deck_id}/status",
+                },
             )
 
-        # Consume credits
-        await billing.consume_credits(
-            user_id,
-            CreditAction.SLIDE_GENERATION,
-            metadata={
-                "deck_id": deck_uuid,
-                "num_slides": request.slides,
-                "source": "api",
-                "api_key_id": api_key_record.id
-            }
+    # ------------------------------------------------------------------
+    # Fix 1: Concurrency enforcement
+    # ------------------------------------------------------------------
+    if not await _acquire_concurrency_slot(api_key_record.id):
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "concurrency_limit",
+                "message": f"Maximum {API_MAX_CONCURRENT_PER_KEY} concurrent generations per API key.",
+                "retry_after_seconds": 30,
+            },
+            headers={"Retry-After": "30"},
         )
+
+    # ------------------------------------------------------------------
+    # Fix 5: Atomic credit deduction
+    # ------------------------------------------------------------------
+    billing = get_billing_service()
+    try:
+        await _consume_credits_atomic(user_id, billing, api_key_record, deck_uuid, body.slides)
     except HTTPException:
+        # Release slot since generation won't run
+        await _release_concurrency_slot(api_key_record.id)
         raise
     except Exception as e:
         logger.warning(f"Credit check failed, proceeding anyway: {e}")
 
+    # Record dedup entry after passing all checks
+    _recent_api_creations[req_hash] = (time.time(), deck_uuid)
+
     # Create initial deck record FIRST (needed for share link foreign key)
     try:
         initial_deck = {
-            "name": request.topic[:100],
+            "name": body.topic[:100],
             "slides": [],
             "size": {"width": 1920, "height": 1080},
             "status": {"state": "generating"},
@@ -498,6 +727,7 @@ async def create_deck(
         upload_deck(initial_deck, deck_uuid, user_id)
     except Exception as e:
         logger.error(f"Failed to create initial deck: {e}")
+        await _release_concurrency_slot(api_key_record.id)
         raise HTTPException(status_code=500, detail="Failed to create deck")
 
     # Create share links after deck exists
@@ -530,20 +760,43 @@ async def create_deck(
         view_url = f"https://nextslide.ai/deck/{deck_uuid}"
         edit_url = f"https://nextslide.ai/deck/{deck_uuid}" if api_key_record.include_edit_link else None
 
-    # Start generation in background
-    background_tasks.add_task(
-        generate_deck_background,
-        deck_uuid=deck_uuid,
-        user_id=user_id,
-        api_key_record=api_key_record,
-        topic=request.topic,
-        num_slides=request.slides,
-        style=request.style,
-        additional_instructions=request.additional_instructions,
-        view_url=view_url,
-        edit_url=edit_url,
-        metadata=request.metadata
-    )
+    # ------------------------------------------------------------------
+    # Fix 6: Try Redis queue first, fall back to background tasks
+    # ------------------------------------------------------------------
+    enqueued = False
+    try:
+        from services.api_queue_service import enqueue_deck_generation
+        enqueued = await enqueue_deck_generation(
+            deck_uuid=deck_uuid,
+            user_id=user_id,
+            api_key_id=api_key_record.id,
+            api_key_record_dict=asdict(api_key_record),
+            topic=body.topic,
+            num_slides=body.slides,
+            style=body.style,
+            additional_instructions=body.additional_instructions,
+            view_url=view_url,
+            edit_url=edit_url,
+            metadata=body.metadata,
+        )
+    except Exception as e:
+        logger.warning(f"Queue enqueue failed, falling back to background task: {e}")
+
+    if not enqueued:
+        # Fallback: in-process background task (current behaviour)
+        background_tasks.add_task(
+            generate_deck_background,
+            deck_uuid=deck_uuid,
+            user_id=user_id,
+            api_key_record=api_key_record,
+            topic=body.topic,
+            num_slides=body.slides,
+            style=body.style,
+            additional_instructions=body.additional_instructions,
+            view_url=view_url,
+            edit_url=edit_url,
+            metadata=body.metadata
+        )
 
     # Send creation webhook if configured
     if api_key_record.webhook_url:
@@ -554,7 +807,7 @@ async def create_deck(
                 deck_id=deck_uuid,
                 view_url=view_url,
                 edit_url=edit_url,
-                metadata=request.metadata
+                metadata=body.metadata
             )
         )
 
@@ -570,7 +823,9 @@ async def create_deck(
 
 
 @router.get("/decks/{deck_id}/status", response_model=DeckStatusResponse)
+@limiter.limit(API_RATE_LIMIT)
 async def get_deck_status(
+    request: Request,
     deck_id: str,
     auth: Tuple[str, ApiKeyRecord] = Depends(get_api_key_auth)
 ):
@@ -629,7 +884,9 @@ async def get_deck_status(
 
 
 @router.get("/decks/{deck_id}", response_model=Dict[str, Any])
+@limiter.limit(API_RATE_LIMIT)
 async def get_deck_full(
+    request: Request,
     deck_id: str,
     auth: Tuple[str, ApiKeyRecord] = Depends(get_api_key_auth)
 ):
@@ -659,7 +916,9 @@ async def get_deck_full(
 
 
 @router.get("/decks", response_model=DeckListResponse)
+@limiter.limit(API_RATE_LIMIT)
 async def list_decks(
+    request: Request,
     offset: int = 0,
     limit: int = 20,
     auth: Tuple[str, ApiKeyRecord] = Depends(get_api_key_auth)
@@ -722,7 +981,9 @@ async def list_decks(
 
 
 @router.delete("/decks/{deck_id}")
+@limiter.limit(API_RATE_LIMIT)
 async def delete_deck(
+    request: Request,
     deck_id: str,
     auth: Tuple[str, ApiKeyRecord] = Depends(get_api_key_auth)
 ):

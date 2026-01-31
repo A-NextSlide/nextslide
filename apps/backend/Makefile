@@ -1,6 +1,6 @@
 # Makefile for slide-backend development
 
-.PHONY: help test deploy check verify lint format run clean init-registry kill-all force-kill check-ports run-all run-all-verbose run-renderer run-headless run-simple-headless ensure-deps
+.PHONY: help test deploy check verify lint format run clean init-registry kill-all force-kill check-ports run-all run-all-verbose
 
 # Allow overriding the server port
 PORT ?= 9090
@@ -14,14 +14,12 @@ help:
 	@echo "  make format          - Format code with black"
 	@echo "  make run             - Run backend server only (port 9090)"
 	@echo "  make run-info        - Run backend with INFO logging (shows OpenAI responses)"
-	@echo "  make run-renderer    - Run frontend renderer (needs browser tabs)"
-	@echo "  make run-headless    - Run headless renderers (no browser needed)"
 	@echo "  make run-all         - Run all services (clean output)"
 	@echo "  make run-all-verbose - Run all services (verbose output for debugging)"
 	@echo "  make init-registry   - Initialize backend registry from saved schemas"
-	@echo "  make kill-all        - Kill all services (backend + renderer)"
+	@echo "  make kill-all        - Kill all services (backend + frontend)"
 	@echo "  make force-kill      - Force kill ALL Node.js and Python processes"
-	@echo "  make check-ports     - Check what's using ports 8080, 9090, 3334"
+	@echo "  make check-ports     - Check what's using ports 8080, 9090"
 	@echo "  make deploy          - Test and deploy to Render"
 	@echo "  make clean           - Clean cache files"
 
@@ -64,7 +62,7 @@ run-info:
 	@./venv/bin/python -m pip install -q uvicorn fastapi sentry-sdk >/dev/null 2>&1 || true
 	@./venv/bin/python -m uvicorn api.chat_server:app --reload --host 0.0.0.0 --port $(PORT) --log-level info
 
-# Run both backend and frontend renderer
+# Run both backend and frontend
 run-all:
 	@echo "🧹 Checking for port conflicts..."
 	@if lsof -iTCP:9090 -sTCP:LISTEN >/dev/null 2>&1; then \
@@ -73,10 +71,6 @@ run-all:
 	fi
 	@if lsof -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1; then \
 		echo "❌ Port 8080 is already in use. Run 'make kill-all' first."; \
-		exit 1; \
-	fi
-	@if lsof -iTCP:3334 -sTCP:LISTEN >/dev/null 2>&1; then \
-		echo "❌ Port 3334 is already in use. Run 'make kill-all' first."; \
 		exit 1; \
 	fi
 	@echo "✅ All ports are available"
@@ -91,17 +85,6 @@ run-all:
 	@sleep 8
 	@echo "✅ Frontend server started"
 	@echo ""
-	@echo "📦 Starting renderer API on port 3334..."
-	@cd ../../interactive-slide-sorcery && PORT=3334 npx tsx ssr/api-server.ts 2>&1 | grep -v "REGISTRY DATA" &
-	@sleep 3
-	@echo "✅ Renderer API started"
-	@echo ""
-	@echo "🤖 Starting 4 headless Chrome instances..."
-	@cd ../../interactive-slide-sorcery && npx tsx ssr/puppet.ts --url http://localhost:8080/renderer --instances 4 2>&1 | \
-		grep -vE "(Page Log:|WebSocket connection to|WebSocket error:|WebSocket closed:|Attempting to connect|loadDeck|vite\] connecting|vite\] connected|Download the React DevTools|__name is not defined|vite\] server connection lost|Polling for restart|WebSocket opened, sending renderer-ready)" | \
-		grep -E "(Browser instance|launched successfully|Error launching|Starting render|Render complete|Page loaded:|ERROR:|Warning:|Important:)" &
-	@sleep 5
-	@echo ""
 	@echo "============================================================"
 	@echo "✅ All services started successfully!"
 	@echo "============================================================"
@@ -109,41 +92,19 @@ run-all:
 	@echo "📊 Services running on:"
 	@echo "   - Backend API: http://localhost:9090"
 	@echo "   - Frontend: http://localhost:8080"
-	@echo "   - Renderer API: http://localhost:3334"
 	@echo ""
 	@echo "🔄 Registry auto-loaded from saved schemas"
 	@echo ""
 	@echo "Press Ctrl+C to stop all services"
 
-# Run just the renderer (with browser tabs)
-run-renderer:
-	@echo "🚀 Starting frontend renderer on port 3334..."
-	@cd ../../interactive-slide-sorcery && PORT=3334 npm exec tsx ssr/api-server.ts
-
-# Run headless renderer (no browser tabs needed)
-run-headless:
-	@echo "🤖 Starting headless renderers..."
-	@cd ../../interactive-slide-sorcery && npx tsx scripts/start-headless-renderers.ts --api-port 3334 --instances 4
-
-# Simple headless setup (use existing npm scripts)
-run-simple-headless:
-	@echo "📦 First, start the renderer service in another terminal:"
-	@echo "   cd ../../interactive-slide-sorcery && npm run puppet-server"
-	@echo ""
-	@echo "🚀 Starting backend server on port 9090..."
-	@./venv/bin/python -m uvicorn api.chat_server:app --reload --host 0.0.0.0 --port 9090
-
-# Kill all services (backend and renderer)
+# Kill all services (backend and frontend)
 kill-all:
 	@echo "🔪 Killing all services..."
 	@echo "  Killing processes on ports..."
 	@lsof -ti :9090 | xargs kill -9 2>/dev/null || true
-	@lsof -ti :3334 | xargs kill -9 2>/dev/null || true
 	@lsof -ti :8080 | xargs kill -9 2>/dev/null || true
 	@echo "  Killing named processes..."
 	@pkill -f "uvicorn" 2>/dev/null || true
-	@pkill -f "tsx ssr/puppet.ts" 2>/dev/null || true
-	@pkill -f "tsx ssr/api-server.ts" 2>/dev/null || true
 	@pkill -f "npm run dev" 2>/dev/null || true
 	@pkill -f "vite" 2>/dev/null || true
 	@pkill -f "node.*vite" 2>/dev/null || true
@@ -160,11 +121,6 @@ kill-all:
 		lsof -ti :9090 | xargs kill -9 2>/dev/null || true; \
 		sleep 2; \
 	fi
-	@if lsof -ti :3334 >/dev/null 2>&1; then \
-		echo "  ⚠️  Port 3334 still in use, forcing kill..."; \
-		lsof -ti :3334 | xargs kill -9 2>/dev/null || true; \
-		sleep 2; \
-	fi
 	@echo "✅ All services stopped"
 
 # Force kill - more aggressive version
@@ -173,12 +129,14 @@ force-kill:
 	@pkill -9 -f node 2>/dev/null || true
 	@pkill -9 -f python 2>/dev/null || true
 	@pkill -9 -f uvicorn 2>/dev/null || true
-	@lsof -ti :8080,:9090,:3334 | xargs kill -9 2>/dev/null || true
+	@lsof -ti :8080,:9090 | xargs kill -9 2>/dev/null || true
 	@sleep 2
 	@echo "✅ Force kill complete"
 
-# Deploy to Render (with pre-deployment tests)
+# Deploy to Render + Modal (with pre-deployment tests)
 deploy: test
+	@echo "📦 Deploying Modal app..."
+	@modal deploy modal_app.py
 	@echo "📦 Deploying to Render..."
 	@git add -A
 	@git commit -m "Deploy: $(shell date +'%Y-%m-%d %H:%M:%S')" || true
@@ -203,8 +161,6 @@ check-ports:
 	@lsof -iTCP:8080 -sTCP:LISTEN 2>/dev/null || echo "  ✅ Port 8080 is free"
 	@echo "\nPort 9090 (Backend API):"
 	@lsof -iTCP:9090 -sTCP:LISTEN 2>/dev/null || echo "  ✅ Port 9090 is free"
-	@echo "\nPort 3334 (Renderer API):"
-	@lsof -iTCP:3334 -sTCP:LISTEN 2>/dev/null || echo "  ✅ Port 3334 is free"
 
 # Run all services with verbose logging (for debugging)
 run-all-verbose:
@@ -215,10 +171,6 @@ run-all-verbose:
 	fi
 	@if lsof -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1; then \
 		echo "❌ Port 8080 is already in use. Run 'make kill-all' first."; \
-		exit 1; \
-	fi
-	@if lsof -iTCP:3334 -sTCP:LISTEN >/dev/null 2>&1; then \
-		echo "❌ Port 3334 is already in use. Run 'make kill-all' first."; \
 		exit 1; \
 	fi
 	@echo "✅ All ports are available"
@@ -233,15 +185,6 @@ run-all-verbose:
 	@sleep 8
 	@echo "✅ Frontend server started"
 	@echo ""
-	@echo "📦 Starting renderer API on port 3334..."
-	@cd ../../interactive-slide-sorcery && PORT=3334 npx tsx ssr/api-server.ts &
-	@sleep 3
-	@echo "✅ Renderer API started"
-	@echo ""
-	@echo "🤖 Starting 4 headless Chrome instances..."
-	@cd ../../interactive-slide-sorcery && npx tsx ssr/puppet.ts --url http://localhost:8080/renderer --instances 4 &
-	@sleep 5
-	@echo ""
 	@echo "============================================================"
 	@echo "✅ All services started successfully! (VERBOSE MODE)"
 	@echo "============================================================"
@@ -249,6 +192,5 @@ run-all-verbose:
 	@echo "📊 Services running on:"
 	@echo "   - Backend API: http://localhost:9090"
 	@echo "   - Frontend: http://localhost:8080"
-	@echo "   - Renderer API: http://localhost:3334"
 	@echo ""
-	@echo "Press Ctrl+C to stop all services" 
+	@echo "Press Ctrl+C to stop all services"
