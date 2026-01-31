@@ -1,444 +1,204 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
-import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCw, Loader2, Target, DollarSign, Users, ChevronDown, ChevronUp, Info, Edit3, RotateCcw, CreditCard, Building2, Server, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useFinancialActuals, useUsagePatterns, useAdminOverview } from '@/hooks/useAdminQueries';
 import { useAdminData } from '@/context/AdminDataContext';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, ReferenceLine, Area, ComposedChart, Legend
+  fmtMoney, fmtNum, calcOpCost, MODEL_COSTS, OP_TOKENS, DEFAULT_PLANS, DEFAULT_INPUTS,
+  calcTokensPerDeck, calcCostPerDeck, calcBlendedARPU, calcBlendedActualDecksPerPaidUser,
+  calcProPlusPct, calcBlendedDecksPerOverageUser, calcEffectivePaidConversionPct,
+  type PlanConfig, type EconomicsInputs, type MonthlyUserBreakdown, type EnterpriseConfig,
+} from '@/utils/costModelCalculations';
+import {
+  ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, PieChart, Pie, Cell, RadarChart, Radar, PolarGrid, PolarAngleAxis,
+  PolarRadiusAxis, ReferenceLine, Legend,
 } from 'recharts';
+import {
+  RefreshCw, Loader2, DollarSign, Users, TrendingUp, Target, Zap, Globe, Share2,
+  MessageSquare, Mail, Megaphone, Search, Rocket, RotateCcw, ChevronRight,
+  ArrowUpRight, ArrowDownRight, Award, BarChart3, PieChart as PieChartIcon,
+} from 'lucide-react';
 
-// Model pricing (per 1M tokens) - Dec 2025
-const MODEL_COSTS = {
-  gemini: { input: 1.25, output: 10.00, name: 'Gemini 3 Pro' },
-  perplexity: { input: 1.00, output: 5.00, name: 'Perplexity Sonar Pro' },
-  haiku: { input: 0.80, output: 4.00, name: 'Claude Haiku' },
-};
+// ════════════════════════════════════════════════════════════════════════════════
+// TYPES
+// ════════════════════════════════════════════════════════════════════════════════
 
-// Average tokens per operation (from production logs)
-const OP_TOKENS = {
-  slideGen: { input: 850, output: 7700, model: 'gemini' },
-  themeGen: { input: 500, output: 2000, model: 'gemini' },
-  research: { input: 500, output: 2500, model: 'perplexity' },
-  edit: { input: 1500, output: 6500, model: 'gemini' },
-  routing: { input: 500, output: 300, model: 'haiku' },
-};
+type TabId = 'overview' | 'revenue' | 'costs' | 'growth' | 'projections' | 'benchmarks';
 
-const calcOpCost = (op: keyof typeof OP_TOKENS) => {
-  const { input, output, model } = OP_TOKENS[op];
-  const pricing = MODEL_COSTS[model as keyof typeof MODEL_COSTS];
-  return (input * pricing.input + output * pricing.output) / 1_000_000;
-};
-
-const COSTS = {
-  slideGen: calcOpCost('slideGen'),
-  themeGen: calcOpCost('themeGen'),
-  research: calcOpCost('research'),
-  edit: calcOpCost('edit'),
-  routing: calcOpCost('routing'),
-};
-
-interface PlanConfig {
+interface GrowthChannel {
+  id: string;
   name: string;
-  price: number;
-  tokens: number;
-  pctOfPaid: number; // % of paid users on this plan
-  isEnterprise?: boolean; // enterprise deals are one-off, not subscription
+  icon: React.ReactNode;
+  pctOfSignups: number;
+  cac: number;
+  convToPaid: number;
+  color: string;
 }
 
-interface EnterpriseConfig {
-  dealsPerYear: number;
-  avgDealSize: number; // one-time or annual contract value
-  // Which months deals close (0-11), empty = spread evenly
-  dealMonths: number[];
+interface ViralModel {
+  sharesPerUserMonth: number;
+  viewsPerShare: number;
+  clickThroughRate: number;
+  signupRate: number;
+  referralBoost: number;
 }
 
-interface EconomicsInputs {
-  // Token costs (what we charge users)
-  tokensPerSlide: number;
-  tokensPerEdit: number;
-  tokensPerResearch: number;
-  // API costs (our actual costs)
-  apiCostPerSlide: number;
-  apiCostPerEdit: number;
-  apiCostPerResearch: number;
-  apiCostPerTheme: number;
-  // Usage patterns
-  slidesPerDeck: number;
-  editsPerDeck: number;
-  researchCallsPerDeck: number;
-  decksPerActiveUserMonth: number;
-  // Free tier
-  freeTokens: number;
-  freeToPayConvPct: number; // % of free users who upgrade when they hit token limit
-  // Growth
-  paidConversionPct: number; // % of new users who start as paid (direct conversion)
-  monthlyGrowthPct: number;
-  churnPct: number;
-  cac: number; // CAC per paid-acquired user
-  paidAcquisitionPct: number; // % of signups from paid channels (rest is organic)
-  // Token consumption rates (% of allocated tokens actually used)
-  freeTokenConsumptionPct: number;
-  starterTokenConsumptionPct: number;
-  proTokenConsumptionPct: number;
-  enterpriseTokenConsumptionPct: number;
-  // Overage (Pro+ only - Starter must upgrade)
-  overageEnabled: boolean;
-  overagePctOfProUsers: number; // % of Pro+ users who go over their limit
-  overagePricePerToken: number;
-  avgOverageTokensPerUser: number;
-  // Starter upgrade
-  starterUpgradePct: number; // % of Starter users who upgrade to Pro when hitting limit
+interface FunnelStage {
+  name: string;
+  rate: number;
 }
 
-interface MonthlyScenario {
-  month: string;
-  users: number;
-  isManual: boolean;
+interface GeminiFlashModel {
+  costPerDeck: number;
+  typingRate: number;
+  completionRate: number;
+  signupRate: number;
 }
 
-const DEFAULT_PLANS: PlanConfig[] = [
-  { name: 'Starter', price: 12, tokens: 500, pctOfPaid: 70 },
-  { name: 'Pro', price: 24, tokens: 1500, pctOfPaid: 25 },
-  { name: 'Team', price: 49, tokens: 5000, pctOfPaid: 5 },
-];
-
-const DEFAULT_ENTERPRISE: EnterpriseConfig = {
-  dealsPerYear: 2,
-  avgDealSize: 10000, // $10k average enterprise deal
-  dealMonths: [], // empty = spread evenly across year
-};
-
-// Per-month user breakdown by tier (editable)
-interface MonthlyUserBreakdown {
-  free: number;
-  starter: number;
-  pro: number;
-  team: number;
-  enterprise: number;
-  oneOffSpend: number; // One-off enterprise spend (setup fees, custom work)
-  isManual: boolean;
-}
-
-// Monthly expenses breakdown (editable per month)
-interface MonthlyExpenses {
-  // Headcount
-  headcount: number; // Number of employees
-  avgSalary: number; // Average monthly salary per person
-  // Infrastructure
-  render: number; // Render.com hosting
-  supabase: number; // Supabase database
-  // APIs & Services
-  serpapi: number; // SerpAPI for search
-  stripe: number; // Stripe fees (auto-calculated from revenue)
-  other: number; // Other misc costs
-  isManual: boolean;
-}
-
-// Base expense rates (defaults)
 interface ExpenseDefaults {
   headcount: number;
   avgSalary: number;
   render: number;
   supabase: number;
   serpapi: number;
-  stripePct: number; // Stripe takes % of revenue
+  stripePct: number;
   other: number;
 }
 
-const DEFAULT_EXPENSE_RATES: ExpenseDefaults = {
-  headcount: 1, // Default 1 person
-  avgSalary: 0, // $0/mo default (bootstrapped)
-  render: 25, // Render starter ~$25/mo
-  supabase: 25, // Supabase Pro $25/mo
-  serpapi: 50, // SerpAPI $50/mo for 5000 searches
-  stripePct: 2.9, // Stripe 2.9% + $0.30 per txn
-  other: 50, // Buffer for misc
-};
+// ════════════════════════════════════════════════════════════════════════════════
+// CONSTANTS & DEFAULTS
+// ════════════════════════════════════════════════════════════════════════════════
 
-const DEFAULT_INPUTS: EconomicsInputs = {
-  tokensPerSlide: 5,
-  tokensPerEdit: 5,
-  tokensPerResearch: 5,
-  apiCostPerSlide: 0.045, // $0.045 per slide
-  apiCostPerEdit: 0.03, // $0.03 per edit
-  apiCostPerResearch: 0.005, // $0.005 per research call
-  apiCostPerTheme: 0.005, // $0.005 per theme/design
-  slidesPerDeck: 10,
-  editsPerDeck: 2,
-  researchCallsPerDeck: 1,
-  decksPerActiveUserMonth: 3,
-  freeTokens: 50,
-  freeToPayConvPct: 10, // 10% of free users upgrade when they hit their limit
-  paidConversionPct: 2, // 2% of new users start as paid directly
-  monthlyGrowthPct: 10,
-  churnPct: 5,
-  cac: 10, // CAC per paid-acquired user (one-time)
-  paidAcquisitionPct: 20, // Only 20% of signups come from paid channels (rest is organic/viral)
-  // Token consumption (% of allocated tokens actually used)
-  freeTokenConsumptionPct: 80, // Free users use 80% of their trial tokens
-  starterTokenConsumptionPct: 60, // Starter users use 60% of their plan
-  proTokenConsumptionPct: 75, // Pro users use 75% of their plan
-  enterpriseTokenConsumptionPct: 50, // Enterprise uses 50% (over-provisioned)
-  // Overage
-  overageEnabled: false,
-  overagePctOfProUsers: 20, // 20% of Pro+ users go over their limit
-  overagePricePerToken: 0.10, // $0.10 per extra token
-  avgOverageTokensPerUser: 50, // average extra tokens used by overage users
-  starterUpgradePct: 15, // 15% of Starter users upgrade to Pro when hitting limit
-};
+const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
+  { id: 'overview', label: 'Overview', icon: <BarChart3 className="h-3 w-3" /> },
+  { id: 'revenue', label: 'Revenue', icon: <DollarSign className="h-3 w-3" /> },
+  { id: 'costs', label: 'Costs', icon: <PieChartIcon className="h-3 w-3" /> },
+  { id: 'growth', label: 'Growth & PLG', icon: <Rocket className="h-3 w-3" /> },
+  { id: 'projections', label: 'Projections', icon: <TrendingUp className="h-3 w-3" /> },
+  { id: 'benchmarks', label: 'Benchmarks', icon: <Award className="h-3 w-3" /> },
+];
 
 const MONTH_LABELS = ['Now', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9', 'M10', 'M11', 'M12'];
 
-// Format money with max 2 decimals, use K/M for large numbers
-const fmtMoney = (n: number, decimals = 2): string => {
-  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(n) >= 10_000) return `${(n / 1_000).toFixed(0)}K`;
-  if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toFixed(decimals);
+const DEFAULT_ENTERPRISE: EnterpriseConfig = { dealsPerYear: 1, avgDealSize: 5000, dealMonths: [] };
+
+const DEFAULT_EXPENSE_RATES: ExpenseDefaults = {
+  headcount: 2, avgSalary: 0, render: 25, supabase: 25, serpapi: 50, stripePct: 2.9, other: 75,
 };
 
-// Format number with max decimals
-const fmtNum = (n: number, decimals = 0): string => {
-  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(n) >= 10_000) return `${(n / 1_000).toFixed(0)}K`;
-  if (Math.abs(n) >= 1_000) return n.toLocaleString(undefined, { maximumFractionDigits: decimals });
-  return n.toFixed(decimals);
-};
+const DEFAULT_CHANNELS: GrowthChannel[] = [
+  { id: 'seo', name: 'Organic SEO', icon: <Search className="h-3 w-3" />, pctOfSignups: 20, cac: 0, convToPaid: 4, color: '#10b981' },
+  { id: 'plg', name: 'Landing Page PLG', icon: <Zap className="h-3 w-3" />, pctOfSignups: 25, cac: 0.05, convToPaid: 10, color: '#3b82f6' },
+  { id: 'viral', name: 'Viral / Social', icon: <Share2 className="h-3 w-3" />, pctOfSignups: 15, cac: 0, convToPaid: 7, color: '#8b5cf6' },
+  { id: 'referral', name: 'Referral Program', icon: <Users className="h-3 w-3" />, pctOfSignups: 5, cac: 2, convToPaid: 14, color: '#f97316' },
+  { id: 'community', name: 'Community', icon: <Globe className="h-3 w-3" />, pctOfSignups: 8, cac: 0, convToPaid: 5, color: '#ec4899' },
+  { id: 'slack', name: 'Slack Integration', icon: <MessageSquare className="h-3 w-3" />, pctOfSignups: 5, cac: 0, convToPaid: 12, color: '#6366f1' },
+  { id: 'paid', name: 'Paid Ads', icon: <Megaphone className="h-3 w-3" />, pctOfSignups: 10, cac: 20, convToPaid: 4, color: '#ef4444' },
+  { id: 'email', name: 'Email / Outbound', icon: <Mail className="h-3 w-3" />, pctOfSignups: 4, cac: 5, convToPaid: 8, color: '#f59e0b' },
+  { id: 'influencer', name: 'Influencer / Creator', icon: <Award className="h-3 w-3" />, pctOfSignups: 5, cac: 15, convToPaid: 6, color: '#14b8a6' },
+  { id: 'producthunt', name: 'Product Hunt', icon: <Rocket className="h-3 w-3" />, pctOfSignups: 3, cac: 0, convToPaid: 8, color: '#da552f' },
+];
 
-const STORAGE_KEY = 'admin_costs_inputs';
-const PLANS_STORAGE_KEY = 'admin_costs_plans';
+const DEFAULT_VIRAL: ViralModel = { sharesPerUserMonth: 3, viewsPerShare: 15, clickThroughRate: 6, signupRate: 18, referralBoost: 12 };
 
-// Load from localStorage with fallback
-const loadFromStorage = <T,>(key: string, fallback: T): T => {
+const DEFAULT_FUNNEL: FunnelStage[] = [
+  { name: 'Monthly Visitors', rate: 100 },
+  { name: 'Signed Up', rate: 8 },
+  { name: 'Activated (created deck)', rate: 65 },
+  { name: 'Hit usage limit', rate: 45 },
+  { name: 'Converted to paid', rate: 18 },
+];
+
+const DEFAULT_GEMINI_FLASH: GeminiFlashModel = { costPerDeck: 0.05, typingRate: 35, completionRate: 88, signupRate: 65 };
+
+const BENCHMARK_DATA = [
+  { company: 'Loveable', freeToPaid: 7, grossMargin: 55, ltvCac: 10, viral: 0.8, nrr: 115, payback: 1 },
+  { company: 'Canva', freeToPaid: 4, grossMargin: 75, ltvCac: 4.5, viral: 0.4, nrr: 115, payback: 10 },
+  { company: 'Gamma', freeToPaid: 6, grossMargin: 70, ltvCac: 3.2, viral: 0.35, nrr: 108, payback: 14 },
+  { company: 'Tome', freeToPaid: 3, grossMargin: 65, ltvCac: 2.8, viral: 0.25, nrr: 105, payback: 16 },
+  { company: 'Beautiful.ai', freeToPaid: 5, grossMargin: 72, ltvCac: 3.5, viral: 0.2, nrr: 110, payback: 12 },
+  { company: 'Pitch', freeToPaid: 4, grossMargin: 68, ltvCac: 3.0, viral: 0.3, nrr: 112, payback: 13 },
+];
+
+const INDUSTRY_BENCHMARKS = { freeToPaid: 5, grossMargin: 75, ltvCac: 3, viral: 0.3, nrr: 110, payback: 12 };
+
+// ════════════════════════════════════════════════════════════════════════════════
+// STORAGE HELPERS
+// ════════════════════════════════════════════════════════════════════════════════
+
+const SK = {
+  inputs: 'admin_costs_v2_inputs', plans: 'admin_costs_v2_plans', enterprise: 'admin_costs_v2_enterprise',
+  channels: 'admin_costs_v2_channels', viral: 'admin_costs_v2_viral', funnel: 'admin_costs_v2_funnel',
+  gemini: 'admin_costs_v2_gemini', expenses: 'admin_costs_v2_expenses', expenseRates: 'admin_costs_v2_expense_rates',
+  userBreakdown: 'admin_costs_v2_user_breakdown', tab: 'admin_costs_v2_tab',
+} as const;
+
+function load<T>(key: string, fb: T): T {
   try {
-    const saved = localStorage.getItem(key);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      // For arrays, return parsed directly if it's an array, otherwise fallback
-      if (Array.isArray(fallback)) {
-        return Array.isArray(parsed) ? parsed : fallback;
-      }
-      // For objects, merge with fallback to handle new fields
-      return { ...fallback, ...parsed };
-    }
-  } catch (e) {
-    console.warn('Failed to load from localStorage:', e);
-  }
-  return fallback;
-};
+    const s = localStorage.getItem(key);
+    if (s) { const p = JSON.parse(s); return Array.isArray(fb) ? (Array.isArray(p) ? p : fb) : { ...fb, ...p }; }
+  } catch { /* fallback */ }
+  return fb;
+}
+function save(key: string, v: unknown) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* */ } }
 
-const ENTERPRISE_STORAGE_KEY = 'admin_costs_enterprise';
-const USER_BREAKDOWN_STORAGE_KEY = 'admin_costs_user_breakdown';
-const EXPENSES_STORAGE_KEY = 'admin_costs_expenses';
-const EXPENSE_RATES_STORAGE_KEY = 'admin_costs_expense_rates';
+// Design tokens
+const hk = { fontFamily: '"HK Grotesk Wide", sans-serif' };
+const sH = "text-[10px] font-bold uppercase tracking-wider text-[#FF4301]";
+const cd = "bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl";
+
+// ════════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ════════════════════════════════════════════════════════════════════════════════
 
 const AdminCosts: React.FC = () => {
   const { dateRange } = useAdminData();
-  const [inputs, setInputs] = useState<EconomicsInputs>(() => loadFromStorage(STORAGE_KEY, DEFAULT_INPUTS));
-  const [plans, setPlans] = useState<PlanConfig[]>(() => loadFromStorage(PLANS_STORAGE_KEY, DEFAULT_PLANS));
-  const [enterprise, setEnterprise] = useState<EnterpriseConfig>(() => loadFromStorage(ENTERPRISE_STORAGE_KEY, DEFAULT_ENTERPRISE));
-  const [userBreakdown, setUserBreakdown] = useState<MonthlyUserBreakdown[]>([]);
-  const [expenseRates, setExpenseRates] = useState<ExpenseDefaults>(() => loadFromStorage(EXPENSE_RATES_STORAGE_KEY, DEFAULT_EXPENSE_RATES));
-  const [monthlyExpenses, setMonthlyExpenses] = useState<MonthlyExpenses[]>([]);
-  const [breakdownTab, setBreakdownTab] = useState<'users' | 'expenses'>('users');
-
-  // Save inputs to localStorage when they change
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(inputs));
-    } catch (e) {
-      console.warn('Failed to save inputs to localStorage:', e);
-    }
-  }, [inputs]);
-
-  // Save plans to localStorage when they change
-  useEffect(() => {
-    try {
-      localStorage.setItem(PLANS_STORAGE_KEY, JSON.stringify(plans));
-    } catch (e) {
-      console.warn('Failed to save plans to localStorage:', e);
-    }
-  }, [plans]);
-
-  // Save enterprise to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(ENTERPRISE_STORAGE_KEY, JSON.stringify(enterprise));
-    } catch (e) {
-      console.warn('Failed to save enterprise to localStorage:', e);
-    }
-  }, [enterprise]);
-
-  // Save user breakdown to localStorage
-  useEffect(() => {
-    if (userBreakdown.length > 0) {
-      try {
-        localStorage.setItem(USER_BREAKDOWN_STORAGE_KEY, JSON.stringify(userBreakdown));
-      } catch (e) {
-        console.warn('Failed to save user breakdown to localStorage:', e);
-      }
-    }
-  }, [userBreakdown]);
-
-  // Save expense rates to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(EXPENSE_RATES_STORAGE_KEY, JSON.stringify(expenseRates));
-    } catch (e) {
-      console.warn('Failed to save expense rates to localStorage:', e);
-    }
-  }, [expenseRates]);
-
-  // Save monthly expenses to localStorage
-  useEffect(() => {
-    if (monthlyExpenses.length > 0) {
-      try {
-        localStorage.setItem(EXPENSES_STORAGE_KEY, JSON.stringify(monthlyExpenses));
-      } catch (e) {
-        console.warn('Failed to save expenses to localStorage:', e);
-      }
-    }
-  }, [monthlyExpenses]);
-
-  const [showModelCosts, setShowModelCosts] = useState(false);
-  const [showPlanConfig, setShowPlanConfig] = useState(true);
-  const [projectionMonths, setProjectionMonths] = useState(6);
-  const [chartView, setChartView] = useState<'combined' | 'users' | 'financials'>('combined');
-  const [selectedMonth, setSelectedMonth] = useState(6);
-  const [manualScenario, setManualScenario] = useState<MonthlyScenario[]>([]);
-
-  // Fetch real data
-  const { data: actuals, isLoading: actualsLoading, refetch } = useFinancialActuals(
-    dateRange.startDate,
-    dateRange.endDate
-  );
+  const { data: actuals, isLoading, refetch } = useFinancialActuals(dateRange.startDate, dateRange.endDate);
   const { data: patterns } = useUsagePatterns(dateRange.startDate, dateRange.endDate);
   const { data: overview } = useAdminOverview(dateRange.startDate, dateRange.endDate);
 
-  // Get real metrics
-  const totalUsers = actuals?.users?.total || overview?.metrics?.users?.total || 0;
-  const activeUsers = actuals?.users?.active_30d || Math.ceil(totalUsers * 0.3);
-  const realPaidUsers = actuals?.revenue?.paidUsers || 0;
-  const realMRR = actuals?.revenue?.mrr || 0;
-  const realARPU = actuals?.revenue?.arpu || 0;
-
-  // Calculate scenario from growth rate, respecting manual overrides
-  useEffect(() => {
-    if (totalUsers > 0) {
-      const { monthlyGrowthPct, churnPct } = inputs;
-      const netGrowth = (monthlyGrowthPct - churnPct) / 100;
-
-      setManualScenario(prev => {
-        const updated: MonthlyScenario[] = [];
-        let calculatedUsers = totalUsers;
-
-        for (let i = 0; i <= 12; i++) {
-          if (i > 0) calculatedUsers = Math.round(totalUsers * Math.pow(1 + netGrowth, i));
-
-          // Keep manual values, update calculated ones
-          const existing = prev[i];
-          if (existing?.isManual) {
-            updated.push(existing);
-          } else {
-            updated.push({ month: MONTH_LABELS[i], users: calculatedUsers, isManual: false });
-          }
-        }
-        return updated;
-      });
-    }
-  }, [totalUsers, inputs.monthlyGrowthPct, inputs.churnPct]);
-
-  // Initialize user breakdown based on total users and plan percentages
-  useEffect(() => {
-    if (manualScenario.length === 0) return;
-
-    const { paidConversionPct, freeToPayConvPct } = inputs;
-    const directPaidPct = paidConversionPct / 100;
-    const freeToPaidPct = ((100 - paidConversionPct) / 100) * (freeToPayConvPct / 100);
-    const effectiveConvPct = (directPaidPct + freeToPaidPct) * 100;
-
-    // Find plan percentages
-    const starterPlan = plans.find(p => p.name.toLowerCase().includes('starter')) || plans[0];
-    const proPlan = plans.find(p => p.name.toLowerCase().includes('pro')) || plans[1];
-    const teamPlan = plans.find(p => p.name.toLowerCase().includes('team')) || plans[2];
-
-    setUserBreakdown(prev => {
-      const updated: MonthlyUserBreakdown[] = [];
-
-      for (let i = 0; i <= 12; i++) {
-        const totalU = manualScenario[i]?.users || 0;
-        const paidU = Math.round(totalU * (effectiveConvPct / 100));
-        const freeU = totalU - paidU;
-
-        // Check if we have manual overrides
-        const existing = prev[i];
-        if (existing?.isManual) {
-          updated.push(existing);
-        } else {
-          // Calculate based on plan percentages
-          const starterU = Math.round(paidU * ((starterPlan?.pctOfPaid || 70) / 100));
-          const proU = Math.round(paidU * ((proPlan?.pctOfPaid || 25) / 100));
-          const teamU = Math.round(paidU * ((teamPlan?.pctOfPaid || 5) / 100));
-          // Enterprise deals are separate, not % based
-          const enterpriseU = i === 0 ? 0 : Math.floor(enterprise.dealsPerYear * (i / 12));
-
-          updated.push({
-            free: freeU,
-            starter: starterU,
-            pro: proU,
-            team: teamU,
-            enterprise: enterpriseU,
-            oneOffSpend: 0, // One-off enterprise spend (setup fees, etc)
-            isManual: false,
-          });
-        }
-      }
-      return updated;
-    });
-  }, [manualScenario, inputs.paidConversionPct, inputs.freeToPayConvPct, plans, enterprise.dealsPerYear]);
-
-  // Initialize monthly expenses based on projectionData revenue (for Stripe fees)
-  useEffect(() => {
-    if (manualScenario.length === 0) return;
-
-    setMonthlyExpenses(prev => {
-      const updated: MonthlyExpenses[] = [];
-
-      for (let i = 0; i <= 12; i++) {
-        const existing = prev[i];
-        if (existing?.isManual) {
-          updated.push(existing);
-        } else {
-          // Default expenses based on expenseRates
-          updated.push({
-            headcount: expenseRates.headcount,
-            avgSalary: expenseRates.avgSalary,
-            render: expenseRates.render,
-            supabase: expenseRates.supabase,
-            serpapi: expenseRates.serpapi,
-            stripe: 0, // Will be calculated from revenue
-            other: expenseRates.other,
-            isManual: false,
-          });
-        }
-      }
-      return updated;
-    });
-  }, [manualScenario, expenseRates]);
-
-  // Track if inputs were initialized from patterns (only apply once)
+  const [activeTab, setActiveTab] = useState<TabId>(() => (localStorage.getItem(SK.tab) as TabId) || 'overview');
+  const [inputs, setInputs] = useState<EconomicsInputs>(() => load(SK.inputs, DEFAULT_INPUTS));
+  const [plans, setPlans] = useState<PlanConfig[]>(() => load(SK.plans, DEFAULT_PLANS));
+  const [enterprise, setEnterprise] = useState<EnterpriseConfig>(() => load(SK.enterprise, DEFAULT_ENTERPRISE));
+  const [channels, setChannels] = useState<GrowthChannel[]>(() => {
+    const stored = load(SK.channels, DEFAULT_CHANNELS);
+    // React elements (icons) can't survive JSON serialization — restore from defaults
+    return stored.map((ch: any) => ({
+      ...ch,
+      icon: DEFAULT_CHANNELS.find(dc => dc.id === ch.id)?.icon || DEFAULT_CHANNELS[0]?.icon,
+    }));
+  });
+  const [viral, setViral] = useState<ViralModel>(() => load(SK.viral, DEFAULT_VIRAL));
+  const [funnel, setFunnel] = useState<FunnelStage[]>(() => load(SK.funnel, DEFAULT_FUNNEL));
+  const [geminiFlash, setGeminiFlash] = useState<GeminiFlashModel>(() => load(SK.gemini, DEFAULT_GEMINI_FLASH));
+  const [expenseRates, setExpenseRates] = useState<ExpenseDefaults>(() => load(SK.expenseRates, DEFAULT_EXPENSE_RATES));
+  const [userBreakdown, setUserBreakdown] = useState<MonthlyUserBreakdown[]>([]);
+  const [projectionMonths, setProjectionMonths] = useState(12);
+  const [selectedMonth, setSelectedMonth] = useState(6);
   const [patternsApplied, setPatternsApplied] = useState(false);
 
-  // Update inputs from real patterns - only on first load
+  // Persist
+  useEffect(() => { save(SK.inputs, inputs); }, [inputs]);
+  useEffect(() => { save(SK.plans, plans); }, [plans]);
+  useEffect(() => { save(SK.enterprise, enterprise); }, [enterprise]);
+  useEffect(() => { save(SK.channels, channels.map(({ icon, ...rest }) => rest)); }, [channels]);
+  useEffect(() => { save(SK.viral, viral); }, [viral]);
+  useEffect(() => { save(SK.funnel, funnel); }, [funnel]);
+  useEffect(() => { save(SK.gemini, geminiFlash); }, [geminiFlash]);
+  useEffect(() => { save(SK.expenseRates, expenseRates); }, [expenseRates]);
+  useEffect(() => { localStorage.setItem(SK.tab, activeTab); }, [activeTab]);
+  useEffect(() => { if (userBreakdown.length > 0) save(SK.userBreakdown, userBreakdown); }, [userBreakdown]);
+
+  // Real data
+  const totalUsers = actuals?.users?.total || overview?.metrics?.users?.total || 100;
+  const realPaidUsers = actuals?.revenue?.paidUsers || 0;
+  const realMRR = actuals?.revenue?.mrr || 0;
+
   useEffect(() => {
     if (patternsApplied) return;
-
     if (patterns) {
       setInputs(prev => ({
         ...prev,
@@ -449,1466 +209,1149 @@ const AdminCosts: React.FC = () => {
       }));
       setPatternsApplied(true);
     }
-    if (actuals?.revenue?.paidUsers && actuals?.users?.total) {
-      const realConversion = (actuals.revenue.paidUsers / actuals.users.total) * 100;
-      if (realConversion > 0) {
-        setInputs(prev => ({ ...prev, paidConversionPct: Math.round(realConversion * 10) / 10 }));
-      }
-    }
-  }, [patterns, actuals, patternsApplied]);
+  }, [patterns, patternsApplied]);
 
-  // Calculate tokens per deck
-  const tokensPerDeck = useMemo(() => {
-    const { tokensPerSlide, tokensPerEdit, tokensPerResearch, slidesPerDeck, editsPerDeck, researchCallsPerDeck } = inputs;
-    return (slidesPerDeck * tokensPerSlide) + (editsPerDeck * tokensPerEdit) + (researchCallsPerDeck * tokensPerResearch);
-  }, [inputs]);
+  // Derived
+  const tokensPerDeck = useMemo(() => calcTokensPerDeck(inputs), [inputs]);
+  const routingCost = calcOpCost('routing');
+  const costPerDeck = useMemo(() => calcCostPerDeck(inputs, routingCost), [inputs, routingCost]);
+  const blendedARPU = useMemo(() => calcBlendedARPU(plans), [plans]);
+  const proPlusPct = useMemo(() => calcProPlusPct(plans), [plans]);
+  const blendedActualDecks = useMemo(() => calcBlendedActualDecksPerPaidUser(plans, tokensPerDeck, inputs), [plans, tokensPerDeck, inputs]);
+  const blendedOverageDecks = useMemo(() => calcBlendedDecksPerOverageUser(plans, tokensPerDeck, proPlusPct), [plans, tokensPerDeck, proPlusPct]);
+  const effectiveConvPct = useMemo(() => calcEffectivePaidConversionPct(inputs.paidConversionPct, inputs.freeToPayConvPct), [inputs.paidConversionPct, inputs.freeToPayConvPct]);
 
-  // Calculate blended ARPU from plans
-  const blendedARPU = useMemo(() => {
-    return plans.reduce((sum, p) => sum + (p.price * p.pctOfPaid / 100), 0);
-  }, [plans]);
+  // User scenario
+  const manualScenario = useMemo(() => {
+    const ng = (inputs.monthlyGrowthPct - inputs.churnPct) / 100;
+    return MONTH_LABELS.map((month, i) => ({ month, users: i === 0 ? totalUsers : Math.round(totalUsers * Math.pow(1 + ng, i)), isManual: false }));
+  }, [totalUsers, inputs.monthlyGrowthPct, inputs.churnPct]);
 
-  // Calculate blended tokens per paid user
-  const blendedTokensPerPaidUser = useMemo(() => {
-    return plans.reduce((sum, p) => sum + (p.tokens * p.pctOfPaid / 100), 0);
-  }, [plans]);
+  useEffect(() => {
+    if (manualScenario.length === 0) return;
+    const sp = plans.find(p => p.name.toLowerCase().includes('starter')) || plans[0];
+    const pp = plans.find(p => p.name.toLowerCase().includes('pro')) || plans[1];
+    const tp = plans.find(p => p.name.toLowerCase().includes('team')) || plans[2];
+    setUserBreakdown(prev => {
+      if (prev.length > 0 && prev.some(b => b?.isManual)) return prev;
+      return manualScenario.map((s, i) => {
+        const paid = Math.round(s.users * (effectiveConvPct / 100));
+        return {
+          free: s.users - paid, starter: Math.round(paid * ((sp?.pctOfPaid || 70) / 100)),
+          pro: Math.round(paid * ((pp?.pctOfPaid || 25) / 100)), team: Math.round(paid * ((tp?.pctOfPaid || 5) / 100)),
+          enterprise: i === 0 ? 0 : Math.floor(enterprise.dealsPerYear * (i / 12)), oneOffSpend: 0, isManual: false,
+        };
+      });
+    });
+  }, [manualScenario, effectiveConvPct, plans, enterprise.dealsPerYear]);
 
-  // Calculate blended decks per paid user (blend at deck level, not token level)
-  const blendedDecksPerPaidUser = useMemo(() => {
-    if (tokensPerDeck === 0) return 0;
-    return plans.reduce((sum, p) => {
-      const decksForPlan = Math.floor(p.tokens / tokensPerDeck);
-      return sum + (decksForPlan * p.pctOfPaid / 100);
-    }, 0);
-  }, [plans, tokensPerDeck]);
+  // Funnel (moved before economics for dependency)
+  const funnelData = useMemo(() => {
+    const visitors = 10000;
+    let cur = visitors;
+    return funnel.map((s, i) => {
+      if (i === 0) return { ...s, count: visitors, pct: 100 };
+      cur = Math.round(cur * (s.rate / 100));
+      return { ...s, count: cur, pct: (cur / visitors) * 100 };
+    });
+  }, [funnel]);
 
-  // Calculate Pro+ percentage (all plans except Starter/first plan can have overage)
-  const proPlusPct = useMemo(() => {
-    if (plans.length <= 1) return 0;
-    // Sum all plans except the first one (Starter)
-    return plans.slice(1).reduce((sum, p) => sum + p.pctOfPaid, 0);
-  }, [plans]);
+  // Gemini Flash (moved before economics for dependency)
+  const geminiMetrics = useMemo(() => {
+    const vis = funnelData[0]?.count || 10000;
+    const typed = Math.round(vis * (geminiFlash.typingRate / 100));
+    const gen = Math.round(typed * (geminiFlash.completionRate / 100));
+    const signup = Math.round(gen * (geminiFlash.signupRate / 100));
+    const tc = gen * geminiFlash.costPerDeck;
+    return { typed, generated: gen, signedUp: signup, totalCost: tc, costPerSignup: signup > 0 ? tc / signup : 0 };
+  }, [geminiFlash, funnelData]);
 
-  // Starter percentage (first plan - must upgrade when hitting limit)
-  const starterPct = useMemo(() => {
-    return plans.length > 0 ? plans[0].pctOfPaid : 100;
-  }, [plans]);
-
-  // Get consumption rate for a plan based on its index/name
-  const getConsumptionRate = (planIndex: number, planName: string) => {
-    const name = planName.toLowerCase();
-    if (name.includes('enterprise') || name.includes('team')) {
-      return inputs.enterpriseTokenConsumptionPct / 100;
-    }
-    if (name.includes('pro')) {
-      return inputs.proTokenConsumptionPct / 100;
-    }
-    if (planIndex === 0 || name.includes('starter') || name.includes('basic')) {
-      return inputs.starterTokenConsumptionPct / 100;
-    }
-    // Default to pro rate for unknown plans
-    return inputs.proTokenConsumptionPct / 100;
-  };
-
-  // Calculate blended consumption-adjusted decks per paid user (for NORMAL users who don't go over)
-  const blendedActualDecksPerPaidUser = useMemo(() => {
-    if (tokensPerDeck === 0) return 0;
-    return plans.reduce((sum, p, i) => {
-      const consumptionRate = getConsumptionRate(i, p.name);
-      const tokensActuallyUsed = p.tokens * consumptionRate;
-      const decksForPlan = tokensActuallyUsed / tokensPerDeck;
-      return sum + (decksForPlan * p.pctOfPaid / 100);
-    }, 0);
-  }, [plans, tokensPerDeck, inputs.starterTokenConsumptionPct, inputs.proTokenConsumptionPct, inputs.enterpriseTokenConsumptionPct]);
-
-  // Calculate blended decks for OVERAGE users (they use 100% of their allocation, then buy more)
-  const blendedDecksPerOverageUser = useMemo(() => {
-    if (tokensPerDeck === 0) return 0;
-    // Overage users are Pro+ only, so only include non-Starter plans
-    return plans.slice(1).reduce((sum, p) => {
-      const decksForPlan = p.tokens / tokensPerDeck; // 100% consumption
-      // Weight by this plan's share of Pro+ users (not all paid users)
-      const proPlusShare = p.pctOfPaid / proPlusPct * 100;
-      return sum + (decksForPlan * proPlusShare / 100);
-    }, 0);
-  }, [plans, tokensPerDeck, proPlusPct]);
-
-  // Calculate cost per deck using editable API costs
-  const costPerDeck = useMemo(() => {
-    const { slidesPerDeck, editsPerDeck, researchCallsPerDeck, apiCostPerSlide, apiCostPerEdit, apiCostPerResearch, apiCostPerTheme } = inputs;
-    return (
-      apiCostPerTheme +
-      (slidesPerDeck * apiCostPerSlide) +
-      (researchCallsPerDeck * apiCostPerResearch) +
-      (editsPerDeck * apiCostPerEdit) +
-      (3 * COSTS.routing) // routing is minimal, keep static
-    );
-  }, [inputs]);
-
-  // Calculate economics with token-based model
-  // Uses userBreakdown for tier counts (allows manual editing)
-  // Enterprise deals are one-off and tracked separately
+  // Economics
   const economics = useMemo(() => {
-    const {
-      decksPerActiveUserMonth, paidConversionPct, freeToPayConvPct, churnPct, cac, freeTokens,
+    const { decksPerActiveUserMonth, paidConversionPct, churnPct, cac, freeTokens,
       overageEnabled, overagePctOfProUsers, overagePricePerToken, avgOverageTokensPerUser,
-      starterUpgradePct, freeTokenConsumptionPct
-    } = inputs;
-
-    // Free users: get tokens ONCE (not monthly), but only use X% of them
-    const freeTokensActuallyUsed = freeTokens * (freeTokenConsumptionPct / 100);
-    const freeDecksOneTime = tokensPerDeck > 0 ? freeTokensActuallyUsed / tokensPerDeck : 0;
-
-    // Paid users: limited by their plan's tokens (monthly), adjusted for consumption rate
-    const paidDecksPerUserMonth = Math.min(decksPerActiveUserMonth, blendedActualDecksPerPaidUser);
-
-    // User funnel calculation for effective conversion rate display
+      starterUpgradePct, freeTokenConsumptionPct, monthlyGrowthPct, paidAcquisitionPct } = inputs;
+    const freeTokensUsed = freeTokens * (freeTokenConsumptionPct / 100);
+    const freeDecksOneTime = tokensPerDeck > 0 ? freeTokensUsed / tokensPerDeck : 0;
+    const paidDecks = Math.min(decksPerActiveUserMonth, blendedActualDecks);
     const directPaidPct = paidConversionPct / 100;
-    const freeToPaidPct = ((100 - paidConversionPct) / 100) * (freeToPayConvPct / 100);
-    const effectivePaidConversionPct = (directPaidPct + freeToPaidPct) * 100;
-
-    // Get user counts from userBreakdown (month 0 = current state)
-    const currentBreakdown = userBreakdown[0] || { free: 0, starter: 0, pro: 0, team: 0, enterprise: 0, isManual: false };
-    const starterUsers = currentBreakdown.starter;
-    const proUsers = currentBreakdown.pro;
-    const teamUsers = currentBreakdown.team;
-    const enterpriseDeals = currentBreakdown.enterprise;
-    const freeUsers = currentBreakdown.free;
-
-    // Pro+ = Pro + Team (excludes enterprise)
-    const proPlusUsers = proUsers + teamUsers;
-    const estPaidUsers = starterUsers + proPlusUsers; // Subscription users
-    const activeProPlusUsers = Math.ceil(proPlusUsers * 0.7);
-
-    // Free user costs: new signups each month use their free trial
-    const newSignupsPerMonth = Math.round(totalUsers * (inputs.monthlyGrowthPct / 100));
-    const newFreeTrialUsers = Math.round(newSignupsPerMonth * (1 - directPaidPct));
-    const freeTrialCostMonthly = newFreeTrialUsers * freeDecksOneTime * costPerDeck;
-
-    // Plan info for pricing
+    const cb = userBreakdown[0] || { free: 0, starter: 0, pro: 0, team: 0, enterprise: 0 };
+    const proPlusU = cb.pro + cb.team;
+    const estPaidU = cb.starter + proPlusU;
+    const activeProPlus = Math.ceil(proPlusU * 0.7);
+    const organicSignups = Math.round(totalUsers * (monthlyGrowthPct / 100));
+    const newSignups = organicSignups + geminiMetrics.signedUp;
+    const newFree = Math.round(newSignups * (1 - directPaidPct));
+    const freeTrialCost = newFree * freeDecksOneTime * costPerDeck;
     const proPlan = plans.find(p => p.name.toLowerCase().includes('pro')) || plans[1];
     const starterPlan = plans.find(p => p.name.toLowerCase().includes('starter')) || plans[0];
     const teamPlan = plans.find(p => p.name.toLowerCase().includes('team')) || plans[2];
-
-    // Starter upgrade revenue: X% of Starter users upgrade to Pro when hitting limit
-    const starterUpgradeUsers = Math.round(starterUsers * (starterUpgradePct / 100));
-    const upgradeRevenue = proPlan && starterPlan ? starterUpgradeUsers * (proPlan.price - starterPlan.price) : 0;
-
-    // Customer acquisition cost (CAC) - only applies to paid-acquired users, not organic/viral
-    const paidAcquiredUsers = Math.round(newSignupsPerMonth * (inputs.paidAcquisitionPct / 100));
-    const acquisitionCostMonthly = paidAcquiredUsers * cac;
-
-    // Monthly costs - split by user type:
-    const activeStarterUsers = Math.ceil(starterUsers * 0.7);
-    const starterDecksPerUser = Math.min(decksPerActiveUserMonth, blendedActualDecksPerPaidUser);
-    const starterCostMonthly = activeStarterUsers * starterDecksPerUser * costPerDeck;
-
-    // Pro+ split: normal vs overage users
-    const overageUsers = overageEnabled ? Math.ceil(activeProPlusUsers * (overagePctOfProUsers / 100)) : 0;
-    const normalProPlusUsers = activeProPlusUsers - overageUsers;
-
-    // Normal Pro+ users: use consumption-adjusted decks
-    const normalProPlusDecksPerUser = Math.min(decksPerActiveUserMonth, blendedActualDecksPerPaidUser);
-    const normalProPlusCostMonthly = normalProPlusUsers * normalProPlusDecksPerUser * costPerDeck;
-
-    // Overage Pro+ users: use 100% of their allocation, then buy more
-    const overageBaseDecksPerUser = blendedDecksPerOverageUser;
-    const overageBaseCostMonthly = overageUsers * overageBaseDecksPerUser * costPerDeck;
-
-    // Plus their overage tokens
-    const overageTokensTotal = overageUsers * avgOverageTokensPerUser;
-    const costPerToken = tokensPerDeck > 0 ? costPerDeck / tokensPerDeck : 0;
-    const overageExtraCost = overageEnabled ? overageTokensTotal * costPerToken : 0;
-
-    // Enterprise costs (they consume tokens too)
-    const enterpriseTokensPerUser = 5000 * (inputs.enterpriseTokenConsumptionPct / 100);
-    const enterpriseDecksPerUser = tokensPerDeck > 0 ? enterpriseTokensPerUser / tokensPerDeck : 0;
-    const enterpriseCostMonthly = enterpriseDeals * enterpriseDecksPerUser * costPerDeck;
-
-    const paidUserCostMonthly = starterCostMonthly + normalProPlusCostMonthly + overageBaseCostMonthly + overageExtraCost + enterpriseCostMonthly;
-    const monthlyCost = paidUserCostMonthly + freeTrialCostMonthly + acquisitionCostMonthly;
-
-    // Revenue: subscription tiers × their prices
-    const starterRevenue = starterUsers * (starterPlan?.price || 9);
-    const proRevenue = proUsers * (proPlan?.price || 19);
-    const teamRevenue = teamUsers * (teamPlan?.price || 49);
-    const subscriptionRevenue = starterRevenue + proRevenue + teamRevenue;
-
-    // Enterprise revenue: for current month (0), show amortized annual value / 12
-    const enterpriseAnnualValue = enterprise.dealsPerYear * enterprise.avgDealSize;
-    const enterpriseMonthlyAmortized = enterpriseAnnualValue / 12;
-
-    // Overage revenue (if enabled)
-    const overageRevenue = overageEnabled ? overageTokensTotal * overagePricePerToken : 0;
-    const overageCost = overageEnabled ? (overageBaseCostMonthly - (overageUsers * normalProPlusDecksPerUser * costPerDeck)) + overageExtraCost : 0;
-
-    const estMRR = subscriptionRevenue + overageRevenue + upgradeRevenue + enterpriseMonthlyAmortized;
-    const totalMonthlyCost = monthlyCost;
-
-    // Margins - based on all paying users
-    const totalPayingUsers = estPaidUsers + enterpriseDeals;
-    const grossMargin = estMRR > 0 ? ((estMRR - totalMonthlyCost) / estMRR) * 100 : 0;
-    const costPerPaidUser = totalPayingUsers > 0 ? totalMonthlyCost / totalPayingUsers : 0;
-    const revenuePerPaidUser = totalPayingUsers > 0 ? estMRR / totalPayingUsers : blendedARPU;
-    const profitPerPaidUser = revenuePerPaidUser - costPerPaidUser;
-
-    // LTV/CAC
-    const avgLifetimeMonths = churnPct > 0 ? (100 / churnPct) : 24;
-    const ltv = revenuePerPaidUser * avgLifetimeMonths;
+    const upgradeU = Math.round(cb.starter * (starterUpgradePct / 100));
+    const upgradeRev = proPlan && starterPlan ? upgradeU * (proPlan.price - starterPlan.price) : 0;
+    const paidAcq = Math.round(newSignups * (paidAcquisitionPct / 100));
+    const acqCost = paidAcq * cac;
+    const activeStarter = Math.ceil(cb.starter * 0.7);
+    const starterCost = activeStarter * paidDecks * costPerDeck;
+    const overageU = overageEnabled ? Math.ceil(activeProPlus * (overagePctOfProUsers / 100)) : 0;
+    const normalProPlus = activeProPlus - overageU;
+    const normalCost = normalProPlus * paidDecks * costPerDeck;
+    const overageBaseCost = overageU * blendedOverageDecks * costPerDeck;
+    const overageTok = overageU * avgOverageTokensPerUser;
+    const costTok = tokensPerDeck > 0 ? costPerDeck / tokensPerDeck : 0;
+    const overageExtra = overageEnabled ? overageTok * costTok : 0;
+    const entDecks = tokensPerDeck > 0 ? (5000 * (inputs.enterpriseTokenConsumptionPct / 100)) / tokensPerDeck : 0;
+    const entCost = cb.enterprise * entDecks * costPerDeck;
+    const geminiCost = geminiMetrics.totalCost;
+    const totalCost = starterCost + normalCost + overageBaseCost + overageExtra + entCost + freeTrialCost + acqCost + geminiCost;
+    const subRev = cb.starter * (starterPlan?.price || 9) + cb.pro * (proPlan?.price || 19) + cb.team * (teamPlan?.price || 49);
+    const entRev = (enterprise.dealsPerYear * enterprise.avgDealSize) / 12;
+    const overageRev = overageEnabled ? overageTok * overagePricePerToken : 0;
+    const estMRR = subRev + overageRev + upgradeRev + entRev;
+    const totalPaying = estPaidU + cb.enterprise;
+    const grossMargin = estMRR > 0 ? ((estMRR - totalCost) / estMRR) * 100 : 0;
+    const costPerPaid = totalPaying > 0 ? totalCost / totalPaying : 0;
+    const revPerPaid = totalPaying > 0 ? estMRR / totalPaying : blendedARPU;
+    const profitPerPaid = revPerPaid - costPerPaid;
+    const avgLife = churnPct > 0 ? 100 / churnPct : 24;
+    const ltv = revPerPaid * avgLife;
     const ltvCac = cac > 0 ? ltv / cac : 0;
-
-    // Break-even
-    const breakEvenPaidUsers = profitPerPaidUser > 0 ? Math.ceil(totalMonthlyCost / profitPerPaidUser) : 0;
-    const paybackMonths = cac > 0 && profitPerPaidUser > 0 ? cac / profitPerPaidUser : 99;
-
+    const breakEven = profitPerPaid > 0 ? Math.ceil(totalCost / profitPerPaid) : 0;
+    const payback = cac > 0 && profitPerPaid > 0 ? cac / profitPerPaid : 99;
     return {
-      costPerDeck, tokensPerDeck, freeDecksOneTime, paidDecksPerUserMonth,
-      totalCost: totalMonthlyCost,
-      estPaidUsers: totalPayingUsers, freeUsers, estMRR, subscriptionRevenue, overageRevenue, overageCost,
-      enterpriseRevenue: enterpriseMonthlyAmortized, enterpriseDeals,
-      grossMargin, ltv, ltvCac, effectivePaidConversionPct,
-      breakEvenPaidUsers, paybackMonths, netMonthly: estMRR - totalMonthlyCost,
-      costPerPaidUser, profitPerPaidUser, blendedARPU: revenuePerPaidUser,
-      freeTrialCostMonthly, newFreeTrialUsers,
-      // Plan breakdown
-      starterUsers, proPlusUsers, activeProPlusUsers, overageUsers, overageTokensTotal,
-      upgradeRevenue, starterUpgradeUsers,
+      costPerDeck, tokensPerDeck, freeDecksOneTime, paidDecksPerUserMonth: paidDecks,
+      totalCost, estPaidUsers: totalPaying, freeUsers: cb.free, estMRR,
+      subscriptionRevenue: subRev, overageRevenue: overageRev, enterpriseRevenue: entRev,
+      grossMargin, ltv, ltvCac, effectivePaidConversionPct: effectiveConvPct,
+      breakEvenPaidUsers: breakEven, paybackMonths: payback, netMonthly: estMRR - totalCost,
+      costPerPaidUser: costPerPaid, profitPerPaidUser: profitPerPaid, blendedARPU: revPerPaid,
+      freeTrialCostMonthly: freeTrialCost, newFreeTrialUsers: newFree, starterUsers: cb.starter,
+      proPlusUsers: proPlusU, activeProPlusUsers: activeProPlus, overageUsers: overageU,
+      overageTokensTotal: overageTok, upgradeRevenue: upgradeRev, starterUpgradeUsers: upgradeU,
+      overageCost: overageExtra,
     };
-  }, [inputs, costPerDeck, tokensPerDeck, totalUsers, blendedARPU, blendedActualDecksPerPaidUser, blendedDecksPerOverageUser, plans, userBreakdown, enterprise]);
+  }, [inputs, costPerDeck, tokensPerDeck, totalUsers, blendedARPU, blendedActualDecks, blendedOverageDecks, plans, userBreakdown, enterprise, effectiveConvPct, geminiMetrics]);
 
-  // Generate projection data - uses userBreakdown for tier counts
-  // Enterprise revenue is separate (one-off deals, not subscription MRR)
+  // Projections
   const projectionData = useMemo(() => {
-    const {
-      decksPerActiveUserMonth,
-      overageEnabled, overagePctOfProUsers, overagePricePerToken, avgOverageTokensPerUser,
-      starterUpgradePct, freeTokenConsumptionPct, paidConversionPct
-    } = inputs;
-    const data = [];
-
-    // Paid users: limited by their plan's tokens (monthly), adjusted for consumption
-    const paidDecksPerU = Math.min(decksPerActiveUserMonth, blendedActualDecksPerPaidUser);
-
-    // Get plan info for pricing
+    const { decksPerActiveUserMonth, overageEnabled, overagePctOfProUsers, overagePricePerToken,
+      avgOverageTokensPerUser, starterUpgradePct, freeTokenConsumptionPct, paidConversionPct } = inputs;
+    const paidDecks = Math.min(decksPerActiveUserMonth, blendedActualDecks);
     const proPlan = plans.find(p => p.name.toLowerCase().includes('pro')) || plans[1];
     const starterPlan = plans.find(p => p.name.toLowerCase().includes('starter')) || plans[0];
     const teamPlan = plans.find(p => p.name.toLowerCase().includes('team')) || plans[2];
-    const upgradePriceDiff = proPlan && starterPlan ? proPlan.price - starterPlan.price : 0;
-
-    let cumRevenue = 0;
-    let cumCosts = 0;
-    let cumEnterpriseRev = 0;
-
+    const upgDiff = proPlan && starterPlan ? proPlan.price - starterPlan.price : 0;
+    let cumRev = 0, cumCost = 0;
+    const data = [];
     for (let i = 0; i <= projectionMonths; i++) {
       const users = manualScenario[i]?.users || totalUsers;
-      const prevUsers = i > 0 ? (manualScenario[i-1]?.users || totalUsers) : 0;
-      const newSignups = i === 0 ? users : Math.max(0, users - prevUsers);
-
-      // Use userBreakdown for tier counts (editable values)
-      const breakdown = userBreakdown[i] || { free: 0, starter: 0, pro: 0, team: 0, enterprise: 0, oneOffSpend: 0, isManual: false };
-      const starterU = breakdown.starter;
-      const proU = breakdown.pro;
-      const teamU = breakdown.team;
-      const enterpriseDeals = breakdown.enterprise;
-      const freeU = breakdown.free;
-      const oneOffSpend = breakdown.oneOffSpend || 0;
-
-      // Get operating expenses for this month
-      const expenses = monthlyExpenses[i] || { headcount: 1, avgSalary: 0, render: 25, supabase: 25, serpapi: 50, stripe: 0, other: 50, isManual: false };
-
-      // Pro+ = Pro + Team (excludes enterprise deals which are one-off)
-      const proPlusU = proU + teamU;
-      const paidU = starterU + proPlusU; // Subscription users only (no enterprise)
-      const activeStarterU = Math.ceil(starterU * 0.7);
-      const activeProPlusU = Math.ceil(proPlusU * 0.7);
-
-      // Paid user costs - split by consumption behavior:
-      // 1. Starter users: consumption-adjusted
-      const starterCosts = activeStarterU * paidDecksPerU * costPerDeck;
-
-      // 2. Pro+ users: split into normal (consumption-adjusted) vs overage (100% + extra)
-      const overageU = overageEnabled ? Math.ceil(activeProPlusU * (overagePctOfProUsers / 100)) : 0;
-      const normalProPlusU = activeProPlusU - overageU;
-
-      // Normal Pro+ users: consumption-adjusted
-      const normalProPlusCosts = normalProPlusU * paidDecksPerU * costPerDeck;
-
-      // Overage Pro+ users: use 100% of allocation (they max out) + extra tokens
-      const overageBaseDecks = blendedDecksPerOverageUser; // 100% consumption for Pro+
-      const overageBaseCosts = overageU * overageBaseDecks * costPerDeck;
-      const overageTokens = overageU * avgOverageTokensPerUser;
-      const costPerToken = tokensPerDeck > 0 ? costPerDeck / tokensPerDeck : 0;
-      const overageExtraCosts = overageEnabled ? overageTokens * costPerToken : 0;
-
-      const paidCosts = starterCosts + normalProPlusCosts + overageBaseCosts + overageExtraCosts;
-
-      // Enterprise costs: enterprise users consume tokens too (at enterprise consumption rate)
-      const enterpriseTokensPerUser = 5000 * (inputs.enterpriseTokenConsumptionPct / 100); // Assume 5000 tokens
-      const enterpriseDecksPerUser = tokensPerDeck > 0 ? enterpriseTokensPerUser / tokensPerDeck : 0;
-      const enterpriseCosts = enterpriseDeals * enterpriseDecksPerUser * costPerDeck;
-
-      // Free trial costs: new signups who don't go straight to paid (with consumption rate)
-      const newFreeTrialU = Math.round(newSignups * (1 - paidConversionPct / 100));
-      const freeTokensUsed = inputs.freeTokens * (freeTokenConsumptionPct / 100);
-      const freeDecks = tokensPerDeck > 0 ? freeTokensUsed / tokensPerDeck : 0;
-      const freeTrialCosts = newFreeTrialU * freeDecks * costPerDeck;
-
-      // Customer acquisition cost - only for paid-acquired users
-      const paidAcquiredU = Math.round(newSignups * (inputs.paidAcquisitionPct / 100));
-      const acquisitionCosts = paidAcquiredU * inputs.cac;
-
-      // API costs subtotal
-      const apiCosts = paidCosts + enterpriseCosts + freeTrialCosts + acquisitionCosts;
-
-      // Operating expenses
-      const headcountCosts = expenses.headcount * expenses.avgSalary;
-      const infraCosts = expenses.render + expenses.supabase;
-      const apiServiceCosts = expenses.serpapi + expenses.other;
-      // One-off spend from enterprise section
-      const totalOneOffSpend = oneOffSpend;
-
-      // Total costs = API costs + Operating expenses + One-off spend
-      const monthCosts = apiCosts + headcountCosts + infraCosts + apiServiceCosts + totalOneOffSpend;
-
-      // Subscription revenue: each tier × price
-      const starterRev = starterU * (starterPlan?.price || 9);
-      const proRev = proU * (proPlan?.price || 19);
-      const teamRev = teamU * (teamPlan?.price || 49);
-      const subscriptionRev = starterRev + proRev + teamRev;
-
-      // Enterprise revenue: one-off deals - cumulative deals × avg deal size / 12 (amortized monthly)
-      // Or, if we want revenue in the month deals close: new deals this month × avgDealSize
-      const prevEnterpriseDeals = i > 0 ? (userBreakdown[i-1]?.enterprise || 0) : 0;
-      const newDealsThisMonth = Math.max(0, enterpriseDeals - prevEnterpriseDeals);
-      const enterpriseRevThisMonth = newDealsThisMonth * enterprise.avgDealSize;
-      cumEnterpriseRev += enterpriseRevThisMonth;
-
-      // Starter upgrade revenue: X% of Starter users upgrade to Pro
-      const starterUpgradeU = Math.round(starterU * (starterUpgradePct / 100));
-      const upgradeRev = starterUpgradeU * upgradePriceDiff;
-
-      // Overage revenue
-      const overageRev = overageEnabled ? overageTokens * overagePricePerToken : 0;
-
-      const monthRevenue = subscriptionRev + overageRev + upgradeRev + enterpriseRevThisMonth;
-
-      // Stripe fees: 2.9% + $0.30 per transaction (approx as % of revenue)
-      const stripeFees = expenses.isManual ? expenses.stripe : monthRevenue * (expenseRates.stripePct / 100);
-
-      const totalMonthCosts = monthCosts + stripeFees;
-
-      cumRevenue += monthRevenue;
-      cumCosts += totalMonthCosts;
-
+      const prevU = i > 0 ? (manualScenario[i - 1]?.users || totalUsers) : 0;
+      const newSig = i === 0 ? users : Math.max(0, users - prevU);
+      const b = userBreakdown[i] || { free: 0, starter: 0, pro: 0, team: 0, enterprise: 0, oneOffSpend: 0 };
+      const proPlusU = b.pro + b.team;
+      const actStarter = Math.ceil(b.starter * 0.7);
+      const actProPlus = Math.ceil(proPlusU * 0.7);
+      const sCost = actStarter * paidDecks * costPerDeck;
+      const ovU = overageEnabled ? Math.ceil(actProPlus * (overagePctOfProUsers / 100)) : 0;
+      const nPP = actProPlus - ovU;
+      const nCost = nPP * paidDecks * costPerDeck;
+      const ovBase = ovU * blendedOverageDecks * costPerDeck;
+      const ovTok = ovU * avgOverageTokensPerUser;
+      const cTok = tokensPerDeck > 0 ? costPerDeck / tokensPerDeck : 0;
+      const ovExtra = overageEnabled ? ovTok * cTok : 0;
+      const eTok = 5000 * (inputs.enterpriseTokenConsumptionPct / 100);
+      const eDecks = tokensPerDeck > 0 ? eTok / tokensPerDeck : 0;
+      const eCost = b.enterprise * eDecks * costPerDeck;
+      const newFr = Math.round(newSig * (1 - paidConversionPct / 100));
+      const frUsed = inputs.freeTokens * (freeTokenConsumptionPct / 100);
+      const frDecks = tokensPerDeck > 0 ? frUsed / tokensPerDeck : 0;
+      const frCost = newFr * frDecks * costPerDeck;
+      const paidAcq = Math.round(newSig * (inputs.paidAcquisitionPct / 100));
+      const acqCost = paidAcq * inputs.cac;
+      const apiCosts = sCost + nCost + ovBase + ovExtra + eCost + frCost + acqCost;
+      const infraCosts = expenseRates.render + expenseRates.supabase;
+      const serviceCosts = expenseRates.serpapi + expenseRates.other;
+      const headcountCosts = expenseRates.headcount * expenseRates.avgSalary;
+      const subRev = b.starter * (starterPlan?.price || 9) + b.pro * (proPlan?.price || 19) + b.team * (teamPlan?.price || 49);
+      const prevEnt = i > 0 ? (userBreakdown[i - 1]?.enterprise || 0) : 0;
+      const newDeals = Math.max(0, b.enterprise - prevEnt);
+      const entRev = newDeals * enterprise.avgDealSize;
+      const upgU = Math.round(b.starter * (starterUpgradePct / 100));
+      const upgRev = upgU * upgDiff;
+      const ovRev = overageEnabled ? ovTok * overagePricePerToken : 0;
+      const monthRev = subRev + ovRev + upgRev + entRev;
+      const stripeFees = monthRev * (expenseRates.stripePct / 100);
+      const monthCosts = apiCosts + headcountCosts + infraCosts + serviceCosts + stripeFees;
+      cumRev += monthRev; cumCost += monthCosts;
       data.push({
-        month: MONTH_LABELS[i],
-        monthIndex: i,
-        users,
-        paidUsers: paidU + enterpriseDeals, // Total paying (subscriptions + enterprise)
-        freeUsers: freeU,
-        starterUsers: starterU,
-        proUsers: proU,
-        teamUsers: teamU,
-        enterpriseDeals,
-        proPlusUsers: proPlusU,
-        revenue: monthRevenue,
-        subscriptionRevenue: subscriptionRev,
-        enterpriseRevenue: enterpriseRevThisMonth,
-        overageRevenue: overageRev,
-        // Cost breakdown
-        apiCosts,
-        headcountCosts,
-        infraCosts,
-        apiServiceCosts,
-        stripeFees,
-        oneOffSpend: totalOneOffSpend,
-        costs: totalMonthCosts,
-        profit: monthRevenue - totalMonthCosts,
-        cumRevenue,
-        cumCosts,
-        cumProfit: cumRevenue - cumCosts,
-        cumEnterpriseRev,
+        month: MONTH_LABELS[i], monthIndex: i, users, paidUsers: b.starter + b.pro + b.team + b.enterprise,
+        freeUsers: b.free, starterUsers: b.starter, proUsers: b.pro, teamUsers: b.team, enterpriseDeals: b.enterprise,
+        revenue: monthRev, subscriptionRevenue: subRev, enterpriseRevenue: entRev, overageRevenue: ovRev,
+        apiCosts, headcountCosts, infraCosts, serviceCosts, stripeFees,
+        costs: monthCosts, profit: monthRev - monthCosts, cumRevenue: cumRev, cumCosts: cumCost, cumProfit: cumRev - cumCost,
       });
     }
     return data;
-  }, [inputs, totalUsers, costPerDeck, tokensPerDeck, blendedActualDecksPerPaidUser, blendedDecksPerOverageUser, projectionMonths, manualScenario, plans, userBreakdown, enterprise.avgDealSize, monthlyExpenses, expenseRates.stripePct]);
+  }, [inputs, totalUsers, costPerDeck, tokensPerDeck, blendedActualDecks, blendedOverageDecks, projectionMonths, manualScenario, plans, userBreakdown, enterprise, expenseRates]);
 
-  // Selected month data
   const selectedData = projectionData[selectedMonth] || projectionData[projectionData.length - 1];
 
-  // Cost breakdown using editable values
+  // Channel metrics
+  const channelMetrics = useMemo(() => {
+    const newSig = Math.round(totalUsers * (inputs.monthlyGrowthPct / 100));
+    return channels.map(ch => {
+      const signups = Math.round(newSig * (ch.pctOfSignups / 100));
+      const paidUsers = Math.round(signups * (ch.convToPaid / 100));
+      return { ...ch, signups, paidUsers, monthlyCost: signups * ch.cac };
+    });
+  }, [channels, totalUsers, inputs.monthlyGrowthPct]);
+
+  const blendedCAC = useMemo(() => {
+    const tc = channelMetrics.reduce((s, c) => s + c.monthlyCost, 0);
+    const tp = channelMetrics.reduce((s, c) => s + c.paidUsers, 0);
+    return tp > 0 ? tc / tp : 0;
+  }, [channelMetrics]);
+
+  const weightedConv = useMemo(() => channels.reduce((s, c) => s + (c.pctOfSignups / 100) * c.convToPaid, 0), [channels]);
+
+  // Viral
+  const viralCoeff = useMemo(() => {
+    const base = viral.sharesPerUserMonth * viral.viewsPerShare * (viral.clickThroughRate / 100) * (viral.signupRate / 100);
+    return base + viral.referralBoost / 100;
+  }, [viral]);
+
+  // Cost breakdown
   const costBreakdown = useMemo(() => {
-    const { slidesPerDeck, editsPerDeck, researchCallsPerDeck, apiCostPerSlide, apiCostPerEdit, apiCostPerResearch, apiCostPerTheme } = inputs;
     const items = [
-      { name: 'Slides', cost: slidesPerDeck * apiCostPerSlide },
-      { name: 'Theme', cost: apiCostPerTheme },
-      { name: 'Research', cost: researchCallsPerDeck * apiCostPerResearch },
-      { name: 'Edits', cost: editsPerDeck * apiCostPerEdit },
-      { name: 'Routing', cost: 3 * COSTS.routing },
+      { name: 'Slides', cost: inputs.slidesPerDeck * inputs.apiCostPerSlide, color: '#FF4301' },
+      { name: 'Theme', cost: inputs.apiCostPerTheme, color: '#f59e0b' },
+      { name: 'Research', cost: inputs.researchCallsPerDeck * inputs.apiCostPerResearch, color: '#3b82f6' },
+      { name: 'Edits', cost: inputs.editsPerDeck * inputs.apiCostPerEdit, color: '#8b5cf6' },
+      { name: 'Routing', cost: 3 * routingCost, color: '#10b981' },
     ];
     const total = items.reduce((s, i) => s + i.cost, 0);
-    return items.map(item => ({ ...item, pct: total > 0 ? (item.cost / total) * 100 : 0 }));
-  }, [inputs]);
+    return items.map(i => ({ ...i, pct: total > 0 ? (i.cost / total) * 100 : 0 }));
+  }, [inputs, routingCost]);
 
-  // Annual metrics - based on selected month's projections
+  // Annual
   const annualMetrics = useMemo(() => {
-    const monthData = selectedData || projectionData[projectionData.length - 1];
-    if (!monthData) {
-      return { arr: 0, annualCosts: 0, annualProfit: 0, annualGrossMargin: 0 };
-    }
-    const arr = monthData.revenue * 12;
-    const annualCosts = monthData.costs * 12;
-    const annualProfit = monthData.profit * 12;
-    const annualGrossMargin = arr > 0 ? (annualProfit / arr) * 100 : 0;
-    return { arr, annualCosts, annualProfit, annualGrossMargin };
-  }, [selectedData, projectionData]);
+    if (!selectedData) return { arr: 0, annualCosts: 0, annualProfit: 0, margin: 0 };
+    const arr = selectedData.revenue * 12;
+    const ac = selectedData.costs * 12;
+    return { arr, annualCosts: ac, annualProfit: arr - ac, margin: arr > 0 ? ((arr - ac) / arr) * 100 : 0 };
+  }, [selectedData]);
 
-  const updateInput = <K extends keyof EconomicsInputs>(key: K, value: number) => {
-    setInputs(prev => ({ ...prev, [key]: value }));
-  };
+  // Benchmarks
+  const benchmarkScores = useMemo(() => {
+    const score = (val: number, bench: number, hb: boolean) => Math.min(100, Math.max(0, (hb ? val / bench : bench / val) * 60));
+    const grade = (p: number) => {
+      if (p >= 80) return { letter: 'A', color: '#10b981' };
+      if (p >= 60) return { letter: 'B', color: '#3b82f6' };
+      if (p >= 40) return { letter: 'C', color: '#f59e0b' };
+      if (p >= 20) return { letter: 'D', color: '#f97316' };
+      return { letter: 'F', color: '#ef4444' };
+    };
+    const nrrVal = 100 + (inputs.monthlyGrowthPct - inputs.churnPct);
+    const metrics = [
+      { name: 'Free→Paid', value: effectiveConvPct, benchmark: INDUSTRY_BENCHMARKS.freeToPaid, pct: score(effectiveConvPct, INDUSTRY_BENCHMARKS.freeToPaid, true), unit: '%' },
+      { name: 'Gross Margin', value: economics.grossMargin, benchmark: INDUSTRY_BENCHMARKS.grossMargin, pct: score(economics.grossMargin, INDUSTRY_BENCHMARKS.grossMargin, true), unit: '%' },
+      { name: 'LTV:CAC', value: economics.ltvCac, benchmark: INDUSTRY_BENCHMARKS.ltvCac, pct: score(economics.ltvCac, INDUSTRY_BENCHMARKS.ltvCac, true), unit: 'x' },
+      { name: 'Viral Coeff', value: viralCoeff, benchmark: INDUSTRY_BENCHMARKS.viral, pct: score(viralCoeff, INDUSTRY_BENCHMARKS.viral, true), unit: '' },
+      { name: 'Net Rev Ret', value: nrrVal, benchmark: INDUSTRY_BENCHMARKS.nrr, pct: score(nrrVal, INDUSTRY_BENCHMARKS.nrr, true), unit: '%' },
+      { name: 'CAC Payback', value: economics.paybackMonths, benchmark: INDUSTRY_BENCHMARKS.payback, pct: economics.paybackMonths < 99 ? score(economics.paybackMonths, INDUSTRY_BENCHMARKS.payback, false) : 0, unit: 'mo' },
+    ];
+    return metrics.map(m => ({ ...m, grade: grade(m.pct) }));
+  }, [effectiveConvPct, economics, viralCoeff, inputs.monthlyGrowthPct, inputs.churnPct]);
 
-  const updatePlan = (index: number, field: keyof PlanConfig, value: number | string) => {
+  // Sensitivity engine: recomputes key metrics with modified inputs
+  const computeMetrics = useMemo(() => {
+    return (ti: EconomicsInputs) => {
+      const tpd = calcTokensPerDeck(ti);
+      const rc = calcOpCost('routing');
+      const cpd = calcCostPerDeck(ti, rc);
+      const bad = calcBlendedActualDecksPerPaidUser(plans, tpd, ti);
+      const ppp = calcProPlusPct(plans);
+      const bod = calcBlendedDecksPerOverageUser(plans, tpd, ppp);
+      const cb = userBreakdown[0] || { free: 0, starter: 0, pro: 0, team: 0, enterprise: 0 };
+      const dp = ti.paidConversionPct / 100;
+      const pd = Math.min(ti.decksPerActiveUserMonth, bad);
+      const app = Math.ceil((cb.pro + cb.team) * 0.7);
+      const ns = Math.round(totalUsers * (ti.monthlyGrowthPct / 100));
+      const ftu = ti.freeTokens * (ti.freeTokenConsumptionPct / 100);
+      const fdo = tpd > 0 ? ftu / tpd : 0;
+      const ftc = Math.round(ns * (1 - dp)) * fdo * cpd;
+      const sp = plans.find(p => p.name.toLowerCase().includes('starter')) || plans[0];
+      const pp = plans.find(p => p.name.toLowerCase().includes('pro')) || plans[1];
+      const tp = plans.find(p => p.name.toLowerCase().includes('team')) || plans[2];
+      const ur = pp && sp ? Math.round(cb.starter * (ti.starterUpgradePct / 100)) * (pp.price - sp.price) : 0;
+      const ac = Math.round(ns * (ti.paidAcquisitionPct / 100)) * ti.cac;
+      const starterActive = Math.ceil(cb.starter * 0.7);
+      const sc = starterActive * pd * cpd;
+      const ou = ti.overageEnabled ? Math.ceil(app * (ti.overagePctOfProUsers / 100)) : 0;
+      const nc = (app - ou) * pd * cpd;
+      const obc = ou * bod * cpd;
+      const ot = ou * ti.avgOverageTokensPerUser;
+      const oe = ti.overageEnabled ? ot * (tpd > 0 ? cpd / tpd : 0) : 0;
+      const ed = tpd > 0 ? (5000 * (ti.enterpriseTokenConsumptionPct / 100)) / tpd : 0;
+      const ec = cb.enterprise * ed * cpd;
+      const cost = sc + nc + obc + oe + ec + ftc + ac;
+      const sr = cb.starter * (sp?.price || 9) + cb.pro * (pp?.price || 19) + cb.team * (tp?.price || 49);
+      const er = (enterprise.dealsPerYear * enterprise.avgDealSize) / 12;
+      const ovr = ti.overageEnabled ? ot * ti.overagePricePerToken : 0;
+      const mrr = sr + ovr + ur + er;
+      return { mrr, cost, profit: mrr - cost, margin: mrr > 0 ? ((mrr - cost) / mrr) * 100 : 0 };
+    };
+  }, [plans, userBreakdown, totalUsers, enterprise]);
+
+  const sensitivity = useMemo(() => {
+    const base = computeMetrics(inputs);
+    const params: { key: keyof EconomicsInputs; label: string; category: string }[] = [
+      { key: 'apiCostPerSlide', label: '$/Slide', category: 'COGS' },
+      { key: 'apiCostPerEdit', label: '$/Edit', category: 'COGS' },
+      { key: 'apiCostPerResearch', label: '$/Research', category: 'COGS' },
+      { key: 'apiCostPerTheme', label: '$/Theme', category: 'COGS' },
+      { key: 'monthlyGrowthPct', label: 'Growth %/mo', category: 'Growth' },
+      { key: 'churnPct', label: 'Churn %/mo', category: 'Retention' },
+      { key: 'cac', label: 'CAC', category: 'Acquisition' },
+      { key: 'paidAcquisitionPct', label: 'Paid Acq %', category: 'Acquisition' },
+      { key: 'freeTokens', label: 'Free Tokens', category: 'Free Tier' },
+      { key: 'freeTokenConsumptionPct', label: 'Free Usage %', category: 'Free Tier' },
+      { key: 'slidesPerDeck', label: 'Slides/Deck', category: 'Usage' },
+      { key: 'editsPerDeck', label: 'Edits/Deck', category: 'Usage' },
+      { key: 'decksPerActiveUserMonth', label: 'Decks/User', category: 'Usage' },
+      { key: 'starterUpgradePct', label: 'Starter→Pro %', category: 'Expansion' },
+      { key: 'paidConversionPct', label: 'Direct Paid %', category: 'Conversion' },
+    ];
+    return params.map(p => {
+      const val = inputs[p.key];
+      if (typeof val !== 'number' || val === 0) return { ...p, mrrDelta: 0, profitDelta: 0, marginDelta: 0, noEffect: true };
+      const up = computeMetrics({ ...inputs, [p.key]: (val as number) * 1.1 });
+      const mrrD = base.mrr > 0 ? ((up.mrr - base.mrr) / base.mrr) * 100 : 0;
+      const profitD = base.profit !== 0 ? ((up.profit - base.profit) / Math.abs(base.profit)) * 100 : (up.profit !== base.profit ? 100 : 0);
+      const marginD = up.margin - base.margin;
+      const noEffect = Math.abs(mrrD) < 0.01 && Math.abs(profitD) < 0.01 && Math.abs(marginD) < 0.01;
+      return { ...p, mrrDelta: mrrD, profitDelta: profitD, marginDelta: marginD, noEffect };
+    }).sort((a, b) => Math.abs(b.profitDelta) - Math.abs(a.profitDelta));
+  }, [inputs, computeMetrics]);
+
+  const insights = useMemo(() => {
+    const items: { type: 'critical' | 'warning' | 'info' | 'success'; title: string; detail: string }[] = [];
+    // Critical
+    if (economics.grossMargin < 0) items.push({ type: 'critical', title: 'Negative Gross Margin', detail: `${economics.grossMargin.toFixed(0)}% margin — revenue does not cover costs.` });
+    if (economics.netMonthly < 0 && economics.estMRR > 0 && Math.abs(economics.netMonthly) > economics.estMRR * 2) items.push({ type: 'critical', title: 'Unsustainable Burn', detail: `Monthly loss ($${fmtMoney(Math.abs(economics.netMonthly))}) exceeds 2x revenue.` });
+    if (inputs.churnPct > inputs.monthlyGrowthPct) items.push({ type: 'critical', title: 'Negative Net Growth', detail: `Churn (${inputs.churnPct}%) > growth (${inputs.monthlyGrowthPct}%). User base is shrinking.` });
+    // Warning
+    if (economics.grossMargin >= 0 && economics.grossMargin < 50) items.push({ type: 'warning', title: 'Low SaaS Margin', detail: `${economics.grossMargin.toFixed(0)}% is below the 70%+ target.` });
+    if (economics.ltvCac > 0 && economics.ltvCac < 3) items.push({ type: 'warning', title: 'LTV:CAC Below 3x', detail: `${economics.ltvCac.toFixed(1)}x ratio. Target is 3x+.` });
+    if (economics.paybackMonths > 18 && economics.paybackMonths < 99) items.push({ type: 'warning', title: 'Long Payback', detail: `${economics.paybackMonths.toFixed(0)} months. Target is <12.` });
+    if (economics.freeTrialCostMonthly > 0 && economics.estMRR > 0 && economics.freeTrialCostMonthly > economics.estMRR * 0.3) items.push({ type: 'warning', title: 'High Free Tier Cost', detail: `${((economics.freeTrialCostMonthly / economics.estMRR) * 100).toFixed(0)}% of MRR goes to free trials.` });
+    // Info
+    const topSensitive = sensitivity.filter(s => !s.noEffect && Math.abs(s.profitDelta) > 5);
+    if (topSensitive.length > 0) items.push({ type: 'info', title: 'High Sensitivity', detail: `Most sensitive to: ${topSensitive.slice(0, 3).map(s => s.label).join(', ')}. A 10% change significantly impacts profit.` });
+    const noEffectParams = sensitivity.filter(s => s.noEffect);
+    if (noEffectParams.length > 0) items.push({ type: 'info', title: 'Inactive Parameters', detail: `${noEffectParams.map(s => s.label).join(', ')} don't affect the current model.` });
+    if (!inputs.overageEnabled) items.push({ type: 'info', title: 'Overage Disabled', detail: 'Enable overage to see its revenue/cost impact.' });
+    // Success
+    if (economics.grossMargin >= 70) items.push({ type: 'success', title: 'Healthy Margin', detail: `${economics.grossMargin.toFixed(0)}% exceeds the 70% SaaS benchmark.` });
+    if (economics.ltvCac >= 3) items.push({ type: 'success', title: 'Strong Unit Economics', detail: `${economics.ltvCac.toFixed(1)}x LTV:CAC exceeds the 3x target.` });
+    if (viralCoeff >= 0.3) items.push({ type: 'success', title: 'PLG Working', detail: `Viral coefficient ${viralCoeff.toFixed(2)} indicates effective product-led growth.` });
+    if (economics.netMonthly > 0) items.push({ type: 'success', title: 'Net Profitable', detail: `+$${fmtMoney(economics.netMonthly)}/mo after all costs.` });
+    const sortOrder = { critical: 0, warning: 1, info: 2, success: 3 };
+    items.sort((a, b) => sortOrder[a.type] - sortOrder[b.type]);
+    return items;
+  }, [economics, inputs, viralCoeff, sensitivity]);
+
+  // Updaters
+  const ui = <K extends keyof EconomicsInputs>(k: K, v: number) => setInputs(prev => ({ ...prev, [k]: v }));
+  const updatePlan = (idx: number, field: keyof PlanConfig, value: number | string) => {
     setPlans(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
-      // Normalize pctOfPaid if needed
+      const u = [...prev]; u[idx] = { ...u[idx], [field]: value };
       if (field === 'pctOfPaid') {
-        const total = updated.reduce((sum, p) => sum + p.pctOfPaid, 0);
+        const total = u.reduce((s, p) => s + p.pctOfPaid, 0);
         if (total !== 100) {
-          // Auto-adjust others proportionally
-          const others = updated.filter((_, i) => i !== index);
-          const othersTotal = others.reduce((sum, p) => sum + p.pctOfPaid, 0);
-          if (othersTotal > 0) {
-            const remaining = 100 - (value as number);
-            others.forEach((p, i) => {
-              const otherIndex = updated.findIndex(u => u.name === p.name);
-              updated[otherIndex].pctOfPaid = Math.round((p.pctOfPaid / othersTotal) * remaining);
-            });
-          }
+          const others = u.filter((_, i) => i !== idx);
+          const ot = others.reduce((s, p) => s + p.pctOfPaid, 0);
+          if (ot > 0) { const rem = 100 - (value as number); others.forEach(p => { const oi = u.findIndex(x => x.name === p.name); u[oi].pctOfPaid = Math.round((p.pctOfPaid / ot) * rem); }); }
         }
       }
-      return updated;
+      return u;
     });
   };
+  const uc = (idx: number, field: keyof GrowthChannel, value: number) => setChannels(prev => { const u = [...prev]; u[idx] = { ...u[idx], [field]: value }; return u; });
+  const ub = (idx: number, tier: string, value: number) => setUserBreakdown(prev => { const u = [...prev]; if (u[idx]) u[idx] = { ...u[idx], [tier]: value, isManual: true }; return u; });
 
-  const updateManualUsers = (index: number, value: number) => {
-    setManualScenario(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], users: value, isManual: true };
-      return updated;
-    });
+  const resetAll = () => {
+    setInputs(DEFAULT_INPUTS); setPlans(DEFAULT_PLANS); setEnterprise(DEFAULT_ENTERPRISE);
+    setChannels(DEFAULT_CHANNELS); setViral(DEFAULT_VIRAL); setFunnel(DEFAULT_FUNNEL);
+    setGeminiFlash(DEFAULT_GEMINI_FLASH); setExpenseRates(DEFAULT_EXPENSE_RATES); setUserBreakdown([]);
+    Object.values(SK).forEach(k => localStorage.removeItem(k));
   };
 
-  // Update a specific tier count for a specific month
-  const updateUserBreakdown = (index: number, tier: keyof MonthlyUserBreakdown, value: number) => {
-    if (tier === 'isManual') return;
-    setUserBreakdown(prev => {
-      const updated = [...prev];
-      if (updated[index]) {
-        updated[index] = { ...updated[index], [tier]: value, isManual: true };
-      }
-      return updated;
-    });
+  const gs = (v: number, good: number, warn: number, higher = true): 'good' | 'warn' | 'bad' => {
+    if (higher) return v >= good ? 'good' : v >= warn ? 'warn' : 'bad';
+    return v <= good ? 'good' : v <= warn ? 'warn' : 'bad';
   };
 
-  // Update enterprise config
-  const updateEnterprise = <K extends keyof EnterpriseConfig>(key: K, value: EnterpriseConfig[K]) => {
-    setEnterprise(prev => ({ ...prev, [key]: value }));
-  };
+  if (isLoading) return <AdminLayoutV2><div className="flex items-center justify-center h-[60vh]"><Loader2 className="h-5 w-5 animate-spin text-[#666]" /></div></AdminLayoutV2>;
 
-  // Update expense rates (default values)
-  const updateExpenseRate = <K extends keyof ExpenseDefaults>(key: K, value: ExpenseDefaults[K]) => {
-    setExpenseRates(prev => ({ ...prev, [key]: value }));
-  };
-
-  // Update a specific expense field for a specific month
-  const updateMonthlyExpense = (index: number, field: keyof MonthlyExpenses, value: number) => {
-    if (field === 'isManual') return;
-    setMonthlyExpenses(prev => {
-      const updated = [...prev];
-      if (updated[index]) {
-        updated[index] = { ...updated[index], [field]: value, isManual: true };
-      }
-      return updated;
-    });
-  };
-
-  // Reset expenses to defaults (recalculate from rates)
-  const resetExpenses = () => {
-    setMonthlyExpenses([]);
-    setExpenseRates(DEFAULT_EXPENSE_RATES);
-    localStorage.removeItem(EXPENSES_STORAGE_KEY);
-    localStorage.removeItem(EXPENSE_RATES_STORAGE_KEY);
-  };
-
-  const resetToDefaults = () => {
-    setInputs(DEFAULT_INPUTS);
-    setPlans(DEFAULT_PLANS);
-    setEnterprise(DEFAULT_ENTERPRISE);
-    setUserBreakdown([]);
-    setMonthlyExpenses([]);
-    setExpenseRates(DEFAULT_EXPENSE_RATES);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(PLANS_STORAGE_KEY);
-    localStorage.removeItem(ENTERPRISE_STORAGE_KEY);
-    localStorage.removeItem(USER_BREAKDOWN_STORAGE_KEY);
-    localStorage.removeItem(EXPENSES_STORAGE_KEY);
-    localStorage.removeItem(EXPENSE_RATES_STORAGE_KEY);
-  };
-
-  const resetManualScenario = () => {
-    const { monthlyGrowthPct, churnPct } = inputs;
-    const netGrowth = (monthlyGrowthPct - churnPct) / 100;
-    const reset: MonthlyScenario[] = [];
-    let users = totalUsers;
-    for (let i = 0; i <= 12; i++) {
-      if (i > 0) users = Math.round(users * (1 + netGrowth));
-      reset.push({ month: MONTH_LABELS[i], users, isManual: false });
-    }
-    setManualScenario(reset);
-    // Also reset user breakdown
-    setUserBreakdown([]);
-  };
-
-  const getStatus = (value: number, good: number, warn: number, higher = true): 'good' | 'warn' | 'bad' => {
-    if (higher) return value >= good ? 'good' : value >= warn ? 'warn' : 'bad';
-    return value <= good ? 'good' : value <= warn ? 'warn' : 'bad';
-  };
-
-  const StatusBadge = ({ status }: { status: 'good' | 'warn' | 'bad' }) => (
-    <span className={cn(
-      'w-1.5 h-1.5 rounded-full',
-      status === 'good' && 'bg-emerald-500',
-      status === 'warn' && 'bg-amber-500',
-      status === 'bad' && 'bg-red-500'
-    )} />
-  );
-
-  if (actualsLoading) {
-    return (
-      <AdminLayoutV2>
-        <div className="flex items-center justify-center h-[60vh]">
-          <Loader2 className="h-5 w-5 animate-spin text-[#666]" />
-        </div>
-      </AdminLayoutV2>
-    );
-  }
-
+  // ════════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ════════════════════════════════════════════════════════════════════════════
   return (
     <AdminLayoutV2>
-      <div className="space-y-2 max-w-[1600px] mx-auto">
-        {/* Header + Current Stats */}
+      <div className="space-y-3 max-w-[1600px] mx-auto">
+        {/* Header */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Unit Economics</h1>
-            <div className="flex items-center gap-3 text-[10px]">
-              <span className="text-[#888]">Actual:</span>
-              <span className="font-medium">{totalUsers} users</span>
-              {realPaidUsers > 0 ? (
-                <>
-                  <span className="text-emerald-600 font-medium">{realPaidUsers} paid</span>
-                  <span className="text-emerald-600 font-medium">${realMRR.toFixed(0)} MRR</span>
-                </>
-              ) : (
-                <span className="text-amber-600 text-[9px]">(no payment data)</span>
-              )}
-              <span className="text-[#666]">|</span>
-              <span className="text-[#888]">Model:</span>
-              <span className="text-[#FF4301]">{economics.estPaidUsers} paid</span>
-              <span className="text-emerald-600">${fmtMoney(economics.subscriptionRevenue)} sub</span>
-              {economics.enterpriseRevenue > 0 && (
-                <span className="text-orange-600">+${fmtMoney(economics.enterpriseRevenue)} ent</span>
-              )}
-              <span className="text-emerald-600 font-medium">${fmtMoney(economics.estMRR)} MRR</span>
+          <div className="flex items-center gap-3">
+            <h1 className="text-sm font-bold uppercase tracking-wider" style={hk}>Financial Model</h1>
+            <div className="flex items-center gap-2 text-[10px]">
+              <span className="text-[#888]">Live:</span>
+              <span className="font-medium tabular-nums">{totalUsers} users</span>
+              {realPaidUsers > 0 && <span className="text-emerald-600 font-medium tabular-nums">{realPaidUsers} paid</span>}
+              {realMRR > 0 && <span className="text-emerald-600 font-medium tabular-nums">${realMRR.toFixed(0)} MRR</span>}
+              <span className="text-[#333] dark:text-[#555]">|</span>
+              <span className="text-[#FF4301] font-medium tabular-nums">${fmtMoney(economics.estMRR)} MRR</span>
+              <span className={cn("font-medium tabular-nums", economics.netMonthly >= 0 ? "text-emerald-600" : "text-red-500")}>
+                {economics.netMonthly >= 0 ? '+' : ''}{fmtMoney(economics.netMonthly)} net
+              </span>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <button onClick={resetToDefaults} className="text-[9px] text-[#888] hover:text-[#666] px-1.5 py-0.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded" title="Reset to defaults">
-              Reset
-            </button>
-            <button onClick={() => refetch()} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded" title="Refresh data">
-              <RefreshCw className="h-3.5 w-3.5" />
-            </button>
+          <div className="flex items-center gap-1.5">
+            <button onClick={resetAll} className="text-[9px] text-[#888] hover:text-[#666] px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors">Reset</button>
+            <button onClick={() => refetch()} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"><RefreshCw className="h-3.5 w-3.5 text-[#888]" /></button>
           </div>
         </div>
 
-        {/* Main 3-Column Layout */}
-        <div className="grid grid-cols-12 gap-2">
-          {/* Left: Inputs (Compact) */}
-          <div className="col-span-2 bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2 space-y-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301] flex items-center gap-1" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-              <Target className="h-3 w-3" /> Inputs
-            </div>
-            <div className="space-y-1">
-              <CompactInput label="Tok/Slide" value={inputs.tokensPerSlide} onChange={v => updateInput('tokensPerSlide', v)} />
-              <CompactInput label="Tok/Edit" value={inputs.tokensPerEdit} onChange={v => updateInput('tokensPerEdit', v)} />
-              <CompactInput label="Tok/Rsch" value={inputs.tokensPerResearch} onChange={v => updateInput('tokensPerResearch', v)} />
-              <CompactInput label="Free Tok" value={inputs.freeTokens} onChange={v => updateInput('freeTokens', v)} />
-            </div>
-            <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
-              <CompactInput label="Slides/Dk" value={inputs.slidesPerDeck} onChange={v => updateInput('slidesPerDeck', v)} />
-              <CompactInput label="Edits/Dk" value={inputs.editsPerDeck} onChange={v => updateInput('editsPerDeck', v)} />
-              <CompactInput label="Rsch/Dk" value={inputs.researchCallsPerDeck} onChange={v => updateInput('researchCallsPerDeck', v)} />
-              <CompactInput label="Decks/Mo" value={inputs.decksPerActiveUserMonth} onChange={v => updateInput('decksPerActiveUserMonth', v)} />
-            </div>
-            <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
-              <div className="text-[8px] text-[#888] font-medium">Token Consumption %</div>
-              <CompactInput label="Free" value={inputs.freeTokenConsumptionPct} onChange={v => updateInput('freeTokenConsumptionPct', v)} step={5} />
-              <CompactInput label="Starter" value={inputs.starterTokenConsumptionPct} onChange={v => updateInput('starterTokenConsumptionPct', v)} step={5} />
-              <CompactInput label="Pro" value={inputs.proTokenConsumptionPct} onChange={v => updateInput('proTokenConsumptionPct', v)} step={5} />
-              <CompactInput label="Enterpr" value={inputs.enterpriseTokenConsumptionPct} onChange={v => updateInput('enterpriseTokenConsumptionPct', v)} step={5} />
-            </div>
-            <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
-              <div className="text-[8px] text-[#888] font-medium">Conversion</div>
-              <CompactInput label="Direct %" value={inputs.paidConversionPct} onChange={v => updateInput('paidConversionPct', v)} step={0.5} />
-              <CompactInput label="Upgr %" value={inputs.freeToPayConvPct} onChange={v => updateInput('freeToPayConvPct', v)} step={1} />
-              <div className="text-[8px] text-[#888] pl-1">→ {economics.effectivePaidConversionPct.toFixed(1)}% effective</div>
-            </div>
-            <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
-              <div className="text-[8px] text-[#888] font-medium">Growth & Churn</div>
-              <CompactInput label="Growth %" value={inputs.monthlyGrowthPct} onChange={v => updateInput('monthlyGrowthPct', v)} />
-              <CompactInput label="Churn %" value={inputs.churnPct} onChange={v => updateInput('churnPct', v)} />
-              <div className="text-[8px] text-[#666] pl-1">
-                <div className="flex justify-between"><span>New/mo:</span><span>+{Math.round(totalUsers * inputs.monthlyGrowthPct / 100)}</span></div>
-                <div className="flex justify-between"><span>Lost/mo:</span><span>-{Math.round(totalUsers * inputs.churnPct / 100)}</span></div>
-              </div>
-            </div>
-            <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
-              <div className="text-[8px] text-[#888] font-medium">Customer Acquisition</div>
-              <CompactInput label="CAC $/user" value={inputs.cac} onChange={v => updateInput('cac', v)} />
-              <CompactInput label="Paid %" value={inputs.paidAcquisitionPct} onChange={v => updateInput('paidAcquisitionPct', v)} step={5} min={0} max={100} />
-              <div className="text-[8px] text-[#666] pl-1">
-                <div className="flex justify-between"><span>Paid:</span><span>{Math.round((totalUsers * inputs.monthlyGrowthPct / 100) * inputs.paidAcquisitionPct / 100)} new/mo</span></div>
-                <div className="flex justify-between"><span>Organic:</span><span>{Math.round((totalUsers * inputs.monthlyGrowthPct / 100) * (100 - inputs.paidAcquisitionPct) / 100)} new/mo</span></div>
-                <div className="flex justify-between text-red-600"><span>Spend:</span><span>${fmtMoney(Math.round((totalUsers * inputs.monthlyGrowthPct / 100) * inputs.paidAcquisitionPct / 100) * inputs.cac)}/mo</span></div>
-              </div>
-            </div>
-            <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
-              <div className="text-[8px] text-[#888] font-medium">Starter → Pro</div>
-              <CompactInput label="Upgr %" value={inputs.starterUpgradePct} onChange={v => updateInput('starterUpgradePct', v)} step={1} />
-              <div className="text-[8px] text-[#666]">
-                <div className="flex justify-between"><span>Starter:</span><span>{economics.starterUsers} ({starterPct}%)</span></div>
-                <div className="flex justify-between"><span>Upgrade:</span><span>{economics.starterUpgradeUsers}</span></div>
-                <div className="flex justify-between text-emerald-600"><span>+Rev:</span><span>${fmtMoney(economics.upgradeRevenue || 0)}/mo</span></div>
-              </div>
-            </div>
-            <div className="border-t border-[#eaeaea] dark:border-[#333] pt-1 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[9px] text-[#888]">Overage (Pro+)</span>
-                <input
-                  type="checkbox"
-                  checked={inputs.overageEnabled}
-                  onChange={e => setInputs(prev => ({ ...prev, overageEnabled: e.target.checked }))}
-                  className="h-3 w-3"
-                />
-              </div>
-              {inputs.overageEnabled && (
-                <>
-                  <div className="text-[8px] text-[#666]">Pro+ users: {economics.proPlusUsers} ({proPlusPct}%)</div>
-                  <CompactInput label="% go over" value={inputs.overagePctOfProUsers} onChange={v => updateInput('overagePctOfProUsers', v)} step={1} />
-                  <CompactInput label="Avg tok" value={inputs.avgOverageTokensPerUser} onChange={v => updateInput('avgOverageTokensPerUser', v)} />
-                  <CompactInput label="$/token" value={inputs.overagePricePerToken} onChange={v => updateInput('overagePricePerToken', v)} step={0.01} />
-                  <div className="text-[8px] text-[#666] pt-0.5 border-t border-[#eaeaea] dark:border-[#333]">
-                    <div className="flex justify-between"><span>Users over:</span><span>{economics.overageUsers}</span></div>
-                    <div className="flex justify-between"><span>Tokens:</span><span>{fmtNum(economics.overageTokensTotal || 0)}</span></div>
-                    <div className="flex justify-between text-emerald-600"><span>Revenue:</span><span>+${fmtMoney(economics.overageRevenue || 0)}/mo</span></div>
-                    <div className="flex justify-between text-red-600"><span>Cost:</span><span>+${fmtMoney(economics.overageCost || 0)}/mo</span></div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+        {/* Tabs */}
+        <div className="flex items-center gap-0.5 border-b border-[#eaeaea] dark:border-[#333]">
+          {TABS.map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={cn(
+              "flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium border-b-2 transition-colors -mb-px",
+              activeTab === tab.id ? "border-[#FF4301] text-[#FF4301]" : "border-transparent text-[#666] dark:text-[#888] hover:text-black dark:hover:text-white"
+            )}>{tab.icon}{tab.label}</button>
+          ))}
+        </div>
 
-          {/* Center: Chart + Stats */}
-          <div className="col-span-7 space-y-2">
-            {/* Chart */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2">
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-medium">Cumulative {projectionMonths}mo</span>
-                  <select value={projectionMonths} onChange={e => { setProjectionMonths(Number(e.target.value)); setSelectedMonth(Number(e.target.value)); }} className="h-5 text-[9px] border border-[#eaeaea] dark:border-[#333] rounded bg-transparent px-1">
-                    {[3, 6, 9, 12].map(n => <option key={n} value={n}>{n}mo</option>)}
-                  </select>
-                </div>
-                <Tabs value={chartView} onValueChange={v => setChartView(v as typeof chartView)}>
-                  <TabsList className="h-5">
-                    <TabsTrigger value="combined" className="text-[9px] px-1.5 h-4">All</TabsTrigger>
-                    <TabsTrigger value="users" className="text-[9px] px-1.5 h-4">Users</TabsTrigger>
-                    <TabsTrigger value="financials" className="text-[9px] px-1.5 h-4">$$$</TabsTrigger>
-                  </TabsList>
-                </Tabs>
+        {/* Insights Banner */}
+        {insights.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {insights.slice(0, 5).map((item, i) => (
+              <div key={i} className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] border transition-colors",
+                item.type === 'critical' && "bg-red-500/[0.08] text-red-700 dark:text-red-400 border-red-500/20",
+                item.type === 'warning' && "bg-amber-500/[0.08] text-amber-700 dark:text-amber-400 border-amber-500/20",
+                item.type === 'info' && "bg-blue-500/[0.08] text-blue-700 dark:text-blue-400 border-blue-500/20",
+                item.type === 'success' && "bg-emerald-500/[0.08] text-emerald-700 dark:text-emerald-400 border-emerald-500/20",
+              )}>
+                <span className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0",
+                  item.type === 'critical' && "bg-red-500",
+                  item.type === 'warning' && "bg-amber-500",
+                  item.type === 'info' && "bg-blue-500",
+                  item.type === 'success' && "bg-emerald-500",
+                )} />
+                <span className="font-medium whitespace-nowrap">{item.title}</span>
+                <span className="text-[9px] opacity-70 hidden lg:inline">{item.detail}</span>
               </div>
-              <div className="h-[calc(100vh-380px)] min-h-[300px]">
+            ))}
+          </div>
+        )}
+
+        {/* ═══ OVERVIEW ═══ */}
+        {activeTab === 'overview' && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-4 lg:grid-cols-8 gap-2">
+              <KPI label="MRR" value={`$${fmtMoney(economics.estMRR)}`} sub={`${economics.estPaidUsers} paying`} status={gs(economics.estMRR, 1000, 100)} />
+              <KPI label="ARR" value={`$${fmtMoney(annualMetrics.arr)}`} sub="projected" status={gs(annualMetrics.arr, 10000, 1000)} />
+              <KPI label="Gross Margin" value={`${economics.grossMargin.toFixed(0)}%`} sub={economics.grossMargin >= 70 ? 'healthy' : 'below target'} status={gs(economics.grossMargin, 70, 50)} />
+              <KPI label="LTV:CAC" value={`${economics.ltvCac.toFixed(1)}x`} sub={`LTV $${economics.ltv.toFixed(0)}`} status={gs(economics.ltvCac, 3, 1)} />
+              <KPI label="Burn Rate" value={`$${fmtMoney(Math.max(0, -economics.netMonthly))}/mo`} sub={economics.netMonthly >= 0 ? 'profitable' : 'burning'} status={economics.netMonthly >= 0 ? 'good' : 'bad'} />
+              <KPI label="Breakeven" value={economics.breakEvenPaidUsers > 0 ? `${economics.breakEvenPaidUsers} users` : 'N/A'} sub={economics.estPaidUsers >= economics.breakEvenPaidUsers ? 'reached' : 'not yet'} status={economics.estPaidUsers >= economics.breakEvenPaidUsers ? 'good' : 'warn'} />
+              <KPI label="Blended CAC" value={`$${blendedCAC.toFixed(2)}`} sub={`${weightedConv.toFixed(1)}% conv`} status={gs(blendedCAC, 5, 15, false)} />
+              <KPI label="Rev/User" value={`$${economics.blendedARPU.toFixed(2)}`} sub="monthly" status={gs(economics.blendedARPU, 15, 8)} />
+            </div>
+            <div className={cn(cd, "p-3")}>
+              <div className="flex items-center justify-between mb-2">
+                <span className={sH} style={hk}>Financial Projection</span>
+                <div className="flex items-center bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded-lg p-0.5">
+                  {[1, 6, 12].map(n => (
+                    <button key={n} onClick={() => { setProjectionMonths(n); setSelectedMonth(Math.min(selectedMonth, n)); }} className={cn(
+                      "px-2.5 py-0.5 text-[9px] font-medium rounded-md transition-colors",
+                      projectionMonths === n ? "bg-white dark:bg-[#222] text-[#FF4301] shadow-sm" : "text-[#888] hover:text-[#666]"
+                    )}>{n}mo</button>
+                  ))}
+                </div>
+              </div>
+              <div className="h-[340px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={projectionData} margin={{ top: 5, right: 5, left: -15, bottom: 0 }} onClick={(e) => e?.activeTooltipIndex !== undefined && setSelectedMonth(e.activeTooltipIndex)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333" opacity={0.1} />
+                  <ComposedChart data={projectionData} margin={{ top: 5, right: 5, left: -15, bottom: 0 }} onClick={(e: any) => e?.activeTooltipIndex !== undefined && setSelectedMonth(e.activeTooltipIndex)}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#333" opacity={0.08} />
                     <XAxis dataKey="month" tick={{ fontSize: 9 }} tickLine={false} />
-                    {(chartView === 'combined' || chartView === 'users') && (
-                      <YAxis yAxisId="users" orientation="left" tick={{ fontSize: 9 }} tickLine={false} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
-                    )}
-                    {(chartView === 'combined' || chartView === 'financials') && (
-                      <YAxis yAxisId="money" orientation="right" tick={{ fontSize: 9 }} tickLine={false} tickFormatter={v => `$${v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}`} />
-                    )}
-                    <Tooltip content={<CustomTooltip />} />
+                    <YAxis yAxisId="users" orientation="left" tick={{ fontSize: 9 }} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
+                    <YAxis yAxisId="money" orientation="right" tick={{ fontSize: 9 }} tickLine={false} tickFormatter={(v: number) => `$${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
+                    <Tooltip content={<CTip />} />
                     <Legend wrapperStyle={{ fontSize: '9px' }} />
-                    {(chartView === 'combined' || chartView === 'financials') && (
-                      <ReferenceLine y={0} yAxisId="money" stroke="#666" strokeDasharray="3 3" />
-                    )}
-                    {(chartView === 'combined' || chartView === 'users') && (
-                      <ReferenceLine x={MONTH_LABELS[selectedMonth]} yAxisId="users" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="4 4" />
-                    )}
-                    {chartView === 'financials' && (
-                      <ReferenceLine x={MONTH_LABELS[selectedMonth]} yAxisId="money" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="4 4" />
-                    )}
-                    {(chartView === 'combined' || chartView === 'users') && (
-                      <>
-                        <Line yAxisId="users" type="monotone" dataKey="users" name="Users" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 2 }} />
-                        <Line yAxisId="users" type="monotone" dataKey="paidUsers" name="Paid" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 1.5 }} strokeDasharray="3 2" />
-                      </>
-                    )}
-                    {(chartView === 'combined' || chartView === 'financials') && (
-                      <>
-                        <Area yAxisId="money" type="monotone" dataKey="cumRevenue" name="Total Rev" fill="#10b981" fillOpacity={0.15} stroke="#10b981" strokeWidth={2} />
-                        <Area yAxisId="money" type="monotone" dataKey="cumCosts" name="Total Cost" fill="#ef4444" fillOpacity={0.1} stroke="#ef4444" strokeWidth={2} />
-                        <Line yAxisId="money" type="monotone" dataKey="cumProfit" name="Total Profit" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                      </>
-                    )}
+                    <ReferenceLine y={0} yAxisId="money" stroke="#666" strokeDasharray="3 3" />
+                    <ReferenceLine x={MONTH_LABELS[selectedMonth]} yAxisId="users" stroke="#FF4301" strokeWidth={2} strokeDasharray="4 4" />
+                    <Line yAxisId="users" type="monotone" dataKey="users" name="Users" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 2 }} />
+                    <Line yAxisId="users" type="monotone" dataKey="paidUsers" name="Paid" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 1.5 }} strokeDasharray="3 2" />
+                    <Area yAxisId="money" type="monotone" dataKey="cumRevenue" name="Cum. Revenue" fill="#10b981" fillOpacity={0.12} stroke="#10b981" strokeWidth={2} />
+                    <Area yAxisId="money" type="monotone" dataKey="cumCosts" name="Cum. Costs" fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeWidth={2} />
+                    <Line yAxisId="money" type="monotone" dataKey="cumProfit" name="Cum. Profit" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
             </div>
-
-            {/* Selected Month Stats */}
             <div className="grid grid-cols-6 gap-1.5">
-              <div className="bg-white dark:bg-[#111] border border-purple-500/30 rounded p-1.5 text-center">
-                <div className="text-[9px] text-[#FF4301]">M{selectedMonth} Users</div>
-                <div className="text-sm font-semibold">{fmtNum(selectedData?.users || 0)}</div>
-                <div className="text-[8px] text-[#888]">{fmtNum(selectedData?.paidUsers || 0)} paid</div>
-              </div>
-              <div className="bg-white dark:bg-[#111] border border-emerald-500/30 rounded p-1.5 text-center">
-                <div className="text-[9px] text-emerald-600">Total Revenue</div>
-                <div className="text-sm font-semibold text-emerald-600">${fmtMoney(selectedData?.cumRevenue || 0)}</div>
-                <div className="text-[8px] text-[#888]">${fmtMoney(selectedData?.revenue || 0)}/mo</div>
-              </div>
-              <div className="bg-white dark:bg-[#111] border border-red-500/30 rounded p-1.5 text-center">
-                <div className="text-[9px] text-red-600">Total Costs</div>
-                <div className="text-sm font-semibold text-red-600">${fmtMoney(selectedData?.cumCosts || 0)}</div>
-                <div className="text-[8px] text-[#888]">${fmtMoney(selectedData?.costs || 0)}/mo</div>
-              </div>
-              <div className={cn("bg-white dark:bg-[#111] border rounded p-1.5 text-center", selectedData?.cumProfit >= 0 ? "border-blue-500/30" : "border-red-500/30")}>
-                <div className={cn("text-[9px]", selectedData?.cumProfit >= 0 ? "text-blue-600" : "text-red-600")}>Total Profit</div>
-                <div className={cn("text-sm font-semibold", selectedData?.cumProfit >= 0 ? "text-blue-600" : "text-red-600")}>${fmtMoney(selectedData?.cumProfit || 0)}</div>
-                <div className="text-[8px] text-[#888]">${fmtMoney(selectedData?.profit || 0)}/mo</div>
-              </div>
-              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded p-1.5 text-center">
-                <div className="text-[9px] text-[#888]">Margin</div>
-                <div className="text-sm font-semibold">{selectedData && selectedData.cumRevenue > 0 ? ((selectedData.cumProfit / selectedData.cumRevenue) * 100).toFixed(0) : 0}%</div>
-                <div className="text-[8px] text-[#888]">gross</div>
-              </div>
-              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded p-1.5 text-center">
-                <div className="text-[9px] text-[#888]">Cost/Deck</div>
-                <div className="text-sm font-semibold">${economics.costPerDeck.toFixed(2)}</div>
-                <div className="text-[8px] text-[#888]">{economics.tokensPerDeck} tok</div>
+              {[
+                { l: `M${selectedMonth} Users`, v: fmtNum(selectedData?.users || 0), s: `${fmtNum(selectedData?.paidUsers || 0)} paid`, b: 'border-purple-500/30', c: 'text-[#FF4301]' },
+                { l: 'Monthly Rev', v: `$${fmtMoney(selectedData?.revenue || 0)}`, s: `subs $${fmtMoney(selectedData?.subscriptionRevenue || 0)}`, b: 'border-emerald-500/30', c: 'text-emerald-600' },
+                { l: 'Monthly Costs', v: `$${fmtMoney(selectedData?.costs || 0)}`, s: `API $${fmtMoney(selectedData?.apiCosts || 0)}`, b: 'border-red-500/30', c: 'text-red-600' },
+                { l: 'Monthly Profit', v: `$${fmtMoney(selectedData?.profit || 0)}`, s: `margin ${selectedData?.revenue ? ((selectedData.profit / selectedData.revenue) * 100).toFixed(0) : 0}%`, b: (selectedData?.profit || 0) >= 0 ? 'border-blue-500/30' : 'border-red-500/30', c: (selectedData?.profit || 0) >= 0 ? 'text-blue-600' : 'text-red-600' },
+                { l: 'Cum. Revenue', v: `$${fmtMoney(selectedData?.cumRevenue || 0)}`, s: `after ${selectedMonth}mo`, b: 'border-emerald-500/20', c: 'text-emerald-600' },
+                { l: 'Cum. Profit', v: `$${fmtMoney(selectedData?.cumProfit || 0)}`, s: `${selectedData?.cumRevenue ? ((selectedData.cumProfit / selectedData.cumRevenue) * 100).toFixed(0) : 0}% margin`, b: (selectedData?.cumProfit || 0) >= 0 ? 'border-blue-500/20' : 'border-red-500/20', c: (selectedData?.cumProfit || 0) >= 0 ? 'text-blue-600' : 'text-red-600' },
+              ].map((m, i) => (
+                <div key={i} className={cn("bg-white dark:bg-[#111] border rounded-lg p-2 text-center", m.b)}>
+                  <div className={cn("text-[9px] font-medium", m.c)}>{m.l}</div>
+                  <div className={cn("text-sm font-semibold tabular-nums", m.c)}>{m.v}</div>
+                  <div className="text-[8px] text-[#888]">{m.s}</div>
+                </div>
+              ))}
+            </div>
+            <div className={cn(cd, "p-3")}>
+              <span className={sH} style={hk}>Health Scorecard</span>
+              <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 mt-2">
+                <MR label="Cost/Deck" value={`$${economics.costPerDeck.toFixed(3)}`} status={gs(economics.costPerDeck, 0.2, 0.5, false)} />
+                <MR label="Cost/Paid User" value={`$${economics.costPerPaidUser.toFixed(2)}`} status={gs(economics.costPerPaidUser, 5, 10, false)} />
+                <MR label="Payback Period" value={economics.paybackMonths < 99 ? `${economics.paybackMonths.toFixed(1)} mo` : 'N/A'} status={gs(economics.paybackMonths, 6, 18, false)} />
+                <MR label="Free Trial Cost" value={`$${fmtMoney(economics.freeTrialCostMonthly)}/mo`} status={gs(economics.freeTrialCostMonthly, 50, 200, false)} />
+                <MR label="Landing CAC" value={`$${geminiMetrics.costPerSignup.toFixed(3)}`} status={gs(geminiMetrics.costPerSignup, 0.5, 2, false)} />
+                <MR label="Viral Coefficient" value={viralCoeff.toFixed(2)} status={gs(viralCoeff, 0.3, 0.1)} />
               </div>
             </div>
-
-            {/* Breakdown Tabs - Users | Expenses */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2">
-              {/* Tab Header */}
+            {/* Sensitivity Analysis */}
+            <div className={cn(cd, "p-3")}>
               <div className="flex items-center justify-between mb-2">
-                <Tabs value={breakdownTab} onValueChange={v => setBreakdownTab(v as 'users' | 'expenses')}>
-                  <TabsList className="h-6">
-                    <TabsTrigger value="users" className="text-[9px] px-2 h-5 gap-1">
-                      <Users className="h-3 w-3" /> Users
-                    </TabsTrigger>
-                    <TabsTrigger value="expenses" className="text-[9px] px-2 h-5 gap-1">
-                      <Building2 className="h-3 w-3" /> Expenses
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
-                {breakdownTab === 'expenses' && monthlyExpenses.some(e => e?.isManual) && (
-                  <button onClick={resetExpenses} className="text-[8px] text-[#888] hover:text-[#666] flex items-center gap-1">
-                    <RotateCcw className="h-2.5 w-2.5" /> Reset
-                  </button>
-                )}
+                <span className={sH} style={hk}>Sensitivity Analysis</span>
+                <span className="text-[9px] text-[#888]">Impact of +10% change per parameter</span>
               </div>
+              <div className="grid grid-cols-[120px_56px_56px_56px_56px_1fr] gap-1 text-[8px] text-[#888] font-medium pb-1 border-b border-[#eaeaea] dark:border-[#333]">
+                <span>Parameter</span><span className="text-center">Category</span><span className="text-right">Profit</span><span className="text-right">MRR</span><span className="text-right">Margin</span><span className="pl-2">Impact</span>
+              </div>
+              {sensitivity.map(s => {
+                const absProfit = Math.abs(s.profitDelta);
+                const impactLevel = s.noEffect ? 'none' : absProfit > 10 ? 'high' : absProfit > 2 ? 'medium' : 'low';
+                return (
+                  <div key={s.key} className={cn(
+                    "grid grid-cols-[120px_56px_56px_56px_56px_1fr] gap-1 py-1.5 border-b border-[#eaeaea]/50 dark:border-[#333]/50 items-center text-[9px]",
+                    s.noEffect && "opacity-35"
+                  )}>
+                    <span className="font-medium truncate">{s.label}</span>
+                    <span className="text-center text-[8px] text-[#888]">{s.category}</span>
+                    <span className={cn("text-right tabular-nums font-medium", s.profitDelta > 0.01 ? "text-emerald-600" : s.profitDelta < -0.01 ? "text-red-600" : "text-[#888]")}>
+                      {s.noEffect ? '-' : `${s.profitDelta > 0 ? '+' : ''}${s.profitDelta.toFixed(1)}%`}
+                    </span>
+                    <span className={cn("text-right tabular-nums", s.mrrDelta > 0.01 ? "text-emerald-600" : s.mrrDelta < -0.01 ? "text-red-600" : "text-[#888]")}>
+                      {s.noEffect ? '-' : `${s.mrrDelta > 0 ? '+' : ''}${s.mrrDelta.toFixed(1)}%`}
+                    </span>
+                    <span className={cn("text-right tabular-nums", s.marginDelta > 0.01 ? "text-emerald-600" : s.marginDelta < -0.01 ? "text-red-600" : "text-[#888]")}>
+                      {s.noEffect ? '-' : `${s.marginDelta > 0 ? '+' : ''}${s.marginDelta.toFixed(1)}pp`}
+                    </span>
+                    <div className="flex items-center gap-1.5 pl-2">
+                      <div className="flex-1 h-2 bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded overflow-hidden">
+                        <div className={cn("h-full rounded transition-all duration-300",
+                          impactLevel === 'high' ? "bg-red-500" : impactLevel === 'medium' ? "bg-amber-500" : impactLevel === 'low' ? "bg-emerald-500/60" : "bg-[#ddd] dark:bg-[#444]"
+                        )} style={{ width: `${Math.min(100, absProfit * 5)}%` }} />
+                      </div>
+                      {s.noEffect && <span className="text-[7px] text-[#aaa] whitespace-nowrap">no effect</span>}
+                      {impactLevel === 'high' && <span className="text-[7px] text-red-500 font-bold whitespace-nowrap">HIGH</span>}
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="mt-2 pt-2 border-t border-[#eaeaea] dark:border-[#333] text-[8px] text-[#888] space-y-0.5">
+                <div className="flex items-center gap-2"><span className="w-2 h-1.5 rounded bg-red-500" />HIGH: &gt;10% profit impact per 10% change</div>
+                <div className="flex items-center gap-2"><span className="w-2 h-1.5 rounded bg-amber-500" />MEDIUM: 2-10% impact</div>
+                <div className="flex items-center gap-2"><span className="w-2 h-1.5 rounded bg-emerald-500/60" />LOW: &lt;2% impact</div>
+                <div className="text-[#aaa] mt-1">Parameters marked "no effect" are gated by other settings (e.g., overage disabled) or don't affect current-month economics.</div>
+              </div>
+            </div>
+          </div>
+        )}
 
-              <div className="space-y-0.5">
-                {/* Header Row with Month Labels */}
-                <div className="flex items-center gap-2">
-                  <div className="w-14 flex-shrink-0" />
-                  <div className="flex items-center gap-1 flex-1">
-                    {manualScenario.slice(0, projectionMonths + 1).map((item, i) => (
-                      <div key={`hdr-${i}`} className="flex-1 text-center">
-                        <div className={cn("text-[8px]", i === selectedMonth ? "text-[#FF4301] font-medium" : "text-[#888]")}>{item.month}</div>
+        {/* ═══ REVENUE ═══ */}
+        {activeTab === 'revenue' && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-12 gap-3">
+              <div className="col-span-5">
+                <div className={cn(cd, "p-3")}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={sH} style={hk}>Pricing Plans</span>
+                    <span className="text-[10px] text-emerald-600 font-medium tabular-nums">ARPU ${blendedARPU.toFixed(2)}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {plans.map((plan, i) => {
+                      const dpm = tokensPerDeck > 0 ? Math.floor(plan.tokens / tokensPerDeck) : 0;
+                      return (
+                        <div key={plan.name} className="border border-[#eaeaea] dark:border-[#333] rounded-lg p-2">
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <Input value={plan.name} onChange={e => updatePlan(i, 'name', e.target.value)} className="h-5 w-20 text-[10px] px-1 font-medium" />
+                            <span className="text-[9px] text-[#888]">$</span>
+                            <Input type="number" value={plan.price} onChange={e => updatePlan(i, 'price', Number(e.target.value))} className="h-5 w-16 text-[10px] px-1 text-right" />
+                            <Input type="number" value={plan.tokens} onChange={e => updatePlan(i, 'tokens', Number(e.target.value))} className="h-5 w-20 text-[10px] px-1 text-right" />
+                            <span className="text-[9px] text-[#888]">tok</span>
+                            <Input type="number" value={plan.pctOfPaid} onChange={e => updatePlan(i, 'pctOfPaid', Number(e.target.value))} className="h-5 w-14 text-[10px] px-1 text-center" />
+                            <span className="text-[9px] text-[#888]">%</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[8px] text-[#888]">
+                            <span>{dpm} decks/mo</span><span>${dpm > 0 ? (plan.price / dpm).toFixed(2) : '0'}/deck</span><span>{inputs.slidesPerDeck} slides</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-[#eaeaea] dark:border-[#333] flex items-center gap-2 text-[9px]">
+                    <span className="text-orange-600 font-medium">Enterprise</span>
+                    <Input type="number" value={enterprise.dealsPerYear} onChange={e => setEnterprise(p => ({ ...p, dealsPerYear: Number(e.target.value) }))} className="h-5 w-14 text-[9px] text-center" />
+                    <span className="text-[#888]">deals/yr × $</span>
+                    <Input type="number" value={enterprise.avgDealSize} onChange={e => setEnterprise(p => ({ ...p, avgDealSize: Number(e.target.value) }))} className="h-5 w-20 text-[9px] text-center" />
+                    <span className="text-orange-600 font-medium">= ${fmtMoney(enterprise.dealsPerYear * enterprise.avgDealSize)}/yr</span>
+                  </div>
+                </div>
+              </div>
+              <div className="col-span-7 space-y-3">
+                <div className={cn(cd, "p-3")}>
+                  <span className={sH} style={hk}>Revenue Streams (Monthly)</span>
+                  <div className="space-y-2 mt-2">
+                    {[
+                      { name: 'Subscriptions', value: economics.subscriptionRevenue, color: '#10b981' },
+                      { name: 'Enterprise', value: economics.enterpriseRevenue, color: '#f97316' },
+                      { name: 'Overage', value: economics.overageRevenue, color: '#8b5cf6' },
+                      { name: 'Upgrades', value: economics.upgradeRevenue, color: '#3b82f6' },
+                    ].map(st => {
+                      const pct = economics.estMRR > 0 ? (st.value / economics.estMRR) * 100 : 0;
+                      return (
+                        <div key={st.name} className="flex items-center gap-2">
+                          <span className="text-[9px] text-[#888] w-20">{st.name}</span>
+                          <div className="flex-1 h-4 bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded overflow-hidden">
+                            <div className="h-full rounded transition-all duration-500" style={{ width: `${Math.max(1, pct)}%`, backgroundColor: st.color }} />
+                          </div>
+                          <span className="text-[9px] font-medium tabular-nums w-16 text-right">${fmtMoney(st.value)}</span>
+                          <span className="text-[8px] text-[#888] w-10 text-right">{pct.toFixed(0)}%</span>
+                        </div>
+                      );
+                    })}
+                    <div className="flex items-center justify-between pt-1.5 border-t border-[#eaeaea] dark:border-[#333] text-[10px] font-medium">
+                      <span>Total MRR</span><span className="text-emerald-600 tabular-nums">${fmtMoney(economics.estMRR)}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className={cn(cd, "p-3")}>
+                  <span className={sH} style={hk}>Conversion & Growth</span>
+                  <div className="grid grid-cols-3 gap-3 mt-2">
+                    <div className="space-y-1.5">
+                      <CI label="Direct Paid %" value={inputs.paidConversionPct} onChange={v => ui('paidConversionPct', v)} step={0.5} />
+                      <CI label="Free→Paid %" value={inputs.freeToPayConvPct} onChange={v => ui('freeToPayConvPct', v)} />
+                      <div className="text-[8px] text-[#FF4301] font-medium pl-1">→ {effectiveConvPct.toFixed(1)}% effective</div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <CI label="Growth %/mo" value={inputs.monthlyGrowthPct} onChange={v => ui('monthlyGrowthPct', v)} />
+                      <CI label="Churn %/mo" value={inputs.churnPct} onChange={v => ui('churnPct', v)} />
+                      <div className="text-[8px] text-[#888] pl-1">Net: +{(inputs.monthlyGrowthPct - inputs.churnPct).toFixed(0)}%/mo</div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <CI label="Starter→Pro %" value={inputs.starterUpgradePct} onChange={v => ui('starterUpgradePct', v)} />
+                      <CI label="Decks/User/mo" value={inputs.decksPerActiveUserMonth} onChange={v => ui('decksPerActiveUserMonth', v)} />
+                      <CI label="Free Tokens" value={inputs.freeTokens} onChange={v => ui('freeTokens', v)} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ COSTS ═══ */}
+        {activeTab === 'costs' && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-12 gap-3">
+              <div className="col-span-5 space-y-3">
+                <div className={cn(cd, "p-3")}>
+                  <span className={sH} style={hk}>AI Model Pricing</span>
+                  <div className="mt-2">
+                    <div className="grid grid-cols-4 gap-1 text-[8px] text-[#888] font-medium pb-1 border-b border-[#eaeaea] dark:border-[#333]">
+                      <span>Model</span><span className="text-right">In/1M</span><span className="text-right">Out/1M</span><span className="text-right">Eff.</span>
+                    </div>
+                    {Object.entries(MODEL_COSTS).map(([key, m]) => (
+                      <div key={key} className="grid grid-cols-4 gap-1 py-1.5 border-b border-[#eaeaea]/50 dark:border-[#333]/50 text-[9px]">
+                        <span className="font-medium truncate">{m.name}</span>
+                        <span className="text-right text-[#888] tabular-nums">${m.input.toFixed(2)}</span>
+                        <span className="text-right text-[#888] tabular-nums">${m.output.toFixed(2)}</span>
+                        <span className="text-right font-medium tabular-nums">${(m.input * 0.2 + m.output * 0.8).toFixed(2)}</span>
                       </div>
                     ))}
                   </div>
-                  <div className="w-5" />
                 </div>
-
-                {/* Users Tab Content */}
-                {breakdownTab === 'users' && (
-                  <>
-                    {/* Total Users Row */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0 flex items-center gap-1">
-                        <Users className="h-3 w-3 text-[#FF4301]" />
-                        <span className="text-[9px] font-medium">Total</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {manualScenario.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`total-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item.users}
-                              onChange={e => updateManualUsers(i, Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5",
-                                item.isManual && "border-purple-500 bg-purple-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      {(manualScenario.some(s => s.isManual) || userBreakdown.some(b => b?.isManual)) && (
-                        <button onClick={resetManualScenario} className="w-5 text-[#888] hover:text-[#666]" title="Reset">
-                          <RotateCcw className="h-3 w-3" />
-                        </button>
-                      )}
+                <div className={cn(cd, "p-3")}>
+                  <span className={sH} style={hk}>Operation Costs</span>
+                  <div className="mt-2">
+                    <div className="grid grid-cols-5 gap-1 text-[8px] text-[#888] font-medium pb-1 border-b border-[#eaeaea] dark:border-[#333]">
+                      <span>Op</span><span className="text-right">In</span><span className="text-right">Out</span><span className="text-right">Model</span><span className="text-right">Cost</span>
                     </div>
-
-                    {/* Free Users Row */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-[#888]">Free</span>
+                    {Object.entries(OP_TOKENS).map(([key, op]) => (
+                      <div key={key} className="grid grid-cols-5 gap-1 py-1.5 border-b border-[#eaeaea]/50 dark:border-[#333]/50 text-[9px]">
+                        <span className="font-medium">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                        <span className="text-right text-[#888] tabular-nums">{op.input}</span>
+                        <span className="text-right text-[#888] tabular-nums">{op.output}</span>
+                        <span className="text-right text-[#888]">{op.model}</span>
+                        <span className="text-right font-medium text-red-600 tabular-nums">${calcOpCost(key as any).toFixed(4)}</span>
                       </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {userBreakdown.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`free-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item?.free || 0}
-                              onChange={e => updateUserBreakdown(i, 'free', Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5 text-[#888]",
-                                item?.isManual && "border-blue-500 bg-blue-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Divider - PAID */}
-                    <div className="flex items-center gap-2 py-0.5">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[8px] text-amber-600 font-medium">PAID</span>
-                      </div>
-                      <div className="flex-1 h-px bg-amber-500/30" />
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Starter Row */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-amber-600">Starter</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {userBreakdown.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`starter-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item?.starter || 0}
-                              onChange={e => updateUserBreakdown(i, 'starter', Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5",
-                                item?.isManual && "border-blue-500 bg-blue-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Pro Row */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-blue-600">Pro</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {userBreakdown.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`pro-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item?.pro || 0}
-                              onChange={e => updateUserBreakdown(i, 'pro', Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5",
-                                item?.isManual && "border-blue-500 bg-blue-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Team Row */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-emerald-600">Team</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {userBreakdown.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`team-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item?.team || 0}
-                              onChange={e => updateUserBreakdown(i, 'team', Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5",
-                                item?.isManual && "border-blue-500 bg-blue-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Total Paid Row (calculated) - Subscription users only */}
-                    <div className="flex items-center gap-2 pt-1 border-t border-[#eaeaea] dark:border-[#333]">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-amber-600 font-medium">Σ Paid</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {userBreakdown.slice(0, projectionMonths + 1).map((item, i) => {
-                          const totalPaid = (item?.starter || 0) + (item?.pro || 0) + (item?.team || 0);
-                          return (
-                            <div key={`sum-${i}`} className="flex-1">
-                              <div className={cn(
-                                "h-5 flex items-center justify-center text-[9px] rounded border font-medium",
-                                i === selectedMonth ? "border-amber-500 bg-amber-500/10 text-amber-600" : "border-[#eaeaea] dark:border-[#333] text-amber-600/70"
-                              )}>
-                                {fmtNum(totalPaid)}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Enterprise Deals Section */}
-                    <div className="flex items-center gap-2 pt-1 border-t border-[#eaeaea] dark:border-[#333]">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[8px] text-orange-600 font-medium">ENTERPRISE</span>
-                      </div>
-                      <div className="flex-1 flex items-center gap-2 text-[8px] text-[#666]">
-                        <span>Deals/yr:</span>
-                        <Input
-                          type="number"
-                          value={enterprise.dealsPerYear}
-                          onChange={e => updateEnterprise('dealsPerYear', Number(e.target.value))}
-                          className="h-4 w-10 text-[9px] text-center px-0.5"
-                        />
-                        <span>×</span>
-                        <span>$</span>
-                        <Input
-                          type="number"
-                          value={enterprise.avgDealSize}
-                          onChange={e => updateEnterprise('avgDealSize', Number(e.target.value))}
-                          className="h-4 w-16 text-[9px] text-center px-0.5"
-                        />
-                        <span className="text-orange-600 font-medium">= ${fmtMoney(enterprise.dealsPerYear * enterprise.avgDealSize)}/yr</span>
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Enterprise Deals Row */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-orange-600">Deals</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {userBreakdown.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`ent-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item?.enterprise || 0}
-                              onChange={e => updateUserBreakdown(i, 'enterprise', Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5",
-                                item?.isManual && "border-blue-500 bg-blue-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* One-off Costs Row (setup fees, custom work, etc.) */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-red-500">Costs $</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {userBreakdown.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`oneoff-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item?.oneOffSpend || 0}
-                              onChange={e => updateUserBreakdown(i, 'oneOffSpend', Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5",
-                                item?.isManual && "border-blue-500 bg-blue-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-                  </>
-                )}
-
-                {/* Expenses Tab Content */}
-                {breakdownTab === 'expenses' && (
-                  <>
-                    {/* Expense Defaults Header */}
-                    <div className="flex items-center gap-2 pb-1 mb-1 border-b border-[#eaeaea] dark:border-[#333]">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[8px] text-[#888] font-medium">DEFAULTS</span>
-                      </div>
-                      <div className="flex-1 flex items-center gap-3 text-[8px] text-[#666]">
-                        <span>Headcount:</span>
-                        <Input type="number" value={expenseRates.headcount} onChange={e => updateExpenseRate('headcount', Number(e.target.value))} className="h-4 w-8 text-[9px] text-center px-0.5" />
-                        <span>× $</span>
-                        <Input type="number" value={expenseRates.avgSalary} onChange={e => updateExpenseRate('avgSalary', Number(e.target.value))} className="h-4 w-14 text-[9px] text-center px-0.5" />
-                        <span>/mo</span>
-                        <span className="text-[#888]">|</span>
-                        <span>Stripe:</span>
-                        <Input type="number" value={expenseRates.stripePct} onChange={e => updateExpenseRate('stripePct', Number(e.target.value))} className="h-4 w-10 text-[9px] text-center px-0.5" step={0.1} />
-                        <span>%</span>
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Headcount Section */}
-                    <div className="flex items-center gap-2 py-0.5">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[8px] text-blue-600 font-medium">TEAM</span>
-                      </div>
-                      <div className="flex-1 h-px bg-blue-500/30" />
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Headcount Row */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-blue-600">Headcount</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {monthlyExpenses.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`hc-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item?.headcount || expenseRates.headcount}
-                              onChange={e => updateMonthlyExpense(i, 'headcount', Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5",
-                                item?.isManual && "border-blue-500 bg-blue-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Salary Row */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-blue-500">Salary/mo</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {monthlyExpenses.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`sal-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item?.avgSalary || expenseRates.avgSalary}
-                              onChange={e => updateMonthlyExpense(i, 'avgSalary', Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5",
-                                item?.isManual && "border-blue-500 bg-blue-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Infrastructure Section */}
-                    <div className="flex items-center gap-2 py-0.5">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[8px] text-emerald-600 font-medium">INFRA</span>
-                      </div>
-                      <div className="flex-1 h-px bg-emerald-500/30" />
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Render Row */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-emerald-600">Render</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {monthlyExpenses.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`render-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item?.render || expenseRates.render}
-                              onChange={e => updateMonthlyExpense(i, 'render', Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5",
-                                item?.isManual && "border-blue-500 bg-blue-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Supabase Row */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-emerald-500">Supabase</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {monthlyExpenses.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`supa-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item?.supabase || expenseRates.supabase}
-                              onChange={e => updateMonthlyExpense(i, 'supabase', Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5",
-                                item?.isManual && "border-blue-500 bg-blue-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* APIs Section */}
-                    <div className="flex items-center gap-2 py-0.5">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[8px] text-amber-600 font-medium">SERVICES</span>
-                      </div>
-                      <div className="flex-1 h-px bg-amber-500/30" />
-                      <div className="w-5" />
-                    </div>
-
-                    {/* SerpAPI Row */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-amber-600">SerpAPI</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {monthlyExpenses.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`serp-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item?.serpapi || expenseRates.serpapi}
-                              onChange={e => updateMonthlyExpense(i, 'serpapi', Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5",
-                                item?.isManual && "border-blue-500 bg-blue-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Stripe Row (calculated from revenue) */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-amber-500">Stripe</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {projectionData.slice(0, projectionMonths + 1).map((data, i) => {
-                          const stripeFee = data?.stripeFees || (data?.revenue || 0) * (expenseRates.stripePct / 100);
-                          return (
-                            <div key={`stripe-${i}`} className="flex-1">
-                              <div className={cn(
-                                "h-5 flex items-center justify-center text-[9px] rounded border text-[#888]",
-                                i === selectedMonth ? "border-amber-500/50 bg-amber-500/5" : "border-[#eaeaea] dark:border-[#333]"
-                              )}>
-                                {fmtNum(stripeFee, 0)}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Other Row */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-[#888]">Other</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {monthlyExpenses.slice(0, projectionMonths + 1).map((item, i) => (
-                          <div key={`other-${i}`} className="flex-1">
-                            <Input
-                              type="number"
-                              value={item?.other || expenseRates.other}
-                              onChange={e => updateMonthlyExpense(i, 'other', Number(e.target.value))}
-                              onClick={() => setSelectedMonth(i)}
-                              className={cn(
-                                "h-5 text-[9px] text-center px-0.5",
-                                item?.isManual && "border-blue-500 bg-blue-500/5",
-                                i === selectedMonth && "ring-1 ring-purple-500"
-                              )}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-
-                    {/* Total Operating Expenses Row */}
-                    <div className="flex items-center gap-2 pt-1 border-t border-[#eaeaea] dark:border-[#333]">
-                      <div className="w-14 flex-shrink-0">
-                        <span className="text-[9px] text-red-600 font-medium">Σ OpEx</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-1">
-                        {projectionData.slice(0, projectionMonths + 1).map((data, i) => {
-                          const exp = monthlyExpenses[i] || { headcount: expenseRates.headcount, avgSalary: expenseRates.avgSalary, render: expenseRates.render, supabase: expenseRates.supabase, serpapi: expenseRates.serpapi, other: expenseRates.other };
-                          const headcountCost = exp.headcount * exp.avgSalary;
-                          const infra = exp.render + exp.supabase;
-                          const services = exp.serpapi + exp.other;
-                          const stripe = data?.stripeFees || 0;
-                          const totalOpEx = headcountCost + infra + services + stripe;
-                          return (
-                            <div key={`opex-${i}`} className="flex-1">
-                              <div className={cn(
-                                "h-5 flex items-center justify-center text-[9px] rounded border font-medium",
-                                i === selectedMonth ? "border-red-500 bg-red-500/10 text-red-600" : "border-[#eaeaea] dark:border-[#333] text-red-600/70"
-                              )}>
-                                ${fmtNum(totalOpEx, 0)}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="w-5" />
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Plans + Metrics */}
-          <div className="col-span-3 space-y-2">
-            {/* Plans with more detail */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1">
-                  <CreditCard className="h-3 w-3 text-[#FF4301]" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301]" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Plans</span>
+                    ))}
+                  </div>
                 </div>
-                <span className="text-[9px] text-emerald-600 font-medium">ARPU ${blendedARPU.toFixed(2)}</span>
               </div>
-              <div className="space-y-2">
-                {plans.map((plan, i) => {
-                  const decksPerMonth = Math.floor(plan.tokens / economics.tokensPerDeck);
-                  const costPerDeckForPlan = plan.price / Math.max(1, decksPerMonth);
-                  return (
-                    <div key={plan.name} className="border border-[#eaeaea] dark:border-[#333] rounded p-1.5">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <Input value={plan.name} onChange={e => updatePlan(i, 'name', e.target.value)} className="h-5 w-14 text-[10px] px-1 font-medium" />
-                        <div className="flex items-center">
-                          <span className="text-[9px] text-[#888]">$</span>
-                          <Input type="number" value={plan.price} onChange={e => updatePlan(i, 'price', Number(e.target.value))} className="h-5 w-14 text-[10px] px-1 text-right" />
+              <div className="col-span-7 space-y-3">
+                <div className={cn(cd, "p-3")}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={sH} style={hk}>Cost Per Deck</span>
+                    <span className="text-sm font-semibold text-red-600 tabular-nums">${costPerDeck.toFixed(4)}</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {costBreakdown.map(item => (
+                      <div key={item.name} className="flex items-center gap-2">
+                        <span className="text-[9px] text-[#888] w-14">{item.name}</span>
+                        <div className="flex-1 h-3 bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded overflow-hidden">
+                          <div className="h-full rounded" style={{ width: `${item.pct}%`, backgroundColor: item.color }} />
                         </div>
-                        <Input type="number" value={plan.tokens} onChange={e => updatePlan(i, 'tokens', Number(e.target.value))} className="h-5 w-16 text-[10px] px-1 text-right" />
-                        <span className="text-[9px] text-[#888]">t</span>
-                        <Input type="number" value={plan.pctOfPaid} onChange={e => updatePlan(i, 'pctOfPaid', Number(e.target.value))} className="h-5 w-12 text-[10px] px-1 text-center" />
-                        <span className="text-[9px] text-[#888]">%</span>
+                        <span className="text-[9px] tabular-nums w-14 text-right">${item.cost.toFixed(4)}</span>
+                        <span className="text-[8px] text-[#888] w-8 text-right">{item.pct.toFixed(0)}%</span>
                       </div>
-                      <div className="flex items-center justify-between text-[8px] text-[#888]">
-                        <span>{decksPerMonth} dk/mo</span>
-                        <span>${costPerDeckForPlan.toFixed(2)}/dk</span>
-                        <span>{inputs.slidesPerDeck} slides</span>
-                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-[#eaeaea] dark:border-[#333] grid grid-cols-2 gap-2">
+                    <CI label="$/Slide" value={inputs.apiCostPerSlide} onChange={v => ui('apiCostPerSlide', v)} step={0.001} />
+                    <CI label="$/Edit" value={inputs.apiCostPerEdit} onChange={v => ui('apiCostPerEdit', v)} step={0.001} />
+                    <CI label="$/Research" value={inputs.apiCostPerResearch} onChange={v => ui('apiCostPerResearch', v)} step={0.001} />
+                    <CI label="$/Theme" value={inputs.apiCostPerTheme} onChange={v => ui('apiCostPerTheme', v)} step={0.001} />
+                  </div>
+                </div>
+                <div className={cn(cd, "p-3 border-blue-500/20")}>
+                  <div className="flex items-center gap-2 mb-2"><Zap className="h-3.5 w-3.5 text-blue-500" /><span className="text-[10px] font-bold uppercase tracking-wider text-blue-500" style={hk}>Gemini Flash Free Tier</span></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <CI label="Cost/Free Deck" value={geminiFlash.costPerDeck} onChange={v => setGeminiFlash(p => ({ ...p, costPerDeck: v }))} step={0.01} />
+                      <CI label="Typing Rate %" value={geminiFlash.typingRate} onChange={v => setGeminiFlash(p => ({ ...p, typingRate: v }))} />
+                      <CI label="Completion %" value={geminiFlash.completionRate} onChange={v => setGeminiFlash(p => ({ ...p, completionRate: v }))} />
+                      <CI label="Signup Rate %" value={geminiFlash.signupRate} onChange={v => setGeminiFlash(p => ({ ...p, signupRate: v }))} />
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* API Costs (Editable) */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301] mb-1.5 flex items-center gap-1" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                <DollarSign className="h-3 w-3" />
-                API Costs
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-[9px]">
-                  <span className="text-[#888]">Slide Gen</span>
-                  <div className="flex items-center">
-                    <span className="text-[#888]">$</span>
-                    <Input type="number" value={inputs.apiCostPerSlide} onChange={e => updateInput('apiCostPerSlide', Number(e.target.value))} className="h-4 w-16 text-[9px] px-1" step={0.001} />
+                    <div className="space-y-1 text-[9px]">
+                      <div className="flex justify-between"><span className="text-[#888]">Visitors type</span><span className="tabular-nums">{geminiMetrics.typed}</span></div>
+                      <div className="flex justify-between"><span className="text-[#888]">Decks gen'd</span><span className="tabular-nums">{geminiMetrics.generated}</span></div>
+                      <div className="flex justify-between"><span className="text-[#888]">Signups</span><span className="tabular-nums font-medium text-blue-600">{geminiMetrics.signedUp}</span></div>
+                      <div className="flex justify-between"><span className="text-[#888]">Monthly cost</span><span className="tabular-nums text-red-600">${fmtMoney(geminiMetrics.totalCost)}</span></div>
+                      <div className="flex justify-between pt-1 border-t border-[#eaeaea] dark:border-[#333]"><span className="text-[#888] font-medium">CAC via landing</span><span className="tabular-nums font-medium text-blue-600">${geminiMetrics.costPerSignup.toFixed(3)}</span></div>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center justify-between text-[9px]">
-                  <span className="text-[#888]">Edit</span>
-                  <div className="flex items-center">
-                    <span className="text-[#888]">$</span>
-                    <Input type="number" value={inputs.apiCostPerEdit} onChange={e => updateInput('apiCostPerEdit', Number(e.target.value))} className="h-4 w-16 text-[9px] px-1" step={0.001} />
+                <div className={cn(cd, "p-3")}>
+                  <span className={sH} style={hk}>Operating Expenses (Monthly)</span>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <CI label="Headcount" value={expenseRates.headcount} onChange={v => setExpenseRates(p => ({ ...p, headcount: v }))} />
+                    <CI label="Salary/mo" value={expenseRates.avgSalary} onChange={v => setExpenseRates(p => ({ ...p, avgSalary: v }))} />
+                    <CI label="Render" value={expenseRates.render} onChange={v => setExpenseRates(p => ({ ...p, render: v }))} />
+                    <CI label="Supabase" value={expenseRates.supabase} onChange={v => setExpenseRates(p => ({ ...p, supabase: v }))} />
+                    <CI label="SerpAPI" value={expenseRates.serpapi} onChange={v => setExpenseRates(p => ({ ...p, serpapi: v }))} />
+                    <CI label="Stripe %" value={expenseRates.stripePct} onChange={v => setExpenseRates(p => ({ ...p, stripePct: v }))} step={0.1} />
+                    <CI label="Other" value={expenseRates.other} onChange={v => setExpenseRates(p => ({ ...p, other: v }))} />
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-[#888] font-medium">Total OpEx</span>
+                      <span className="font-semibold text-red-600 tabular-nums">${fmtMoney(expenseRates.headcount * expenseRates.avgSalary + expenseRates.render + expenseRates.supabase + expenseRates.serpapi + expenseRates.other + (economics.estMRR * expenseRates.stripePct / 100))}/mo</span>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center justify-between text-[9px]">
-                  <span className="text-[#888]">Research</span>
-                  <div className="flex items-center">
-                    <span className="text-[#888]">$</span>
-                    <Input type="number" value={inputs.apiCostPerResearch} onChange={e => updateInput('apiCostPerResearch', Number(e.target.value))} className="h-4 w-16 text-[9px] px-1" step={0.001} />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between text-[9px]">
-                  <span className="text-[#888]">Theme</span>
-                  <div className="flex items-center">
-                    <span className="text-[#888]">$</span>
-                    <Input type="number" value={inputs.apiCostPerTheme} onChange={e => updateInput('apiCostPerTheme', Number(e.target.value))} className="h-4 w-16 text-[9px] px-1" step={0.001} />
-                  </div>
-                </div>
-                <div className="pt-1 border-t border-[#eaeaea] dark:border-[#333] flex justify-between text-[9px]">
-                  <span className="font-medium">Total/Deck</span>
-                  <span className="font-medium text-red-600">${costPerDeck.toFixed(4)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Annual Metrics */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301] mb-1.5" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Annual @ M{selectedMonth}</div>
-              <div className="space-y-1 text-[10px]">
-                <div className="flex justify-between">
-                  <span className="text-[#888]">ARR</span>
-                  <span className="font-semibold text-emerald-600">${fmtMoney(annualMetrics.arr)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#888]">Annual Costs</span>
-                  <span className="font-semibold text-red-600">${fmtMoney(annualMetrics.annualCosts)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#888]">Annual Profit</span>
-                  <span className={cn("font-semibold", annualMetrics.annualProfit >= 0 ? "text-blue-600" : "text-red-600")}>
-                    ${fmtMoney(annualMetrics.annualProfit)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#888]">Gross Margin</span>
-                  <span className={cn("font-semibold", annualMetrics.annualGrossMargin >= 70 ? "text-emerald-600" : annualMetrics.annualGrossMargin >= 50 ? "text-amber-600" : "text-red-600")}>
-                    {annualMetrics.annualGrossMargin.toFixed(0)}%
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Key Metrics */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301] mb-1.5" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Monthly Metrics</div>
-              <div className="space-y-0.5 text-[9px]">
-                <MetricRow label="Cost/Paid User" value={`$${economics.costPerPaidUser.toFixed(2)}`} status={getStatus(economics.costPerPaidUser, 5, 10, false)} />
-                <MetricRow label="LTV" value={`$${economics.ltv.toFixed(0)}`} sub={`${economics.ltvCac.toFixed(1)}x CAC`} status={getStatus(economics.ltvCac, 3, 1)} />
-                <MetricRow label="Payback" value={economics.paybackMonths < 99 ? `${economics.paybackMonths.toFixed(1)}mo` : 'N/A'} status={getStatus(economics.paybackMonths, 6, 12, false)} />
-                <MetricRow label="Break-even" value={`${economics.breakEvenPaidUsers} paid`} status={economics.estPaidUsers >= economics.breakEvenPaidUsers ? 'good' : 'warn'} />
-                <MetricRow label="Free Trial" value={`${economics.freeDecksOneTime.toFixed(1)} decks`} status={economics.freeDecksOneTime > 0 ? 'good' : 'warn'} />
               </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* ═══ GROWTH & PLG ═══ */}
+        {activeTab === 'growth' && (
+          <div className="space-y-3">
+            <div className={cn(cd, "p-3")}>
+              <div className="flex items-center justify-between mb-2">
+                <span className={sH} style={hk}>Growth Channel Attribution</span>
+                <div className="flex items-center gap-3 text-[9px]">
+                  <span className="text-[#888]">Blended CAC: <span className="font-medium text-[#FF4301]">${blendedCAC.toFixed(2)}</span></span>
+                  <span className="text-[#888]">Weighted Conv: <span className="font-medium text-emerald-600">{weightedConv.toFixed(1)}%</span></span>
+                </div>
+              </div>
+              <div className="grid grid-cols-[24px_130px_70px_55px_55px_70px_70px_1fr] gap-1 text-[8px] text-[#888] font-medium pb-1 border-b border-[#eaeaea] dark:border-[#333]">
+                <span></span><span>Channel</span><span className="text-right">% Sign</span><span className="text-right">CAC</span><span className="text-right">Conv%</span><span className="text-right">Sign/mo</span><span className="text-right">Paid/mo</span><span className="text-right">Cost/mo</span>
+              </div>
+              {channelMetrics.map((ch, i) => (
+                <div key={ch.id} className="grid grid-cols-[24px_130px_70px_55px_55px_70px_70px_1fr] gap-1 py-1 border-b border-[#eaeaea]/50 dark:border-[#333]/50 items-center text-[9px]">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: ch.color }} />
+                  <span className="font-medium flex items-center gap-1">{ch.icon}{ch.name}</span>
+                  <Input type="number" value={ch.pctOfSignups} onChange={e => uc(i, 'pctOfSignups', Number(e.target.value))} className="h-5 text-[9px] text-right px-1" />
+                  <div className="flex items-center justify-end"><span className="text-[8px] text-[#888]">$</span><Input type="number" value={ch.cac} onChange={e => uc(i, 'cac', Number(e.target.value))} className="h-5 w-14 text-[9px] text-right px-0.5" step={0.5} /></div>
+                  <Input type="number" value={ch.convToPaid} onChange={e => uc(i, 'convToPaid', Number(e.target.value))} className="h-5 text-[9px] text-right px-1" />
+                  <span className="text-right tabular-nums text-[#888]">{ch.signups}</span>
+                  <span className="text-right tabular-nums font-medium text-emerald-600">{ch.paidUsers}</span>
+                  <span className="text-right tabular-nums text-red-600">{ch.monthlyCost > 0 ? `$${fmtMoney(ch.monthlyCost)}` : '$0'}</span>
+                </div>
+              ))}
+              <div className="grid grid-cols-[24px_130px_70px_55px_55px_70px_70px_1fr] gap-1 pt-1 text-[9px] font-medium">
+                <span></span><span>Total</span>
+                <span className="text-right">{channels.reduce((s, c) => s + c.pctOfSignups, 0)}%</span>
+                <span className="text-right text-[#FF4301]">${blendedCAC.toFixed(2)}</span>
+                <span className="text-right text-emerald-600">{weightedConv.toFixed(1)}%</span>
+                <span className="text-right tabular-nums">{channelMetrics.reduce((s, c) => s + c.signups, 0)}</span>
+                <span className="text-right tabular-nums text-emerald-600">{channelMetrics.reduce((s, c) => s + c.paidUsers, 0)}</span>
+                <span className="text-right tabular-nums text-red-600">${fmtMoney(channelMetrics.reduce((s, c) => s + c.monthlyCost, 0))}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-12 gap-3">
+              <div className="col-span-4">
+                <div className={cn(cd, "p-3")}>
+                  <span className={sH} style={hk}>Viral Coefficient</span>
+                  <div className="mt-3 mb-3 text-center">
+                    <div className={cn("text-4xl font-bold tabular-nums", viralCoeff >= 0.3 ? "text-emerald-600" : viralCoeff >= 0.15 ? "text-amber-500" : "text-red-500")}>{viralCoeff.toFixed(2)}</div>
+                    <div className="text-[9px] text-[#888] mt-1">k-factor {viralCoeff >= 1 ? '(viral!)' : viralCoeff >= 0.3 ? '(good PLG)' : '(needs work)'}</div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <CI label="Shares/user/mo" value={viral.sharesPerUserMonth} onChange={v => setViral(p => ({ ...p, sharesPerUserMonth: v }))} />
+                    <CI label="Views/share" value={viral.viewsPerShare} onChange={v => setViral(p => ({ ...p, viewsPerShare: v }))} />
+                    <CI label="CTR %" value={viral.clickThroughRate} onChange={v => setViral(p => ({ ...p, clickThroughRate: v }))} step={0.5} />
+                    <CI label="Signup rate %" value={viral.signupRate} onChange={v => setViral(p => ({ ...p, signupRate: v }))} />
+                    <CI label="Referral boost %" value={viral.referralBoost} onChange={v => setViral(p => ({ ...p, referralBoost: v }))} />
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-[#eaeaea] dark:border-[#333] text-[8px] text-[#888]">
+                    <div>Base: {viral.sharesPerUserMonth}×{viral.viewsPerShare}×{viral.clickThroughRate}%×{viral.signupRate}% = {(viral.sharesPerUserMonth * viral.viewsPerShare * (viral.clickThroughRate / 100) * (viral.signupRate / 100)).toFixed(3)}</div>
+                    <div>+ Referral: +{(viral.referralBoost / 100).toFixed(2)}</div>
+                  </div>
+                </div>
+              </div>
+              <div className="col-span-4">
+                <div className={cn(cd, "p-3")}>
+                  <span className={sH} style={hk}>Conversion Funnel</span>
+                  <div className="mt-3 space-y-1">
+                    {funnelData.map((stage, i) => {
+                      const w = Math.max(8, stage.pct);
+                      const colors = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#FF4301'];
+                      return (
+                        <div key={stage.name}>
+                          <div className="flex items-center justify-between text-[8px] mb-0.5">
+                            <span className="text-[#888]">{stage.name}</span>
+                            <span className="tabular-nums font-medium">{fmtNum(stage.count)} <span className="text-[#888]">({stage.pct.toFixed(1)}%)</span></span>
+                          </div>
+                          <div className="h-5 bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded overflow-hidden mx-auto" style={{ width: `${w}%` }}>
+                            <div className="w-full h-full rounded" style={{ backgroundColor: colors[i] || '#666', opacity: 0.7 }} />
+                          </div>
+                          {i < funnelData.length - 1 && (
+                            <div className="flex items-center justify-center my-0.5">
+                              <ChevronRight className="h-2.5 w-2.5 text-[#ccc] dark:text-[#555] rotate-90" />
+                              <span className="text-[7px] text-[#888] ml-0.5">{funnel[i + 1]?.rate}%</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <div className="pt-2 border-t border-[#eaeaea] dark:border-[#333] text-[9px] flex justify-between">
+                      <span className="text-[#888]">Visitor → Paid</span>
+                      <span className="font-medium text-[#FF4301] tabular-nums">{funnelData.length > 0 ? ((funnelData[funnelData.length - 1].count / funnelData[0].count) * 100).toFixed(2) : 0}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="col-span-4">
+                <div className={cn(cd, "p-3")}>
+                  <span className={sH} style={hk}>Channel Mix</span>
+                  <div className="h-[200px] mt-1">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={channelMetrics.filter(c => c.signups > 0)} dataKey="signups" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={2}>
+                          {channelMetrics.filter(c => c.signups > 0).map((c, i) => <Cell key={i} fill={c.color} />)}
+                        </Pie>
+                        <Tooltip formatter={(v: number, n: string) => [`${v} signups`, n]} contentStyle={{ fontSize: '10px', borderRadius: '8px', border: '1px solid #eaeaea' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                    {channelMetrics.filter(c => c.signups > 0).map(c => (
+                      <div key={c.id} className="flex items-center gap-1 text-[8px]"><div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c.color }} /><span className="text-[#888]">{c.name}</span></div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ PROJECTIONS ═══ */}
+        {activeTab === 'projections' && (
+          <div className="space-y-3">
+            <div className={cn(cd, "p-3")}>
+              <div className="flex items-center justify-between mb-2">
+                <span className={sH} style={hk}>{projectionMonths}-Month Projection</span>
+                <div className="flex items-center bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded-lg p-0.5">
+                  {[1, 6, 12].map(n => (
+                    <button key={n} onClick={() => { setProjectionMonths(n); setSelectedMonth(Math.min(selectedMonth, n)); }} className={cn(
+                      "px-2.5 py-0.5 text-[9px] font-medium rounded-md transition-colors",
+                      projectionMonths === n ? "bg-white dark:bg-[#222] text-[#FF4301] shadow-sm" : "text-[#888] hover:text-[#666]"
+                    )}>{n}mo</button>
+                  ))}
+                </div>
+              </div>
+              <div className="h-[280px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={projectionData} margin={{ top: 5, right: 5, left: -15, bottom: 0 }} onClick={(e: any) => e?.activeTooltipIndex !== undefined && setSelectedMonth(e.activeTooltipIndex)}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#333" opacity={0.08} />
+                    <XAxis dataKey="month" tick={{ fontSize: 9 }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 9 }} tickLine={false} tickFormatter={(v: number) => `$${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
+                    <Tooltip content={<CTip />} />
+                    <Legend wrapperStyle={{ fontSize: '9px' }} />
+                    <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
+                    <ReferenceLine x={MONTH_LABELS[selectedMonth]} stroke="#FF4301" strokeWidth={2} strokeDasharray="4 4" />
+                    <Bar dataKey="revenue" name="Revenue" fill="#10b981" opacity={0.7} />
+                    <Bar dataKey="costs" name="Costs" fill="#ef4444" opacity={0.5} />
+                    <Line type="monotone" dataKey="profit" name="Profit" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div className={cn(cd, "p-3 overflow-x-auto")}>
+              <div className="flex items-center justify-between mb-2">
+                <span className={sH} style={hk}>Monthly Breakdown</span>
+                {userBreakdown.some(b => b?.isManual) && (
+                  <button onClick={() => setUserBreakdown([])} className="text-[8px] text-[#888] hover:text-[#666] flex items-center gap-1"><RotateCcw className="h-2.5 w-2.5" /> Reset</button>
+                )}
+              </div>
+              <div className="min-w-[800px] space-y-0.5">
+                <div className="flex items-center gap-1">
+                  <div className="w-20 flex-shrink-0" />
+                  {projectionData.slice(0, projectionMonths + 1).map((d, i) => (
+                    <div key={i} className="flex-1 text-center">
+                      <button onClick={() => setSelectedMonth(i)} className={cn("text-[8px] px-1 py-0.5 rounded", i === selectedMonth ? "text-[#FF4301] font-medium bg-[#FF4301]/5" : "text-[#888]")}>{d.month}</button>
+                    </div>
+                  ))}
+                </div>
+                <SD label="USERS" color="text-purple-600" />
+                <GR label="Total" data={projectionData} field="users" sm={selectedMonth} />
+                <GR label="Free" data={projectionData} field="freeUsers" sm={selectedMonth} c="text-[#888]" />
+                <GR label="Starter" data={projectionData} field="starterUsers" sm={selectedMonth} c="text-amber-600" edit onEdit={(i, v) => ub(i, 'starter', v)} ed={userBreakdown} ef="starter" />
+                <GR label="Pro" data={projectionData} field="proUsers" sm={selectedMonth} c="text-blue-600" edit onEdit={(i, v) => ub(i, 'pro', v)} ed={userBreakdown} ef="pro" />
+                <GR label="Team" data={projectionData} field="teamUsers" sm={selectedMonth} c="text-emerald-600" edit onEdit={(i, v) => ub(i, 'team', v)} ed={userBreakdown} ef="team" />
+                <GR label="Enterprise" data={projectionData} field="enterpriseDeals" sm={selectedMonth} c="text-orange-600" edit onEdit={(i, v) => ub(i, 'enterprise', v)} ed={userBreakdown} ef="enterprise" />
+                <SR label="Σ Paid" data={projectionData} calc={d => d.paidUsers} sm={selectedMonth} c="text-amber-600" />
+                <SD label="REVENUE" color="text-emerald-600" />
+                <GR label="Subs" data={projectionData} field="subscriptionRevenue" sm={selectedMonth} c="text-emerald-600" p="$" />
+                <GR label="Enterprise" data={projectionData} field="enterpriseRevenue" sm={selectedMonth} c="text-orange-600" p="$" />
+                <GR label="Overage" data={projectionData} field="overageRevenue" sm={selectedMonth} c="text-purple-600" p="$" />
+                <SR label="Total Rev" data={projectionData} calc={d => d.revenue} sm={selectedMonth} c="text-emerald-600" p="$" />
+                <SD label="COSTS" color="text-red-600" />
+                <GR label="API" data={projectionData} field="apiCosts" sm={selectedMonth} c="text-red-500" p="$" />
+                <GR label="Infra" data={projectionData} field="infraCosts" sm={selectedMonth} c="text-red-400" p="$" />
+                <GR label="Services" data={projectionData} field="serviceCosts" sm={selectedMonth} c="text-red-400" p="$" />
+                <GR label="Stripe" data={projectionData} field="stripeFees" sm={selectedMonth} c="text-red-400" p="$" />
+                <SR label="Total Cost" data={projectionData} calc={d => d.costs} sm={selectedMonth} c="text-red-600" p="$" />
+                <SD label="P&L" color="text-blue-600" />
+                <SR label="Profit" data={projectionData} calc={d => d.profit} sm={selectedMonth} c="text-blue-600" p="$" signed />
+                <SR label="Margin" data={projectionData} calc={d => d.revenue > 0 ? (d.profit / d.revenue) * 100 : 0} sm={selectedMonth} c="text-blue-600" s="%" />
+                <SR label="Cum P&L" data={projectionData} calc={d => d.cumProfit} sm={selectedMonth} c="text-blue-600" p="$" signed />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ BENCHMARKS ═══ */}
+        {activeTab === 'benchmarks' && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-12 gap-3">
+              <div className="col-span-5">
+                <div className={cn(cd, "p-3")}>
+                  <span className={sH} style={hk}>Performance vs Industry</span>
+                  <div className="h-[300px] mt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart data={benchmarkScores.map(b => ({ metric: b.name, you: b.pct, industry: 60 }))}>
+                        <PolarGrid stroke="#333" opacity={0.15} />
+                        <PolarAngleAxis dataKey="metric" tick={{ fontSize: 9, fill: '#888' }} />
+                        <PolarRadiusAxis angle={90} tick={false} domain={[0, 100]} />
+                        <Radar name="You" dataKey="you" stroke="#FF4301" fill="#FF4301" fillOpacity={0.2} strokeWidth={2} />
+                        <Radar name="Industry" dataKey="industry" stroke="#888" fill="#888" fillOpacity={0.05} strokeWidth={1} strokeDasharray="4 4" />
+                        <Legend wrapperStyle={{ fontSize: '9px' }} />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+              <div className="col-span-7 space-y-3">
+                <div className={cn(cd, "p-3")}>
+                  <span className={sH} style={hk}>Metric Scorecard</span>
+                  <div className="mt-2">
+                    <div className="grid grid-cols-6 gap-1 text-[8px] text-[#888] font-medium pb-1 border-b border-[#eaeaea] dark:border-[#333]">
+                      <span>Metric</span><span className="text-right">Yours</span><span className="text-right">Bench</span><span className="text-right">Score</span><span className="text-center">Grade</span><span></span>
+                    </div>
+                    {benchmarkScores.map(b => (
+                      <div key={b.name} className="grid grid-cols-6 gap-1 py-2 border-b border-[#eaeaea]/50 dark:border-[#333]/50 items-center text-[9px]">
+                        <span className="font-medium">{b.name}</span>
+                        <span className="text-right tabular-nums">{b.value.toFixed(1)}{b.unit}</span>
+                        <span className="text-right tabular-nums text-[#888]">{b.benchmark}{b.unit}</span>
+                        <div className="flex items-center gap-1 justify-end">
+                          <div className="w-12 h-1.5 bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded overflow-hidden">
+                            <div className="h-full rounded" style={{ width: `${Math.min(100, b.pct)}%`, backgroundColor: b.grade.color }} />
+                          </div>
+                          <span className="text-[8px] tabular-nums text-[#888]">{b.pct.toFixed(0)}</span>
+                        </div>
+                        <div className="text-center">
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold" style={{ backgroundColor: b.grade.color + '15', color: b.grade.color }}>{b.grade.letter}</span>
+                        </div>
+                        <div className="flex items-center">{b.value > b.benchmark ? <ArrowUpRight className="h-3 w-3 text-emerald-500" /> : <ArrowDownRight className="h-3 w-3 text-red-500" />}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-[#eaeaea] dark:border-[#333] grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-[8px] text-[#888] font-medium mb-1">RULE OF 40</div>
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-xl font-bold tabular-nums", (inputs.monthlyGrowthPct * 12 + economics.grossMargin) >= 40 ? "text-emerald-600" : "text-red-500")}>{(inputs.monthlyGrowthPct * 12 + economics.grossMargin).toFixed(0)}</span>
+                        <span className="text-[8px] text-[#888]">Growth ({(inputs.monthlyGrowthPct * 12).toFixed(0)}%) + Margin ({economics.grossMargin.toFixed(0)}%)</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[8px] text-[#888] font-medium mb-1">QUICK RATIO</div>
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-xl font-bold tabular-nums", inputs.churnPct > 0 ? (inputs.monthlyGrowthPct / inputs.churnPct >= 4 ? "text-emerald-600" : inputs.monthlyGrowthPct / inputs.churnPct >= 2 ? "text-amber-500" : "text-red-500") : "text-emerald-600")}>
+                          {inputs.churnPct > 0 ? (inputs.monthlyGrowthPct / inputs.churnPct).toFixed(1) : '∞'}x
+                        </span>
+                        <span className="text-[8px] text-[#888]">New / Lost MRR (target: 4x+)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className={cn(cd, "p-3")}>
+                  <span className={sH} style={hk}>Industry Comparison</span>
+                  <div className="mt-2">
+                    <div className="grid grid-cols-7 gap-1 text-[8px] text-[#888] font-medium pb-1 border-b border-[#eaeaea] dark:border-[#333]">
+                      <span>Company</span><span className="text-right">F→P</span><span className="text-right">Margin</span><span className="text-right">LTV:CAC</span><span className="text-right">Viral</span><span className="text-right">NRR</span><span className="text-right">Payback</span>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1 py-1.5 border-b border-[#FF4301]/20 items-center text-[9px] bg-[#FF4301]/[0.03]">
+                      <span className="font-bold text-[#FF4301]">NextSlide</span>
+                      <span className="text-right tabular-nums font-medium">{effectiveConvPct.toFixed(1)}%</span>
+                      <span className="text-right tabular-nums font-medium">{economics.grossMargin.toFixed(0)}%</span>
+                      <span className="text-right tabular-nums font-medium">{economics.ltvCac.toFixed(1)}x</span>
+                      <span className="text-right tabular-nums font-medium">{viralCoeff.toFixed(2)}</span>
+                      <span className="text-right tabular-nums font-medium">{(100 + inputs.monthlyGrowthPct - inputs.churnPct).toFixed(0)}%</span>
+                      <span className="text-right tabular-nums font-medium">{economics.paybackMonths < 99 ? `${economics.paybackMonths.toFixed(0)}mo` : 'N/A'}</span>
+                    </div>
+                    {BENCHMARK_DATA.map(c => (
+                      <div key={c.company} className="grid grid-cols-7 gap-1 py-1.5 border-b border-[#eaeaea]/50 dark:border-[#333]/50 items-center text-[9px]">
+                        <span className="text-[#888]">{c.company}</span>
+                        <span className="text-right tabular-nums text-[#888]">{c.freeToPaid}%</span>
+                        <span className="text-right tabular-nums text-[#888]">{c.grossMargin}%</span>
+                        <span className="text-right tabular-nums text-[#888]">{c.ltvCac}x</span>
+                        <span className="text-right tabular-nums text-[#888]">{c.viral}</span>
+                        <span className="text-right tabular-nums text-[#888]">{c.nrr}%</span>
+                        <span className="text-right tabular-nums text-[#888]">{c.payback}mo</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AdminLayoutV2>
   );
 };
 
-// Compact input for sidebar
-const CompactInput = ({ label, value, onChange, step = 1 }: {
-  label: string; value: number; onChange: (v: number) => void; step?: number;
-}) => (
+// ════════════════════════════════════════════════════════════════════════════════
+// SUB-COMPONENTS
+// ════════════════════════════════════════════════════════════════════════════════
+
+const KPI = ({ label, value, sub, status }: { label: string; value: string; sub: string; status: 'good' | 'warn' | 'bad' }) => (
+  <div className={cn("bg-white dark:bg-[#111] border rounded-xl p-2.5", status === 'bad' ? 'border-red-500/40' : status === 'warn' ? 'border-amber-500/40' : 'border-[#eaeaea] dark:border-[#333]')}>
+    <div className="flex items-center gap-1 mb-1">
+      <span className={cn("w-1.5 h-1.5 rounded-full", status === 'good' && "bg-emerald-500", status === 'warn' && "bg-amber-500", status === 'bad' && "bg-red-500")} />
+      <span className="text-[9px] text-[#888] truncate">{label}</span>
+    </div>
+    <div className="text-lg font-semibold tabular-nums leading-tight truncate">{value}</div>
+    <div className="text-[9px] text-[#888] mt-0.5 truncate">{sub}</div>
+  </div>
+);
+
+const MR = ({ label, value, status }: { label: string; value: string; status: 'good' | 'warn' | 'bad' }) => (
+  <div className="flex items-center justify-between py-1.5 px-2 bg-[#fafafa] dark:bg-[#0a0a0a] rounded">
+    <div className="flex items-center gap-1.5">
+      <span className={cn("w-1.5 h-1.5 rounded-full", status === 'good' && "bg-emerald-500", status === 'warn' && "bg-amber-500", status === 'bad' && "bg-red-500")} />
+      <span className="text-[9px] text-[#888]">{label}</span>
+    </div>
+    <span className="text-[10px] font-medium tabular-nums">{value}</span>
+  </div>
+);
+
+const CI = ({ label, value, onChange, step = 1, min, max }: { label: string; value: number; onChange: (v: number) => void; step?: number; min?: number; max?: number }) => (
   <div className="flex items-center justify-between">
     <span className="text-[9px] text-[#888]">{label}</span>
-    <Input type="number" value={value} onChange={e => onChange(Number(e.target.value))} step={step} className="h-5 w-16 text-[10px] text-right px-1" />
+    <Input type="number" value={value} onChange={e => onChange(Number(e.target.value))} step={step} min={min} max={max} className="h-5 w-20 text-[10px] text-right px-1" />
   </div>
 );
 
-// Metric row for sidebar
-const MetricRow = ({ label, value, sub, status }: {
-  label: string; value: string; sub?: string; status: 'good' | 'warn' | 'bad';
+const SD = ({ label, color }: { label: string; color: string }) => (
+  <div className="flex items-center gap-1 pt-2 pb-0.5">
+    <span className={cn("text-[8px] font-bold", color)}>{label}</span>
+    <div className="flex-1 h-px bg-[#eaeaea] dark:bg-[#333]" />
+  </div>
+);
+
+const GR = ({ label, data, field, sm, c, p, edit, onEdit, ed, ef }: {
+  label: string; data: any[]; field: string; sm: number; c?: string; p?: string;
+  edit?: boolean; onEdit?: (i: number, v: number) => void; ed?: any[]; ef?: string;
 }) => (
-  <div className="flex items-center justify-between py-0.5">
-    <div className="flex items-center gap-1">
-      <span className={cn('w-1.5 h-1.5 rounded-full', status === 'good' && 'bg-emerald-500', status === 'warn' && 'bg-amber-500', status === 'bad' && 'bg-red-500')} />
-      <span className="text-[#888]">{label}</span>
-    </div>
-    <div className="text-right">
-      <span className="font-medium">{value}</span>
-      {sub && <span className="text-[9px] text-[#666] ml-1">{sub}</span>}
-    </div>
+  <div className="flex items-center gap-1">
+    <div className="w-20 flex-shrink-0"><span className={cn("text-[9px]", c || "text-[#666]")}>{label}</span></div>
+    {data.map((d, i) => (
+      <div key={i} className="flex-1">
+        {edit && onEdit && ed ? (
+          <Input type="number" value={ed[i]?.[ef!] ?? d[field] ?? 0} onChange={e => onEdit(i, Number(e.target.value))}
+            className={cn("h-5 text-[9px] text-center px-0.5", ed[i]?.isManual && "border-blue-500 bg-blue-500/5", i === sm && "ring-1 ring-[#FF4301]/50")} />
+        ) : (
+          <div className={cn("h-5 flex items-center justify-center text-[9px] tabular-nums rounded border border-transparent", i === sm && "bg-[#FF4301]/5 border-[#FF4301]/20", c || "text-[#666]")}>
+            {p}{typeof d[field] === 'number' ? fmtNum(d[field], p === '$' ? 0 : 0) : d[field]}
+          </div>
+        )}
+      </div>
+    ))}
   </div>
 );
 
-// Custom tooltip for chart
-const CustomTooltip = ({ active, payload, label }: any) => {
+const SR = ({ label, data, calc, sm, c, p, s, signed }: {
+  label: string; data: any[]; calc: (d: any) => number; sm: number; c: string; p?: string; s?: string; signed?: boolean;
+}) => (
+  <div className="flex items-center gap-1 pt-0.5 border-t border-[#eaeaea]/50 dark:border-[#333]/50">
+    <div className="w-20 flex-shrink-0"><span className={cn("text-[9px] font-medium", c)}>{label}</span></div>
+    {data.map((d, i) => {
+      const v = calc(d);
+      return (
+        <div key={i} className="flex-1">
+          <div className={cn("h-5 flex items-center justify-center text-[9px] tabular-nums font-medium rounded",
+            i === sm ? "bg-[#FF4301]/5 border border-[#FF4301]/20" : "border border-transparent",
+            signed && v < 0 ? "text-red-600" : c)}>
+            {signed && v > 0 ? '+' : ''}{p}{fmtNum(v, s === '%' ? 0 : 0)}{s}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+);
+
+const CTip = ({ active, payload, label }: any) => {
   if (!active || !payload) return null;
   return (
-    <div className="bg-white dark:bg-[#1a1a1a] border border-[#eaeaea] dark:border-[#333] rounded p-2 text-[10px] shadow-lg">
-      <div className="font-medium mb-1 text-black dark:text-white">{label}</div>
+    <div className="bg-white dark:bg-[#1a1a1a] border border-[#eaeaea] dark:border-[#333] rounded-lg p-2 text-[10px] shadow-lg">
+      <div className="font-medium mb-1">{label}</div>
       {payload.map((p: any) => (
         <div key={p.name} className="flex items-center gap-2">
           <span style={{ color: p.color }}>{p.name}:</span>
-          <span className="font-medium text-black dark:text-white">
-            {p.name.includes('User') || p.name === 'Paid' ? fmtNum(p.value) : `$${fmtMoney(p.value)}`}
-          </span>
+          <span className="font-medium tabular-nums">{p.name.includes('User') || p.name === 'Paid' ? fmtNum(p.value) : `$${fmtMoney(p.value)}`}</span>
         </div>
       ))}
     </div>

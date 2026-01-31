@@ -51,6 +51,8 @@ import { ActiveSlideProvider, StaticActiveSlideProvider } from '@/context/Active
 import { EditorStateProvider } from '@/context/EditorStateContext';
 import Slide from '@/components/Slide';
 import MadeWithBadge from '@/components/badges/MadeWithBadge';
+import { extractDeckFonts } from '@/utils/fontUtils';
+import { FontLoadingService } from '@/services/FontLoadingService';
 
 // Error boundary to catch component rendering errors and prevent page crashes
 interface ErrorBoundaryProps {
@@ -427,6 +429,21 @@ const SharedDeckView: React.FC = () => {
         });
         const resolvedDeckSize = resolveSlideSize(normalizedSlides[0], deckData?.size);
         const cleanedDeckData = { ...deckData, slides: normalizedSlides, size: resolvedDeckSize };
+
+        // Preload fonts before revealing the deck (4-second timeout)
+        const deckFonts = extractDeckFonts(cleanedDeckData);
+        if (deckFonts.length > 0) {
+          console.log('[SharedDeckView] Preloading fonts:', deckFonts);
+          await Promise.race([
+            FontLoadingService.loadFonts(deckFonts, {
+              maxConcurrent: 6,
+              delayBetweenBatches: 0,
+              useIdleCallback: false,
+            }),
+            new Promise<void>(resolve => setTimeout(resolve, 4000)),
+          ]);
+          console.log('[SharedDeckView] Fonts preloaded (or timed out)');
+        }
 
         // Set the deck data locally
         console.log('[SharedDeckView] Setting deck state...');

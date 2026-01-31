@@ -7,18 +7,25 @@ import { Button } from '@/components/ui/button';
 import { SlideData } from '@/types/SlideTypes';
 import { normalizeSlideForRender } from '@/utils/slideNormalization';
 import { NavigationProvider } from '@/context/NavigationContext';
-import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
-import { StaticEditorStateProvider } from '@/context/EditorStateContext';
+import { StaticActiveSlideProvider, ActiveSlideProvider } from '@/context/ActiveSlideContext';
+import { StaticEditorStateProvider, EditorStateProvider } from '@/context/EditorStateContext';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import Slide from '@/components/Slide';
 import { cn } from '@/lib/utils';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
+import { extractDeckFonts } from '@/utils/fontUtils';
+import { FontLoadingService } from '@/services/FontLoadingService';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { usePresentationStore } from '@/stores/presentationStore';
+import PresentationMode from '@/components/deck/PresentationMode';
+import MadeWithBadge from '@/components/badges/MadeWithBadge';
 
 const CommunityDeckView: React.FC = () => {
   const { deckId } = useParams<{ deckId: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
 
   const [deck, setDeck] = useState<CommunityDeck | null>(null);
   const [slides, setSlides] = useState<SlideData[]>([]);
@@ -27,8 +34,13 @@ const CommunityDeckView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isRemixing, setIsRemixing] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  const [slideScale, setSlideScale] = useState(0.5); // Start smaller
+  const [slideScale, setSlideScale] = useState(0.5);
   const slideContainerRef = useRef<HTMLDivElement>(null);
+
+  // Mobile presentation state
+  const isPresenting = usePresentationStore(state => state.isPresenting);
+  const enterPresentation = usePresentationStore(state => state.enterPresentation);
+  const hasLoadedDeck = useRef(false);
 
   // Compute deck slide size from the first slide or theme
   const deckSlideSize = useMemo(() => {
@@ -41,6 +53,7 @@ const CommunityDeckView: React.FC = () => {
     return { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
   }, [slides, theme]);
 
+  // Load deck data
   useEffect(() => {
     const loadDeck = async () => {
       if (!deckId) {
@@ -57,19 +70,26 @@ const CommunityDeckView: React.FC = () => {
         const normalizedSlides = (data.slides || []).map((slide: SlideData, idx: number) => {
           const normalized = normalizeSlideForRender(slide, data.theme?.defaultSlideSize);
           if (!normalized) {
-            console.log('[CommunityDeckView] Normalization failed for slide', idx);
-            return slide; // Return original if normalization fails
+            return slide;
           }
-          console.log('[CommunityDeckView] Normalized slide', idx, 'size:', normalized.slideSize);
           return {
             ...normalized.slide,
             size: normalized.slideSize,
           };
         });
 
-        console.log('[CommunityDeckView] Loaded deck with', normalizedSlides.length, 'slides');
-        console.log('[CommunityDeckView] First slide size:', normalizedSlides[0]?.size);
-        console.log('[CommunityDeckView] Theme defaultSlideSize:', data.theme?.defaultSlideSize);
+        // Preload fonts before revealing slides (4-second timeout)
+        const deckFonts = extractDeckFonts({ slides: normalizedSlides });
+        if (deckFonts.length > 0) {
+          await Promise.race([
+            FontLoadingService.loadFonts(deckFonts, {
+              maxConcurrent: 6,
+              delayBetweenBatches: 0,
+              useIdleCallback: false,
+            }),
+            new Promise<void>(resolve => setTimeout(resolve, 4000)),
+          ]);
+        }
 
         setSlides(normalizedSlides);
         setTheme(data.theme);
@@ -84,8 +104,18 @@ const CommunityDeckView: React.FC = () => {
     loadDeck();
   }, [deckId]);
 
-  // Keyboard navigation
+  // On mobile, auto-enter presentation mode when deck finishes loading
   useEffect(() => {
+    if (isMobile && slides.length > 0 && !hasLoadedDeck.current) {
+      hasLoadedDeck.current = true;
+      enterPresentation();
+    }
+  }, [isMobile, slides.length, enterPresentation]);
+
+  // Keyboard navigation (desktop + mobile exit state only)
+  useEffect(() => {
+    if (isMobile && isPresenting) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight' || e.key === ' ') {
         e.preventDefault();
@@ -100,9 +130,9 @@ const CommunityDeckView: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [slides.length, navigate]);
+  }, [slides.length, navigate, isMobile, isPresenting]);
 
-  // Calculate slide scale to fit container
+  // Calculate slide scale to fit container (desktop + mobile exit state)
   useLayoutEffect(() => {
     const calculateScale = () => {
       const container = slideContainerRef.current;
@@ -112,8 +142,6 @@ const CommunityDeckView: React.FC = () => {
       const styles = window.getComputedStyle(container);
       const paddingX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
       const paddingY = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
-
-      // Subtract padding to get actual content area
       const availableWidth = rect.width - paddingX;
       const availableHeight = rect.height - paddingY;
 
@@ -121,29 +149,13 @@ const CommunityDeckView: React.FC = () => {
 
       const scaleX = availableWidth / deckSlideSize.width;
       const scaleY = availableHeight / deckSlideSize.height;
-      // Use the smaller scale to fit, and cap at 1 (never scale up)
       const scale = Math.min(scaleX, scaleY, 1);
-
-      console.log('[CommunityDeckView] Scale calc:', {
-        containerW: rect.width,
-        containerH: rect.height,
-        paddingX,
-        paddingY,
-        availableW: availableWidth,
-        availableH: availableHeight,
-        slideW: deckSlideSize.width,
-        slideH: deckSlideSize.height,
-        scaleX,
-        scaleY,
-        finalScale: scale
-      });
 
       if (Number.isFinite(scale) && scale > 0) {
         setSlideScale(scale);
       }
     };
 
-    // Calculate after a brief delay to ensure container is sized
     const timeoutId = setTimeout(calculateScale, 100);
     const rafId = requestAnimationFrame(calculateScale);
 
@@ -162,7 +174,7 @@ const CommunityDeckView: React.FC = () => {
       if (resizeObserver) resizeObserver.disconnect();
       window.removeEventListener('resize', calculateScale);
     };
-  }, [deckSlideSize.width, deckSlideSize.height, slides]);
+  }, [deckSlideSize.width, deckSlideSize.height, slides, isPresenting]);
 
   const handleRemix = async () => {
     if (!user) {
@@ -203,6 +215,52 @@ const CommunityDeckView: React.FC = () => {
     setCurrentSlideIndex(prev => Math.min(prev + 1, slides.length - 1));
   }, [slides.length]);
 
+  // renderSlide for PresentationMode (mobile)
+  const renderSlide = useCallback((slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
+    const normalized = normalizeSlideForRender(slide, deckSlideSize, { preferFallbackSize: true });
+    const normalizedSlide = normalized?.slide || slide;
+
+    if (isThumbnail) {
+      return (
+        <div className="w-full h-full relative overflow-hidden" style={{ background: '#f0f0f0' }}>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-4xl font-bold text-black/20">{index + 1}</span>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="w-full h-full relative overflow-hidden">
+        <div
+          style={{
+            position: 'relative',
+            width: `${deckSlideSize.width}px`,
+            height: `${deckSlideSize.height}px`,
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+            willChange: 'transform',
+          }}
+        >
+          <StaticActiveSlideProvider slide={normalizedSlide}>
+            <Slide
+              key={normalizedSlide.id}
+              slide={normalizedSlide}
+              isActive={true}
+              direction={null}
+              isEditing={false}
+              onSave={() => {}}
+              selectedComponentId={undefined}
+              onComponentSelect={() => {}}
+              forceSimpleContainer={true}
+            />
+          </StaticActiveSlideProvider>
+        </div>
+      </div>
+    );
+  }, [deckSlideSize.width, deckSlideSize.height]);
+
+  // --- Loading state ---
   if (isLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -214,6 +272,7 @@ const CommunityDeckView: React.FC = () => {
     );
   }
 
+  // --- Error state ---
   if (error || !deck || slides.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -234,10 +293,124 @@ const CommunityDeckView: React.FC = () => {
 
   const currentSlide = slides[currentSlideIndex];
 
+  // --- Mobile: Fullscreen presentation mode ---
+  if (isMobile && isPresenting) {
+    return (
+      <div
+        className="w-screen overflow-hidden relative touch-manipulation"
+        style={{ height: '100dvh', overscrollBehavior: 'none' }}
+      >
+        <NavigationProvider
+          initialSlideIndex={currentSlideIndex}
+          onSlideChange={(index) => setCurrentSlideIndex(index)}
+        >
+          <EditorStateProvider initialEditingState={false} slideSizeOverride={deckSlideSize}>
+            <ActiveSlideProvider>
+              <PresentationMode
+                slides={slides}
+                currentSlideIndex={currentSlideIndex}
+                renderSlide={renderSlide}
+                isViewOnly={true}
+                slideSize={deckSlideSize}
+              />
+            </ActiveSlideProvider>
+          </EditorStateProvider>
+
+          {/* Remix button overlay */}
+          <div className="absolute top-4 right-4 z-50">
+            <Button
+              size="sm"
+              className="bg-white text-black hover:bg-gray-100 shadow-lg min-w-[44px] min-h-[44px] touch-manipulation"
+              onClick={handleRemix}
+              disabled={isRemixing}
+            >
+              {isRemixing ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Copy className="h-4 w-4 mr-2" />
+              )}
+              Remix
+            </Button>
+          </div>
+
+          {/* Made with NextSlide badge */}
+          {deckId && <MadeWithBadge shareCode={deckId} />}
+        </NavigationProvider>
+      </div>
+    );
+  }
+
+  // --- Mobile: Exit state (after leaving fullscreen presentation) ---
+  if (isMobile && hasLoadedDeck.current) {
+    const scaledWidth = deckSlideSize.width * slideScale;
+    const scaledHeight = deckSlideSize.height * slideScale;
+
+    return (
+      <div
+        className="w-screen bg-black flex flex-col touch-manipulation"
+        style={{ height: '100dvh', overscrollBehavior: 'none' }}
+      >
+        {/* Remix button - top right */}
+        <div className="absolute top-4 right-4 z-50">
+          <Button
+            size="sm"
+            className="bg-white text-black hover:bg-gray-100 shadow-lg min-w-[44px] min-h-[44px] touch-manipulation"
+            onClick={handleRemix}
+            disabled={isRemixing}
+          >
+            {isRemixing ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Copy className="h-4 w-4 mr-2" />
+            )}
+            Remix
+          </Button>
+        </div>
+
+        {/* Centered slide - tap to re-enter presentation */}
+        <div
+          ref={slideContainerRef}
+          className="flex-1 flex items-center justify-center p-6 min-h-0"
+          onClick={() => enterPresentation()}
+        >
+          <div
+            className="relative overflow-hidden rounded-lg shadow-2xl bg-white"
+            style={{
+              width: `${scaledWidth}px`,
+              height: `${scaledHeight}px`,
+            }}
+          >
+            <div
+              className="absolute top-0 left-0 origin-top-left"
+              style={{
+                width: `${deckSlideSize.width}px`,
+                height: `${deckSlideSize.height}px`,
+                transform: `scale(${slideScale})`,
+              }}
+            >
+              <StaticEditorStateProvider slideSize={deckSlideSize}>
+                <StaticActiveSlideProvider slide={currentSlide}>
+                  <Slide
+                    slide={currentSlide}
+                    isActive={true}
+                    isEditing={false}
+                  />
+                </StaticActiveSlideProvider>
+              </StaticEditorStateProvider>
+            </div>
+          </div>
+        </div>
+
+        {/* Made with NextSlide badge */}
+        {deckId && <MadeWithBadge shareCode={deckId} />}
+      </div>
+    );
+  }
+
+  // --- Desktop: Windowed viewer (unchanged) ---
   const scaledWidth = deckSlideSize.width * slideScale;
   const scaledHeight = deckSlideSize.height * slideScale;
 
-  // Thumbnail dimensions
   const thumbHeight = 60;
   const thumbScale = thumbHeight / deckSlideSize.height;
   const thumbWidth = deckSlideSize.width * thumbScale;
@@ -302,7 +475,7 @@ const CommunityDeckView: React.FC = () => {
               <ChevronLeft className="h-6 w-6" />
             </button>
 
-            {/* Slide wrapper - uses aspect ratio to maintain proportions */}
+            {/* Slide wrapper */}
             <div
               className="relative w-full h-full flex items-center justify-center"
               onClick={goToNextSlide}
@@ -314,7 +487,6 @@ const CommunityDeckView: React.FC = () => {
                   height: `${scaledHeight}px`,
                 }}
               >
-                {/* Inner content at full resolution, scaled via CSS transform */}
                 <div
                   className="absolute top-0 left-0 origin-top-left"
                   style={{

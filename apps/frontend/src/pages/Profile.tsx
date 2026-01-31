@@ -196,10 +196,17 @@ const BadgesTab: React.FC = () => {
 };
 
 const Profile: React.FC = () => {
-  const { user, signOut, isLoading: authLoading, isAdmin, adminRole } = useAuth();
+  const { user, signOut, isLoading: authLoading, isAdmin, adminRole, refreshAdminStatus, isAdminLoading } = useAuth();
   const { balance: creditsBalance } = useCredits();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Ensure admin status is checked when visiting settings
+  useEffect(() => {
+    if (user && !isAdmin && !isAdminLoading) {
+      refreshAdminStatus();
+    }
+  }, [user]);
 
   // Get active tab from URL or default to 'profile'
   const activeTab = (searchParams.get('tab') as SettingsTab) || 'profile';
@@ -1350,13 +1357,13 @@ const Profile: React.FC = () => {
             {(isAdmin || adminRole === 'admin' || adminRole === 'super_admin' || adminRole === 'superadmin') && (
               <button
                 onClick={() => navigate('/admin')}
-                className="w-full flex items-center gap-3 px-4 py-2.5 mt-4 rounded-xl text-sm font-medium border-2 border-dashed border-amber-300/50 dark:border-amber-700/50 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                className="group w-full flex items-center gap-3 px-4 py-2.5 mt-4 rounded-lg text-sm font-medium bg-[#FF4301]/[0.06] dark:bg-[#FF4301]/10 text-[#FF4301] hover:bg-[#FF4301]/[0.12] dark:hover:bg-[#FF4301]/20 transition-all duration-200"
               >
-                <div className="h-7 w-7 rounded-full flex items-center justify-center shrink-0 bg-amber-100 dark:bg-amber-900/30">
+                <div className="h-7 w-7 rounded-full flex items-center justify-center shrink-0 bg-[#FF4301]/10 dark:bg-[#FF4301]/20 group-hover:bg-[#FF4301]/20 dark:group-hover:bg-[#FF4301]/30 transition-colors duration-200">
                   <Shield className="h-3.5 w-3.5" />
                 </div>
                 Admin Panel
-                <ExternalLink className="h-3 w-3 ml-auto opacity-50" />
+                <ExternalLink className="h-3 w-3 ml-auto opacity-50 group-hover:opacity-80 transition-opacity" />
               </button>
             )}
           </aside>

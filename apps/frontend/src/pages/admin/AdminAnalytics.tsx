@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import {
   RefreshCw, Users, FileStack, Calendar, CreditCard, Share2, BarChart3, Activity,
   Download, ChevronDown, ArrowUpRight, ArrowDownRight, Minus, UserPlus, Zap,
-  AlertTriangle, CheckCircle, Target, TrendingUp, Database,
+  Target, TrendingUp, Database,
   Clock, Eye, Layers, PieChart, Settings2, ArrowRight, Palette, Server
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -177,48 +177,6 @@ const QUICK_ACCESS_CARDS = [
   { title: 'Brands', description: 'Manage brand styles', href: '/admin/brands', icon: Palette, color: 'text-[#FF4301]' },
   { title: 'Services', description: 'Monitor services', href: '/admin/services', icon: Server, color: 'text-amber-500' },
 ];
-
-// System health banner component
-const SystemHealthBanner: React.FC<{ health: any; isLoading: boolean }> = ({ health, isLoading }) => {
-  if (isLoading) {
-    return (
-      <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-3 animate-pulse">
-        <div className="h-4 w-48 bg-zinc-200 dark:bg-zinc-800 rounded" />
-      </div>
-    );
-  }
-
-  const services = health?.services || [];
-  const operationalCount = services.filter((s: any) => s.status === 'operational').length;
-  const totalCount = services.length;
-  const allOperational = operationalCount === totalCount && totalCount > 0;
-
-  return (
-    <div className={cn(
-      "rounded-xl p-3 flex items-center justify-between",
-      allOperational
-        ? "bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30"
-        : "bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30"
-    )}>
-      <div className="flex items-center gap-2">
-        {allOperational ? (
-          <CheckCircle className="h-4 w-4 text-emerald-500" />
-        ) : (
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
-        )}
-        <span className={cn("text-xs font-medium", allOperational ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400")}>
-          {allOperational ? 'All Systems Operational' : 'Some Services Need Attention'}
-        </span>
-        <span className="text-[10px] text-[#888]">
-          {operationalCount}/{totalCount} services running
-        </span>
-      </div>
-      <Link to="/admin/services" className="text-[10px] text-[#888] hover:text-[#333] dark:hover:text-white flex items-center gap-1">
-        View details <ArrowRight className="h-3 w-3" />
-      </Link>
-    </div>
-  );
-};
 
 // Quick access card component
 const QuickAccessCard: React.FC<{ title: string; description: string; href: string; icon: any; color: string }> = ({ title, description, href, icon: Icon, color }) => (

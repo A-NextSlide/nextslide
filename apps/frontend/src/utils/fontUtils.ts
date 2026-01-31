@@ -274,6 +274,51 @@ export function validateAndFixDeckFonts(deckData: any): { fixed: boolean; change
 }
 
 /**
+ * Extract all unique font families used in a single slide
+ */
+export function extractSlideFonts(slide: any): string[] {
+  const fonts = new Set<string>();
+
+  if (!slide || !slide.components) return [];
+
+  slide.components.forEach((component: any) => {
+    // Check for fontFamily in component props
+    if (component.props?.fontFamily) {
+      fonts.add(component.props.fontFamily);
+    }
+
+    // Check for fonts in text components with nested structure
+    if (component.type === 'TiptapTextBlock' || component.type === 'TextBlock') {
+      if (component.props?.texts) {
+        extractFontsFromTexts(component.props.texts, fonts);
+      }
+    }
+
+    // Check for fonts in shapes with text
+    if (component.type === 'ShapeWithText' && component.props?.hasText) {
+      if (component.props?.texts) {
+        extractFontsFromTexts(component.props.texts, fonts);
+      }
+    }
+
+    // Check inline content strings for font-family CSS references
+    if (component.props?.content && typeof component.props.content === 'string') {
+      const fontFamilyRegex = /font-family:\s*["']?([^;"']+)["']?/gi;
+      let match;
+      while ((match = fontFamilyRegex.exec(component.props.content)) !== null) {
+        const fontName = match[1].split(',')[0].trim().replace(/^["']|["']$/g, '');
+        if (fontName) fonts.add(fontName);
+      }
+    }
+  });
+
+  // Filter out inherit, initial, and empty strings
+  return Array.from(fonts).filter(
+    f => f && f !== 'inherit' && f !== 'initial'
+  );
+}
+
+/**
  * Extract all unique font families used in a deck
  */
 export function extractDeckFonts(deckData: any): string[] {
