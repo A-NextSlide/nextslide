@@ -118,7 +118,11 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         "/auth/magic-link/send", # Magic Link endpoints
         "/auth/magic-link/verify",
         "/auth/check-email",
-        "/api/public/"  # All public deck endpoints
+        "/api/public/",  # All public deck endpoints
+        "/api/slack/commands",      # Slack signature-verified
+        "/api/slack/interactions",  # Slack signature-verified
+        "/api/slack/events",        # Slack signature-verified
+        "/api/slack/oauth/callback", # Slack OAuth callback
     ]
     
     # Paths that need special handling for SSE

@@ -172,13 +172,12 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
     }
   }, []);
 
-  // Initial load
+  // Load categories once
   useEffect(() => {
-    fetchDecks();
     fetchCategories();
   }, []);
 
-  // Refetch when filters change
+  // Fetch decks on mount and when filters change
   useEffect(() => {
     fetchDecks();
   }, [debouncedSearch, selectedCategory]);

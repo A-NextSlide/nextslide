@@ -145,9 +145,10 @@ class SlackContextGatherer:
 
         # Summarize with a fast model
         try:
-            from agents.ai.clients import get_genai_client
+            import os
+            from google import genai
 
-            client = get_genai_client()
+            client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
             prompt = (
                 f"Summarize the following Slack conversation into a concise context "
                 f"(max 500 words) relevant to creating a presentation"
@@ -248,32 +249,25 @@ class SlackContextGatherer:
     ) -> Optional[Dict[str, Any]]:
         """Analyse a document using the existing file_design_extractor."""
         try:
-            import tempfile
-            import os
+            import base64
             from services.file_design_extractor import FileDesignExtractor
 
-            # Write to temp file
-            suffix = f".{filetype}" if filetype else ""
-            with tempfile.NamedTemporaryFile(
-                suffix=suffix, delete=False, prefix="slack_"
-            ) as tmp:
-                tmp.write(content)
-                tmp_path = tmp.name
+            b64_content = base64.b64encode(content).decode("utf-8")
 
-            try:
-                extractor = FileDesignExtractor()
-                analysis = await extractor.analyze_file(
-                    tmp_path, filename, f"Analyze this {filetype} file for presentation content"
-                )
-                return {
-                    "filename": filename,
-                    "file_type": filetype,
-                    "content_summary": analysis.content.summary if analysis.content else "",
-                    "main_points": analysis.content.main_points if analysis.content else [],
-                    "data_points": analysis.content.data_points if analysis.content else [],
-                }
-            finally:
-                os.unlink(tmp_path)
+            extractor = FileDesignExtractor()
+            analysis = await extractor.analyze_file(
+                file_content=b64_content,
+                filename=filename,
+                file_type=filetype,
+                user_message=f"Analyze this {filetype} file for presentation content",
+            )
+            return {
+                "filename": filename,
+                "file_type": filetype,
+                "content_summary": analysis.content.summary if analysis.content else "",
+                "main_points": analysis.content.main_points if analysis.content else [],
+                "data_points": analysis.content.data_points if analysis.content else [],
+            }
 
         except Exception as e:
             logger.warning(f"Document analysis failed for {filename}: {e}")
@@ -303,18 +297,21 @@ class SlackContextGatherer:
         return urls
 
     async def _scrape_urls(self, urls: List[str]) -> List[Dict[str, Any]]:
-        """Scrape URLs using the existing Firecrawl/scraping integration."""
+        """Scrape URLs using the existing Firecrawl integration."""
         results = []
         for url in urls:
             try:
-                from services.web_scraper import scrape_url
+                from services.firecrawl_service import get_firecrawl_service
 
-                content = await scrape_url(url)
-                if content:
-                    results.append({
-                        "url": url,
-                        "content": content[:3000],  # cap
-                    })
+                fc = get_firecrawl_service()
+                result = fc.scrape(url, formats=["markdown"])
+                if result.get("success"):
+                    markdown = (result.get("data") or {}).get("markdown", "")
+                    if markdown:
+                        results.append({
+                            "url": url,
+                            "content": markdown[:3000],  # cap
+                        })
             except Exception as e:
                 logger.debug(f"Failed to scrape {url}: {e}")
         return results

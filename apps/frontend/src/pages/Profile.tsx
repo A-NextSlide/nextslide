@@ -51,6 +51,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { useCredits } from '@/context/CreditsContext';
 import { googleIntegrationApi } from '@/services/googleIntegrationApi';
+import { SlackIntegrationCard } from '@/components/integrations/SlackIntegrationCard';
 import { billingApi, type CreditBalance, type Subscription, type UsageStats } from '@/services/billingApi';
 import { developerApiService, type ApiKey, type CreateApiKeyResponse } from '@/services/developerApiService';
 import { WelcomeModal } from '@/components/billing/WelcomeModal';
@@ -1817,7 +1818,9 @@ const Profile: React.FC = () => {
                     </p>
                   </div>
 
-                  <div className="space-y-4 max-w-lg">
+                  <div className="space-y-4 max-w-2xl">
+                    <SlackIntegrationCard />
+
                     <div className="flex items-center justify-between p-4 rounded-2xl border-2 border-black/10 dark:border-white/10">
                       <div className="flex items-center gap-4">
                         <div className="h-10 w-10 rounded-full bg-[#FF4301]/10 flex items-center justify-center">

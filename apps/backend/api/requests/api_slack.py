@@ -105,34 +105,43 @@ async def _handle_slash_command(
     response_url: str,
 ):
     """Background handler for /nextslide."""
+    print(f"[SLACK] _handle_slash_command started: team={team_id} user={user_id_slack} text={text[:50]}")
     sessions = get_session_manager()
     slack = get_slack_service()
 
     try:
         # 1. Get workspace
+        print(f"[SLACK] Looking up workspace {team_id}...")
         workspace = await sessions.get_workspace(team_id)
         if not workspace:
+            print(f"[SLACK] No workspace found for {team_id}")
             await slack.respond_to_url(
                 response_url,
                 text="This workspace isn't connected to NextSlide. Ask an admin to install the app.",
             )
             return
+        print(f"[SLACK] Found workspace: {workspace.team_name}")
         bot_token = workspace.bot_token
 
         # 2. Account linking
+        print(f"[SLACK] Looking up user mapping for {user_id_slack}...")
         mapping = await sessions.get_user_mapping(user_id_slack, team_id)
         if not mapping:
             # Try auto-link by email
+            print(f"[SLACK] No mapping found, trying auto-link by email...")
             try:
                 user_info = await slack.get_user_info(bot_token, user_id_slack)
                 email = user_info.get("profile", {}).get("email")
+                print(f"[SLACK] Slack user email: {email}")
                 if email:
                     ns_user_id = await sessions.auto_link_by_email(
                         email, user_id_slack, team_id
                     )
+                    print(f"[SLACK] Auto-link result: {ns_user_id}")
                     if ns_user_id:
                         mapping = await sessions.get_user_mapping(user_id_slack, team_id)
             except Exception as e:
+                print(f"[SLACK] Auto-link failed: {e}")
                 logger.debug(f"Auto-link failed: {e}")
 
         if not mapping:
@@ -221,6 +230,9 @@ async def _handle_slash_command(
         )
 
     except Exception as e:
+        import traceback
+        print(f"[SLACK] ERROR in slash command handler: {e}")
+        traceback.print_exc()
         logger.error(f"Slash command handler failed: {e}", exc_info=True)
         try:
             await slack.respond_to_url(
@@ -418,28 +430,14 @@ async def _handle_link_shared(team_id: str, event: Dict[str, Any]):
         try:
             from services.deck_sharing_service import get_sharing_service
             sharing = get_sharing_service()
-            share_info = sharing.get_share_by_code(code)
-            if not share_info:
+            deck_data = sharing.get_deck_by_share_code(code)
+            if not deck_data:
                 continue
-
-            deck_uuid = share_info.get("deck_uuid")
-            from services.supabase import get_supabase_client
-            client = get_supabase_client()
-            deck = (
-                client.table("decks")
-                .select("name, slide_count, thumbnail_url")
-                .eq("uuid", deck_uuid)
-                .limit(1)
-                .execute()
-            )
-            if not deck.data:
-                continue
-            d = deck.data[0]
 
             unfurls[url] = SlackBlockKit.link_unfurl(
-                title=d.get("name", "Untitled"),
-                slide_count=d.get("slide_count") or 0,
-                thumbnail_url=d.get("thumbnail_url"),
+                title=deck_data.get("name", "Untitled"),
+                slide_count=deck_data.get("slide_count") or 0,
+                thumbnail_url=deck_data.get("thumbnail_url"),
             )
         except Exception as e:
             logger.debug(f"Unfurl failed for {url}: {e}")

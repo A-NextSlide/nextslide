@@ -303,12 +303,13 @@ class SlackGenerationBridge:
         combined = SlackContextGatherer.format_for_agent(context, user_text)
 
         try:
-            from agents.ai.clients import get_genai_client
+            import os
+            from google import genai
             from api.requests.outline_agent.streaming import (
                 OUTLINE_AGENT_SYSTEM_PROMPT,
             )
 
-            client = get_genai_client()
+            client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
             prompt = (
                 f"{OUTLINE_AGENT_SYSTEM_PROMPT}\n\n"
                 f"USER REQUEST: {combined}\n\n"

@@ -58,6 +58,9 @@ resend==2.11.0  # For professional email sending
 
 PyMuPDF==1.26.6
 
+# Token encryption for Slack bot tokens
+cryptography>=42.0.0
+
 # PDF generation for carousel export
 reportlab>=4.0.0
 

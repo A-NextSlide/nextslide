@@ -17,7 +17,6 @@ import InteractiveHero from '@/components/landing/InteractiveHero';
 import PixelGridBackground from '@/components/landing/PixelGridBackground';
 import ComparisonSection from '@/components/landing/ComparisonSection';
 import { HeroTitle } from '@/components/landing/HeroTitle';
-import { communityService, CommunityDeck } from '@/services/communityService';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import CommunityGallery from '@/components/community/CommunityGallery';
 import CommunityBottomSheet from '@/components/community/CommunityBottomSheet';
@@ -190,7 +189,6 @@ const Landing: React.FC = () => {
 
   // Community bottom sheet
   const [showCommunity, setShowCommunity] = useState(false);
-  const [communityDecks, setCommunityDecks] = useState<CommunityDeck[]>([]);
 
   // Legal modal
   const [legalModalOpen, setLegalModalOpen] = useState(false);
@@ -203,18 +201,13 @@ const Landing: React.FC = () => {
     setLegalModalOpen(true);
   };
 
-  // Load showcase decks and community decks
+  // Load showcase decks
   useEffect(() => {
     const loadDecks = async () => {
       setIsLoadingShowcase(true);
       try {
-        // Fetch both in parallel
-        const [showcaseResults, communityResults] = await Promise.all([
-          showcaseService.getFeaturedDecks(30),
-          communityService.getDecks({ limit: 20 }).catch(() => ({ decks: [] }))
-        ]);
+        const showcaseResults = await showcaseService.getFeaturedDecks(30);
         setShowcaseDecks(showcaseResults);
-        setCommunityDecks(communityResults.decks || []);
       } catch (err) {
         console.error('Failed to load decks:', err);
       } finally {
