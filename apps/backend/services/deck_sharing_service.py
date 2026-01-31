@@ -82,6 +82,7 @@ class DeckSharingService:
                 'short_code': short_code,
                 'share_type': share_type,
                 'created_by': user_id,
+                'shared_by': user_id,
                 'is_active': True,
                 'access_count': 0
             }
@@ -191,7 +192,7 @@ class DeckSharingService:
             List of share link records
         """
         try:
-            query = self.supabase.table('active_deck_shares').select('*').eq('created_by', user_id)
+            query = self.supabase.table('deck_shares').select('*').eq('is_active', True).eq('created_by', user_id)
             
             if deck_uuid:
                 query = query.eq('deck_uuid', deck_uuid)
@@ -217,8 +218,9 @@ class DeckSharingService:
 
         try:
             result = (
-                self.supabase.table('active_deck_shares')
+                self.supabase.table('deck_shares')
                 .select('*')
+                .eq('is_active', True)
                 .eq('deck_uuid', deck_uuid)
                 .order('created_at', desc=True)
                 .execute()

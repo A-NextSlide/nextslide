@@ -28,13 +28,14 @@ class NotificationService:
     """Service for managing user notifications and view tracking."""
 
     def __init__(self):
-        self._supabase = None
+        # Don't cache the supabase client - get fresh one for each operation
+        # to avoid "client has been closed" errors when the connection pool recycles
+        pass
 
     @property
     def supabase(self):
-        if self._supabase is None:
-            self._supabase = get_supabase_client()
-        return self._supabase
+        """Get a fresh Supabase client for each operation."""
+        return get_supabase_client()
 
     # ------------------------------------------------------------------
     # Notification CRUD
