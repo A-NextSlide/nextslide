@@ -850,6 +850,15 @@ async def get_deck_status(
     """
     user_id, _ = auth
 
+    # Validate deck_id is a proper UUID
+    if not deck_id or deck_id in ("undefined", "null", ""):
+        raise HTTPException(status_code=400, detail="Invalid deck ID")
+    try:
+        import uuid as _uuid
+        _uuid.UUID(deck_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid deck ID format")
+
     try:
         deck = get_deck(deck_id)
         if not deck:
@@ -910,6 +919,14 @@ async def get_deck_full(
     Returns the complete deck JSON structure.
     """
     user_id, _ = auth
+
+    if not deck_id or deck_id in ("undefined", "null", ""):
+        raise HTTPException(status_code=400, detail="Invalid deck ID")
+    try:
+        import uuid as _uuid
+        _uuid.UUID(deck_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid deck ID format")
 
     try:
         deck = get_deck(deck_id)
@@ -1007,6 +1024,14 @@ async def delete_deck(
     This permanently removes the deck and all associated data.
     """
     user_id, _ = auth
+
+    if not deck_id or deck_id in ("undefined", "null", ""):
+        raise HTTPException(status_code=400, detail="Invalid deck ID")
+    try:
+        import uuid as _uuid
+        _uuid.UUID(deck_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid deck ID format")
 
     try:
         # Verify ownership

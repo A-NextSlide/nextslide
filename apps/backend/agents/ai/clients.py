@@ -815,7 +815,7 @@ def _invoke_structured(client, model: str, messages: List[Dict], system: str, re
         if schema:
             prompt = f"{prompt}\n\nRespond with JSON matching this schema:\n{json.dumps(schema, ensure_ascii=False)}"
 
-        gk = {k: v for k, v in kwargs.items() if k not in ["temperature", "max_tokens", "config"]}
+        gk = {k: v for k, v in kwargs.items() if k not in ["temperature", "max_tokens", "config", "thinking_budget", "thinking_config"]}
         gk["config"] = genai_types.GenerateContentConfig(**config_dict)
 
         last_err = None

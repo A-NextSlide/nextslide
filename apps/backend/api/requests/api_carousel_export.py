@@ -2,12 +2,11 @@
 API endpoints for LinkedIn Carousel PDF export.
 """
 
-import io
 import logging
 from typing import Optional, List, Literal
 
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from api.requests.api_auth import get_auth_header
@@ -103,11 +102,10 @@ async def export_linkedin_carousel(
         f"user={user_id or 'anonymous'}, branding={add_branding}"
     )
 
-    return StreamingResponse(
-        io.BytesIO(pdf_bytes),
+    return Response(
+        content=pdf_bytes,
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Length": str(len(pdf_bytes)),
         },
     )

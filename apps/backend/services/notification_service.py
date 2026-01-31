@@ -246,7 +246,7 @@ class NotificationService:
             threshold = get_growth_config().get_int("notifications.view_threshold", DAILY_VIEW_NOTIFICATION_THRESHOLD)
             if new_count == threshold:
                 # Get deck title for the notification
-                deck_title = await self._get_deck_title(deck_uuid)
+                deck_title = self._get_deck_title(deck_uuid)
                 display_title = deck_title or "your presentation"
 
                 # Check preferences before creating notification
@@ -330,7 +330,7 @@ class NotificationService:
 
             most_viewed_title = None
             if most_viewed_uuid:
-                most_viewed_title = await self._get_deck_title(most_viewed_uuid)
+                most_viewed_title = self._get_deck_title(most_viewed_uuid)
 
             return {
                 "total_views": total_views,
@@ -353,7 +353,7 @@ class NotificationService:
     # Helpers
     # ------------------------------------------------------------------
 
-    async def _get_deck_title(self, deck_uuid: str) -> Optional[str]:
+    def _get_deck_title(self, deck_uuid: str) -> Optional[str]:
         """Fetch the title (name) of a deck by its uuid."""
         try:
             result = (
