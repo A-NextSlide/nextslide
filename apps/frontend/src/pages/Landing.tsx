@@ -403,7 +403,7 @@ const Landing: React.FC = () => {
 
 
   return (
-    <div className="min-h-screen bg-[#FCFBF8] dark:bg-[#0a0a0a] overflow-x-clip">
+    <div className="min-h-screen bg-[#FCFBF8] dark:bg-[#0a0a0a] overflow-x-hidden">
 
       {/* Navigation */}
       <nav

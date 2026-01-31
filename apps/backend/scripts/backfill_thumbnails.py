@@ -27,9 +27,8 @@ failed = 0
 skipped = 0
 
 
-async def render_one(sem: asyncio.Semaphore, i: int, total: int, deck: dict):
+async def render_one(sem: asyncio.Semaphore, i: int, total: int, deck: dict, *, local: bool = False):
     global success, failed, skipped
-    from services.thumbnail_dispatch import render_thumbnail_via_modal
 
     uuid = deck["uuid"]
     slides = deck.get("slides") or []
@@ -46,13 +45,24 @@ async def render_one(sem: asyncio.Semaphore, i: int, total: int, deck: dict):
     async with sem:
         logger.info("  [%d/%d] Rendering %s ...", i, total, uuid)
         try:
-            result = await render_thumbnail_via_modal(
-                deck_uuid=uuid,
-                slide_data=first_slide,
-                slide_size=slide_size,
-                theme_data=theme_data,
-                slide_index=0,
-            )
+            if local:
+                from services.thumbnail_renderer import render_and_upload_thumbnail
+                result = await render_and_upload_thumbnail(
+                    deck_uuid=uuid,
+                    slide_data=first_slide,
+                    slide_size=slide_size,
+                    theme_data=theme_data,
+                    slide_index=0,
+                )
+            else:
+                from services.thumbnail_dispatch import render_thumbnail_via_modal
+                result = await render_thumbnail_via_modal(
+                    deck_uuid=uuid,
+                    slide_data=first_slide,
+                    slide_size=slide_size,
+                    theme_data=theme_data,
+                    slide_index=0,
+                )
             if result:
                 logger.info("    OK [%d/%d]: %s", i, total, result.get("url", "")[:80])
                 success += 1
@@ -64,7 +74,7 @@ async def render_one(sem: asyncio.Semaphore, i: int, total: int, deck: dict):
             failed += 1
 
 
-async def backfill(limit: int, dry_run: bool, concurrency: int, force: bool = False):
+async def backfill(limit: int, dry_run: bool, concurrency: int, force: bool = False, local: bool = False):
     global success, failed, skipped
     from services.supabase import get_supabase_client
 
@@ -83,7 +93,8 @@ async def backfill(limit: int, dry_run: bool, concurrency: int, force: bool = Fa
 
     decks = result.data or []
     mode = "ALL (force re-render)" if force else "missing thumbnails only"
-    logger.info("Found %d decks [%s] (limit=%d, concurrency=%d)", len(decks), mode, limit, concurrency)
+    renderer = "LOCAL Playwright" if local else "Modal (with local fallback)"
+    logger.info("Found %d decks [%s] (limit=%d, concurrency=%d, renderer=%s)", len(decks), mode, limit, concurrency, renderer)
 
     if dry_run:
         for d in decks:
@@ -93,7 +104,7 @@ async def backfill(limit: int, dry_run: bool, concurrency: int, force: bool = Fa
 
     sem = asyncio.Semaphore(concurrency)
     tasks = [
-        render_one(sem, i + 1, len(decks), deck)
+        render_one(sem, i + 1, len(decks), deck, local=local)
         for i, deck in enumerate(decks)
     ]
     await asyncio.gather(*tasks)
@@ -107,9 +118,10 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without rendering")
     parser.add_argument("--concurrency", type=int, default=10, help="Max parallel renders (default: 10)")
     parser.add_argument("--force", action="store_true", help="Re-render ALL decks, even those with existing thumbnails")
+    parser.add_argument("--local", action="store_true", help="Use local Playwright directly, bypassing Modal")
     args = parser.parse_args()
 
-    asyncio.run(backfill(args.limit, args.dry_run, args.concurrency, args.force))
+    asyncio.run(backfill(args.limit, args.dry_run, args.concurrency, args.force, args.local))
 
 
 if __name__ == "__main__":

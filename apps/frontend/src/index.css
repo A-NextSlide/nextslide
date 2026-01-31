@@ -84,6 +84,7 @@
 /* ===== BASE LAYOUT FIX ===== */
 /* Prevent layout shift on page navigation by ensuring consistent width */
 html {
+  overflow-x: hidden; /* Prevent horizontal overflow from widening the viewport on mobile */
   overflow-y: scroll; /* Always show scrollbar to prevent layout shift */
 }
 

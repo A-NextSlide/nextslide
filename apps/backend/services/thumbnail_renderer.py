@@ -264,13 +264,22 @@ async def capture_slide_screenshot(
         try:
             page = await browser.new_page(viewport={"width": width, "height": height})
             await page.set_content(html, wait_until="networkidle")
-            # Wait for all font faces to finish loading (CSS Font Loading API)
+            # Force-load every registered font face and block until done.
+            # 1. Explicitly call .load() on every face (display:swap leaves
+            #    unused weights as "unloaded" and fonts.ready resolves early).
+            # 2. Wait for the network to settle again (woff2 fetches).
+            # 3. Re-check fonts.ready after forced loads complete.
+            # 4. Long settle for swap reflows + any late paints.
             try:
-                await page.evaluate("() => document.fonts.ready")
+                await page.evaluate("""async () => {
+                    const loads = [];
+                    document.fonts.forEach(f => loads.push(f.load().catch(() => null)));
+                    await Promise.all(loads);
+                    await document.fonts.ready;
+                }""")
             except Exception:
-                pass  # fallback if fonts.ready fails
-            # Small extra settle time for font-display: swap reflows
-            await page.wait_for_timeout(300)
+                pass
+            await page.wait_for_timeout(1000)
             png_bytes = await page.screenshot(type="png")
             return png_bytes
         finally:

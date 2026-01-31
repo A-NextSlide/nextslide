@@ -188,6 +188,7 @@ from api.requests.api_profiles import router as profiles_router
 from api.requests.api_sharing import router as sharing_router
 from api.requests.api_webpage import router as webpage_router
 from api.requests.api_pqa import router as pqa_router
+from api.requests.api_slack import router as slack_router
 from fastapi import Depends
 
 # Middleware imports removed - files were deleted
@@ -378,6 +379,8 @@ app.include_router(webpage_router, tags=["Webpage Publishing"])
 app.include_router(sharing_router, tags=["Sharing"])
 # Enterprise PQA detection and upgrade prompts
 app.include_router(pqa_router, tags=["PQA Enterprise"])
+# Slack integration (slash command, interactions, events, OAuth)
+app.include_router(slack_router, tags=["Slack Integration"])
 # Mount public API at /v1 (clean URLs for api.nextslide.ai) and /api/v1 (backward compatibility)
 app.include_router(public_api_v1_router, prefix="/v1", tags=["Public API v1"])
 app.include_router(public_api_v1_router, prefix="/api/v1", tags=["Public API v1"])
