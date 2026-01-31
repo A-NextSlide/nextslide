@@ -50,6 +50,19 @@ def _get_env(name: str) -> str:
     return val
 
 
+_SLIDE_COUNT_RE = re.compile(r"(\d+)\s*slides?", re.IGNORECASE)
+
+
+def _parse_slide_count(text: str, default: int = 15) -> int:
+    """Extract slide count from user text like '2 slides' or 'in 5 slides'."""
+    match = _SLIDE_COUNT_RE.search(text)
+    if match:
+        n = int(match.group(1))
+        if 1 <= n <= 50:
+            return n
+    return default
+
+
 # ============================================================================
 # 1. Slash command: /nextslide
 # ============================================================================
@@ -207,13 +220,15 @@ async def _handle_slash_command(
         # 6. Skip to generation
         await sessions.update_session(session_id, state="generating")
 
-        # Determine slide count from agent result or default
+        # Determine slide count: agent result > parsed from text > default
         num_slides = 15
         if agent_result and agent_result.get("slide_count"):
             try:
                 num_slides = int(agent_result["slide_count"])
             except (ValueError, TypeError):
                 pass
+        else:
+            num_slides = _parse_slide_count(text)
 
         create_background_task(
             bridge.generate_deck(
@@ -350,16 +365,18 @@ async def _handle_generate_from_form(
         # Get topic from first answer or session context
         topic = answers.get("topic", "") or session.get("clarification_data", {}).get("topic", "Presentation")
 
-        # Notify: replacing form with progress
-        response_url = payload.get("response_url")
-        if response_url:
-            await slack.respond_to_url(
-                response_url,
-                text="Starting deck generation...",
-                blocks=SlackBlockKit.generation_progress(0, 15, topic[:50]),
-                replace_original=True,
-                response_type="in_channel",
-            )
+        # Parse slide count from answers or topic
+        num_slides = 15
+        if answers.get("slide_count"):
+            try:
+                num_slides = int(answers["slide_count"])
+            except (ValueError, TypeError):
+                pass
+        else:
+            num_slides = _parse_slide_count(topic)
+
+        # Use the interaction's response_url to replace the form
+        response_url = payload.get("response_url") or session.get("slack_response_url")
 
         bridge = SlackGenerationBridge()
         await bridge.generate_deck(
@@ -367,11 +384,12 @@ async def _handle_generate_from_form(
             bot_token=bot_token,
             channel_id=channel_id,
             thread_ts=session.get("slack_thread_ts"),
-            response_url=session.get("slack_response_url"),
+            response_url=response_url,
             user_id=nextslide_user_id,
             topic=topic,
             context=context,
             additional_instructions=additional,
+            num_slides=num_slides,
         )
 
     except Exception as e:
