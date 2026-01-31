@@ -128,14 +128,31 @@ class SlackGenerationBridge:
             # Update session state
             await self.sessions.update_session(session_id, state="generating")
 
-            # Post initial progress message
-            progress_ts = await self._send_message(
-                bot_token, channel_id, response_url,
-                text="Generating your deck...",
-                blocks=SlackBlockKit.generation_progress(0, num_slides, topic[:50]),
-                thread_ts=thread_ts,
-                replace_original=True,
-            )
+            # Replace the previous message (ack/form) with initial progress
+            if response_url:
+                try:
+                    await self.slack.respond_to_url(
+                        response_url,
+                        text=f"Generating: {topic[:50]}...",
+                        blocks=SlackBlockKit.generation_progress(0, num_slides, topic[:50]),
+                        replace_original=True,
+                        response_type="in_channel",
+                    )
+                except Exception:
+                    pass
+
+            # Post a trackable progress message via chat.postMessage
+            progress_ts: Optional[str] = None
+            try:
+                resp = await self.slack.post_message(
+                    bot_token, channel_id,
+                    text=f"Generating: {topic[:50]}...",
+                    blocks=SlackBlockKit.generation_progress(0, num_slides, topic[:50]),
+                    thread_ts=thread_ts,
+                )
+                progress_ts = resp.get("ts")
+            except Exception as e:
+                logger.debug(f"Could not post trackable progress message: {e}")
 
             # Create deck record + share links
             deck_uuid = str(uuid.uuid4())
@@ -259,7 +276,6 @@ class SlackGenerationBridge:
             from agents.config import MAX_PARALLEL_SLIDES, DELAY_BETWEEN_SLIDES
 
             slides_generated = 0
-            last_update_count = 0
 
             async for update in compose_deck_stream(
                 deck_outline, registry, deck_uuid,
@@ -271,9 +287,7 @@ class SlackGenerationBridge:
                 utype = update.get("type", "")
                 if utype == "slide_generated":
                     slides_generated += 1
-                    # Update progress every ~3 slides (only via postMessage if we have ts)
-                    if progress_ts and slides_generated - last_update_count >= 3:
-                        last_update_count = slides_generated
+                    if progress_ts:
                         try:
                             await self.slack.update_message(
                                 bot_token, channel_id, progress_ts,
@@ -307,22 +321,41 @@ class SlackGenerationBridge:
                 thumbnail_url = deck_row.data[0].get("thumbnail_url")
                 final_count = len(deck_row.data[0].get("slides") or []) or total_slides
 
-            # Post completion message
-            completion_blocks = SlackBlockKit.deck_complete(
-                title=title,
-                slide_count=final_count,
-                view_url=view_url,
-                edit_url=edit_url,
-                thumbnail_url=thumbnail_url,
-            )
+            # Delete the progress message and post completion
+            if progress_ts:
+                try:
+                    await self.slack.update_message(
+                        bot_token, channel_id, progress_ts,
+                        text=f"Deck ready: {title}",
+                        blocks=SlackBlockKit.deck_complete(
+                            title=title,
+                            slide_count=final_count,
+                            view_url=view_url,
+                            edit_url=edit_url,
+                            thumbnail_url=thumbnail_url,
+                        ),
+                    )
+                except Exception:
+                    pass
 
-            await self._send_message(
-                bot_token, channel_id, response_url,
-                text=f"Deck ready: {title}",
-                blocks=completion_blocks,
-                thread_ts=thread_ts,
-                replace_original=True,
-            )
+            # Also post via response_url for cases where postMessage didn't work
+            if response_url:
+                try:
+                    await self.slack.respond_to_url(
+                        response_url,
+                        text=f"Deck ready: {title}",
+                        blocks=SlackBlockKit.deck_complete(
+                            title=title,
+                            slide_count=final_count,
+                            view_url=view_url,
+                            edit_url=edit_url,
+                            thumbnail_url=thumbnail_url,
+                        ),
+                        replace_original=True,
+                        response_type="in_channel",
+                    )
+                except Exception:
+                    pass
 
             await self.sessions.update_session(session_id, state="completed")
             logger.info(f"Slack deck generation completed: {deck_uuid} ({final_count} slides)")
