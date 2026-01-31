@@ -73,12 +73,15 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
             </div>
           )}
 
-          {/* Desktop hover layer: live MiniSlide mounts once on first hover, stays rendered */}
+          {/* Desktop hover layer: live MiniSlide mounts once on first hover, stays rendered.
+              overlayMode keeps background transparent + hides shimmer so the PNG shows
+              through until slide content fades in seamlessly. */}
           {showLive && deck.firstSlide && (
             <div ref={onThumbnailRef} className="absolute inset-0 w-full h-full z-[1]">
               <MiniSlide
                 slide={deck.firstSlide}
                 className="w-full h-full"
+                overlayMode
               />
             </div>
           )}

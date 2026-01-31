@@ -9,6 +9,7 @@ import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { StaticNavigationProvider } from '@/context/NavigationContext';
 import { ThumbnailRenderProvider } from '@/context/ThumbnailRenderContext';
 import { BROWSER } from '@/utils/browser';
+import { useSlideFonts } from '@/hooks/useSlideFonts';
 import { Lock } from 'lucide-react';
 
 interface MiniSlideProps {
@@ -40,6 +41,12 @@ interface MiniSlideProps {
    * Renders blur effect and lock badge overlay.
    */
   isLocked?: boolean;
+  /**
+   * Overlay mode: transparent background + no shimmer.
+   * Used when MiniSlide is layered on top of a PNG thumbnail
+   * so the image shows through until slide content fades in.
+   */
+  overlayMode?: boolean;
 }
 
 /**
@@ -113,7 +120,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
   renderMode = 'full',
   interactive = false,
   forceRender = false,
-  isLocked = false
+  isLocked = false,
+  overlayMode = false
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerDims, setContainerDims] = useState<{ width: number; height: number } | null>(null);
@@ -167,17 +175,6 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     };
   }, [shouldRender, forceRender]);
 
-  // Trigger fade-in animation after content mounts
-  useEffect(() => {
-    if (shouldRender && !isContentMounted) {
-      // Small delay to ensure DOM has painted before triggering transition
-      const timer = requestAnimationFrame(() => {
-        setIsContentMounted(true);
-      });
-      return () => cancelAnimationFrame(timer);
-    }
-  }, [shouldRender, isContentMounted]);
-
   // Normalize slide data
   const normalizedResult = useMemo(() => {
     return normalizeSlideForRender(slide, slideSize, { preferFallbackSize: true });
@@ -188,6 +185,20 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
     if (typeof slide === 'string') return null;
     return slide;
   }, [normalizedResult, slide]);
+
+  // Ensure slide fonts are loaded before revealing content
+  const { fontsReady } = useSlideFonts(normalizedSlide);
+
+  // Trigger fade-in animation after content mounts and fonts are ready
+  useEffect(() => {
+    if (shouldRender && fontsReady && !isContentMounted) {
+      // Small delay to ensure DOM has painted before triggering transition
+      const timer = requestAnimationFrame(() => {
+        setIsContentMounted(true);
+      });
+      return () => cancelAnimationFrame(timer);
+    }
+  }, [shouldRender, fontsReady, isContentMounted]);
 
   const resolvedSlideSize = useMemo(() => {
     if (normalizedResult?.slideSize) return normalizedResult.slideSize;
@@ -349,13 +360,13 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       className={containerClasses}
       onClick={onClick}
       style={{
-        ...backgroundStyle,
+        ...(overlayMode ? {} : backgroundStyle),
         position: 'relative',
       }}
       data-mini-slide-debug={`scale:${scale.toFixed(3)},render:${shouldRender}`}
     >
-      {/* Loading shimmer — visible until slide content fades in */}
-      {!isContentMounted && (
+      {/* Loading shimmer — visible until slide content fades in (hidden in overlay mode) */}
+      {!isContentMounted && !overlayMode && (
         <div
           className="absolute inset-0 z-10 pointer-events-none"
           style={{
