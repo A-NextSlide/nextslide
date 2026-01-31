@@ -1,14 +1,15 @@
 """
 Bridge between Slack and the existing deck generation pipeline.
 
-Reuses generate_deck_background() from api_public_v1.py directly.
-Handles credit checks, progress updates, and completion messaging.
+Reuses the same outline + composition pipeline as api_public_v1.py.
+Handles progress updates and completion messaging via response_url
+(which always works) with chat.postMessage as optional fallback.
 """
 
 import asyncio
 import logging
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from services.slack.slack_service import SlackService, get_slack_service
 from services.slack.slack_block_kit import SlackBlockKit
@@ -29,12 +30,52 @@ class SlackGenerationBridge:
         self.slack = slack_service or get_slack_service()
         self.sessions = session_manager or get_session_manager()
 
+    async def _send_message(
+        self,
+        bot_token: str,
+        channel_id: str,
+        response_url: Optional[str],
+        *,
+        text: str = "",
+        blocks: Optional[List[Dict]] = None,
+        thread_ts: Optional[str] = None,
+        replace_original: bool = False,
+    ) -> Optional[str]:
+        """
+        Send a message via response_url first (always works),
+        fall back to chat.postMessage. Returns the message ts if available.
+        """
+        if response_url:
+            try:
+                await self.slack.respond_to_url(
+                    response_url,
+                    text=text,
+                    blocks=blocks,
+                    replace_original=replace_original,
+                    response_type="in_channel",
+                )
+                return None  # response_url doesn't return a ts
+            except Exception as e:
+                logger.debug(f"respond_to_url failed, trying postMessage: {e}")
+
+        # Fallback to chat.postMessage
+        try:
+            resp = await self.slack.post_message(
+                bot_token, channel_id,
+                text=text, blocks=blocks, thread_ts=thread_ts,
+            )
+            return resp.get("ts")
+        except Exception as e:
+            logger.warning(f"chat.postMessage also failed: {e}")
+            return None
+
     async def generate_deck(
         self,
         session_id: str,
         bot_token: str,
         channel_id: str,
         thread_ts: Optional[str],
+        response_url: Optional[str],
         user_id: str,
         topic: str,
         context: SlackContext,
@@ -52,14 +93,13 @@ class SlackGenerationBridge:
             await self.sessions.update_session(session_id, state="generating")
 
             # Post initial progress message
-            resp = await self.slack.post_message(
-                bot_token,
-                channel_id,
+            progress_ts = await self._send_message(
+                bot_token, channel_id, response_url,
                 text="Generating your deck...",
                 blocks=SlackBlockKit.generation_progress(0, num_slides, topic[:50]),
                 thread_ts=thread_ts,
+                replace_original=True,
             )
-            progress_ts = resp.get("ts")
 
             # Create deck record + share links
             deck_uuid = str(uuid.uuid4())
@@ -195,14 +235,12 @@ class SlackGenerationBridge:
                 utype = update.get("type", "")
                 if utype == "slide_generated":
                     slides_generated += 1
-                    # Update progress every ~3 slides
+                    # Update progress every ~3 slides (only via postMessage if we have ts)
                     if progress_ts and slides_generated - last_update_count >= 3:
                         last_update_count = slides_generated
                         try:
                             await self.slack.update_message(
-                                bot_token,
-                                channel_id,
-                                progress_ts,
+                                bot_token, channel_id, progress_ts,
                                 text=f"Generating... {slides_generated}/{total_slides} slides",
                                 blocks=SlackBlockKit.generation_progress(
                                     slides_generated, total_slides, title
@@ -233,7 +271,7 @@ class SlackGenerationBridge:
                 thumbnail_url = deck_row.data[0].get("thumbnail_url")
                 final_count = len(deck_row.data[0].get("slides") or []) or total_slides
 
-            # Post completion message (replace progress)
+            # Post completion message
             completion_blocks = SlackBlockKit.deck_complete(
                 title=title,
                 slide_count=final_count,
@@ -242,19 +280,13 @@ class SlackGenerationBridge:
                 thumbnail_url=thumbnail_url,
             )
 
-            if progress_ts:
-                await self.slack.update_message(
-                    bot_token, channel_id, progress_ts,
-                    text=f"Deck ready: {title}",
-                    blocks=completion_blocks,
-                )
-            else:
-                await self.slack.post_message(
-                    bot_token, channel_id,
-                    text=f"Deck ready: {title}",
-                    blocks=completion_blocks,
-                    thread_ts=thread_ts,
-                )
+            await self._send_message(
+                bot_token, channel_id, response_url,
+                text=f"Deck ready: {title}",
+                blocks=completion_blocks,
+                thread_ts=thread_ts,
+                replace_original=True,
+            )
 
             await self.sessions.update_session(session_id, state="completed")
             logger.info(f"Slack deck generation completed: {deck_uuid} ({final_count} slides)")
@@ -269,19 +301,13 @@ class SlackGenerationBridge:
                 f"Deck generation failed: {str(e)[:200]}"
             )
             try:
-                if progress_ts:
-                    await self.slack.update_message(
-                        bot_token, channel_id, progress_ts,
-                        text="Generation failed",
-                        blocks=error_blocks,
-                    )
-                else:
-                    await self.slack.post_message(
-                        bot_token, channel_id,
-                        text="Generation failed",
-                        blocks=error_blocks,
-                        thread_ts=thread_ts,
-                    )
+                await self._send_message(
+                    bot_token, channel_id, response_url,
+                    text="Generation failed",
+                    blocks=error_blocks,
+                    thread_ts=thread_ts,
+                    replace_original=True,
+                )
             except Exception:
                 pass
 
