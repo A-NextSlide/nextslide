@@ -60,6 +60,26 @@ _CDN_LOOKUP = {f.lower(): f for f in CDN_FONTS}
 # Regex to extract font-family values from inline CSS
 _FONT_FAMILY_RE = re.compile(r'font-family\s*:\s*([^;"}]+)[;"}]', re.IGNORECASE)
 
+# Regex to find url() values with embedded newlines (invalid CSS that breaks parsers)
+_CSS_URL_RE = re.compile(r'url\s*\(([^)]*)\)', re.DOTALL)
+
+
+def _sanitize_css_urls(html: str) -> str:
+    """Remove newlines/carriage-returns inside CSS url() values.
+
+    Some stored HTML contains url('data:image/svg+xml;\\nutf8,...') with
+    literal newlines which is invalid CSS.  The browser's CSS parser silently
+    drops the entire rule *and all subsequent rules in the same <style> block*,
+    causing massive layout breakage.  This function collapses those newlines
+    so the CSS parses correctly.
+    """
+    def _fix(m: re.Match) -> str:
+        inner = m.group(1)
+        if "\n" in inner or "\r" in inner:
+            inner = inner.replace("\r\n", "").replace("\n", "").replace("\r", "")
+        return f"url({inner})"
+    return _CSS_URL_RE.sub(_fix, html)
+
 
 def _normalize_family(raw: str) -> str:
     """Take the first font-family token and strip quotes/whitespace."""
@@ -174,6 +194,10 @@ def build_slide_html(
     custom_html = _extract_custom_component_html(slide_data)
 
     if custom_html:
+        # Sanitize invalid CSS (e.g. newlines inside url() values) that would
+        # break the browser's CSS parser and drop subsequent rules.
+        custom_html = _sanitize_css_urls(custom_html)
+
         # The render prop is already a full HTML document.
         # Scan the HTML for font-family references and inject loading tags.
         font_tags = _build_font_injection(custom_html, theme_data)

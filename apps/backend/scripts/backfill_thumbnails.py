@@ -80,18 +80,29 @@ async def backfill(limit: int, dry_run: bool, concurrency: int, force: bool = Fa
 
     supabase = get_supabase_client()
 
-    # Fetch decks — either only missing thumbnails, or all (--force)
-    query = (
-        supabase.table("decks")
-        .select("uuid, slides, size, data")
-        .order("created_at", desc=True)
-        .limit(limit)
-    )
-    if not force:
-        query = query.is_("thumbnail_url", "null")
-    result = query.execute()
+    # Fetch decks — paginate through all rows to bypass Supabase 1000-row cap
+    all_decks = []
+    page_size = 1000
+    offset = 0
+    while offset < limit:
+        fetch = min(page_size, limit - offset)
+        query = (
+            supabase.table("decks")
+            .select("uuid, slides, size, data")
+            .order("created_at", desc=True)
+            .limit(fetch)
+            .offset(offset)
+        )
+        if not force:
+            query = query.is_("thumbnail_url", "null")
+        result = query.execute()
+        batch = result.data or []
+        all_decks.extend(batch)
+        if len(batch) < fetch:
+            break  # no more rows
+        offset += fetch
 
-    decks = result.data or []
+    decks = all_decks
     mode = "ALL (force re-render)" if force else "missing thumbnails only"
     renderer = "LOCAL Playwright" if local else "Modal (with local fallback)"
     logger.info("Found %d decks [%s] (limit=%d, concurrency=%d, renderer=%s)", len(decks), mode, limit, concurrency, renderer)

@@ -281,7 +281,7 @@ async def _gather_user_stats(user_id: str) -> Dict[str, Any]:
 
     try:
         # Team invites sent
-        invite_result = client.table("invitations").select("id", count="exact").eq("invited_by_user_id", user_id).eq("status", "accepted").execute()
+        invite_result = client.table("invitations").select("id", count="exact").eq("invited_by_user_id", user_id).not_.is_("accepted_at", "null").execute()
         stats["team_invites"] = invite_result.count if invite_result.count else 0
     except Exception as e:
         logger.warning(f"Failed to get team invites for {user_id}: {e}")
