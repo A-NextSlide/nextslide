@@ -312,20 +312,70 @@ const AdminCosts: React.FC = () => {
   const blendedOverageDecks = useMemo(() => calcBlendedDecksPerOverageUser(plans, tokensPerDeck, proPlusPct), [plans, tokensPerDeck, proPlusPct]);
   const effectiveConvPct = useMemo(() => calcEffectivePaidConversionPct(inputs.paidConversionPct, inputs.freeToPayConvPct), [inputs.paidConversionPct, inputs.freeToPayConvPct]);
 
-  // Funnel-derived monthly signups (last stage = converted to paid, but total signups = stage 1)
+  // Visitor baseline (scenario-driven) — must be before funnelData
+  const [visitorBaseline, setVisitorBaseline] = useState(50000);
+  useEffect(() => {
+    if (scenarioJustApplied && activeScenario !== 'custom') {
+      setVisitorBaseline(SCENARIOS[activeScenario].visitorBaseline);
+    }
+  }, [scenarioJustApplied, activeScenario]);
+
+  // Funnel data (must come before manualScenario which depends on it)
+  const funnelData = useMemo(() => {
+    const visitors = visitorBaseline;
+    let cur = visitors;
+    return funnel.map((s, i) => {
+      if (i === 0) return { ...s, count: visitors, pct: 100 };
+      cur = Math.round(cur * (s.rate / 100));
+      return { ...s, count: cur, pct: (cur / visitors) * 100 };
+    });
+  }, [funnel, visitorBaseline]);
+
+  // Funnel-derived monthly signups (stage 1 = total signups)
   const funnelSignupsPerMonth = funnelData.length >= 2 ? funnelData[1].count : 0;
 
-  // User scenario — compound growth + funnel-sourced signups each month
+  // Channel metrics — computed early so blendedCAC feeds into economics/projections
+  const channelMetrics = useMemo(() => {
+    const newSig = Math.round(totalUsers * (inputs.monthlyGrowthPct / 100));
+    return channels.map(ch => {
+      const signups = ch.signupsManual ?? Math.round(newSig * (ch.pctOfSignups / 100));
+      const paidUsers = ch.paidUsersManual ?? Math.round(signups * (ch.convToPaid / 100));
+      return { ...ch, signups, paidUsers, monthlyCost: signups * ch.cac };
+    });
+  }, [channels, totalUsers, inputs.monthlyGrowthPct]);
+
+  const blendedCAC = useMemo(() => {
+    const tc = channelMetrics.reduce((s, c) => s + c.monthlyCost, 0);
+    const tp = channelMetrics.reduce((s, c) => s + c.paidUsers, 0);
+    return tp > 0 ? tc / tp : 0;
+  }, [channelMetrics]);
+
+  const weightedConv = useMemo(() => channels.reduce((s, c) => s + (c.pctOfSignups / 100) * c.convToPaid, 0), [channels]);
+
+  const totalChannelSpend = useMemo(() => channelMetrics.reduce((s, c) => s + c.monthlyCost, 0), [channelMetrics]);
+
+  // Viral coefficient — feeds into growth model
+  const viralCoeff = useMemo(() => {
+    const base = viral.sharesPerUserMonth * viral.viewsPerShare * (viral.clickThroughRate / 100) * (viral.signupRate / 100);
+    return base + viral.referralBoost / 100;
+  }, [viral]);
+
+  // User scenario — compound growth + funnel signups + viral-driven growth each month
   const manualScenario = useMemo(() => {
     const ng = (inputs.monthlyGrowthPct - inputs.churnPct) / 100;
     return MONTH_LABELS.map((month, i) => {
       if (i === 0) return { month, users: totalUsers, isManual: false };
-      // Compound growth on existing base + funnel signups accumulate
       const compoundUsers = Math.round(totalUsers * Math.pow(1 + ng, i));
       const funnelAccumulated = funnelSignupsPerMonth * i;
-      return { month, users: compoundUsers + funnelAccumulated, isManual: false };
+      // Viral: each existing user brings viralCoeff new users per month, accumulated
+      const viralAccumulated = Math.round(
+        ng !== 0
+          ? totalUsers * viralCoeff * ((Math.pow(1 + ng, i) - 1) / ng)
+          : totalUsers * viralCoeff * i
+      );
+      return { month, users: compoundUsers + funnelAccumulated + viralAccumulated, isManual: false };
     });
-  }, [totalUsers, inputs.monthlyGrowthPct, inputs.churnPct, funnelSignupsPerMonth]);
+  }, [totalUsers, inputs.monthlyGrowthPct, inputs.churnPct, funnelSignupsPerMonth, viralCoeff]);
 
   useEffect(() => {
     if (manualScenario.length === 0) return;
@@ -344,25 +394,6 @@ const AdminCosts: React.FC = () => {
       });
     });
   }, [manualScenario, effectiveConvPct, plans, enterprise.dealsPerYear]);
-
-  // Visitor baseline (scenario-driven)
-  const [visitorBaseline, setVisitorBaseline] = useState(50000);
-  useEffect(() => {
-    if (scenarioJustApplied && activeScenario !== 'custom') {
-      setVisitorBaseline(SCENARIOS[activeScenario].visitorBaseline);
-    }
-  }, [scenarioJustApplied, activeScenario]);
-
-  // Funnel (moved before economics for dependency)
-  const funnelData = useMemo(() => {
-    const visitors = visitorBaseline;
-    let cur = visitors;
-    return funnel.map((s, i) => {
-      if (i === 0) return { ...s, count: visitors, pct: 100 };
-      cur = Math.round(cur * (s.rate / 100));
-      return { ...s, count: cur, pct: (cur / visitors) * 100 };
-    });
-  }, [funnel, visitorBaseline]);
 
   // Gemini Flash (moved before economics for dependency)
   const geminiMetrics = useMemo(() => {
@@ -396,8 +427,7 @@ const AdminCosts: React.FC = () => {
     const teamPlan = plans.find(p => p.name.toLowerCase().includes('team')) || plans[2];
     const upgradeU = Math.round(cb.starter * (starterUpgradePct / 100));
     const upgradeRev = proPlan && starterPlan ? upgradeU * (proPlan.price - starterPlan.price) : 0;
-    const paidAcq = Math.round(newSignups * (paidAcquisitionPct / 100));
-    const acqCost = paidAcq * cac;
+    const acqCost = totalChannelSpend; // driven by channel CAC × signups
     const activeStarter = Math.ceil(cb.starter * 0.7);
     const starterCost = activeStarter * paidDecks * costPerDeck;
     const overageU = overageEnabled ? Math.ceil(activeProPlus * (overagePctOfProUsers / 100)) : 0;
@@ -422,9 +452,10 @@ const AdminCosts: React.FC = () => {
     const profitPerPaid = revPerPaid - costPerPaid;
     const avgLife = churnPct > 0 ? 100 / churnPct : 24;
     const ltv = revPerPaid * avgLife;
-    const ltvCac = cac > 0 ? ltv / cac : 0;
+    const effCAC = blendedCAC > 0 ? blendedCAC : cac;
+    const ltvCac = effCAC > 0 ? ltv / effCAC : 0;
     const breakEven = profitPerPaid > 0 ? Math.ceil(totalCost / profitPerPaid) : 0;
-    const payback = cac > 0 && profitPerPaid > 0 ? cac / profitPerPaid : 99;
+    const payback = effCAC > 0 && profitPerPaid > 0 ? effCAC / profitPerPaid : 99;
     return {
       costPerDeck, tokensPerDeck, freeDecksOneTime, paidDecksPerUserMonth: paidDecks,
       totalCost, estPaidUsers: totalPaying, freeUsers: cb.free, estMRR,
@@ -437,7 +468,7 @@ const AdminCosts: React.FC = () => {
       overageTokensTotal: overageTok, upgradeRevenue: upgradeRev, starterUpgradeUsers: upgradeU,
       overageCost: overageExtra,
     };
-  }, [inputs, costPerDeck, tokensPerDeck, totalUsers, blendedARPU, blendedActualDecks, blendedOverageDecks, plans, userBreakdown, enterprise, effectiveConvPct, geminiMetrics]);
+  }, [inputs, costPerDeck, tokensPerDeck, totalUsers, blendedARPU, blendedActualDecks, blendedOverageDecks, plans, userBreakdown, enterprise, effectiveConvPct, geminiMetrics, blendedCAC, totalChannelSpend]);
 
   // Projections
   const projectionData = useMemo(() => {
@@ -473,8 +504,9 @@ const AdminCosts: React.FC = () => {
       const frUsed = inputs.freeTokens * (freeTokenConsumptionPct / 100);
       const frDecks = tokensPerDeck > 0 ? frUsed / tokensPerDeck : 0;
       const frCost = newFr * frDecks * costPerDeck;
-      const paidAcq = Math.round(newSig * (inputs.paidAcquisitionPct / 100));
-      const acqCost = paidAcq * inputs.cac;
+      // Channel spend scales with user growth (month-0 spend × growth factor)
+      const growthFactor = i === 0 ? 1 : users / totalUsers;
+      const acqCost = totalChannelSpend * growthFactor;
       const apiCosts = sCost + nCost + ovBase + ovExtra + eCost + frCost + acqCost;
       const infraCosts = expenseRates.render + expenseRates.supabase;
       const serviceCosts = expenseRates.serpapi + expenseRates.other;
@@ -499,33 +531,9 @@ const AdminCosts: React.FC = () => {
       });
     }
     return data;
-  }, [inputs, totalUsers, costPerDeck, tokensPerDeck, blendedActualDecks, blendedOverageDecks, projectionMonths, manualScenario, plans, userBreakdown, enterprise, expenseRates]);
+  }, [inputs, totalUsers, costPerDeck, tokensPerDeck, blendedActualDecks, blendedOverageDecks, projectionMonths, manualScenario, plans, userBreakdown, enterprise, expenseRates, totalChannelSpend]);
 
   const selectedData = projectionData[selectedMonth] || projectionData[projectionData.length - 1];
-
-  // Channel metrics
-  const channelMetrics = useMemo(() => {
-    const newSig = Math.round(totalUsers * (inputs.monthlyGrowthPct / 100));
-    return channels.map(ch => {
-      const signups = ch.signupsManual ?? Math.round(newSig * (ch.pctOfSignups / 100));
-      const paidUsers = ch.paidUsersManual ?? Math.round(signups * (ch.convToPaid / 100));
-      return { ...ch, signups, paidUsers, monthlyCost: signups * ch.cac };
-    });
-  }, [channels, totalUsers, inputs.monthlyGrowthPct]);
-
-  const blendedCAC = useMemo(() => {
-    const tc = channelMetrics.reduce((s, c) => s + c.monthlyCost, 0);
-    const tp = channelMetrics.reduce((s, c) => s + c.paidUsers, 0);
-    return tp > 0 ? tc / tp : 0;
-  }, [channelMetrics]);
-
-  const weightedConv = useMemo(() => channels.reduce((s, c) => s + (c.pctOfSignups / 100) * c.convToPaid, 0), [channels]);
-
-  // Viral
-  const viralCoeff = useMemo(() => {
-    const base = viral.sharesPerUserMonth * viral.viewsPerShare * (viral.clickThroughRate / 100) * (viral.signupRate / 100);
-    return base + viral.referralBoost / 100;
-  }, [viral]);
 
   // Cost breakdown
   const costBreakdown = useMemo(() => {
@@ -858,21 +866,34 @@ const AdminCosts: React.FC = () => {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          {/* KPI strip */}
-          <div className="grid grid-cols-5 gap-2 px-3 pb-2.5 pt-1">
-            {[
-              { label: 'MRR', value: `$${fmtMoney(economics.estMRR)}`, color: economics.estMRR > 0 ? 'text-emerald-600' : 'text-[#888]' },
-              { label: 'Gross Margin', value: `${economics.grossMargin.toFixed(0)}%`, color: economics.grossMargin >= 70 ? 'text-emerald-600' : economics.grossMargin >= 50 ? 'text-amber-500' : 'text-red-500' },
+          {/* KPI strip — uses selected month data */}
+          {(() => {
+            const sd = selectedData;
+            const mRev = sd?.revenue || 0;
+            const mCost = sd?.costs || 0;
+            const mProfit = mRev - mCost;
+            const mMargin = mRev > 0 ? ((mRev - mCost) / mRev) * 100 : 0;
+            const mPaid = sd?.paidUsers || 0;
+            const mARR = mRev * 12;
+            const stripKpis = [
+              { label: `M${selectedMonth} MRR`, value: `$${fmtMoney(mRev)}`, color: mRev > 0 ? 'text-emerald-600' : 'text-[#888]' },
+              { label: 'ARR', value: `$${fmtMoney(mARR)}`, color: mARR > 0 ? 'text-emerald-600' : 'text-[#888]' },
+              { label: 'Gross Margin', value: `${mMargin.toFixed(0)}%`, color: mMargin >= 70 ? 'text-emerald-600' : mMargin >= 50 ? 'text-amber-500' : 'text-red-500' },
               { label: 'LTV:CAC', value: `${economics.ltvCac.toFixed(1)}x`, color: economics.ltvCac >= 3 ? 'text-emerald-600' : economics.ltvCac >= 1 ? 'text-amber-500' : 'text-red-500' },
-              { label: 'Burn Rate', value: economics.netMonthly >= 0 ? '$0' : `$${fmtMoney(Math.abs(economics.netMonthly))}`, color: economics.netMonthly >= 0 ? 'text-emerald-600' : 'text-red-500' },
-              { label: 'Breakeven', value: economics.breakEvenPaidUsers > 0 ? `${economics.breakEvenPaidUsers} users` : 'N/A', color: economics.estPaidUsers >= economics.breakEvenPaidUsers ? 'text-emerald-600' : 'text-amber-500' },
-            ].map((kpi, i) => (
-              <div key={i} className="flex items-center justify-between px-2 py-1 bg-[#fafafa] dark:bg-[#0a0a0a] rounded-md">
-                <span className="text-[8px] text-[#888]">{kpi.label}</span>
-                <span className={cn("text-[10px] font-semibold tabular-nums", kpi.color)}>{kpi.value}</span>
+              { label: 'Burn Rate', value: mProfit >= 0 ? '$0' : `$${fmtMoney(Math.abs(mProfit))}`, color: mProfit >= 0 ? 'text-emerald-600' : 'text-red-500' },
+              { label: 'Breakeven', value: economics.breakEvenPaidUsers > 0 ? `${economics.breakEvenPaidUsers} users` : 'N/A', color: mPaid >= economics.breakEvenPaidUsers ? 'text-emerald-600' : 'text-amber-500' },
+            ];
+            return (
+              <div className="grid grid-cols-6 gap-2 px-3 pb-2.5 pt-1">
+                {stripKpis.map((kpi, i) => (
+                  <div key={i} className="flex items-center justify-between px-2 py-1 bg-[#fafafa] dark:bg-[#0a0a0a] rounded-md">
+                    <span className="text-[8px] text-[#888]">{kpi.label}</span>
+                    <span className={cn("text-[10px] font-semibold tabular-nums", kpi.color)}>{kpi.value}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            );
+          })()}
         </div>
 
         {/* ═══ OVERVIEW ═══ */}
@@ -1190,7 +1211,10 @@ const AdminCosts: React.FC = () => {
                   <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: ch.color }} />
                   <span className="font-medium flex items-center gap-1">{ch.icon}{ch.name}</span>
                   <Input type="number" value={ch.pctOfSignups} onChange={e => uc(i, 'pctOfSignups', Number(e.target.value))} className="h-5 text-[9px] text-right px-1" />
-                  <div className="flex items-center justify-end"><span className="text-[8px] text-[#888]">$</span><Input type="number" value={ch.cac} onChange={e => uc(i, 'cac', Number(e.target.value))} className="h-5 w-14 text-[9px] text-right px-0.5" step={0.5} /></div>
+                  <div className="relative">
+                    <span className="absolute left-1 top-1/2 -translate-y-1/2 text-[8px] text-[#888] pointer-events-none">$</span>
+                    <Input type="number" value={ch.cac} onChange={e => uc(i, 'cac', Number(e.target.value))} className="h-5 text-[9px] text-right pr-1 pl-3" step={0.5} />
+                  </div>
                   <Input type="number" value={ch.convToPaid} onChange={e => uc(i, 'convToPaid', Number(e.target.value))} className="h-5 text-[9px] text-right px-1" />
                   <Input type="number" value={ch.signups} onChange={e => uc(i, 'signupsManual', Number(e.target.value))} className={cn("h-5 text-[9px] text-right px-1", channels[i]?.signupsManual !== undefined && "border-blue-500 bg-blue-500/5")} />
                   <Input type="number" value={ch.paidUsers} onChange={e => uc(i, 'paidUsersManual', Number(e.target.value))} className={cn("h-5 text-[9px] text-right px-1 font-medium text-emerald-600", channels[i]?.paidUsersManual !== undefined && "border-blue-500 bg-blue-500/5")} />
