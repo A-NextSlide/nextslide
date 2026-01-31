@@ -175,9 +175,16 @@ class SlackGenerationBridge:
 
             # Build combined instructions from context
             from services.slack.slack_context_gatherer import SlackContextGatherer
-            combined_instructions = SlackContextGatherer.format_for_agent(context, topic)
+            raw_context = SlackContextGatherer.format_for_agent(context, topic)
+            combined_instructions = (
+                f"Create a presentation about the following topic. "
+                f"Follow the user's request exactly.\n\n"
+                f"USER REQUEST: {raw_context}"
+            )
             if additional_instructions:
-                combined_instructions += f"\n\n{additional_instructions}"
+                combined_instructions += f"\n\nADDITIONAL CONTEXT:\n{additional_instructions}"
+
+            logger.info(f"[slack_gen] Prompt for outline ({len(combined_instructions)} chars): {combined_instructions[:300]}")
 
             # Build context files for reference images
             context_files = []
