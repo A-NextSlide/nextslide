@@ -272,14 +272,30 @@ async def capture_slide_screenshot(
             # 4. Long settle for swap reflows + any late paints.
             try:
                 await page.evaluate("""async () => {
+                    // Force-load every registered font face
                     const loads = [];
                     document.fonts.forEach(f => loads.push(f.load().catch(() => null)));
                     await Promise.all(loads);
                     await document.fonts.ready;
+
+                    // Force all CSS animations to their final frame.
+                    // Elements often start at opacity:0 with animation forwards;
+                    // setting a huge negative delay makes them jump to the end.
+                    const style = document.createElement('style');
+                    style.textContent = `
+                        *, *::before, *::after {
+                            animation-delay: -10s !important;
+                            transition-delay: 0s !important;
+                            transition-duration: 0s !important;
+                        }
+                    `;
+                    document.head.appendChild(style);
+                    // Force reflow so the browser applies the overridden animations
+                    document.body.offsetHeight;
                 }""")
             except Exception:
                 pass
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(500)
             png_bytes = await page.screenshot(type="png")
             return png_bytes
         finally:

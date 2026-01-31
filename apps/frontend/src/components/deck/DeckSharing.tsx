@@ -77,6 +77,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useReward } from '@/context/RewardContext';
 import { communityService, COMMUNITY_CATEGORIES, SubmissionStatus } from '@/services/communityService';
 import { Textarea } from '../ui/textarea';
+import SocialSharePanel from '../sharing/SocialSharePanel';
 
 interface DeckSharingProps {
   deckUuid: string;
@@ -1075,6 +1076,28 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                   ))}
                 </div>
               )}
+
+              {/* Social share section - always visible */}
+              <div className="pt-3 mt-1 border-t border-zinc-100 space-y-2">
+                <p className="text-xs font-medium text-zinc-600">Share on social</p>
+                <SocialSharePanel
+                  title={deckName}
+                  shareUrl={
+                    shareLinks.length > 0
+                      ? mockShareService.getShareUrl(
+                          (shareLinks.find(l => l.share_type === 'view') || shareLinks[0]).short_code,
+                          'view'
+                        )
+                      : `https://nextslide.ai`
+                  }
+                  onShareComplete={(platform) => {
+                    toast({
+                      title: 'Shared!',
+                      description: `Posted to ${platform}`,
+                    });
+                  }}
+                />
+              </div>
             </TabsContent>
 
             <TabsContent value="collaborators" className="space-y-3 mt-4 h-full">
