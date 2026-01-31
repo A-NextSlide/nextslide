@@ -83,6 +83,7 @@ class DeckSharingService:
                 'share_type': share_type,
                 'created_by': user_id,
                 'shared_by': user_id,
+                'shared_with': user_id,
                 'is_active': True,
                 'access_count': 0
             }
