@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useCallback, useState, lazy, Suspense } from 
 import { createPortal } from 'react-dom';
 import { BROWSER } from '@/utils/browser';
 import { runWhenIdle } from '@/utils/scheduler';
-import { ChevronLeft, ChevronRight, Presentation } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Maximize2, Presentation } from 'lucide-react';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { Button } from '@/components/ui/button';
 import { SlideData } from '@/types/SlideTypes';
@@ -866,6 +866,17 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     }
   }, []);
 
+  // Mobile: tap on slide to enter fullscreen presentation mode
+  const handleMobileSlideTap = React.useCallback((e: React.MouseEvent) => {
+    if (!isMobileView || isEditing) return;
+    // Don't trigger on interactive elements or control bar buttons
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, textarea, [contenteditable], select, a')) return;
+    // Only trigger if tapping within the slide display area
+    if (!target.closest('[data-slide-viewport="true"]')) return;
+    enterPresentation();
+  }, [isMobileView, isEditing, enterPresentation]);
+
   return (
     <div
       ref={viewportRef}
@@ -891,9 +902,9 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
         }}
       >
         {/* Canvas wrapper - centers content and provides scroll area when zoomed */}
-        {/* On mobile, position slide slightly above center to reduce top blank space */}
+        {/* On mobile, position slide near top with minimal padding */}
         <div
-          className={`relative flex justify-center ${isMobileView ? 'items-start pt-[18%]' : 'items-center'}`}
+          className={`relative flex justify-center ${isMobileView ? 'items-start pt-3' : 'items-center'}`}
           style={{
             minWidth: '100%',
             minHeight: '100%',
@@ -949,21 +960,38 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
               </div>
             )}
 
-            <SlideContainer
-              slides={slides}
-              currentSlideIndex={currentSlideIndex}
-              direction={direction}
-              isEditing={isEditing}
-              selectedComponentId={selectedComponent?.id}
-              onComponentSelect={handleComponentSelect}
-              onComponentDeselect={handleComponentDeselect}
-              updateSlide={updateSlide}
-              zoomLevel={zoomLevel}
-              slideWidth={slideWidth}
-              slideHeight={slideHeight}
-              deckStatus={deckStatus}
-              isNewDeck={isNewDeck}
-            />
+            {/* On mobile: tappable slide area that enters fullscreen presentation */}
+            <div
+              className="relative"
+              onClick={isMobileView && !isEditing ? handleMobileSlideTap : undefined}
+              style={isMobileView && !isEditing ? { cursor: 'pointer' } : undefined}
+            >
+              <SlideContainer
+                slides={slides}
+                currentSlideIndex={currentSlideIndex}
+                direction={direction}
+                isEditing={isEditing}
+                selectedComponentId={selectedComponent?.id}
+                onComponentSelect={handleComponentSelect}
+                onComponentDeselect={handleComponentDeselect}
+                updateSlide={updateSlide}
+                zoomLevel={zoomLevel}
+                slideWidth={slideWidth}
+                slideHeight={slideHeight}
+                deckStatus={deckStatus}
+                isNewDeck={isNewDeck}
+              />
+
+              {/* Mobile fullscreen hint icon */}
+              {isMobileView && !isEditing && currentSlide && isCurrentSlideCompleted && (
+                <div className="absolute top-2 right-2 z-10 pointer-events-none">
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-black/50 backdrop-blur-sm">
+                    <Maximize2 className="w-3.5 h-3.5 text-white/80" />
+                    <span className="text-[10px] text-white/80 font-medium">Tap to present</span>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Cursor overlays */}
             {currentSlide && (

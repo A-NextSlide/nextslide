@@ -168,8 +168,8 @@ const SlideEditorContent: React.FC = () => {
 
   const minMobileChatHeight = useMemo(() => {
     if (!mobileContainerHeight) return 200;
-    const scaled = Math.round(mobileContainerHeight * 0.26);
-    return Math.max(180, Math.min(240, scaled));
+    const scaled = Math.round(mobileContainerHeight * 0.40);
+    return Math.max(220, Math.min(320, scaled));
   }, [mobileContainerHeight]);
 
   const maxMobileChatHeight = useMemo(() => {
@@ -182,7 +182,7 @@ const SlideEditorContent: React.FC = () => {
   useEffect(() => {
     if (!isMobile || !mobileContainerHeight) return;
     // Initial chat height - show more chat at start (below the slide navigation arrows)
-    const initialHeight = clampValue(Math.round(mobileContainerHeight * 0.52), minMobileChatHeight, maxMobileChatHeight);
+    const initialHeight = clampValue(Math.round(mobileContainerHeight * 0.65), minMobileChatHeight, maxMobileChatHeight);
     setMobileChatHeight((prev) => {
       if (prev > 0) {
         return clampValue(prev, minMobileChatHeight, maxMobileChatHeight);
@@ -1733,7 +1733,7 @@ const SlideEditorContent: React.FC = () => {
           >
             {/* Slide area takes full height - chat overlays on top */}
             <div className="absolute inset-0 flex flex-col">
-              <div className="flex-1 min-h-0 px-2 pt-0 pb-0 -mt-8">
+              <div className="flex-1 min-h-0 px-2 pt-0 pb-0">
                 <DeckPanel
                   deckStatus={deckStatus}
                   isNewDeck={isNewDeck}
