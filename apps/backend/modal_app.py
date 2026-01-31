@@ -30,7 +30,17 @@ image = (
 # Separate lightweight image for Playwright thumbnail rendering (~400MB Chromium)
 playwright_image = (
     modal.Image.debian_slim(python_version="3.11")
-    .pip_install("playwright==1.49.1", "Pillow>=10.0.0", "supabase==2.22.0", "python-dotenv>=1.0.0")
+    .pip_install(
+        "playwright==1.49.1",
+        "Pillow>=10.0.0",
+        "python-dotenv>=1.0.0",
+        "supabase==2.22.0",
+        "supabase-auth==2.22.0",
+        "supabase-functions==2.22.0",
+        "storage3==2.22.0",
+        "postgrest==2.22.0",
+        "realtime==2.22.0",
+    )
     .run_commands("playwright install chromium", "playwright install-deps chromium")
     .env({"PYTHONPATH": "/app"})
     .add_local_dir(".", "/app", ignore=_local_dir_ignore)
