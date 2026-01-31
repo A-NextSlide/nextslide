@@ -1224,7 +1224,7 @@ const AdminCosts: React.FC = () => {
                   </div>
                   <div className="flex-1">
                     <div className="grid grid-cols-[16px_1fr_44px_50px_40px_52px_52px_56px] gap-1 text-[8px] text-[#888] font-medium pb-1 border-b border-[#eaeaea] dark:border-[#333]">
-                      <span></span><span>Channel</span><span className="text-right">%</span><span className="text-right">CAC</span><span className="text-right">Cv%</span><span className="text-right">Sign</span><span className="text-right">Paid</span><span className="text-right">Cost</span>
+                      <span></span><span>Channel</span><span className="text-right">% Sign</span><span className="text-right">CAC</span><span className="text-right">Cv%</span><span className="text-right">Sign/mo</span><span className="text-right">Paid/mo</span><span className="text-right">Cost/mo</span>
                     </div>
                     {channelMetrics.map((ch, i) => (
                       <div key={ch.id} className="grid grid-cols-[16px_1fr_44px_50px_40px_52px_52px_56px] gap-1 py-1 border-b border-[#eaeaea]/50 dark:border-[#333]/50 items-center text-[9px]">
