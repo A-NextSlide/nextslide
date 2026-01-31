@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Sparkles, Rocket, TrendingUp, Microscope, Coffee, Timer, FlaskConical, BookOpen, Handshake, Globe, Skull, Wifi, Megaphone, MousePointer2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ChevronLeft, ChevronRight, Sparkles, Rocket, TrendingUp, Microscope, Coffee, Timer, FlaskConical, BookOpen, Handshake, Globe, Skull, Wifi, Megaphone, MousePointer2, X, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ShowcaseDeck } from '@/services/showcaseService';
 import MiniSlide from '@/components/deck/MiniSlide';
 import { Button } from '@/components/ui/button';
+import { BROWSER } from '@/utils/browser';
 
 export interface PromptItem {
     id: string;
@@ -128,6 +129,10 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
     // Track selected slide within the active deck
     const [selectedSlideIndex, setSelectedSlideIndex] = useState(0);
 
+    // Fullscreen presentation mode
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [fsSlideIndex, setFsSlideIndex] = useState(0);
+
     const activePrompt = effectivePrompts[activeIndex];
 
     // Safe deck retrieval
@@ -172,19 +177,67 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
 
     const totalSlides = activeDeck?.slides?.length || 0;
 
+    // Fullscreen presentation handlers
+    const openFullscreen = useCallback(() => {
+        setFsSlideIndex(selectedSlideIndex);
+        setIsFullscreen(true);
+    }, [selectedSlideIndex]);
+
+    const closeFullscreen = useCallback(() => {
+        setIsFullscreen(false);
+    }, []);
+
+    const fsNext = useCallback(() => {
+        if (activeDeck?.slides) {
+            setFsSlideIndex(prev => prev < activeDeck.slides.length - 1 ? prev + 1 : prev);
+        }
+    }, [activeDeck]);
+
+    const fsPrev = useCallback(() => {
+        setFsSlideIndex(prev => prev > 0 ? prev - 1 : prev);
+    }, []);
+
+    // Keyboard + touch for fullscreen
+    useEffect(() => {
+        if (!isFullscreen) return;
+        const handleKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') closeFullscreen();
+            else if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); fsNext(); }
+            else if (e.key === 'ArrowLeft') { e.preventDefault(); fsPrev(); }
+        };
+        let touchStartX = 0;
+        const handleTouchStart = (e: TouchEvent) => { if (e.touches.length) touchStartX = e.touches[0].clientX; };
+        const handleTouchEnd = (e: TouchEvent) => {
+            if (!e.changedTouches.length) return;
+            const dx = e.changedTouches[0].clientX - touchStartX;
+            if (Math.abs(dx) > 50) { dx < 0 ? fsNext() : fsPrev(); }
+        };
+        // Lock body scroll
+        document.body.style.overflow = 'hidden';
+        window.addEventListener('keydown', handleKey);
+        window.addEventListener('touchstart', handleTouchStart, { passive: true });
+        window.addEventListener('touchend', handleTouchEnd, { passive: true });
+        return () => {
+            document.body.style.overflow = '';
+            window.removeEventListener('keydown', handleKey);
+            window.removeEventListener('touchstart', handleTouchStart);
+            window.removeEventListener('touchend', handleTouchEnd);
+        };
+    }, [isFullscreen, fsNext, fsPrev, closeFullscreen]);
+
     const isOrange = activePrompt.theme === 'orange';
 
     return (
-        <section className={cn("relative w-full z-20", compact ? "py-8" : "h-screen")}>
+        <section className={cn("relative w-full z-20", compact ? "py-8" : "min-h-0 md:h-screen py-2 md:py-0")}>
 
             {/* Main Content - The slides */}
-            <div className={cn("relative w-full flex flex-col items-center overflow-visible pointer-events-none", compact ? "justify-start" : "h-full justify-start pt-2 md:pt-0 md:justify-center")}>
+            <div className={cn("relative w-full flex flex-col items-center overflow-visible pointer-events-none", compact ? "justify-start" : "h-full justify-start md:justify-center")}>
 
                 {/* Main Content Card Container */}
-                <div className={cn("container relative z-10 px-2 md:px-4 w-full max-w-[1400px] mx-auto pointer-events-auto", compact ? "" : "h-full flex flex-col justify-start pt-2 md:pt-0 md:justify-center")}>
+                <div className={cn("container relative z-10 px-1 md:px-4 w-full max-w-[1400px] mx-auto pointer-events-auto", compact ? "" : "h-full flex flex-col justify-start md:justify-center")}>
 
                     {/* The "Binder" Card */}
-                    <div className={cn("bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-2xl md:rounded-[32px] shadow-2xl shadow-black/10 border border-black/5 dark:border-white/5 p-2 md:p-6 w-full flex flex-col md:flex-row gap-2 md:gap-6 relative overflow-visible", compact ? "md:h-[65vh]" : "md:h-[80vh]")}>
+                    <div className={cn("bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-2xl md:rounded-[32px] shadow-2xl shadow-black/10 border border-black/5 dark:border-white/5 p-1.5 md:p-6 w-full flex flex-col md:flex-row gap-1.5 md:gap-6 relative overflow-visible", compact ? "md:h-[65vh]" : "md:h-[80vh]")}>
 
                         {/* LEFT SIDEBAR - Thumbnails (hidden on mobile/tablet) */}
                         <div className="hidden md:flex md:w-[200px] lg:w-[240px] flex-shrink-0 flex-col gap-4 h-full overflow-hidden">
@@ -243,7 +296,7 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
                         </div>
 
                         {/* RIGHT AREA - Main Slide */}
-                        <div className="flex-1 relative bg-zinc-100 dark:bg-zinc-950/50 rounded-2xl overflow-hidden md:overflow-visible flex flex-col items-center justify-center p-1 md:p-4 lg:p-8 group md:h-full">
+                        <div className="flex-1 relative bg-zinc-100 dark:bg-zinc-950/50 rounded-2xl overflow-hidden md:overflow-visible flex flex-col items-center justify-center p-0.5 md:p-4 lg:p-8 group md:h-full">
 
                             {/* Prompt Card - POP OUT (desktop only) */}
                             <div
@@ -278,19 +331,31 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
                             </div>
 
                             {/* Slide Display - Full size */}
-                            <div className={cn(
-                                "relative w-full aspect-video shadow-2xl shadow-black/10 bg-white rounded-xl overflow-hidden transition-all duration-500 transform",
-                                slideTransitioning ? "opacity-80 scale-[0.98] blur-[2px]" : "opacity-100 scale-100 blur-0"
-                            )}>
+                            <div
+                                className={cn(
+                                    "relative w-full aspect-video shadow-2xl shadow-black/10 bg-white rounded-xl overflow-hidden transition-all duration-500 transform cursor-pointer",
+                                    slideTransitioning ? "opacity-80 scale-[0.98] blur-[2px]" : "opacity-100 scale-100 blur-0"
+                                )}
+                                onClick={openFullscreen}
+                            >
                                 {activeDeck?.slides?.[selectedSlideIndex] ? (
-                                    <MiniSlide
-                                        slide={activeDeck.slides[selectedSlideIndex]}
-                                        width={1280}
-                                        height={720}
-                                        responsive
-                                        className="w-full h-full"
-                                        interactive={true}
-                                    />
+                                    <>
+                                        <MiniSlide
+                                            slide={activeDeck.slides[selectedSlideIndex]}
+                                            width={1280}
+                                            height={720}
+                                            responsive
+                                            className="w-full h-full"
+                                            interactive={!BROWSER.isMobile}
+                                        />
+                                        {/* Fullscreen hint overlay */}
+                                        <div className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity pointer-events-none">
+                                            <div className="bg-black/60 backdrop-blur-sm rounded-lg px-2.5 py-1.5 flex items-center gap-1.5 text-white text-xs font-medium">
+                                                <Maximize2 size={12} />
+                                                <span className="hidden md:inline">Present</span>
+                                            </div>
+                                        </div>
+                                    </>
                                 ) : (
                                     <div className="w-full h-full flex items-center justify-center bg-zinc-50 dark:bg-zinc-900 text-zinc-400">
                                         {isLoading ? (
@@ -334,7 +399,7 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
                             </div>
 
                             {/* Mobile: Prompt card below slide (orange outline like desktop) */}
-                            <div className="md:hidden mt-3 w-full border-2 border-[#FF4301] rounded-xl p-3 bg-white dark:bg-zinc-900">
+                            <div className="md:hidden mt-1.5 w-full border-2 border-[#FF4301] rounded-xl p-2.5 bg-white dark:bg-zinc-900">
                                 <div className="flex items-center justify-between mb-2">
                                     <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#FF4301]/10 text-[#FF4301] text-[10px] font-bold uppercase tracking-wider">
                                         {React.createElement(activePrompt.icon, { size: 11 })}
@@ -367,6 +432,75 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
                     </div>
                 </div>
             </div>
+
+            {/* Fullscreen Presentation Overlay */}
+            {isFullscreen && activeDeck?.slides && (
+                <div className="fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center" onClick={closeFullscreen}>
+                    {/* Top bar */}
+                    <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-3 md:p-5">
+                        <div className="bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5 text-white/90 text-sm font-medium border border-white/20">
+                            {fsSlideIndex + 1} / {activeDeck.slides.length}
+                        </div>
+                        <button
+                            onClick={closeFullscreen}
+                            className="bg-black/60 backdrop-blur-sm rounded-full w-9 h-9 flex items-center justify-center text-white/90 hover:bg-black/80 border border-white/20"
+                        >
+                            <X size={18} />
+                        </button>
+                    </div>
+
+                    {/* Slide */}
+                    <div
+                        className="relative w-full h-full flex items-center justify-center p-2 md:p-12"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="relative w-full max-w-[1400px] aspect-video bg-white rounded-lg overflow-hidden shadow-2xl">
+                            <MiniSlide
+                                key={`fs-${fsSlideIndex}`}
+                                slide={activeDeck.slides[fsSlideIndex]}
+                                width={1280}
+                                height={720}
+                                responsive
+                                className="w-full h-full"
+                                interactive={!BROWSER.isMobile}
+                                forceRender
+                            />
+                        </div>
+
+                        {/* Nav buttons */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); fsPrev(); }}
+                            className={cn(
+                                "absolute left-1 md:left-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm border border-white/20",
+                                fsSlideIndex === 0 ? "opacity-30" : "hover:bg-black/70 active:scale-95"
+                            )}
+                            disabled={fsSlideIndex === 0}
+                        >
+                            <ChevronLeft size={22} />
+                        </button>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); fsNext(); }}
+                            className={cn(
+                                "absolute right-1 md:right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm border border-white/20",
+                                fsSlideIndex === activeDeck.slides.length - 1 ? "opacity-30" : "hover:bg-black/70 active:scale-95"
+                            )}
+                            disabled={fsSlideIndex === activeDeck.slides.length - 1}
+                        >
+                            <ChevronRight size={22} />
+                        </button>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="absolute bottom-3 md:bottom-5 left-6 right-6 z-10">
+                        <div className="bg-white/20 rounded-full h-1 overflow-hidden">
+                            <div
+                                className="bg-white/80 h-full rounded-full transition-all duration-300"
+                                style={{ width: `${((fsSlideIndex + 1) / activeDeck.slides.length) * 100}%` }}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </section>
     );

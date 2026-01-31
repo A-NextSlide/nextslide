@@ -50,20 +50,25 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
         {/* Thumbnail */}
         <div className="absolute inset-0 w-full h-full">
           {cachedThumbnailUrl ? (
-            /* Show cached screenshot if available */
+            /* Show server-rendered PNG thumbnail */
             <img
               src={cachedThumbnailUrl}
               alt={deck.title}
               className="w-full h-full object-cover"
               draggable={false}
+              loading="lazy"
             />
+          ) : BROWSER.isMobile ? (
+            /* Mobile: show placeholder when no PNG thumbnail available (never render MiniSlide) */
+            <div className="flex items-center justify-center h-full bg-gray-100 dark:bg-gray-800">
+              <FileStack className="h-8 w-8 text-gray-300" />
+            </div>
           ) : deck.firstSlide ? (
-            /* Render live thumbnail - background-only on mobile to prevent crashes */
+            /* Desktop: full live thumbnail */
             <div ref={onThumbnailRef} className="w-full h-full">
               <MiniSlide
                 slide={deck.firstSlide}
                 className="w-full h-full"
-                renderMode={BROWSER.isMobile ? 'background' : 'full'}
               />
             </div>
           ) : (
