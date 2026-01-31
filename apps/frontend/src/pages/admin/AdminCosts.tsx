@@ -360,21 +360,22 @@ const AdminCosts: React.FC = () => {
     return base + viral.referralBoost / 100;
   }, [viral]);
 
-  // User scenario — compound growth + funnel signups + viral-driven growth each month
+  // User scenario — recursive growth: organic + viral compound on growing base + funnel
   const manualScenario = useMemo(() => {
     const ng = (inputs.monthlyGrowthPct - inputs.churnPct) / 100;
-    return MONTH_LABELS.map((month, i) => {
-      if (i === 0) return { month, users: totalUsers, isManual: false };
-      const compoundUsers = Math.round(totalUsers * Math.pow(1 + ng, i));
-      const funnelAccumulated = funnelSignupsPerMonth * i;
-      // Viral: each existing user brings viralCoeff new users per month, accumulated
-      const viralAccumulated = Math.round(
-        ng !== 0
-          ? totalUsers * viralCoeff * ((Math.pow(1 + ng, i) - 1) / ng)
-          : totalUsers * viralCoeff * i
-      );
-      return { month, users: compoundUsers + funnelAccumulated + viralAccumulated, isManual: false };
-    });
+    const results: { month: string; users: number; isManual: boolean }[] = [];
+    let prevUsers = totalUsers;
+    for (let i = 0; i < MONTH_LABELS.length; i++) {
+      if (i === 0) {
+        results.push({ month: MONTH_LABELS[i], users: totalUsers, isManual: false });
+      } else {
+        // Each month: existing users grow organically + each user virally brings K new users + funnel adds constant
+        const newUsers = Math.round(prevUsers * (1 + ng + viralCoeff) + funnelSignupsPerMonth);
+        results.push({ month: MONTH_LABELS[i], users: newUsers, isManual: false });
+        prevUsers = newUsers;
+      }
+    }
+    return results;
   }, [totalUsers, inputs.monthlyGrowthPct, inputs.churnPct, funnelSignupsPerMonth, viralCoeff]);
 
   useEffect(() => {
@@ -1195,86 +1196,89 @@ const AdminCosts: React.FC = () => {
         {/* ═══ GROWTH & PLG ═══ */}
         {activeTab === 'growth' && (
           <div className="space-y-3">
-            <div className={cn(cd, "p-3")}>
-              <div className="flex items-center justify-between mb-2">
-                <span className={sH} style={hk}>Growth Channel Attribution</span>
-                <div className="flex items-center gap-3 text-[9px]">
-                  <span className="text-[#888]">Blended CAC: <span className="font-medium text-[#FF4301]">${blendedCAC.toFixed(2)}</span></span>
-                  <span className="text-[#888]">Weighted Conv: <span className="font-medium text-emerald-600">{weightedConv.toFixed(1)}%</span></span>
-                </div>
-              </div>
-              <div className="grid grid-cols-[24px_130px_70px_55px_55px_70px_70px_1fr] gap-1 text-[8px] text-[#888] font-medium pb-1 border-b border-[#eaeaea] dark:border-[#333]">
-                <span></span><span>Channel</span><span className="text-right">% Sign</span><span className="text-right">CAC</span><span className="text-right">Conv%</span><span className="text-right">Sign/mo</span><span className="text-right">Paid/mo</span><span className="text-right">Cost/mo</span>
-              </div>
-              {channelMetrics.map((ch, i) => (
-                <div key={ch.id} className="grid grid-cols-[24px_130px_70px_55px_55px_70px_70px_1fr] gap-1 py-1 border-b border-[#eaeaea]/50 dark:border-[#333]/50 items-center text-[9px]">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: ch.color }} />
-                  <span className="font-medium flex items-center gap-1">{ch.icon}{ch.name}</span>
-                  <Input type="number" value={ch.pctOfSignups} onChange={e => uc(i, 'pctOfSignups', Number(e.target.value))} className="h-5 text-[9px] text-right px-1" />
-                  <div className="relative">
-                    <span className="absolute left-1 top-1/2 -translate-y-1/2 text-[8px] text-[#888] pointer-events-none">$</span>
-                    <Input type="number" value={ch.cac} onChange={e => uc(i, 'cac', Number(e.target.value))} className="h-5 text-[9px] text-right pr-1 pl-3" step={0.5} />
+            {/* Channel Attribution + Conversion Funnel — side by side */}
+            <div className="grid grid-cols-12 gap-3">
+              <div className="col-span-7">
+                <div className={cn(cd, "p-3")}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={sH} style={hk}>Growth Channel Attribution</span>
+                    <div className="flex items-center gap-2 text-[8px]">
+                      <span className="text-[#888]">CAC: <span className="font-medium text-[#FF4301]">${blendedCAC.toFixed(2)}</span></span>
+                      <span className="text-[#888]">Conv: <span className="font-medium text-emerald-600">{weightedConv.toFixed(1)}%</span></span>
+                    </div>
                   </div>
-                  <Input type="number" value={ch.convToPaid} onChange={e => uc(i, 'convToPaid', Number(e.target.value))} className="h-5 text-[9px] text-right px-1" />
-                  <Input type="number" value={ch.signups} onChange={e => uc(i, 'signupsManual', Number(e.target.value))} className={cn("h-5 text-[9px] text-right px-1", channels[i]?.signupsManual !== undefined && "border-blue-500 bg-blue-500/5")} />
-                  <Input type="number" value={ch.paidUsers} onChange={e => uc(i, 'paidUsersManual', Number(e.target.value))} className={cn("h-5 text-[9px] text-right px-1 font-medium text-emerald-600", channels[i]?.paidUsersManual !== undefined && "border-blue-500 bg-blue-500/5")} />
-                  <span className="text-right tabular-nums text-red-600">{ch.monthlyCost > 0 ? `$${fmtMoney(ch.monthlyCost)}` : '$0'}</span>
-                </div>
-              ))}
-              <div className="grid grid-cols-[24px_130px_70px_55px_55px_70px_70px_1fr] gap-1 pt-1 text-[9px] font-medium">
-                <span></span><span>Total</span>
-                <span className="text-right">{channels.reduce((s, c) => s + c.pctOfSignups, 0)}%</span>
-                <span className="text-right text-[#FF4301]">${blendedCAC.toFixed(2)}</span>
-                <span className="text-right text-emerald-600">{weightedConv.toFixed(1)}%</span>
-                <span className="text-right tabular-nums">{channelMetrics.reduce((s, c) => s + c.signups, 0)}</span>
-                <span className="text-right tabular-nums text-emerald-600">{channelMetrics.reduce((s, c) => s + c.paidUsers, 0)}</span>
-                <span className="text-right tabular-nums text-red-600">${fmtMoney(channelMetrics.reduce((s, c) => s + c.monthlyCost, 0))}</span>
-              </div>
-            </div>
-            {/* Conversion Funnel — full width */}
-            <div className={cn(cd, "p-3")}>
-              <div className="flex items-center justify-between mb-2">
-                <span className={sH} style={hk}>Conversion Funnel</span>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1 text-[8px] text-[#888]">
-                    <span>Visitors/mo:</span>
-                    <Input type="number" value={visitorBaseline} onChange={e => { setVisitorBaseline(Number(e.target.value)); if (activeScenario !== 'custom') setActiveScenario('custom'); }} className="h-5 w-20 text-[9px] text-right px-1" />
+                  <div className="grid grid-cols-[16px_1fr_42px_42px_38px_48px_48px_52px] gap-0.5 text-[7px] text-[#888] font-medium pb-1 border-b border-[#eaeaea] dark:border-[#333]">
+                    <span></span><span>Channel</span><span className="text-right">%</span><span className="text-right">CAC</span><span className="text-right">Cv%</span><span className="text-right">Sign</span><span className="text-right">Paid</span><span className="text-right">Cost</span>
                   </div>
-                  <span className="text-[9px] font-medium text-[#FF4301] tabular-nums">
-                    {funnelData.length > 0 ? ((funnelData[funnelData.length - 1].count / funnelData[0].count) * 100).toFixed(2) : 0}% end-to-end
-                  </span>
-                </div>
-              </div>
-              <div className="grid grid-cols-[1fr_200px] gap-4">
-                <FunnelChart data={funnelData} />
-                <div className="space-y-1.5 pt-1">
-                  <div className="text-[8px] text-[#888] font-medium uppercase tracking-wider mb-1">Stage Rates</div>
-                  {funnel.slice(1).map((stage, i) => (
-                    <div key={stage.name} className="flex items-center justify-between gap-2">
-                      <span className="text-[8px] text-[#888] truncate">{stage.name.split('(')[0].trim()}</span>
-                      <div className="flex items-center gap-0.5">
-                        <Input type="number" value={stage.rate} onChange={e => {
-                          const v = Number(e.target.value);
-                          setFunnel(prev => { const u = [...prev]; u[i + 1] = { ...u[i + 1], rate: v }; return u; });
-                          if (activeScenario !== 'custom') setActiveScenario('custom');
-                        }} className="h-5 w-12 text-[9px] text-right px-1" step={1} />
-                        <span className="text-[8px] text-[#888]">%</span>
+                  {channelMetrics.map((ch, i) => (
+                    <div key={ch.id} className="grid grid-cols-[16px_1fr_42px_42px_38px_48px_48px_52px] gap-0.5 py-0.5 border-b border-[#eaeaea]/50 dark:border-[#333]/50 items-center text-[8px]">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ch.color }} />
+                      <span className="font-medium flex items-center gap-0.5 truncate">{ch.icon}<span className="truncate">{ch.name}</span></span>
+                      <Input type="number" value={ch.pctOfSignups} onChange={e => uc(i, 'pctOfSignups', Number(e.target.value))} className="h-4 text-[8px] text-right px-0.5" />
+                      <div className="relative">
+                        <span className="absolute left-0.5 top-1/2 -translate-y-1/2 text-[7px] text-[#888] pointer-events-none">$</span>
+                        <Input type="number" value={ch.cac} onChange={e => uc(i, 'cac', Number(e.target.value))} className="h-4 text-[8px] text-right pr-0.5 pl-2.5" step={0.5} />
                       </div>
+                      <Input type="number" value={ch.convToPaid} onChange={e => uc(i, 'convToPaid', Number(e.target.value))} className="h-4 text-[8px] text-right px-0.5" />
+                      <Input type="number" value={ch.signups} onChange={e => uc(i, 'signupsManual', Number(e.target.value))} className={cn("h-4 text-[8px] text-right px-0.5", channels[i]?.signupsManual !== undefined && "border-blue-500 bg-blue-500/5")} />
+                      <Input type="number" value={ch.paidUsers} onChange={e => uc(i, 'paidUsersManual', Number(e.target.value))} className={cn("h-4 text-[8px] text-right px-0.5 font-medium text-emerald-600", channels[i]?.paidUsersManual !== undefined && "border-blue-500 bg-blue-500/5")} />
+                      <span className="text-right tabular-nums text-red-600 text-[8px]">{ch.monthlyCost > 0 ? `$${fmtMoney(ch.monthlyCost)}` : '$0'}</span>
                     </div>
                   ))}
+                  <div className="grid grid-cols-[16px_1fr_42px_42px_38px_48px_48px_52px] gap-0.5 pt-1 text-[8px] font-medium">
+                    <span></span><span>Total</span>
+                    <span className="text-right">{channels.reduce((s, c) => s + c.pctOfSignups, 0)}%</span>
+                    <span className="text-right text-[#FF4301]">${blendedCAC.toFixed(2)}</span>
+                    <span className="text-right text-emerald-600">{weightedConv.toFixed(1)}%</span>
+                    <span className="text-right tabular-nums">{channelMetrics.reduce((s, c) => s + c.signups, 0)}</span>
+                    <span className="text-right tabular-nums text-emerald-600">{channelMetrics.reduce((s, c) => s + c.paidUsers, 0)}</span>
+                    <span className="text-right tabular-nums text-red-600">${fmtMoney(channelMetrics.reduce((s, c) => s + c.monthlyCost, 0))}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="col-span-5">
+                <div className={cn(cd, "p-3 h-full")}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={sH} style={hk}>Conversion Funnel</span>
+                    <span className="text-[8px] font-medium text-[#FF4301] tabular-nums">
+                      {funnelData.length > 0 ? ((funnelData[funnelData.length - 1].count / funnelData[0].count) * 100).toFixed(2) : 0}%
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[8px] text-[#888] mb-2">
+                    <span>Visitors/mo:</span>
+                    <Input type="number" value={visitorBaseline} onChange={e => { setVisitorBaseline(Number(e.target.value)); if (activeScenario !== 'custom') setActiveScenario('custom'); }} className="h-4 w-20 text-[8px] text-right px-1" />
+                  </div>
+                  <FunnelChart data={funnelData} />
+                  <div className="space-y-1 mt-2 pt-2 border-t border-[#eaeaea] dark:border-[#333]">
+                    <div className="text-[7px] text-[#888] font-medium uppercase tracking-wider mb-1">Stage Rates</div>
+                    {funnel.slice(1).map((stage, i) => (
+                      <div key={stage.name} className="flex items-center justify-between gap-1">
+                        <span className="text-[8px] text-[#888] truncate">{stage.name.split('(')[0].trim()}</span>
+                        <div className="flex items-center gap-0.5">
+                          <Input type="number" value={stage.rate} onChange={e => {
+                            const v = Number(e.target.value);
+                            setFunnel(prev => { const u = [...prev]; u[i + 1] = { ...u[i + 1], rate: v }; return u; });
+                            if (activeScenario !== 'custom') setActiveScenario('custom');
+                          }} className="h-4 w-10 text-[8px] text-right px-0.5" step={1} />
+                          <span className="text-[7px] text-[#888]">%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
 
+            {/* Viral Coefficient + Channel Mix */}
             <div className="grid grid-cols-12 gap-3">
               <div className="col-span-5">
                 <div className={cn(cd, "p-3")}>
                   <span className={sH} style={hk}>Viral Coefficient</span>
-                  <div className="mt-3 mb-3 text-center">
-                    <div className={cn("text-4xl font-bold tabular-nums", viralCoeff >= 0.3 ? "text-emerald-600" : viralCoeff >= 0.15 ? "text-amber-500" : "text-red-500")}>{viralCoeff.toFixed(2)}</div>
-                    <div className="text-[9px] text-[#888] mt-1">k-factor {viralCoeff >= 1 ? '(viral!)' : viralCoeff >= 0.3 ? '(good PLG)' : '(needs work)'}</div>
+                  <div className="mt-2 mb-2 text-center">
+                    <div className={cn("text-3xl font-bold tabular-nums", viralCoeff >= 0.3 ? "text-emerald-600" : viralCoeff >= 0.15 ? "text-amber-500" : "text-red-500")}>{viralCoeff.toFixed(2)}</div>
+                    <div className="text-[8px] text-[#888] mt-0.5">k-factor {viralCoeff >= 1 ? '(viral!)' : viralCoeff >= 0.3 ? '(good PLG)' : '(needs work)'}</div>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-1">
                     <CI label="Shares/user/mo" value={viral.sharesPerUserMonth} onChange={v => setViral(p => ({ ...p, sharesPerUserMonth: v }))} />
                     <CI label="Views/share" value={viral.viewsPerShare} onChange={v => setViral(p => ({ ...p, viewsPerShare: v }))} />
                     <CI label="CTR %" value={viral.clickThroughRate} onChange={v => setViral(p => ({ ...p, clickThroughRate: v }))} step={0.5} />
@@ -1284,6 +1288,7 @@ const AdminCosts: React.FC = () => {
                   <div className="mt-2 pt-2 border-t border-[#eaeaea] dark:border-[#333] text-[8px] text-[#888]">
                     <div>Base: {viral.sharesPerUserMonth}×{viral.viewsPerShare}×{viral.clickThroughRate}%×{viral.signupRate}% = {(viral.sharesPerUserMonth * viral.viewsPerShare * (viral.clickThroughRate / 100) * (viral.signupRate / 100)).toFixed(3)}</div>
                     <div>+ Referral: +{(viral.referralBoost / 100).toFixed(2)}</div>
+                    <div className="mt-1 text-[#FF4301] font-medium">Effective monthly multiplier: ×{(1 + (inputs.monthlyGrowthPct - inputs.churnPct) / 100 + viralCoeff).toFixed(2)}</div>
                   </div>
                 </div>
               </div>
