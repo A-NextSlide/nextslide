@@ -6,6 +6,7 @@ Slack Block Kit JSON structures.
 """
 
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://nextslide.ai")
@@ -41,6 +42,8 @@ class SlackBlockKit:
         for field in fields:
             key = field.get("key", "unknown")
             label = field.get("label", key)
+            # Strip markdown bold (*text*) since Slack input labels are plain_text
+            label = re.sub(r"\*([^*]+)\*", r"\1", label)
             ftype = field.get("type", "text")
             placeholder = field.get("placeholder", "")
             default_value = field.get("value", "")
