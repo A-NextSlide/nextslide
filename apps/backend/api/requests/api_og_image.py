@@ -403,8 +403,8 @@ async def get_og_image(short_code: str):
         metadata = share_data.get('metadata') or {}
         og_image_url = metadata.get('og_image_url')
 
-        # Get deck data (name and slides for image extraction)
-        deck_result = supabase.table('decks').select('name, slides').eq(
+        # Get deck data (name, slides, and pre-rendered thumbnail for image extraction)
+        deck_result = supabase.table('decks').select('name, slides, thumbnail_url').eq(
             'uuid', share_data['deck_uuid']
         ).execute()
 
@@ -416,6 +416,12 @@ async def get_og_image(short_code: str):
 
         # Build a list of candidate image URLs to try in priority order
         candidate_urls = []
+
+        # Pre-rendered Playwright thumbnail is highest priority (pixel-perfect)
+        deck_thumbnail = deck_data.get("thumbnail_url")
+        if deck_thumbnail:
+            candidate_urls.append(deck_thumbnail)
+
         if og_image_url:
             candidate_urls.append(og_image_url)
 

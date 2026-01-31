@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
+// Card imports removed - using admin-styled divs
 import {
   Select,
   SelectContent,
@@ -32,7 +32,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Search,
-  Filter,
   Grid3X3,
   List,
   FileStack,
@@ -56,6 +55,12 @@ import { cn } from '@/lib/utils';
 import DeckPreviewModal from '@/components/admin/DeckPreviewModal';
 import DeckThumbnail from '@/components/deck/DeckThumbnail';
 import { CompleteDeckData } from '@/types/DeckTypes';
+
+// ---------------------------------------------------------------------------
+// Shared design tokens (match AdminServices)
+// ---------------------------------------------------------------------------
+const sectionHeading = "text-[10px] font-bold uppercase tracking-wider text-[#FF4301]";
+const cardClass = "bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl";
 
 type ViewMode = 'grid' | 'list';
 
@@ -159,7 +164,7 @@ const AdminDecks: React.FC = () => {
 
   const DeckGridItem: React.FC<{ deck: DeckSummary; index: number }> = ({ deck, index }) => (
     <div
-      className="relative aspect-[16/10] rounded-lg overflow-hidden cursor-pointer group shadow-sm hover:shadow-md transition-shadow"
+      className="relative aspect-[16/10] rounded-xl overflow-hidden cursor-pointer group shadow-sm hover:shadow-md transition-shadow"
       onClick={() => handleDeckClick(deck, index)}
     >
       {/* Thumbnail */}
@@ -217,8 +222,8 @@ const AdminDecks: React.FC = () => {
   );
 
   const DeckListItem: React.FC<{ deck: DeckSummary; index: number }> = ({ deck, index }) => (
-    <div 
-      className="w-full grid grid-cols-[auto,1fr,auto] items-center gap-4 p-3 border rounded-lg hover:bg-accent/50 transition-colors cursor-pointer"
+    <div
+      className="w-full grid grid-cols-[auto,1fr,auto] items-center gap-3 p-2.5 border border-[#eaeaea] dark:border-[#333] rounded-xl hover:bg-[#fafafa] dark:hover:bg-[#161616] transition-colors cursor-pointer"
       onClick={() => handleDeckClick(deck, index)}>
       
       {/* Thumbnail */}
@@ -308,76 +313,75 @@ const AdminDecks: React.FC = () => {
 
   return (
     <AdminLayoutV2>
-      <div className="w-full space-y-6">
-        {/* Header */}
+      <div className="w-full space-y-3">
+        {/* ── Page header ── */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">Decks</h1>
-            <p className="text-sm text-[#666] dark:text-[#888]">
-              Browse and manage all platform decks
-            </p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+              Decks
+            </h1>
+            <span className="text-[11px] font-mono text-[#666] dark:text-[#888]">
+              {totalDecks}
+            </span>
           </div>
-        </div>
-
-        {/* Filters and View Toggle */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by deck name..."
-              value={searchQuery}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Select value={visibilityFilter} onValueChange={handleVisibilityFilter}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Visibility" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Decks</SelectItem>
-                <SelectItem value="public">Public</SelectItem>
-                <SelectItem value="private">Private</SelectItem>
-                <SelectItem value="unlisted">Unlisted</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="icon">
-              <Filter className="h-4 w-4" />
-            </Button>
-            <div className="flex rounded-md shadow-sm">
-              <Button
-                variant={viewMode === 'grid' ? 'default' : 'outline'}
-                size="icon"
+          <div className="flex items-center gap-1.5">
+            <div className="flex rounded-lg border border-[#eaeaea] dark:border-[#333] overflow-hidden">
+              <button
                 onClick={() => setViewMode('grid')}
-                className="rounded-r-none"
+                className={cn("p-1.5 transition-colors", viewMode === 'grid' ? "bg-[#FF4301] text-white" : "text-[#888] hover:bg-[#f5f5f5] dark:hover:bg-[#222]")}
               >
-                <Grid3X3 className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewMode === 'list' ? 'default' : 'outline'}
-                size="icon"
+                <Grid3X3 className="h-3.5 w-3.5" />
+              </button>
+              <button
                 onClick={() => setViewMode('list')}
-                className="rounded-l-none"
+                className={cn("p-1.5 transition-colors", viewMode === 'list' ? "bg-[#FF4301] text-white" : "text-[#888] hover:bg-[#f5f5f5] dark:hover:bg-[#222]")}
               >
-                <List className="h-4 w-4" />
-              </Button>
+                <List className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Decks Display */}
-        <Card>
-          <CardContent className="p-4">
+        {/* ── Filters ── */}
+        <section>
+          <h2 className={sectionHeading} style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Filters</h2>
+          <div className="flex gap-2 mt-1.5">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#999]" />
+            <Input
+              placeholder="Search by deck name..."
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="pl-9 h-9 text-sm bg-white dark:bg-[#111] border-[#eaeaea] dark:border-[#333]"
+            />
+          </div>
+          <Select value={visibilityFilter} onValueChange={handleVisibilityFilter}>
+            <SelectTrigger className="w-[120px] h-9 text-[11px] border-[#eaeaea] dark:border-[#333]">
+              <SelectValue placeholder="All" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="public">Public</SelectItem>
+              <SelectItem value="private">Private</SelectItem>
+              <SelectItem value="unlisted">Unlisted</SelectItem>
+            </SelectContent>
+          </Select>
+          </div>
+        </section>
+
+        {/* ── Gallery ── */}
+        <section>
+          <h2 className={sectionHeading} style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Gallery</h2>
+          <div className="mt-1.5">
             {isLoading && !isTransitioning ? (
               viewMode === 'grid' ? (
-                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {[...Array(24)].map((_, i) => (
                     <Skeleton key={i} className="aspect-[16/10] w-full rounded-lg" />
                   ))}
                 </div>
               ) : (
-                <div className="space-y-4 w-full">
+                <div className="space-y-2 w-full">
                   {[...Array(10)].map((_, i) => (
                     <div key={i} className="grid grid-cols-[auto,1fr,auto] items-center gap-4 p-3 border rounded-lg w-full">
                       <Skeleton className="w-28 h-[63px] rounded" />
@@ -398,10 +402,10 @@ const AdminDecks: React.FC = () => {
                 </div>
               )
             ) : decks.length === 0 ? (
-              <div className="p-12 text-center">
-                <FileStack className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <h3 className="text-lg font-medium mb-2">No decks found</h3>
-                <p className="text-muted-foreground">
+              <div className="py-16 text-center">
+                <FileStack className="h-10 w-10 mx-auto mb-3 text-[#ccc] dark:text-[#555]" />
+                <h3 className="text-sm font-medium mb-1">No decks found</h3>
+                <p className="text-xs text-[#888]">
                   {searchQuery || visibilityFilter !== 'all'
                     ? 'Try adjusting your filters'
                     : 'No decks have been created yet'}
@@ -413,13 +417,13 @@ const AdminDecks: React.FC = () => {
                 isTransitioning ? "opacity-50" : "opacity-100"
               )}>
                 {viewMode === 'grid' ? (
-                  <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {decks.map((deck, index) => (
                       <DeckGridItem key={deck.id} deck={deck} index={index} />
                     ))}
                   </div>
                 ) : (
-                  <div className="space-y-4 w-full">
+                  <div className="space-y-2 w-full">
                     {decks.map((deck, index) => (
                       <DeckListItem key={deck.id} deck={deck} index={index} />
                     ))}
@@ -427,65 +431,51 @@ const AdminDecks: React.FC = () => {
                 )}
               </div>
             )}
-          </CardContent>
-        </Card>
+        </div>
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-2 py-4 mt-8">
-            <div className="text-sm text-muted-foreground">
-              Showing {((currentPage - 1) * (viewMode === 'grid' ? 12 : 20)) + 1} to{' '}
-              {Math.min(currentPage * (viewMode === 'grid' ? 12 : 20), totalDecks)} of {totalDecks} decks
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-[#888]">
+              {((currentPage - 1) * (viewMode === 'grid' ? 12 : 20)) + 1}–{Math.min(currentPage * (viewMode === 'grid' ? 12 : 20), totalDecks)} of {totalDecks}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
+                className="px-2 py-1 rounded border border-[#eaeaea] dark:border-[#333] hover:bg-[#f5f5f5] dark:hover:bg-[#222] disabled:opacity-30 transition-colors"
               >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
-              <div className="flex items-center gap-1">
-                {[...Array(Math.min(5, totalPages))].map((_, i) => {
-                  const page = i + 1;
-                  return (
-                    <Button
-                      key={page}
-                      variant={currentPage === page ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setCurrentPage(page)}
-                      className="w-8"
-                    >
-                      {page}
-                    </Button>
-                  );
-                })}
-                {totalPages > 5 && <span className="px-2">...</span>}
-                {totalPages > 5 && (
-                  <Button
-                    variant={currentPage === totalPages ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setCurrentPage(totalPages)}
-                    className="w-8"
+                <ChevronLeft className="h-3 w-3" />
+              </button>
+              {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                const page = i + 1;
+                return (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={cn(
+                      "w-7 h-7 rounded transition-colors",
+                      currentPage === page
+                        ? "bg-[#FF4301] text-white font-medium"
+                        : "border border-[#eaeaea] dark:border-[#333] hover:bg-[#f5f5f5] dark:hover:bg-[#222]"
+                    )}
                   >
-                    {totalPages}
-                  </Button>
-                )}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
+                    {page}
+                  </button>
+                );
+              })}
+              {totalPages > 5 && <span className="px-1 text-[#999]">...</span>}
+              <button
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
+                className="px-2 py-1 rounded border border-[#eaeaea] dark:border-[#333] hover:bg-[#f5f5f5] dark:hover:bg-[#222] disabled:opacity-30 transition-colors"
               >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+                <ChevronRight className="h-3 w-3" />
+              </button>
             </div>
           </div>
         )}
+        </section>
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MousePointer2, Type, Underline, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,7 +26,7 @@ type Phase =
 
 type TextStyle = 'plain' | 'stunning' | 'animated' | 'glowing' | 'threed';
 
-export const HeroTitle = () => {
+export const HeroTitle = React.memo(() => {
     const [phase, setPhase] = useState<Phase>('idle');
     const [insertedText, setInsertedText] = useState('');
     const [showTextCursor, setShowTextCursor] = useState(false);
@@ -575,4 +575,4 @@ export const HeroTitle = () => {
             </AnimatePresence>
         </div>
     );
-};
+});

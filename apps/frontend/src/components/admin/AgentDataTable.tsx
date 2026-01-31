@@ -60,19 +60,19 @@ const AgentDataTable: React.FC<AgentDataTableProps> = ({
 
   if (rows.length === 0) {
     return (
-      <div className="rounded border border-[#e5e5e5] dark:border-[#333] bg-white dark:bg-[#111] p-3 text-center text-[11px] text-[#888]">
+      <div className="rounded-xl border border-[#eaeaea] dark:border-[#333] bg-white dark:bg-[#111] p-3 text-center text-[11px] text-[#888]">
         No results returned.
       </div>
     );
   }
 
   return (
-    <div className="rounded border border-[#e5e5e5] dark:border-[#333] bg-white dark:bg-[#111] overflow-hidden">
+    <div className="rounded-xl border border-[#eaeaea] dark:border-[#333] bg-white dark:bg-[#111] overflow-hidden">
       {/* Row count bar */}
-      <div className="px-2 py-1 border-b border-[#e5e5e5] dark:border-[#333] bg-[#fafafa] dark:bg-[#0a0a0a]">
+      <div className="px-2 py-1 border-b border-[#eaeaea] dark:border-[#333] bg-[#fafafa] dark:bg-[#0a0a0a]">
         <span className="text-[10px] text-[#888]">
           {rowCount} row{rowCount !== 1 ? 's' : ''}
-          {truncated && <span className="text-amber-500 ml-1">(capped at 500)</span>}
+          {truncated && <span className="text-amber-500 ml-1">(capped at 1,000)</span>}
         </span>
       </div>
 
@@ -82,14 +82,14 @@ const AgentDataTable: React.FC<AgentDataTableProps> = ({
           <thead className="sticky top-0 z-10">
             <tr>
               {thumbnailCol && (
-                <th className="px-2 py-[5px] text-[10px] font-medium text-[#888] whitespace-nowrap bg-[#fafafa] dark:bg-[#0a0a0a] border-b border-[#e5e5e5] dark:border-[#333] text-left w-14">
+                <th className="px-2 py-[5px] text-[10px] font-medium text-[#888] whitespace-nowrap bg-[#fafafa] dark:bg-[#0a0a0a] border-b border-[#eaeaea] dark:border-[#333] text-left w-14">
                   Slide
                 </th>
               )}
               {tableColumns.map(col => (
                 <th
                   key={col}
-                  className="px-2 py-[5px] text-[10px] font-medium text-[#888] whitespace-nowrap bg-[#fafafa] dark:bg-[#0a0a0a] border-b border-[#e5e5e5] dark:border-[#333] text-left"
+                  className="px-2 py-[5px] text-[10px] font-medium text-[#888] whitespace-nowrap bg-[#fafafa] dark:bg-[#0a0a0a] border-b border-[#eaeaea] dark:border-[#333] text-left"
                 >
                   {col}
                 </th>
@@ -133,7 +133,7 @@ const AgentDataTable: React.FC<AgentDataTableProps> = ({
       {(hasMore || (showAll && rows.length > MAX_VISIBLE_ROWS)) && (
         <button
           onClick={() => setShowAll(v => !v)}
-          className="w-full px-2 py-1 text-[10px] text-blue-600 dark:text-blue-400 hover:bg-[#f5f5f5] dark:hover:bg-[#1a1a1a] border-t border-[#e5e5e5] dark:border-[#333]"
+          className="w-full px-2 py-1.5 text-[10px] font-medium text-[#FF4301] hover:bg-[#FF4301]/5 border-t border-[#eaeaea] dark:border-[#333] transition-colors"
         >
           {showAll ? `Collapse to ${MAX_VISIBLE_ROWS} rows` : `Show all ${rows.length} rows`}
         </button>
@@ -214,7 +214,7 @@ const Cell: React.FC<{
           <button onClick={onToggleExpand} className="text-blue-500 hover:text-blue-700 inline-flex items-center gap-0.5">
             {str.slice(0, TRUNCATE_LEN)}&hellip; <ChevronUp className="h-3 w-3 shrink-0" />
           </button>
-          <pre className="mt-1 p-1.5 rounded bg-[#f5f5f5] dark:bg-[#1a1a1a] border border-[#e5e5e5] dark:border-[#333] whitespace-pre-wrap break-all max-w-lg text-[10px] leading-tight max-h-48 overflow-auto">
+          <pre className="mt-1 p-1.5 rounded bg-[#f5f5f5] dark:bg-[#1a1a1a] border border-[#eaeaea] dark:border-[#333] whitespace-pre-wrap break-all max-w-lg text-[10px] leading-tight max-h-48 overflow-auto">
             {typeof value === 'object' ? JSON.stringify(value, null, 2) : str}
           </pre>
         </span>
@@ -286,7 +286,7 @@ const SlideThumbnailCell: React.FC<{ row: Record<string, any>; slideCol: string 
   }
 
   return (
-    <div className="w-10 h-6 rounded-sm overflow-hidden border border-[#e5e5e5] dark:border-[#333] bg-[#fafafa] dark:bg-[#0a0a0a]">
+    <div className="w-10 h-6 rounded-sm overflow-hidden border border-[#eaeaea] dark:border-[#333] bg-[#fafafa] dark:bg-[#0a0a0a]">
       <DeckThumbnail deck={deckData} />
     </div>
   );

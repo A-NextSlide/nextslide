@@ -574,29 +574,43 @@ async def generate_deck_background(
             elif utype in ('deck_complete', 'composition_complete', 'complete'):
                 break
 
-        # Update deck status and restore API metadata
-        client = get_supabase_client()
+        # Update deck status to completed (with retry for resilience under load)
+        final_slides_count = slides_generated
+        for _attempt in range(3):
+            try:
+                client = get_supabase_client()
 
-        # Get current deck to preserve existing data
-        final_deck = get_deck(deck_uuid)
-        existing_data = final_deck.get("data", {}) if final_deck else {}
+                # Read only the data column (not full slides payload) to preserve API metadata
+                data_result = client.table("decks").select("data, slides").eq("uuid", deck_uuid).single().execute()
+                existing_data = (data_result.data or {}).get("data", {}) if data_result.data else {}
+                if data_result.data:
+                    final_slides_count = len((data_result.data.get("slides") or []))
 
-        # Merge API metadata into existing data
-        updated_data = {
-            **existing_data,
-            "source": "api",
-            "api_key_id": api_key_record.id,
-            "api_key_name": api_key_record.name
-        }
+                updated_data = {
+                    **existing_data,
+                    "source": "api",
+                    "api_key_id": api_key_record.id,
+                    "api_key_name": api_key_record.name,
+                }
 
-        client.table("decks").update({
-            "status": {"state": "completed"},
-            "data": updated_data
-        }).eq("uuid", deck_uuid).execute()
+                client.table("decks").update({
+                    "status": {"state": "completed"},
+                    "data": updated_data,
+                }).eq("uuid", deck_uuid).execute()
 
-        # Refresh deck data
-        final_deck = get_deck(deck_uuid)
-        final_slides_count = len(final_deck.get("slides", [])) if final_deck else slides_generated
+                break  # Success
+            except Exception as status_err:
+                logger.warning(f"Status update attempt {_attempt+1} failed for {deck_uuid}: {status_err}")
+                if _attempt < 2:
+                    await asyncio.sleep(2 * (_attempt + 1))
+                else:
+                    # Last resort: update just the status without reading existing data
+                    try:
+                        get_supabase_client().table("decks").update({
+                            "status": {"state": "completed"},
+                        }).eq("uuid", deck_uuid).execute()
+                    except Exception:
+                        logger.error(f"Final status update failed for {deck_uuid}")
 
         logger.info(f"Deck {deck_uuid} generation completed with {final_slides_count} slides")
 

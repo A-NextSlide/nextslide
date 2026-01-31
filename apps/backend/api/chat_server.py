@@ -451,8 +451,7 @@ async def receive_debug_log(entry: FrontendLogEntry):
     if len(_frontend_debug_logs) > _MAX_DEBUG_LOGS:
         _frontend_debug_logs = _frontend_debug_logs[-_MAX_DEBUG_LOGS:]
 
-    # Also print to server logs for Render visibility
-    print(f"[FRONTEND-LOG] [{entry.level.upper()}] {entry.message} | {entry.data or ''}")
+    logger.debug(f"[FRONTEND-LOG] [{entry.level.upper()}] {entry.message}")
     return {"status": "ok"}
 
 @app.get("/api/debug-logs")
@@ -532,9 +531,7 @@ async def api_registry_endpoint(request: RegistryUpdateRequest):
             "schemas_processed": request.schemas is not None and len(request.schemas) > 0
         }
     except Exception as e:
-        import traceback
-        print(f"Error processing registry update: {str(e)}")
-        print(traceback.format_exc())
+        logger.error(f"Error processing registry update: {e}", exc_info=True)
         return {"error": str(e)}
 
 @app.get("/api/health")
@@ -686,11 +683,8 @@ async def api_deck_outline_endpoint(request: DeckOutline):
             raise Exception("Deck composition completed but no deck data was returned")
             
     except Exception as e:
-        # Log the error but still return a response
-        print(f"Error processing deck outline: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        
+        logger.error(f"Error processing deck outline: {e}", exc_info=True)
+
         return DeckOutlineResponse(
             message=f"Error processing deck outline: {str(e)}",
             deck_outline_id=request.id,
@@ -744,9 +738,7 @@ async def api_pptx_convert_endpoint(file: UploadFile = File(...)):
             "message": f"Converted {len(screenshots)} slides successfully"
         }
     except Exception as e:
-        import traceback
-        print(f"Error processing PPTX conversion: {str(e)}")
-        print(traceback.format_exc())
+        logger.error(f"Error processing PPTX conversion: {e}", exc_info=True)
         return {
             "success": False,
             "error": str(e)
@@ -764,22 +756,7 @@ async def api_openai_outline_stream_endpoint(request: OpenAIOutlineRequest, toke
     """
     Generate slide outline using OpenAI with real-time progress updates via Server-Sent Events
     """
-    # CRITICAL: Log IMMEDIATELY to see what frontend sent
-    print("="*100)
-    print(f"[ENDPOINT] ⚠️⚠️⚠️ STREAMING ENDPOINT CALLED")
-    print(f"[ENDPOINT] request.detailLevel = {request.detailLevel}")
-    print(f"[ENDPOINT] request.prompt = {request.prompt[:60]}")
-    print(f"[ENDPOINT] 🔴🔴🔴 request.async_images = {request.async_images}")
-    print(f"[ENDPOINT] 🔴 Type: {type(request.async_images)}")
-    print(f"[ENDPOINT] 🔴 Is None: {request.async_images is None}")
-    print(f"[ENDPOINT] 🔴 Is True: {request.async_images is True}")
-    print(f"[ENDPOINT] 🔴 Is False: {request.async_images is False}")
-    print("="*100)
-    
-    logger.info(f"[ENDPOINT] ⚠️⚠️⚠️ RECEIVED REQUEST AT /api/openai/generate-outline-stream")
-    logger.info(f"[ENDPOINT] request.detailLevel = {request.detailLevel}")
-    logger.info(f"[ENDPOINT] request.model = {request.model}")
-    logger.info(f"Outline generation started for model: {request.model}")
+    logger.info(f"Outline generation started (model={request.model}, detail={request.detailLevel})")
     
     # Extract user from token
     user_id = None
@@ -809,9 +786,7 @@ async def api_openai_outline_stream_endpoint(request: OpenAIOutlineRequest, toke
         logger.info(f"Returning streaming response (model: {request.model})")
         return result
     except Exception as e:
-        logger.error(f"Error in API endpoint: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error in outline stream endpoint: {e}", exc_info=True)
         raise
 
 @app.get("/api/openai/generate-outline-stream")
@@ -1026,16 +1001,7 @@ async def api_media_proxy_endpoint(request: MediaProxyRequest):
 
 @app.post("/api/deck/compose-stream")
 async def api_deck_compose_stream_endpoint(request: DeckComposeRequest, token: Optional[str] = Depends(get_auth_header)):
-    print("="*100)
-    print(f"[DECK COMPOSE] 🎨🎨🎨 DECK COMPOSITION ENDPOINT CALLED")
-    print(f"[DECK COMPOSE] deck_id: {request.deck_id}")
-    print(f"[DECK COMPOSE] 🔴🔴🔴 request.async_images = {request.async_images}")
-    print(f"[DECK COMPOSE] 🔴 Type: {type(request.async_images)}")
-    print(f"[DECK COMPOSE] 🔴 Is False: {request.async_images is False}")
-    print("="*100)
-
-    logger.info(f"Deck composition started for: {request.deck_id}")
-    logger.info(f"🔴 async_images: {request.async_images}")
+    logger.info(f"Deck composition started: {request.deck_id}")
 
     # Extract user from token if available and associate deck
     user_id = None
@@ -1133,10 +1099,8 @@ async def api_deck_create_endpoint(request: DeckComposeRequest):
             raise Exception("Deck composition completed but no deck data was returned")
             
     except Exception as e:
-        print(f"Error processing deck creation: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        
+        logger.error(f"Error processing deck creation: {e}", exc_info=True)
+
         return DeckOutlineResponse(
             message=f"Error processing deck creation: {str(e)}",
             deck_outline_id=request.outline.id,
@@ -1193,8 +1157,7 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
         slide_count=num_slides
     )
     
-    # Log the request for debugging
-    logger.warning(f"DECK CREATE REQUEST - Outline ID: {outline.get('id')}, Title: {outline.get('title')}, User: {user_id or 'anon'}")
+    logger.info(f"Deck create: {outline.get('title', 'Untitled')} ({num_slides} slides) user={user_id or 'anon'}")
     
     # Check for duplicate requests AFTER ensuring outline has an ID
     # Skip duplicate check if this is an overage confirmation retry
@@ -1203,8 +1166,6 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
     if not confirm_overage:
         request_hash = _get_request_hash(outline, user_id)
         current_time = time.time()
-
-        logger.info(f"Request hash: {request_hash}")
 
         # Clean up old entries
         _recent_deck_creations_copy = _recent_deck_creations.copy()
@@ -1217,10 +1178,7 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
             last_request_time = _recent_deck_creations[request_hash]
             time_since_last = current_time - last_request_time
             if time_since_last < _DEDUP_WINDOW_SECONDS:
-                logger.warning(f"DUPLICATE DECK CREATION REJECTED - Same request within {time_since_last:.1f}s (limit: {_DEDUP_WINDOW_SECONDS}s)")
-                logger.warning(f"  - Hash: {request_hash}")
-                logger.warning(f"  - Title: {outline.get('title')}")
-                logger.warning(f"  - Outline ID: {outline.get('id')}")
+                logger.info(f"Duplicate deck creation rejected ({time_since_last:.0f}s ago): {outline.get('title')}")
                 raise HTTPException(
                     status_code=429,
                     detail={
@@ -1235,9 +1193,6 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
 
         # Record this request
         _recent_deck_creations[request_hash] = current_time
-        logger.info(f"Request recorded with hash: {request_hash}")
-    else:
-        logger.info(f"Skipping duplicate check for overage confirmation retry")
 
     # ===== CREDIT TRACKING =====
     # Check credits and determine how many slides we can generate
@@ -1398,18 +1353,6 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/deck/create-from-outline-debug")
-async def api_deck_create_from_outline_debug_endpoint(request: dict):
-    """Debug endpoint to see what's actually being sent"""
-    print(f"\n{'='*80}")
-    print(f"=== DEBUG: Raw request data ===")
-    print(f"{'='*80}")
-    print(f"Request keys: {list(request.keys())}")
-    print(f"Full request: {json.dumps(request, indent=2)[:1000]}...")
-    print(f"{'='*80}\n")
-    
-    return {"message": "Debug info printed to console", "received": request}
 
 if __name__ == "__main__":
     from utils.startup_display import banner, step, done

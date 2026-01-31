@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, Suspense, lazy } from 'react';
 import { useNavigate } from 'react-router-dom';
+import '@/styles/landing.css'; // Static CSS — Vite-managed, immune to React re-renders
 import { Button } from '@/components/ui/button';
 import BrandWordmark from '@/components/common/BrandWordmark';
 import { cn } from '@/lib/utils';
@@ -40,6 +41,35 @@ const MiniSlide = lazy(() => import('@/components/deck/MiniSlide'));
 // Lazy load PreviewCarousel (only needed after generation)
 const PreviewCarousel = lazy(() => import('@/components/landing/PreviewCarousel'));
 
+// Isolated component so typewriter state updates (~20/sec) don't re-render the
+// entire 1500-line Landing component. Only this small subtree re-renders.
+const TYPEWRITER_PHRASES = [
+  'a quarterly business review',
+  'course material on the French Revolution for grade 11',
+  'a lecture on quantum computing',
+  'a team onboarding guide',
+  'a product launch presentation',
+];
+
+const TypewriterPlaceholder = React.memo(({ paused }: { paused: boolean }) => {
+  const text = useTypewriter({
+    phrases: TYPEWRITER_PHRASES,
+    typingSpeed: 50,
+    deletingSpeed: 30,
+    pauseDuration: 2500,
+    paused,
+  });
+
+  return (
+    <div className="absolute inset-0 px-6 pt-10 flex cursor-text pointer-events-none z-10">
+      <span className="text-2xl sm:text-3xl font-semibold leading-tight text-zinc-300 dark:text-zinc-700">
+        {text}
+        <span className="inline-block w-[2px] h-[1em] bg-[#FF4301] ml-1 align-middle animate-pulse" />
+      </span>
+    </div>
+  );
+});
+
 const Landing: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -67,20 +97,8 @@ const Landing: React.FC = () => {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const previewSectionRef = useRef<HTMLDivElement>(null);
 
-  // Typewriter effect
-  const typewriterText = useTypewriter({
-    phrases: [
-      'a quarterly business review',
-      'course material on the French Revolution for grade 11',
-      'a lecture on quantum computing',
-      'a team onboarding guide',
-      'a product launch presentation',
-    ],
-    typingSpeed: 50,
-    deletingSpeed: 30,
-    pauseDuration: 2500,
-    paused: !heroInView || isHeroInputFocused || !!heroInput,
-  });
+  // Typewriter is rendered via <TypewriterPlaceholder> to isolate its rapid
+  // state updates from the rest of the Landing component.
 
   // ------------------------------------------------------------------
   // Preview generation handler (Try Without Signup)
@@ -192,7 +210,7 @@ const Landing: React.FC = () => {
       try {
         // Fetch both in parallel
         const [showcaseResults, communityResults] = await Promise.all([
-          showcaseService.getFeaturedDecks(12),
+          showcaseService.getFeaturedDecks(30),
           communityService.getDecks({ limit: 20 }).catch(() => ({ decks: [] }))
         ]);
         setShowcaseDecks(showcaseResults);
@@ -491,14 +509,7 @@ const Landing: React.FC = () => {
 
                   {/* Typewriter Overlay */}
                   {!isHeroInputFocused && !heroInput && (
-                    <div
-                      className="absolute inset-0 px-6 pt-10 flex cursor-text pointer-events-none z-10"
-                    >
-                      <span className="text-2xl sm:text-3xl font-semibold leading-tight text-zinc-300 dark:text-zinc-700">
-                        {typewriterText}
-                        <span className="inline-block w-1 h-[1em] bg-[#FF4301] ml-1 align-middle animate-pulse" />
-                      </span>
-                    </div>
+                    <TypewriterPlaceholder paused={!heroInView || isHeroInputFocused || !!heroInput} />
                   )}
 
                   <textarea
@@ -1266,261 +1277,8 @@ const Landing: React.FC = () => {
         }}
       />
 
-      {/* Animations */}
-      <style>{`
-        html {
-          scroll-behavior: smooth;
-        }
-        .animate-on-scroll {
-          transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1),
-                      transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-          transform: translateY(30px);
-        }
-        .animate-on-scroll.in-view {
-          opacity: 1 !important;
-          transform: translateY(0);
-        }
-        .scrollbar-hide::-webkit-scrollbar {
-          display: none;
-        }
-        .scrollbar-hide {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: rgba(255,255,255,0.05);
-          border-radius: 3px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(255,255,255,0.2);
-          border-radius: 3px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(255,255,255,0.3);
-        }
-        .custom-scrollbar {
-          scrollbar-width: thin;
-          scrollbar-color: rgba(255,255,255,0.2) rgba(255,255,255,0.05);
-        }
-
-        /* Hero title animation */
-        .hero-title-animate {
-          opacity: 0;
-          animation: heroTitlePop 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s forwards;
-        }
-        @keyframes heroTitlePop {
-          0% { opacity: 0; transform: scale(0.9) translateY(20px); }
-          100% { opacity: 1; transform: scale(1) translateY(0); }
-        }
-
-        .hero-subtitle-animate {
-          opacity: 0;
-          animation: heroSubtitleFade 0.6s ease-out 0.4s forwards;
-        }
-        @keyframes heroSubtitleFade {
-          0% { opacity: 0; transform: translateY(10px); }
-          100% { opacity: 1; transform: translateY(0); }
-        }
-
-        /* Hero input box animation - poppy bounce */
-        .hero-input-box {
-          opacity: 0;
-          animation: heroInputPop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.5s forwards;
-        }
-        @keyframes heroInputPop {
-          0% { opacity: 0; transform: scale(0.95) translateY(20px); }
-          100% { opacity: 1; transform: scale(1) translateY(0); }
-        }
-
-        /* Pop-in card with shadow pulse */
-        .pop-in-card {
-          transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-        .pop-in-card:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
-        }
-        .pop-in-card:focus-within {
-          transform: translateY(-2px);
-          box-shadow: 0 25px 50px -12px rgba(255, 67, 1, 0.15);
-        }
-
-        /* Carousel main slide animation */
-        .carousel-main-slide {
-          transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
-                      box-shadow 0.3s ease;
-        }
-        .carousel-main-slide:hover {
-          transform: scale(1.02);
-        }
-
-        /* Carousel side slides */
-        .carousel-side-slide {
-          transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        /* Carousel arrows */
-        .carousel-arrow {
-          transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-        .carousel-arrow:active {
-          transform: translateY(-50%) scale(0.95);
-        }
-
-        /* Pixelated blocks pattern - left side */
-        .pixel-blocks-left {
-          position: absolute;
-          inset: 0;
-          background-image:
-            radial-gradient(circle at 20% 10%, rgba(255,67,1,0.3) 0, rgba(255,67,1,0.3) 12px, transparent 12px),
-            radial-gradient(circle at 60% 25%, rgba(255,67,1,0.2) 0, rgba(255,67,1,0.2) 8px, transparent 8px),
-            radial-gradient(circle at 30% 40%, rgba(255,67,1,0.25) 0, rgba(255,67,1,0.25) 16px, transparent 16px),
-            radial-gradient(circle at 70% 55%, rgba(255,67,1,0.15) 0, rgba(255,67,1,0.15) 10px, transparent 10px),
-            radial-gradient(circle at 15% 70%, rgba(255,67,1,0.2) 0, rgba(255,67,1,0.2) 14px, transparent 14px),
-            radial-gradient(circle at 50% 85%, rgba(255,67,1,0.25) 0, rgba(255,67,1,0.25) 8px, transparent 8px),
-            radial-gradient(circle at 80% 90%, rgba(255,67,1,0.15) 0, rgba(255,67,1,0.15) 12px, transparent 12px);
-          animation: pixelFloat 8s ease-in-out infinite;
-        }
-
-        /* Pixelated blocks pattern - right side */
-        .pixel-blocks-right {
-          position: absolute;
-          inset: 0;
-          background-image:
-            radial-gradient(circle at 80% 15%, rgba(255,67,1,0.3) 0, rgba(255,67,1,0.3) 12px, transparent 12px),
-            radial-gradient(circle at 40% 30%, rgba(255,67,1,0.2) 0, rgba(255,67,1,0.2) 8px, transparent 8px),
-            radial-gradient(circle at 70% 45%, rgba(255,67,1,0.25) 0, rgba(255,67,1,0.25) 16px, transparent 16px),
-            radial-gradient(circle at 30% 60%, rgba(255,67,1,0.15) 0, rgba(255,67,1,0.15) 10px, transparent 10px),
-            radial-gradient(circle at 85% 75%, rgba(255,67,1,0.2) 0, rgba(255,67,1,0.2) 14px, transparent 14px),
-            radial-gradient(circle at 50% 88%, rgba(255,67,1,0.25) 0, rgba(255,67,1,0.25) 8px, transparent 8px),
-            radial-gradient(circle at 20% 95%, rgba(255,67,1,0.15) 0, rgba(255,67,1,0.15) 12px, transparent 12px);
-          animation: pixelFloat 8s ease-in-out infinite reverse;
-        }
-
-        @keyframes pixelFloat {
-          0%, 100% { transform: translateY(0); opacity: 0.6; }
-          50% { transform: translateY(-10px); opacity: 1; }
-        }
-
-        /* Animated checkerboard background - orange version */
-        .checkerboard-orange {
-          position: absolute;
-          inset: 0;
-          background-image:
-            linear-gradient(45deg, rgba(255,67,1,0.08) 25%, transparent 25%),
-            linear-gradient(-45deg, rgba(255,67,1,0.08) 25%, transparent 25%),
-            linear-gradient(45deg, transparent 75%, rgba(255,67,1,0.08) 75%),
-            linear-gradient(-45deg, transparent 75%, rgba(255,67,1,0.08) 75%);
-          background-size: 40px 40px;
-          background-position: 0 0, 0 20px, 20px -20px, -20px 0px;
-          animation: checkerboardShift 20s linear infinite;
-        }
-
-        /* Animated checkerboard background - gray version */
-        .checkerboard-gray {
-          position: absolute;
-          inset: 0;
-          background-image:
-            linear-gradient(45deg, rgba(128,128,128,0.06) 25%, transparent 25%),
-            linear-gradient(-45deg, rgba(128,128,128,0.06) 25%, transparent 25%),
-            linear-gradient(45deg, transparent 75%, rgba(128,128,128,0.06) 75%),
-            linear-gradient(-45deg, transparent 75%, rgba(128,128,128,0.06) 75%);
-          background-size: 40px 40px;
-          background-position: 0 0, 0 20px, 20px -20px, -20px 0px;
-          animation: checkerboardShift 25s linear infinite reverse;
-        }
-
-        @keyframes checkerboardShift {
-          0% { background-position: 0 0, 0 20px, 20px -20px, -20px 0px; }
-          100% { background-position: 40px 40px, 40px 60px, 60px 20px, 20px 40px; }
-        }
-
-        /* Glitchy mountain pattern */
-        .mountain-pattern {
-          position: absolute;
-          inset: 0;
-          overflow: hidden;
-        }
-        .mountain-pattern::before {
-          content: '';
-          position: absolute;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          height: 200px;
-          background:
-            linear-gradient(135deg, transparent 40%, rgba(255,67,1,0.1) 40%, rgba(255,67,1,0.1) 45%, transparent 45%),
-            linear-gradient(225deg, transparent 40%, rgba(255,67,1,0.08) 40%, rgba(255,67,1,0.08) 45%, transparent 45%),
-            linear-gradient(135deg, transparent 55%, rgba(128,128,128,0.06) 55%, rgba(128,128,128,0.06) 60%, transparent 60%);
-          background-size: 100px 100px, 80px 80px, 120px 120px;
-          animation: mountainGlitch 4s ease-in-out infinite;
-        }
-
-        @keyframes mountainGlitch {
-          0%, 100% { transform: translateX(0); opacity: 0.8; }
-          10% { transform: translateX(-2px) skewX(-0.5deg); opacity: 0.9; }
-          20% { transform: translateX(2px) skewX(0.5deg); opacity: 0.7; }
-          30% { transform: translateX(0); opacity: 0.85; }
-          50% { transform: translateX(1px); opacity: 0.9; }
-          70% { transform: translateX(-1px) skewX(-0.3deg); opacity: 0.75; }
-          90% { transform: translateX(0); opacity: 0.85; }
-        }
-
-        /* Distribution graph pattern - animated bars */
-        .distribution-bars {
-          position: absolute;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          height: 150px;
-          display: flex;
-          align-items: flex-end;
-          justify-content: center;
-          gap: 4px;
-          opacity: 0.15;
-          pointer-events: none;
-        }
-        .distribution-bars .bar {
-          width: 8px;
-          background: linear-gradient(to top, rgba(255,67,1,0.8), rgba(255,107,53,0.4));
-          border-radius: 4px 4px 0 0;
-          animation: barPulse 2s ease-in-out infinite;
-        }
-        .distribution-bars .bar:nth-child(odd) {
-          background: linear-gradient(to top, rgba(128,128,128,0.6), rgba(128,128,128,0.2));
-        }
-        @keyframes barPulse {
-          0%, 100% { transform: scaleY(1); }
-          50% { transform: scaleY(1.1); }
-        }
-
-        /* Hero slide styles (kept for compatibility) */
-        .hero-slide {
-          opacity: 0;
-          animation: heroSlideFadeIn 0.5s ease-out forwards;
-        }
-        @keyframes heroSlideFadeIn {
-          to { opacity: 1; }
-        }
-
-        .hero-slide-wobble {
-          transform: rotate(var(--rotation, 0deg));
-        }
-
-        .hero-slide-swap {
-          position: relative;
-        }
-        .hero-slide-swap > * {
-          animation: heroSlideSwapFade 0.6s ease-out;
-        }
-        @keyframes heroSlideSwapFade {
-          0% { opacity: 0; transform: scale(0.97); }
-          100% { opacity: 1; transform: scale(1); }
-        }
-      `}</style>
+      {/* Landing styles loaded from static CSS file (src/styles/landing.css)
+          to prevent animation resets during React re-renders */}
     </div>
   );
 };

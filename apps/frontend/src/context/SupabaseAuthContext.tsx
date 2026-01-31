@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
@@ -183,6 +183,8 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
               name: session.user.user_metadata?.full_name,
               createdAt: session.user.created_at,
             });
+            // Notify other contexts (e.g. RewardContext) that a user signed in
+            window.dispatchEvent(new CustomEvent('user_signed_in'));
           }
           break;
         case 'SIGNED_OUT':
@@ -465,7 +467,9 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const value = {
+  // Memoize context value to prevent cascading re-renders in all consumers.
+  // Only re-create when actual state values change (not function references).
+  const value = useMemo(() => ({
     user,
     session,
     isAuthenticated: !!session,
@@ -481,7 +485,8 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     signOut,
     resetPassword,
     updatePassword,
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [user, session, isLoading, isAdmin, adminRole, isAdminLoading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

@@ -38,7 +38,7 @@ const AgentConfirmationCard: React.FC<AgentConfirmationCardProps> = ({
   if (result) {
     if (result.success) {
       return (
-        <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 p-4">
+        <div className="rounded-xl border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 p-4">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 rounded-full bg-green-100 dark:bg-green-900 p-1">
               <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
@@ -57,7 +57,7 @@ const AgentConfirmationCard: React.FC<AgentConfirmationCardProps> = ({
     }
 
     return (
-      <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-4">
+      <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-4">
         <div className="flex items-start gap-3">
           <div className="mt-0.5 rounded-full bg-red-100 dark:bg-red-900 p-1">
             <X className="h-4 w-4 text-red-600 dark:text-red-400" />
@@ -77,7 +77,7 @@ const AgentConfirmationCard: React.FC<AgentConfirmationCardProps> = ({
 
   // Pending confirmation
   return (
-    <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4">
+    <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4">
       <div className="flex items-start gap-3">
         <div className="mt-0.5 rounded-full bg-amber-100 dark:bg-amber-900 p-1.5">
           <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
@@ -104,7 +104,7 @@ const AgentConfirmationCard: React.FC<AgentConfirmationCardProps> = ({
             <button
               onClick={handleConfirm}
               disabled={loading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-[#FF4301] text-white hover:bg-[#e63d00] disabled:opacity-50 transition-colors"
             >
               {loading ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -116,7 +116,7 @@ const AgentConfirmationCard: React.FC<AgentConfirmationCardProps> = ({
             <button
               onClick={onCancel}
               disabled={loading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-[#ddd] dark:border-[#444] text-[#666] dark:text-[#aaa] hover:bg-[#f5f5f5] dark:hover:bg-[#222] disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-[#ddd] dark:border-[#444] text-[#666] dark:text-[#aaa] hover:bg-[#f5f5f5] dark:hover:bg-[#222] disabled:opacity-50 transition-colors"
             >
               <X className="h-3.5 w-3.5" />
               Cancel

@@ -67,6 +67,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== LANDING PAGE SCROLL ANIMATIONS ===== */
+/* Must live in a static CSS file — NOT in an inline <style> inside React JSX.
+   React re-renders can churn inline <style> tags, briefly removing these rules
+   and causing elements with opacity-0 + .in-view to flash invisible. */
+.animate-on-scroll {
+  transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateY(30px);
+}
+.animate-on-scroll.in-view {
+  opacity: 1 !important;
+  transform: translateY(0);
+}
+
 /* ===== BASE LAYOUT FIX ===== */
 /* Prevent layout shift on page navigation by ensuring consistent width */
 html {

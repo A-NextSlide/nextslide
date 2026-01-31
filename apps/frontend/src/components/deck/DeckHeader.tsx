@@ -2,13 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { IconButton } from '../ui/IconButton';
-import { Edit, Plus, ChevronLeft, Undo, Redo, History, ZoomIn, ZoomOut, Search, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileText, Loader2, Sun, Moon, Monitor, MessageSquare, Settings, LogOut, Share2, Lock, Download, Palette } from 'lucide-react';
+import { Edit, Plus, ChevronLeft, Undo, Redo, History, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileText, Loader2, Sun, Moon, Monitor, MessageSquare, Settings, LogOut, Share2, Lock, Download, Palette } from 'lucide-react';
 import { useLockedSlides } from '@/hooks/useLockedSlides';
 import { useVersionHistory } from '@/context/VersionHistoryContext';
-import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
-import { ZOOM_LIMITS, ZOOM_STEP } from '@/utils/zoom';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Slider } from "@/components/ui/slider";
 import SyncIndicator from '../SyncIndicator';
 // ModeToggle removed from header surface; theme options moved into actions menu
 import { useYjs } from '@/yjs/YjsProvider';
@@ -522,50 +519,6 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
                   <History size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
                   Version history
                 </DropdownMenuItem>
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className="rounded-lg px-2.5 py-2 text-[13px] text-gray-700 dark:text-gray-300 focus:bg-orange-50 dark:focus:bg-orange-500/10 focus:text-gray-900 dark:focus:text-gray-100 data-[state=open]:bg-orange-50 dark:data-[state=open]:bg-orange-500/10 cursor-pointer">
-                    <Search size={15} className="mr-2.5 text-gray-400 dark:text-gray-500" />
-                    Zoom
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="w-64 p-3 rounded-xl shadow-[0_16px_70px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.5)] border border-gray-200/80 dark:border-white/10 bg-white dark:bg-zinc-900">
-                    <div className="flex items-center space-x-2">
-                      <IconButton
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => {
-                          const z = useEditorSettingsStore.getState().zoomLevel;
-                          if (z > ZOOM_LIMITS.min) {
-                            useEditorSettingsStore.getState().setZoomLevel(Math.max(ZOOM_LIMITS.min, z - ZOOM_STEP));
-                          }
-                        }}
-                        aria-label="Zoom Out"
-                      >
-                        <ZoomOut size={14} />
-                      </IconButton>
-                      <Slider
-                        value={[useEditorSettingsStore.getState().zoomLevel]}
-                        min={ZOOM_LIMITS.min}
-                        max={ZOOM_LIMITS.max}
-                        step={5}
-                        onValueChange={(value) => useEditorSettingsStore.getState().setZoomLevel(value[0])}
-                        className="flex-1"
-                      />
-                      <IconButton
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => {
-                          const z = useEditorSettingsStore.getState().zoomLevel;
-                          if (z < ZOOM_LIMITS.max) {
-                            useEditorSettingsStore.getState().setZoomLevel(Math.min(ZOOM_LIMITS.max, z + ZOOM_STEP));
-                          }
-                        }}
-                        aria-label="Zoom In"
-                      >
-                        <ZoomIn size={14} />
-                      </IconButton>
-                    </div>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
               </div>
 
               <div className="mx-3 h-px bg-gray-100 dark:bg-white/[0.06]" />

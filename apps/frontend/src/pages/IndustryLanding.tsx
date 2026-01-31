@@ -44,6 +44,39 @@ function getIcon(name: string): React.ComponentType<{ className?: string }> {
   return iconMap[name] || Sparkles;
 }
 
+// Topic-specific prompts for the interactive slide viewer per industry
+// deckIndex maps to featured_decks display_order (0-indexed)
+const INDUSTRY_PROMPTS: Record<string, PromptItem[]> = {
+  startups: [
+    { id: 'pitch', badge: 'Pitch', icon: Rocket, text: "Pitch deck for VCs who've already seen 500 this month", theme: 'light', deckIndex: 0 },
+    { id: 'funding', badge: 'Funding', icon: DollarSign, text: "Series A narrative showing 10x growth potential", theme: 'light', deckIndex: 12 },
+    { id: 'demo', badge: 'Demo', icon: Zap, text: "Demo day pitch that actually fits in 3 minutes", theme: 'orange', deckIndex: 4 },
+    { id: 'metrics', badge: 'Metrics', icon: BarChart3, text: "Investor update that makes everyone reply", theme: 'light', deckIndex: 13 },
+    { id: 'team', badge: 'Team', icon: Users, text: "All-hands deck that actually gets people excited", theme: 'light', deckIndex: 14 },
+  ],
+  educators: [
+    { id: 'biology', badge: 'Science', icon: Sparkles, text: "Cellular Respiration: From Glucose to ATP", theme: 'light', deckIndex: 5 },
+    { id: 'lecture', badge: 'Lecture', icon: Brain, text: "Algebra for kids who ask 'when will I use this'", theme: 'light', deckIndex: 2 },
+    { id: 'history', badge: 'History', icon: Clock, text: "The French Revolution: From Monarchy to Republic", theme: 'orange', deckIndex: 6 },
+    { id: 'workshop', badge: 'Workshop', icon: Users, text: "Interactive workshop that keeps everyone engaged", theme: 'light', deckIndex: 15 },
+    { id: 'visual', badge: 'Visual', icon: Palette, text: "Science experiment walkthrough with visual steps", theme: 'light', deckIndex: 16 },
+  ],
+  marketers: [
+    { id: 'social', badge: 'Social', icon: Sparkles, text: "Social media strategy that actually converts", theme: 'light', deckIndex: 11 },
+    { id: 'campaign', badge: 'Campaign', icon: BarChart3, text: "Q4 campaign report that gets budget approved", theme: 'orange', deckIndex: 17 },
+    { id: 'brand', badge: 'Brand', icon: Palette, text: "Brand positioning deck the C-suite remembers", theme: 'light', deckIndex: 18 },
+    { id: 'content', badge: 'Content', icon: Repeat, text: "Content marketing roadmap with real metrics", theme: 'light', deckIndex: 19 },
+    { id: 'launch', badge: 'Launch', icon: Zap, text: "Product launch campaign that breaks through noise", theme: 'light', deckIndex: 20 },
+  ],
+  consultants: [
+    { id: 'strategy', badge: 'Strategy', icon: Briefcase, text: "Strategy analysis that reads like a McKinsey memo", theme: 'light', deckIndex: 21 },
+    { id: 'proposal', badge: 'Proposal', icon: FileText, text: "Client proposal that closes itself", theme: 'orange', deckIndex: 7 },
+    { id: 'research', badge: 'Research', icon: BarChart3, text: "Market research with clean data visualization", theme: 'light', deckIndex: 22 },
+    { id: 'change', badge: 'Change', icon: Sparkles, text: "Change management plan with stakeholder buy-in", theme: 'light', deckIndex: 23 },
+    { id: 'analysis', badge: 'Analysis', icon: Lock, text: "Competitive analysis that stays confidential", theme: 'light', deckIndex: 24 },
+  ],
+};
+
 interface IndustryLandingProps {
   config: LandingPageConfig;
 }
@@ -54,6 +87,8 @@ const IndustryLanding: React.FC<IndustryLandingProps> = ({ config }) => {
   const isSignedIn = !!user;
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [featuredDecks, setFeaturedDecks] = useState<FeaturedDeck[]>([]);
+  const [isLoadingDecks, setIsLoadingDecks] = useState(true);
 
   // Derive the industry label from the title (e.g. "NextSlide for Startups" -> "Startups")
   const industryLabel = config.title.replace('NextSlide for ', '');
@@ -76,6 +111,14 @@ const IndustryLanding: React.FC<IndustryLandingProps> = ({ config }) => {
   useEffect(() => {
     trackLandingPageViewed({ slug: config.slug, type: 'industry' });
   }, [config.slug]);
+
+  // Load featured decks for the interactive slide viewer
+  useEffect(() => {
+    showcaseService.getFeaturedDecks(30).then(decks => {
+      setFeaturedDecks(decks);
+      setIsLoadingDecks(false);
+    }).catch(() => setIsLoadingDecks(false));
+  }, []);
 
   // Enable scrolling
   useEffect(() => {
@@ -291,6 +334,13 @@ const IndustryLanding: React.FC<IndustryLandingProps> = ({ config }) => {
           </motion.p>
         </div>
       </section>
+
+      {/* Interactive Slide Viewer */}
+      <InteractiveHero
+        decks={featuredDecks}
+        isLoading={isLoadingDecks}
+        prompts={INDUSTRY_PROMPTS[config.slug]}
+      />
 
       {/* Social Proof */}
       <section className="py-12 px-4 sm:px-8 bg-white dark:bg-zinc-950 border-y border-black/5 dark:border-white/5">

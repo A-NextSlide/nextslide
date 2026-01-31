@@ -110,7 +110,7 @@ const BadgesTab: React.FC = () => {
   const [badgeData, setBadgeData] = useState<BadgesResponse | null>(null);
   const [streakData, setStreakData] = useState<StreakData | null>(null);
   const [loading, setLoading] = useState(true);
-  const { showBadgeUnlock, triggerBadgeCheck } = useReward();
+  const { triggerBadgeCheck } = useReward();
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -190,40 +190,6 @@ const BadgesTab: React.FC = () => {
         <Leaderboard />
       </div>
 
-      {/* Preview Notifications */}
-      <div className="rounded-2xl border-2 border-[#eaeaea] dark:border-[#333] p-5">
-        <div className="flex items-center gap-2 mb-1">
-          <Eye className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-black dark:text-white">Preview Notifications</h3>
-        </div>
-        <p className="text-xs text-muted-foreground mb-4">See how notifications look when you earn badges</p>
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => showBadgeUnlock({
-              badge_type: 'first_deck',
-              name: 'First Creation',
-              description: 'Created your first presentation',
-              icon: 'sparkles',
-              credits: 10,
-            })}
-            className="px-4 py-2 text-sm font-medium rounded-lg border border-[#eaeaea] dark:border-[#333] bg-white dark:bg-[#111] text-black dark:text-white hover:border-[#FF4301] hover:text-[#FF4301] transition-colors"
-          >
-            Preview Badge Unlock
-          </button>
-          <button
-            onClick={() => showBadgeUnlock({
-              badge_type: 'streak_7',
-              name: '7-Day Streak',
-              description: 'Created presentations 7 days in a row',
-              icon: 'flame',
-              credits: 25,
-            })}
-            className="px-4 py-2 text-sm font-medium rounded-lg border border-[#eaeaea] dark:border-[#333] bg-white dark:bg-[#111] text-black dark:text-white hover:border-[#FF4301] hover:text-[#FF4301] transition-colors"
-          >
-            Preview Streak Milestone
-          </button>
-        </div>
-      </div>
     </div>
   );
 };

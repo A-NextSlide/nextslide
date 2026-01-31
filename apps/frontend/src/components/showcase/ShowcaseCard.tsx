@@ -14,6 +14,7 @@ import type { ShowcaseDeck } from '@/services/showcaseApi';
 import MiniSlide from '@/components/deck/MiniSlide';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { BROWSER } from '@/utils/browser';
 
 interface ShowcaseCardProps {
   deck: ShowcaseDeck;
@@ -92,11 +93,19 @@ const ShowcaseCard: React.FC<ShowcaseCardProps> = ({
             isFeaturedVariant ? 'aspect-[16/9]' : 'aspect-[16/9]',
           )}
         >
-          <div className="absolute inset-0 w-full h-full">
-            {deck.firstSlide ? (
+          <div className="absolute inset-0 w-full h-full pointer-events-none">
+            {BROWSER.isMobile && deck.thumbnailUrl ? (
+              <img
+                src={deck.thumbnailUrl}
+                alt={deck.title}
+                className="w-full h-full object-cover"
+                draggable={false}
+                loading="lazy"
+              />
+            ) : deck.firstSlide ? (
               <MiniSlide
                 slide={deck.firstSlide}
-                className="w-full h-full"
+                className="w-full h-full !cursor-default !ring-0 !hover:ring-0"
               />
             ) : (
               <div
@@ -151,7 +160,7 @@ const ShowcaseCard: React.FC<ShowcaseCardProps> = ({
           </div>
 
           {/* Hover action buttons */}
-          <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+          <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none" />
         </div>
 
         {/* Card footer */}

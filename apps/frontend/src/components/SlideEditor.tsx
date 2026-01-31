@@ -1826,13 +1826,13 @@ const SlideEditorContent: React.FC = () => {
               />
 
               <div
-                className="absolute top-0 right-0 bottom-0 z-10 bg-background border-l border-border"
+                className="absolute top-0 right-0 bottom-0 z-10 border-l border-gray-200/80 dark:border-white/10 bg-white dark:bg-zinc-900 overflow-hidden"
                 style={{
-                  width: '350px',
+                  width: '320px',
                   transform: isHistoryPanelOpen ? 'translateX(0)' : 'translateX(100%)',
                   opacity: isHistoryPanelOpen ? 1 : 0,
-                  transition: 'all 0.3s ease-in-out',
-                  boxShadow: isHistoryPanelOpen ? '-5px 0 15px rgba(0, 0, 0, 0.1)' : 'none'
+                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                  boxShadow: isHistoryPanelOpen ? '-8px 0 30px -12px rgba(0, 0, 0, 0.12)' : 'none'
                 }}
               >
                 {isHistoryPanelOpen && <VersionHistoryPanel />}

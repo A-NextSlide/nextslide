@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+// Card imports removed - using compact admin-styled divs
 import {
   Search,
   ChevronLeft,
@@ -82,6 +82,12 @@ import {
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+
+// ---------------------------------------------------------------------------
+// Shared design tokens (match AdminServices)
+// ---------------------------------------------------------------------------
+const sectionHeading = "text-[10px] font-bold uppercase tracking-wider text-[#FF4301]";
+const cardClass = "bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl";
 
 const AdminUsersV2: React.FC = () => {
   const [users, setUsers] = useState<UserSummary[]>([]);
@@ -454,233 +460,173 @@ const AdminUsersV2: React.FC = () => {
 
   return (
     <AdminLayoutV2>
-      <div className="w-full space-y-6">
-        {/* Header */}
+      <div className="w-full space-y-3">
+        {/* ── Page header ── */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">Users</h1>
-            <p className="text-sm text-[#666] dark:text-[#888]">
-              Manage platform users
-            </p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+              Users
+            </h1>
+            <span className="text-[11px] font-mono text-[#666] dark:text-[#888]">
+              {totalUsers.toLocaleString()}
+            </span>
           </div>
+          <span className="text-[10px] text-[#888]">{userStats.newThisWeek} new this week</span>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          <Card className="border-gray-200 dark:border-gray-800 hover:shadow-lg transition-shadow duration-300">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                Total Users
-              </CardTitle>
-              <Users className="h-4 w-4 text-violet-600 dark:text-violet-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}>
-                {totalUsers.toLocaleString()}
+        {/* ── Overview ── */}
+        <section>
+          <h2 className={sectionHeading} style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Overview</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1.5">
+            <div className={cn(cardClass, "p-2.5")}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-[#888] flex items-center gap-1"><Users className="h-3 w-3" />Total</span>
               </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {userStats.newThisWeek} new this week
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-gray-200 dark:border-gray-800 hover:shadow-lg transition-shadow duration-300">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                Active Users
-              </CardTitle>
-              <Activity className="h-4 w-4 text-green-600 dark:text-green-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}>
-                {userStats.totalActive}
+              <div className="text-lg font-semibold tabular-nums leading-tight">{totalUsers.toLocaleString()}</div>
+            </div>
+            <div className={cn(cardClass, "p-2.5")}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-[#888] flex items-center gap-1"><Activity className="h-3 w-3" />Active (7d)</span>
               </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Active in last 7 days
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-gray-200 dark:border-gray-800 hover:shadow-lg transition-shadow duration-300">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                Admins
-              </CardTitle>
-              <Shield className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}>
-                {userStats.adminCount}
+              <div className="text-lg font-semibold tabular-nums leading-tight">{userStats.totalActive}</div>
+            </div>
+            <div className={cn(cardClass, "p-2.5")}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-[#888] flex items-center gap-1"><Shield className="h-3 w-3" />Admins</span>
               </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Administrator accounts
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-gray-200 dark:border-gray-800 hover:shadow-lg transition-shadow duration-300">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                Verified
-              </CardTitle>
-              <CheckCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}>
-                {userStats.verifiedCount}
+              <div className="text-lg font-semibold tabular-nums leading-tight">{userStats.adminCount}</div>
+            </div>
+            <div className={cn(cardClass, "p-2.5")}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-[#888] flex items-center gap-1"><CheckCircle className="h-3 w-3" />Verified</span>
               </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Email verified users
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-            <Input
-              placeholder="Search by email or name..."
-              value={searchQuery}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="pl-10"
-            />
+              <div className="text-lg font-semibold tabular-nums leading-tight">{userStats.verifiedCount}</div>
+            </div>
           </div>
+        </section>
+
+        {/* ── Directory ── */}
+        <section>
+          <h2 className={sectionHeading} style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Directory</h2>
+          <div className="relative mt-1.5">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[#999] h-3.5 w-3.5" />
+          <Input
+            placeholder="Search by email or name..."
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="pl-9 h-9 text-sm bg-white dark:bg-[#111] border-[#eaeaea] dark:border-[#333]"
+          />
         </div>
 
         {/* Users Table */}
-        <Card>
-          <CardContent className="p-0">
-            <div className="rounded-lg border border-gray-200 dark:border-gray-800 overflow-x-auto">
+        <div className={cn(cardClass, "overflow-x-auto")}>
               <Table>
                 <TableHeader>
-                  <TableRow className="hover:bg-transparent h-10">
-                    <TableHead className="w-[40px] py-2">
+                  <TableRow className="hover:bg-transparent h-9">
+                    <TableHead className="w-[36px] py-1.5 pl-3">
                       <input
                         type="checkbox"
                         checked={selectedUsers.size === users.length && users.length > 0}
                         onChange={handleSelectAll}
-                        className="rounded border-gray-300 h-3.5 w-3.5"
+                        className="rounded border-[#ddd] dark:border-[#555] h-3.5 w-3.5"
                       />
                     </TableHead>
-                    <TableHead className="py-2">
+                    <TableHead className="py-1.5 text-[11px] text-[#888]">
                       <SortableHeader field="email">User</SortableHeader>
                     </TableHead>
-                    <TableHead className="py-2">
-                      <SortableHeader field="lastActive">Last Active</SortableHeader>
+                    <TableHead className="py-1.5 text-[11px] text-[#888]">
+                      <SortableHeader field="lastActive">Active</SortableHeader>
                     </TableHead>
-                    <TableHead className="py-2">
+                    <TableHead className="py-1.5 text-[11px] text-[#888]">
                       <SortableHeader field="status">Status</SortableHeader>
                     </TableHead>
-                    <TableHead className="py-2">
+                    <TableHead className="py-1.5 text-[11px] text-[#888]">
                       <SortableHeader field="role">Role</SortableHeader>
                     </TableHead>
-                    <TableHead className="py-2">
-                      <span className="text-xs">Tokens <span className="text-gray-400 font-normal">(left/total)</span></span>
+                    <TableHead className="py-1.5 text-[11px] text-[#888]">
+                      Tokens
                     </TableHead>
-                    <TableHead className="py-2">
+                    <TableHead className="py-1.5 text-[11px] text-[#888]">
                       <SortableHeader field="deckCount">Decks</SortableHeader>
                     </TableHead>
-                    <TableHead className="w-[40px] py-2"></TableHead>
+                    <TableHead className="w-[36px] py-1.5"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoading ? renderSkeletonRows() : users.map((user) => {
                     const activityStatus = getActivityStatus(user.lastActive);
                     return (
-                      <TableRow key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50 h-12">
-                        <TableCell className="py-2">
+                      <TableRow key={user.id} className="hover:bg-[#fafafa] dark:hover:bg-[#161616] h-10">
+                        <TableCell className="py-1.5 pl-3">
                           <input
                             type="checkbox"
                             checked={selectedUsers.has(user.id)}
                             onChange={() => handleSelectUser(user.id)}
-                            className="rounded border-gray-300 h-3.5 w-3.5"
+                            className="rounded border-[#ddd] dark:border-[#555] h-3.5 w-3.5"
                           />
                         </TableCell>
-                        <TableCell className="py-2">
+                        <TableCell className="py-1.5">
                           <div className="flex items-center gap-2">
-                            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-600 to-purple-600 flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                            <div className="h-7 w-7 rounded-full bg-[#111] dark:bg-[#333] flex items-center justify-center text-white text-[11px] font-medium flex-shrink-0">
                               {user.email.charAt(0).toUpperCase()}
                             </div>
                             <div className="min-w-0">
-                              <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">{user.email}</p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                              <p className="font-medium text-[13px] truncate">{user.email}</p>
+                              <p className="text-[10px] text-[#999]">
                                 {format(new Date(user.createdAt), 'MMM d, yyyy')}
                               </p>
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="py-2">
-                          <span className={cn("text-xs font-medium", activityStatus.color)}>
+                        <TableCell className="py-1.5">
+                          <span className={cn("text-[11px] font-medium", activityStatus.color)}>
                             {activityStatus.label}
                           </span>
                         </TableCell>
-                        <TableCell className="py-2">
+                        <TableCell className="py-1.5">
                           {user.status === 'suspended' ? (
-                            <Badge variant="outline" className="gap-0.5 text-xs px-1.5 py-0 border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-300">
-                              <Ban className="h-2.5 w-2.5" />
-                              Suspended
-                            </Badge>
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400">Suspended</span>
                           ) : user.status === 'deleted' ? (
-                            <Badge variant="outline" className="gap-0.5 text-xs px-1.5 py-0 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
-                              <XCircle className="h-2.5 w-2.5" />
-                              Deleted
-                            </Badge>
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400">Deleted</span>
                           ) : user.emailVerified ? (
-                            <Badge variant="outline" className="gap-0.5 text-xs px-1.5 py-0 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300">
-                              <CheckCircle className="h-2.5 w-2.5" />
-                              Verified
-                            </Badge>
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400">Verified</span>
                           ) : (
-                            <Badge variant="outline" className="gap-0.5 text-xs px-1.5 py-0 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400">
-                              <Clock className="h-2.5 w-2.5" />
-                              Pending
-                            </Badge>
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#f5f5f5] text-[#888] dark:bg-[#222] dark:text-[#666]">Pending</span>
                           )}
                         </TableCell>
-                        <TableCell className="py-2">
+                        <TableCell className="py-1.5">
                           {user.isAdmin ? (
-                            <Badge className="gap-0.5 text-xs px-1.5 py-0 bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300">
-                              <Shield className="h-2.5 w-2.5" />
-                              Admin
-                            </Badge>
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300">Admin</span>
                           ) : (
-                            <Badge variant="outline" className="gap-0.5 text-xs px-1.5 py-0">
-                              <User className="h-2.5 w-2.5" />
-                              User
-                            </Badge>
+                            <span className="text-[10px] text-[#888]">User</span>
                           )}
                         </TableCell>
-                        <TableCell className="py-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-medium tabular-nums">
+                        <TableCell className="py-1.5">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[11px] font-medium tabular-nums">
                               {user.creditsRemaining === -1 ? '∞' : user.creditsRemaining}
                             </span>
-                            <span className="text-xs text-gray-400">/</span>
-                            <span className="text-xs text-gray-500 tabular-nums">
+                            <span className="text-[10px] text-[#ccc] dark:text-[#555]">/</span>
+                            <span className="text-[10px] text-[#999] tabular-nums">
                               {user.creditsTotal === -1 ? '∞' : user.creditsTotal}
                             </span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-5 w-5 p-0 ml-1 hover:bg-orange-50 dark:hover:bg-orange-900/20"
+                            <button
+                              className="ml-1 hover:text-[#FF4301] text-[#ccc] dark:text-[#555] transition-colors"
                               onClick={() => openCreditsDialog(user)}
                             >
-                              <Pencil className="h-3 w-3 text-orange-500" />
-                            </Button>
+                              <Pencil className="h-2.5 w-2.5" />
+                            </button>
                           </div>
                         </TableCell>
-                        <TableCell className="py-2">
+                        <TableCell className="py-1.5">
                           <button
                             onClick={() => navigate(`/admin/users/${user.id}?tab=decks`)}
-                            className="flex items-center gap-1 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+                            className="text-[11px] font-medium tabular-nums hover:text-[#FF4301] transition-colors"
                           >
-                            <FileStack className="h-3.5 w-3.5 text-gray-400" />
-                            <span className="font-medium text-sm">{user.deckCount}</span>
+                            {user.deckCount}
                           </button>
                         </TableCell>
-                        <TableCell className="py-2">
+                        <TableCell className="py-1.5">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-6 w-6" disabled={actionLoading === user.id}>
@@ -801,71 +747,64 @@ const AdminUsersV2: React.FC = () => {
                   })}
                 </TableBody>
               </Table>
-            </div>
-          </CardContent>
-        </Card>
+        </div>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalUsers)} of {totalUsers} users
-            </p>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">Per page:</span>
-              <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); }}>
-                <SelectTrigger className="w-[70px] h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="25">25</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                  <SelectItem value="100">100</SelectItem>
-                  <SelectItem value="200">200</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="flex items-center justify-between text-[11px]">
+          <div className="flex items-center gap-3">
+            <span className="text-[#888]">
+              {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, totalUsers)} of {totalUsers}
+            </span>
+            <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); }}>
+              <SelectTrigger className="w-[60px] h-7 text-[11px] border-[#eaeaea] dark:border-[#333]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+                <SelectItem value="200">200</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           {totalPages > 1 && (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
+            <div className="flex items-center gap-1">
+              <button
                 onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                 disabled={currentPage === 1}
+                className="px-2 py-1 rounded border border-[#eaeaea] dark:border-[#333] hover:bg-[#f5f5f5] dark:hover:bg-[#222] disabled:opacity-30 transition-colors"
               >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
-              <div className="flex items-center gap-1">
-                {[...Array(Math.min(5, totalPages))].map((_, i) => {
-                  const pageNum = i + 1;
-                  return (
-                    <Button
-                      key={pageNum}
-                      variant={currentPage === pageNum ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setCurrentPage(pageNum)}
-                      className="w-8 h-8 p-0"
-                    >
-                      {pageNum}
-                    </Button>
-                  );
-                })}
-                {totalPages > 5 && <span className="px-2">...</span>}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
+                <ChevronLeft className="h-3 w-3" />
+              </button>
+              {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                const pageNum = i + 1;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={cn(
+                      "w-7 h-7 rounded transition-colors",
+                      currentPage === pageNum
+                        ? "bg-[#FF4301] text-white font-medium"
+                        : "border border-[#eaeaea] dark:border-[#333] hover:bg-[#f5f5f5] dark:hover:bg-[#222]"
+                    )}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+              {totalPages > 5 && <span className="px-1 text-[#999]">...</span>}
+              <button
                 onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                 disabled={currentPage === totalPages}
+                className="px-2 py-1 rounded border border-[#eaeaea] dark:border-[#333] hover:bg-[#f5f5f5] dark:hover:bg-[#222] disabled:opacity-30 transition-colors"
               >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+                <ChevronRight className="h-3 w-3" />
+              </button>
             </div>
           )}
         </div>
+        </section>
       </div>
 
       {/* Delete Confirmation Dialog */}

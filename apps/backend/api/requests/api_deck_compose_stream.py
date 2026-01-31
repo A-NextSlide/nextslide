@@ -21,6 +21,15 @@ from agents.generation.events import sse_encode
 
 logger = logging.getLogger(__name__)
 
+
+async def _fire_thumbnail_render(deck_uuid: str) -> None:
+    """Fire-and-forget thumbnail rendering. Never raises."""
+    try:
+        from services.thumbnail_dispatch import trigger_thumbnail_render
+        await trigger_thumbnail_render(deck_uuid)
+    except Exception as e:
+        logger.warning("Thumbnail render failed (non-fatal) for %s: %s", deck_uuid, e)
+
 class StreamingDeckComposeRequest(BaseModel):
     deck_id: str = Field(description="The UUID of the deck to compose")
     outline: DeckOutline = Field(description="The deck outline containing slide information")
@@ -203,9 +212,13 @@ def create_deck_compose_stream(
                 'version': SCHEMA_VERSION
             }
             yield _sse(response_data)
+
+            # Fire-and-forget thumbnail render
+            asyncio.create_task(_fire_thumbnail_render(deck_id))
+
             # Emit explicit end-of-stream marker
             yield _sse({'type': 'end', 'message': 'Stream complete'})
-            
+
         except asyncio.CancelledError:
             cancelled = True
             logger.info("Client disconnected during deck compose stream; cancelling gracefully")

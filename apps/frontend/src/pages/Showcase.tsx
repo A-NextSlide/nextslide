@@ -234,7 +234,7 @@ const Showcase: React.FC = () => {
           <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-1/2 h-1/2 rounded-full bg-gradient-to-t from-amber-200/40 to-transparent dark:from-amber-900/10 blur-3xl" />
         </div>
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-8 sm:pt-14 sm:pb-10">
+        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-8 sm:pt-14 sm:pb-10">
           <div className="text-center max-w-3xl mx-auto">
             <motion.div
               initial={{ opacity: 0, y: 12 }}
@@ -315,7 +315,7 @@ const Showcase: React.FC = () => {
           <div className="h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
 
           <div className="bg-gradient-to-b from-amber-50/60 via-orange-50/30 to-zinc-50 dark:from-zinc-900 dark:via-zinc-900/80 dark:to-zinc-950">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
 
               {/* Section header + toggles */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
@@ -464,7 +464,7 @@ const Showcase: React.FC = () => {
       {/* ================================================================ */}
       {/* GALLERY                                                          */}
       {/* ================================================================ */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <section className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
         {/* Section header */}
         <div className="flex items-center gap-2 mb-5">
@@ -601,7 +601,7 @@ const Showcase: React.FC = () => {
           <>
             {/* Deck Grid */}
             <motion.div
-              className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+              className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
               layout
             >
               <AnimatePresence mode="popLayout">
@@ -690,7 +690,7 @@ const PodiumCard: React.FC<PodiumCardProps> = ({ entry, rank, onClick }) => {
     >
       {/* Thumbnail */}
       <div className={cn('relative w-full overflow-hidden', isGold ? 'aspect-[4/3]' : 'aspect-[16/9]')}>
-        <div className="absolute inset-0 w-full h-full">
+        <div className="absolute inset-0 w-full h-full pointer-events-none">
           {entry.first_slide ? (
             <MiniSlide slide={entry.first_slide} className="w-full h-full" />
           ) : (
@@ -742,7 +742,7 @@ const PodiumCard: React.FC<PodiumCardProps> = ({ entry, rank, onClick }) => {
         </div>
 
         {/* Hover shimmer */}
-        <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+        <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none select-none" />
       </div>
 
       {/* Stats footer */}
@@ -774,7 +774,7 @@ const RunnerCard: React.FC<RunnerCardProps> = ({ entry, onClick }) => {
     >
       {/* Thumbnail */}
       <div className="relative w-full aspect-[16/9] overflow-hidden">
-        <div className="absolute inset-0 w-full h-full">
+        <div className="absolute inset-0 w-full h-full pointer-events-none">
           {entry.first_slide ? (
             <MiniSlide slide={entry.first_slide} className="w-full h-full" />
           ) : (

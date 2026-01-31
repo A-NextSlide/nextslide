@@ -83,6 +83,7 @@ export interface LeaderboardEntry {
   tags: string[];
   slide_count: number;
   first_slide: any | null;
+  thumbnail_url: string | null;
   author_name: string;
   view_count: number;
   remix_count: number;

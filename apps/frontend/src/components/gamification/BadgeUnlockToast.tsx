@@ -62,35 +62,33 @@ const BadgeUnlockToast: React.FC<BadgeUnlockToastProps> = ({ badge, onDismiss })
     if (hasConfettiFired.current) return;
     hasConfettiFired.current = true;
 
-    // Celebration burst
     const defaults = {
-      spread: 60,
-      ticks: 80,
+      spread: 55,
+      ticks: 70,
       gravity: 1.2,
       decay: 0.94,
-      startVelocity: 25,
-      colors: ['#FFD700', '#FFA500', '#FF4301', '#FF6B35', '#FBBF24'],
+      startVelocity: 22,
+      colors: ['#FF4301', '#FF6B00', '#FF8C42', '#FFA564', '#FFD4B8'],
     };
 
     confetti({
       ...defaults,
-      particleCount: 40,
-      origin: { x: 0.5, y: 0.7 },
+      particleCount: 35,
+      origin: { x: 0.5, y: 0.3 },
       angle: 90,
     });
 
-    // A second smaller burst
     setTimeout(() => {
       confetti({
         ...defaults,
-        particleCount: 25,
-        origin: { x: 0.4, y: 0.75 },
+        particleCount: 20,
+        origin: { x: 0.4, y: 0.35 },
         angle: 120,
       });
       confetti({
         ...defaults,
-        particleCount: 25,
-        origin: { x: 0.6, y: 0.75 },
+        particleCount: 20,
+        origin: { x: 0.6, y: 0.35 },
         angle: 60,
       });
     }, 200);
@@ -120,44 +118,40 @@ const BadgeUnlockToast: React.FC<BadgeUnlockToastProps> = ({ badge, onDismiss })
     <AnimatePresence>
       {badge && (
         <motion.div
-          initial={{ opacity: 0, y: -20, scale: 0.95 }}
+          initial={{ opacity: 0, y: -30, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -20, scale: 0.95 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] w-[340px] max-w-[calc(100vw-32px)]"
+          transition={{ type: 'spring', damping: 22, stiffness: 260 }}
+          className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] w-[360px] max-w-[calc(100vw-32px)]"
         >
           <div
-            className="relative bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden"
+            className="relative rounded-2xl overflow-hidden"
             style={{
-              border: '2px solid rgba(255, 215, 0, 0.4)',
+              background: 'linear-gradient(135deg, #FF4301 0%, #FF6B00 100%)',
               boxShadow:
-                '0 20px 40px -10px rgba(0,0,0,0.15), 0 0 0 1px rgba(255,215,0,0.1), 0 0 30px rgba(255,165,0,0.1)',
+                '0 20px 50px -12px rgba(255,67,1,0.4), 0 8px 20px -4px rgba(0,0,0,0.12)',
             }}
           >
-            {/* Top gold accent bar */}
-            <div className="h-1 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-400" />
-
             {/* Close button */}
             <button
               onClick={onDismiss}
-              className="absolute right-3 top-3 p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors z-10"
+              className="absolute right-3 top-3 p-1 rounded-full hover:bg-white/20 transition-colors z-10"
             >
-              <X className="w-3.5 h-3.5 text-zinc-400" />
+              <X className="w-3.5 h-3.5 text-white/70" />
             </button>
 
-            <div className="flex items-center gap-3 px-4 py-3.5">
+            <div className="flex items-center gap-4 px-5 py-4">
               {/* Badge icon */}
               <motion.div
                 initial={{ scale: 0, rotate: -180 }}
                 animate={{ scale: 1, rotate: 0 }}
                 transition={{ delay: 0.1, type: 'spring', stiffness: 300 }}
-                className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center"
+                className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center bg-white/20 backdrop-blur-sm"
                 style={{
-                  background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)',
-                  boxShadow: '0 4px 12px rgba(255,165,0,0.3)',
+                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2)',
                 }}
               >
-                <Icon className="w-6 h-6 text-white" strokeWidth={2} />
+                <Icon className="w-6 h-6 text-white" strokeWidth={2.5} />
               </motion.div>
 
               {/* Content */}
@@ -167,13 +161,13 @@ const BadgeUnlockToast: React.FC<BadgeUnlockToastProps> = ({ badge, onDismiss })
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.15 }}
                 >
-                  <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
-                    Badge Unlocked!
+                  <p className="text-[10px] font-bold text-white/80 uppercase tracking-widest">
+                    Badge Unlocked
                   </p>
-                  <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate">
+                  <p className="text-[15px] font-bold text-white truncate leading-snug mt-0.5">
                     {badge.name}
                   </p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  <p className="text-xs text-white/70 mt-0.5 leading-snug">
                     {badge.description}
                   </p>
                 </motion.div>
@@ -185,20 +179,12 @@ const BadgeUnlockToast: React.FC<BadgeUnlockToastProps> = ({ badge, onDismiss })
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ delay: 0.25, type: 'spring' }}
-                  className="flex-shrink-0 text-center"
+                  className="flex-shrink-0 text-center px-3 py-1.5 rounded-lg bg-white/20 backdrop-blur-sm"
                 >
-                  <p
-                    className="text-lg font-black"
-                    style={{
-                      background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)',
-                      backgroundClip: 'text',
-                      WebkitBackgroundClip: 'text',
-                      WebkitTextFillColor: 'transparent',
-                    }}
-                  >
+                  <p className="text-lg font-black text-white leading-none">
                     +{badge.credits}
                   </p>
-                  <p className="text-[9px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                  <p className="text-[9px] font-bold text-white/70 uppercase tracking-wider mt-0.5">
                     Credits
                   </p>
                 </motion.div>
@@ -207,7 +193,7 @@ const BadgeUnlockToast: React.FC<BadgeUnlockToastProps> = ({ badge, onDismiss })
 
             {/* Progress bar for auto-dismiss */}
             <motion.div
-              className="h-0.5 bg-gradient-to-r from-amber-400 to-yellow-400"
+              className="h-[3px] bg-white/30"
               initial={{ width: '100%' }}
               animate={{ width: '0%' }}
               transition={{ duration: 5, ease: 'linear' }}

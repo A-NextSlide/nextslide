@@ -22,9 +22,9 @@
     <link rel="preload" href="/fonts/HKGroteskWide-Bold.otf" as="font" type="font/otf" crossorigin />
     <link rel="preload" href="/fonts/HKGroteskWide-SemiBold.otf" as="font" type="font/otf" crossorigin />
 
-    <!-- Hide content until HK Grotesk is loaded (smooth transition prevents flash on HMR) -->
+    <!-- Hide content until HK Grotesk is loaded -->
     <style>
-      #root { opacity: 0; transition: opacity 0.15s ease-out; }
+      #root { opacity: 0; }
       .fonts-ready #root { opacity: 1; }
     </style>
   </head>

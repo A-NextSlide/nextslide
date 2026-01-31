@@ -686,6 +686,11 @@ export class DeckSyncService {
         (formattedDeck as any).shared_by = deck.shared_by;
       }
 
+      // Preserve server-rendered thumbnail URL
+      if (deck.thumbnail_url) {
+        formattedDeck.thumbnail_url = deck.thumbnail_url;
+      }
+
       // Preserve locked slide info for freemium gating
       // Check both root level and data field (backend stores it in data JSONB column)
       const lockedInfo = deck.locked_slide_info || deck.data?.locked_slide_info;

@@ -16,6 +16,9 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import { trackLandingPageViewed, trackLandingPageCtaClicked } from '@/services/analytics';
 import { showcaseApi, type ShowcaseDeck } from '@/services/showcaseApi';
+import { showcaseService } from '@/services/showcaseService';
+import type { ShowcaseDeck as FeaturedDeck } from '@/services/showcaseService';
+import InteractiveHero, { type PromptItem } from '@/components/landing/InteractiveHero';
 import type { LandingPageConfig } from '@/config/landingPages';
 
 // Icon mapping from string names to Lucide components
@@ -42,6 +45,39 @@ function getIcon(name: string): React.ComponentType<{ className?: string }> {
   return iconMap[name] || Sparkles;
 }
 
+// Topic-specific prompts for the interactive slide viewer per use case
+// deckIndex maps to featured_decks display_order (0-indexed)
+const USE_CASE_PROMPTS: Record<string, PromptItem[]> = {
+  'pitch-deck': [
+    { id: 'vc-pitch', badge: 'VC Pitch', icon: TrendingUp, text: "Pitch deck for VCs who've already seen 500 this month", theme: 'light', deckIndex: 0 },
+    { id: 'seed', badge: 'Seed Round', icon: Sparkles, text: "Seed round deck that turns coffee chats into term sheets", theme: 'light', deckIndex: 25 },
+    { id: 'demo', badge: 'Demo Day', icon: Zap, text: "Demo day pitch that actually fits in 3 minutes", theme: 'orange', deckIndex: 4 },
+    { id: 'series-a', badge: 'Series A', icon: BarChart3, text: "Series A narrative showing 10x growth potential", theme: 'light', deckIndex: 12 },
+    { id: 'update', badge: 'Update', icon: Target, text: "Investor update that makes everyone reply", theme: 'light', deckIndex: 13 },
+  ],
+  'sales-deck': [
+    { id: 'proposal', badge: 'Proposal', icon: Target, text: "Client proposal that closes itself", theme: 'light', deckIndex: 7 },
+    { id: 'product-demo', badge: 'Demo', icon: Sparkles, text: "Product demo that turns skeptics into champions", theme: 'orange', deckIndex: 26 },
+    { id: 'qbr', badge: 'QBR', icon: BarChart3, text: "Quarterly business review with clean metrics", theme: 'light', deckIndex: 27 },
+    { id: 'partnership', badge: 'Partnership', icon: Users, text: "Partnership pitch that aligns both roadmaps", theme: 'light', deckIndex: 28 },
+    { id: 'roi', badge: 'ROI', icon: TrendingUp, text: "ROI case study that finance teams actually believe", theme: 'light', deckIndex: 29 },
+  ],
+  education: [
+    { id: 'biology', badge: 'Science', icon: Sparkles, text: "Cellular Respiration: From Glucose to ATP", theme: 'light', deckIndex: 5 },
+    { id: 'algebra', badge: 'Math', icon: Lightbulb, text: "Algebra for kids who ask 'when will I use this'", theme: 'light', deckIndex: 2 },
+    { id: 'history', badge: 'History', icon: BookOpen, text: "The French Revolution: From Monarchy to Republic", theme: 'orange', deckIndex: 6 },
+    { id: 'course', badge: 'Course', icon: GraduationCap, text: "Online course module that students actually complete", theme: 'light', deckIndex: 15 },
+    { id: 'training', badge: 'Training', icon: Users, text: "Workshop materials that engage every participant", theme: 'light', deckIndex: 16 },
+  ],
+  marketing: [
+    { id: 'strategy', badge: 'Strategy', icon: Target, text: "Marketing strategy deck that gets budget approved", theme: 'light', deckIndex: 18 },
+    { id: 'social', badge: 'Social', icon: Megaphone, text: "Social media strategy that actually converts", theme: 'orange', deckIndex: 11 },
+    { id: 'report', badge: 'Report', icon: BarChart3, text: "Campaign report with metrics that impress the CMO", theme: 'light', deckIndex: 17 },
+    { id: 'content', badge: 'Content', icon: Palette, text: "Content calendar presentation with visual roadmap", theme: 'light', deckIndex: 19 },
+    { id: 'launch', badge: 'Launch', icon: Zap, text: "Product launch plan that breaks through the noise", theme: 'light', deckIndex: 20 },
+  ],
+};
+
 interface UseCaseLandingProps {
   config: LandingPageConfig;
 }
@@ -52,6 +88,8 @@ const UseCaseLanding: React.FC<UseCaseLandingProps> = ({ config }) => {
   const isSignedIn = !!user;
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [featuredDecks, setFeaturedDecks] = useState<FeaturedDeck[]>([]);
+  const [isLoadingDecks, setIsLoadingDecks] = useState(true);
 
   // SEO: Set document title and meta description
   useEffect(() => {
@@ -71,6 +109,14 @@ const UseCaseLanding: React.FC<UseCaseLandingProps> = ({ config }) => {
   useEffect(() => {
     trackLandingPageViewed({ slug: config.slug, type: 'use_case' });
   }, [config.slug]);
+
+  // Load featured decks for the interactive slide viewer
+  useEffect(() => {
+    showcaseService.getFeaturedDecks(30).then(decks => {
+      setFeaturedDecks(decks);
+      setIsLoadingDecks(false);
+    }).catch(() => setIsLoadingDecks(false));
+  }, []);
 
   // Enable scrolling
   useEffect(() => {
@@ -290,6 +336,13 @@ const UseCaseLanding: React.FC<UseCaseLandingProps> = ({ config }) => {
           </motion.div>
         </div>
       </section>
+
+      {/* Interactive Slide Viewer */}
+      <InteractiveHero
+        decks={featuredDecks}
+        isLoading={isLoadingDecks}
+        prompts={USE_CASE_PROMPTS[config.slug]}
+      />
 
       {/* Features Grid */}
       <section className="py-20 px-4 sm:px-8 bg-white dark:bg-zinc-950">

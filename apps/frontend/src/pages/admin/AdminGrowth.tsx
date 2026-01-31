@@ -11,14 +11,19 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useReward } from '@/context/RewardContext';
+import { cn } from '@/lib/utils';
+
+// ==================== Design Tokens (match AdminServices) ====================
+const sectionHeading = "text-[10px] font-bold uppercase tracking-wider text-[#FF4301]";
+const cardClass = "bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl";
 
 // ==================== Reusable Components ====================
 
 const MetricCard = ({ label, value, sublabel }: { label: string; value: string | number; sublabel?: string }) => (
-  <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4">
-    <div className="text-xs text-[#666] dark:text-[#888] mb-1">{label}</div>
-    <div className="text-2xl font-semibold text-black dark:text-white">{value}</div>
-    {sublabel && <div className="text-xs text-[#999] mt-1">{sublabel}</div>}
+  <div className={cn(cardClass, "p-2.5")}>
+    <div className="text-[10px] text-[#888] mb-1">{label}</div>
+    <div className="text-lg font-semibold tabular-nums leading-tight">{value}</div>
+    {sublabel && <div className="text-[10px] text-[#999] mt-0.5">{sublabel}</div>}
   </div>
 );
 
@@ -68,8 +73,8 @@ const ConfigRow = ({ label, configKey, value, type = 'number', onSave }: {
 };
 
 const SectionCard = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-5 mb-4">
-    <h3 className="text-sm font-medium text-black dark:text-white mb-3">{title}</h3>
+  <div className={cn(cardClass, "p-4 mb-3")}>
+    <h3 className="text-xs font-medium mb-2">{title}</h3>
     {children}
   </div>
 );
@@ -707,7 +712,7 @@ const AdminGrowth: React.FC = () => {
         </SectionCard>
 
         {/* ===== Notification Composer ===== */}
-        <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg mb-4 overflow-hidden">
+        <div className={cn(cardClass, "mb-4 overflow-hidden")}>
           <div className="p-5 border-b border-[#eaeaea] dark:border-[#333]">
             <h3 className="text-sm font-medium text-black dark:text-white">Compose Notification</h3>
             <p className="text-xs text-[#999] mt-0.5">Push an in-app notification to users</p>
@@ -860,7 +865,7 @@ const AdminGrowth: React.FC = () => {
         </SectionCard>
 
         {/* ===== Notification History ===== */}
-        <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg overflow-hidden">
+        <div className={cn(cardClass, "overflow-hidden")}>
           <div className="p-5 border-b border-[#eaeaea] dark:border-[#333] flex items-center justify-between">
             <div>
               <h3 className="text-sm font-medium text-black dark:text-white">History</h3>
@@ -1071,15 +1076,15 @@ const AdminGrowth: React.FC = () => {
   return (
     <AdminLayoutV2>
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold text-black dark:text-white">Growth</h1>
-          <p className="text-sm text-[#666] dark:text-[#888] mt-1">Manage referrals, gamification, notifications, and viral features</p>
+        {/* ── Page header ── */}
+        <div className="mb-4">
+          <h1 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Growth</h1>
+          <p className="text-xs text-[#666] dark:text-[#888] mt-0.5">Referrals, gamification, notifications, and viral features</p>
         </div>
 
         {/* Overview Stats */}
         {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
             <MetricCard label="Referral Signups" value={stats.referrals?.total_signups ?? 0} />
             <MetricCard label="Badges Earned" value={stats.gamification?.total_badges_earned ?? 0} />
             <MetricCard label="Community Pending" value={stats.community?.pending ?? 0} />
@@ -1089,16 +1094,16 @@ const AdminGrowth: React.FC = () => {
           </div>
         )}
 
-        {/* Tab Navigation */}
-        <div className="border-b border-[#eaeaea] dark:border-[#333] mb-6">
+        {/* ── Tab Navigation ── */}
+        <div className="border-b border-[#eaeaea] dark:border-[#333] mb-4">
           <div className="flex gap-0 -mb-px overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
+                className={`px-3 py-2 text-[11px] font-medium border-b-2 whitespace-nowrap transition-colors ${
                   activeTab === tab.id
-                    ? 'border-black dark:border-white text-black dark:text-white'
+                    ? 'border-[#FF4301] text-[#FF4301]'
                     : 'border-transparent text-[#666] dark:text-[#888] hover:text-black dark:hover:text-white'
                 }`}
               >

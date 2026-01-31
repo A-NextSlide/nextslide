@@ -1,4 +1,7 @@
-"""Narrative flow background task for deck creation."""
+"""Narrative flow background task for deck creation.
+
+Dispatches to Modal for serverless execution, falls back to local.
+"""
 
 from __future__ import annotations
 
@@ -16,69 +19,62 @@ def start_narrative_flow_task(
     deck_uuid: str,
     background_tasks: Any,
 ) -> None:
+    """Kick off narrative flow generation as a background asyncio task.
+
+    Tries Modal first; falls back to local generation automatically.
+    """
+
     async def generate_and_save_narrative_flow_background():
-        logger.info("[NARRATIVE FLOW DEBUG] Function called for deck %s", deck_uuid)
+        logger.info("[NARRATIVE FLOW] Starting for deck %s", deck_uuid)
+        # Small yield to let the caller continue
         await asyncio.sleep(0.1)
 
+        analysis_outline = {
+            "id": deck_outline.id,
+            "title": deck_outline.title,
+            "slides": [
+                {
+                    "id": slide.id,
+                    "title": slide.title,
+                    "content": slide.content,
+                    "speaker_notes": getattr(slide, "speaker_notes", ""),
+                }
+                for slide in deck_outline.slides
+            ],
+        }
+
+        logger.info(
+            "[NARRATIVE FLOW] Generating for %s slides via Modal...",
+            len(analysis_outline["slides"]),
+        )
+
         try:
-            from services.narrative_flow_analyzer import NarrativeFlowAnalyzer
+            from services.modal_dispatch import generate_narrative_flow_via_modal
 
-            flow_analyzer = NarrativeFlowAnalyzer()
-            analysis_outline = {
-                "id": deck_outline.id,
-                "title": deck_outline.title,
-                "slides": [
-                    {
-                        "id": slide.id,
-                        "title": slide.title,
-                        "content": slide.content,
-                        "speaker_notes": getattr(slide, "speaker_notes", ""),
-                    }
-                    for slide in deck_outline.slides
-                ],
-            }
-
-            logger.info(
-                "[NARRATIVE FLOW] Generating narrative flow for %s slides...",
-                len(analysis_outline["slides"]),
-            )
-            narrative_flow = await flow_analyzer.analyze_narrative_flow(
-                analysis_outline, context=deck_outline.title
+            result = await generate_narrative_flow_via_modal(
+                outline_dict=analysis_outline,
+                deck_uuid=deck_uuid,
+                context=deck_outline.title,
             )
 
-            if narrative_flow:
-                from utils.supabase import update_deck_notes
-
-                for attempt in range(3):
-                    success = update_deck_notes(
-                        deck_uuid, narrative_flow.model_dump()
-                    )
-                    if success:
-                        logger.info(
-                            "[NARRATIVE FLOW] Successfully saved narrative flow for deck %s on attempt %s",
-                            deck_uuid,
-                            attempt + 1,
-                        )
-                        return narrative_flow
-                    logger.warning(
-                        "[NARRATIVE FLOW] Failed to save on attempt %s, retrying in 2 seconds...",
-                        attempt + 1,
-                    )
-                    await asyncio.sleep(2)
-
-                logger.error(
-                    "[NARRATIVE FLOW] Failed to save after 3 attempts for deck %s",
+            if result and result.get("success"):
+                logger.info(
+                    "[NARRATIVE FLOW] Successfully generated and saved for deck %s",
                     deck_uuid,
                 )
-            else:
-                logger.warning(
-                    "[NARRATIVE FLOW] Generation returned None for deck %s",
-                    deck_uuid,
-                )
+                return result.get("narrative_flow")
+
+            error_msg = result.get("error", "Unknown") if result else "None returned"
+            logger.warning(
+                "[NARRATIVE FLOW] Modal dispatch returned error for deck %s: %s",
+                deck_uuid,
+                error_msg,
+            )
             return None
+
         except Exception as exc:
             logger.error(
-                "[NARRATIVE FLOW] Failed to generate narrative flow for deck %s: %s",
+                "[NARRATIVE FLOW] Failed for deck %s: %s",
                 deck_uuid,
                 exc,
                 exc_info=True,
@@ -93,12 +89,12 @@ def start_narrative_flow_task(
             result = done_task.result()
             if result:
                 logger.info(
-                    "[NARRATIVE FLOW] Background task completed successfully for deck %s",
+                    "[NARRATIVE FLOW] Background task completed for deck %s",
                     deck_uuid,
                 )
             else:
                 logger.warning(
-                    "[NARRATIVE FLOW] Background task completed but returned None for deck %s",
+                    "[NARRATIVE FLOW] Background task returned None for deck %s",
                     deck_uuid,
                 )
         except Exception as exc:
@@ -110,6 +106,6 @@ def start_narrative_flow_task(
 
     task.add_done_callback(task_done_callback)
     logger.info(
-        "[NARRATIVE FLOW] Background generation task started and tracked for deck %s",
+        "[NARRATIVE FLOW] Background task dispatched for deck %s",
         deck_uuid,
     )

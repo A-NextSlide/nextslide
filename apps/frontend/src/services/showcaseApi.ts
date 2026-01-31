@@ -18,6 +18,7 @@ export interface ShowcaseDeck {
   tags: string[];
   slideCount: number;
   firstSlide?: any;
+  thumbnailUrl?: string | null;
   authorName?: string;
   remixCount: number;
   viewCount: number;
@@ -100,6 +101,7 @@ class ShowcaseApiService {
       tags: deck.tags || [],
       slideCount: deck.slide_count || 0,
       firstSlide: deck.first_slide,
+      thumbnailUrl: deck.thumbnail_url || null,
       authorName: deck.author_name,
       remixCount: deck.remix_count || 0,
       viewCount: deck.view_count || 0,

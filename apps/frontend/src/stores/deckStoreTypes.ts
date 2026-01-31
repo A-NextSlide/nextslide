@@ -63,7 +63,7 @@ export interface VersionHistoryState {
   autoSaveIntervalId: number | null;
   
   // Version history operations
-  createVersion: (name: string, description?: string, bookmarked?: boolean, notes?: string) => Promise<string | null>;
+  createVersion: (name: string, description?: string, bookmarked?: boolean, notes?: string, isAutoSave?: boolean) => Promise<string | null>;
   restoreVersion: (versionId: string) => Promise<boolean>;
   getVersionHistory: () => Promise<DeckVersion[]>;
   updateVersionMetadata: (versionId: string, updates: {

@@ -68,8 +68,8 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
             </button>
 
             <Link to="/admin" className="flex items-center gap-2">
-              <span className="font-semibold text-sm">nextslide</span>
-              <span className="text-[#666] dark:text-[#888] text-xs">/</span>
+              <span className="font-bold text-sm tracking-tight" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>nextslide</span>
+              <span className="text-[#FF4301] text-xs font-bold">/</span>
               <span className="text-[#666] dark:text-[#888] text-sm">admin</span>
             </Link>
 
@@ -85,7 +85,7 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
                     className={cn(
                       'px-3 py-1.5 text-sm rounded-md transition-colors',
                       isActive
-                        ? 'bg-[#f3f3f3] dark:bg-[#222] text-black dark:text-white font-medium'
+                        ? 'bg-[#FF4301]/10 text-[#FF4301] font-medium'
                         : 'text-[#666] dark:text-[#888] hover:text-black dark:hover:text-white hover:bg-[#f5f5f5] dark:hover:bg-[#1a1a1a]'
                     )}
                   >
@@ -132,7 +132,7 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
                   className={cn(
                     'flex items-center gap-2 px-3 py-2 text-sm rounded-md',
                     isActive
-                      ? 'bg-[#f3f3f3] dark:bg-[#222] text-black dark:text-white font-medium'
+                      ? 'bg-[#FF4301]/10 text-[#FF4301] font-medium'
                       : 'text-[#666] dark:text-[#888]'
                   )}
                 >
@@ -147,7 +147,7 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
 
       {/* Main Content */}
       <main ref={mainRef} className="pt-12 flex-1 w-full min-h-0 overflow-auto">
-        <div className="w-full px-4 py-4">
+        <div className="w-full max-w-[1400px] mx-auto px-4 py-3">
           {children}
         </div>
       </main>

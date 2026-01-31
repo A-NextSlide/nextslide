@@ -1,7 +1,7 @@
 """
 Authentication API endpoints using Supabase
 """
-from fastapi import APIRouter, HTTPException, Depends, Header, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Header, Query, Request
 from typing import Optional, Dict, Any, List, Union
 from pydantic import BaseModel, EmailStr, ValidationError
 from services.supabase_auth_service import get_auth_service
@@ -741,7 +741,8 @@ async def create_deck(
 async def update_deck(
     deck_uuid: str,
     request: UpdateDeckRequest,
-    token: Optional[str] = Depends(get_auth_header)
+    background_tasks: BackgroundTasks,
+    token: Optional[str] = Depends(get_auth_header),
 ):
     """Update an existing deck"""
     try:
@@ -884,6 +885,9 @@ async def update_deck(
         
         if result.data:
             logger.debug(f"Deck {deck_uuid} updated by user {user['id']}")
+            if request.slides is not None:
+                from services.thumbnail_dispatch import trigger_thumbnail_render
+                background_tasks.add_task(trigger_thumbnail_render, deck_uuid)
             return result.data[0]
         else:
             raise HTTPException(status_code=400, detail="Failed to update deck")

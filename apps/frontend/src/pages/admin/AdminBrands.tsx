@@ -3,7 +3,7 @@ import { adminApi, Brand } from '@/services/adminApi';
 import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+// Card imports removed - using admin-styled divs
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -30,6 +30,12 @@ interface EditableBrandData {
   colors: LabeledColors;
   fonts: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Shared design tokens (match AdminServices)
+// ---------------------------------------------------------------------------
+const sectionHeading = "text-[10px] font-bold uppercase tracking-wider text-[#FF4301]";
+const cardClass = "bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl";
 
 const AdminBrands: React.FC = () => {
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -547,42 +553,45 @@ const AdminBrands: React.FC = () => {
 
   return (
     <AdminLayoutV2>
-      <div className="w-full space-y-6">
-        {/* Header */}
+      <div className="w-full space-y-3">
+        {/* ── Page header ── */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">Brands</h1>
-            <p className="text-sm text-[#666] dark:text-[#888]">
-              Manage cached brand data
-            </p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+              Brands
+            </h1>
+            <span className="text-[11px] font-mono text-[#666] dark:text-[#888]">
+              {total}
+            </span>
           </div>
-          <div className="flex items-center gap-3">
-            <Badge variant="outline" className="text-sm px-3 py-1">
-              {total} brands cached
-            </Badge>
-            <Button onClick={() => setShowAddBrand(true)} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Add Brand
-            </Button>
-          </div>
+          <button
+            onClick={() => setShowAddBrand(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#eaeaea] dark:border-[#333] bg-white dark:bg-[#111] hover:border-[#FF4301]/40 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Brand
+          </button>
         </div>
 
-        {/* Search */}
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search brands by name or domain..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
+        {/* ── Search ── */}
+        <section>
+          <h2 className={sectionHeading} style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Search</h2>
+          <div className="relative mt-1.5">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#999]" />
+          <Input
+            placeholder="Search brands by name or domain..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 h-9 text-sm bg-white dark:bg-[#111] border-[#eaeaea] dark:border-[#333]"
+          />
           </div>
-        </div>
+        </section>
 
-        {/* Brands List */}
-        <Card className="overflow-hidden">
-          <ScrollArea className="h-[calc(100vh-240px)]" onScrollCapture={handleScroll}>
+        {/* ── Brand Library ── */}
+        <section>
+          <h2 className={sectionHeading} style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Brand Library</h2>
+          <div className={cn(cardClass, "mt-1.5 overflow-hidden")}>
+          <ScrollArea className="h-[calc(100vh-220px)]" onScrollCapture={handleScroll}>
             <div className="p-2">
               {brands.length === 0 && !loading ? (
                 <div className="flex flex-col items-center justify-center py-12">
@@ -782,7 +791,8 @@ const AdminBrands: React.FC = () => {
               )}
             </div>
           </ScrollArea>
-        </Card>
+        </div>
+        </section>
       </div>
 
       {/* Add Brand Dialog */}

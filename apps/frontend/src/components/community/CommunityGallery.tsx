@@ -381,19 +381,10 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
                 );
               }
 
-              // Get cached thumbnail for mobile performance
-              const cachedUrl = BROWSER.isMobile ? getCachedThumbnail(deck.id) : null;
-
-              // On mobile, show placeholder if not ready to render yet
-              if (BROWSER.isMobile && !shouldRenderThumbnail(deck.id)) {
-                return (
-                  <CommunityDeckCardPlaceholder
-                    key={deck.id}
-                    deck={deck}
-                    onView={onDeckClick || handleView}
-                  />
-                );
-              }
+              // Always prefer server thumbnail, then client-side cache
+              const cachedUrl = deck.thumbnailUrl
+                || getCachedThumbnail(deck.id)
+                || null;
 
               return (
                 <CommunityDeckCard
@@ -442,4 +433,4 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({
   );
 };
 
-export default CommunityGallery;
+export default React.memo(CommunityGallery);

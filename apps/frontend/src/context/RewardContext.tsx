@@ -187,6 +187,20 @@ export function RewardProvider({ children }: { children: ReactNode }) {
     };
   }, [triggerStreakCheckIn]);
 
+  // Badge check on login — catches anything earned while away (views, community approvals)
+  useEffect(() => {
+    const handleSignIn = () => {
+      setTimeout(() => {
+        triggerBadgeCheck();
+      }, 3000);
+    };
+
+    window.addEventListener('user_signed_in', handleSignIn);
+    return () => {
+      window.removeEventListener('user_signed_in', handleSignIn);
+    };
+  }, [triggerBadgeCheck]);
+
   return (
     <RewardContext.Provider
       value={{

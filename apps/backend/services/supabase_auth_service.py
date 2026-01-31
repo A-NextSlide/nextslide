@@ -629,31 +629,41 @@ class SupabaseAuthService:
         try:
             logger.debug(f"[get_user_decks] user={user_id} limit={limit} offset={offset} search={search_query}")
 
+            _base_cols = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,data"
+            _full_cols = _base_cols + ",thumbnail_url"
+
+            def _try_query(table, cols, extra_filter=None):
+                q = self.supabase.table(table).select(cols, count="planned").eq("user_id", user_id)
+                if extra_filter:
+                    q = extra_filter(q)
+                return q.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+
             if search_query:
-                select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,data"
-                # Use database-level ilike for case-insensitive search across ALL decks
                 search_pattern = f"%{search_query}%"
+                search_filter = lambda q: q.ilike("name", search_pattern)
                 try:
-                    query = self.supabase.table("decks_optimized").select(select_columns, count="planned").eq("user_id", user_id).ilike("name", search_pattern)
-                    owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+                    owned_response = _try_query("decks_optimized", _full_cols, search_filter)
                 except Exception as e:
                     logger.debug(f"[get_user_decks] Optimized view search failed, using decks table: {e}")
-                    query = self.supabase.table("decks").select(select_columns, count="planned").eq("user_id", user_id).ilike("name", search_pattern)
-                    owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+                    try:
+                        owned_response = _try_query("decks", _full_cols, search_filter)
+                    except Exception as e2:
+                        if "thumbnail_url" in str(e2):
+                            owned_response = _try_query("decks", _base_cols, search_filter)
+                        else:
+                            raise
             else:
-                # Try to use optimized view first, fallback to regular table
-                # Use first_slide and slide_count columns instead of full slides array
                 try:
-                    # Attempt to use the optimized view
-                    select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,data"
-                    query = self.supabase.table("decks_optimized").select(select_columns, count="planned").eq("user_id", user_id)
-                    owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+                    owned_response = _try_query("decks_optimized", _full_cols)
                 except Exception as e:
-                    # Fallback to regular table - use first_slide and slide_count columns
                     logger.debug(f"[get_user_decks] Optimized view fallback: {e}")
-                    select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,data"
-                    query = self.supabase.table("decks").select(select_columns, count="planned").eq("user_id", user_id)
-                    owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+                    try:
+                        owned_response = _try_query("decks", _full_cols)
+                    except Exception as e2:
+                        if "thumbnail_url" in str(e2):
+                            owned_response = _try_query("decks", _base_cols)
+                        else:
+                            raise
 
             total_count = owned_response.count if hasattr(owned_response, 'count') else 0
             
@@ -674,7 +684,9 @@ class SupabaseAuthService:
                     "first_slide": deck.get("first_slide"),
                     "slide_count": deck.get("slide_count", 0) or 0,
                     # Include data field for API source filtering
-                    "data": deck.get("data")
+                    "data": deck.get("data"),
+                    # Server-rendered thumbnail URL
+                    "thumbnail_url": deck.get("thumbnail_url"),
                 }
 
                 decks.append(deck_data)
@@ -859,9 +871,12 @@ class SupabaseAuthService:
                     
                     # Access metadata
                     "last_accessed_at": collab.get("last_accessed_at"),
-                    "access_count": collab.get("access_count", 0)
+                    "access_count": collab.get("access_count", 0),
+
+                    # Server-rendered thumbnail URL
+                    "thumbnail_url": deck.get("thumbnail_url"),
                 }
-                
+
                 # Include only the first slide for thumbnail
                 slides = deck.get("slides", [])
                 if slides and len(slides) > 0:

@@ -368,8 +368,10 @@ export const VirtualizedDeckGrid = React.memo(({
           hasBeenRenderedRef.current.add(deck.uuid);
         }
 
-        // Check for cached thumbnail
-        const cachedUrl = BROWSER.isMobile && deck.uuid ? getCachedThumbnail(deck.uuid) : null;
+        // Mobile: prefer server thumbnail or client cache; Desktop: always render live
+        const cachedUrl = BROWSER.isMobile
+          ? ((deck as any).thumbnail_url || (deck.uuid ? getCachedThumbnail(deck.uuid) : null))
+          : null;
 
         // Mobile: progressive timer populates renderedDecks in batches
         // Desktop: IntersectionObserver populates renderedDecks on scroll

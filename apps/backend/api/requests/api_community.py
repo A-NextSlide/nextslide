@@ -155,30 +155,34 @@ async def list_community_decks(
         offset = (page - 1) * limit
 
         # Build query - only approved decks
-        query = supabase.table('community_decks').select(
+        _base_cols = (
             'id, title, description, category, tags, slide_count, first_slide, '
-            'author_name, remix_count, view_count, approved_at, submitted_at',
-            count='exact'
-        ).eq('status', 'approved')
+            'author_name, remix_count, view_count, approved_at, submitted_at'
+        )
 
-        # Apply filters
-        if category:
-            query = query.eq('category', category)
+        def _build_query(cols: str):
+            q = supabase.table('community_decks').select(
+                cols, count='exact'
+            ).eq('status', 'approved')
+            if category:
+                q = q.eq('category', category)
+            if tag:
+                q = q.contains('tags', [tag])
+            if search:
+                q = q.or_(f"title.ilike.%{search}%,description.ilike.%{search}%")
+            q = q.order('approved_at', desc=True)
+            q = q.range(offset, offset + limit - 1)
+            return q
 
-        if tag:
-            query = query.contains('tags', [tag])
-
-        if search:
-            # Use full-text search
-            query = query.or_(f"title.ilike.%{search}%,description.ilike.%{search}%")
-
-        # Order by approved_at descending (newest first)
-        query = query.order('approved_at', desc=True)
-
-        # Paginate
-        query = query.range(offset, offset + limit - 1)
-
-        result = query.execute()
+        # Try with thumbnail_url; fall back without if column doesn't exist yet
+        try:
+            result = _build_query(_base_cols + ', thumbnail_url').execute()
+        except Exception as col_err:
+            if 'thumbnail_url' in str(col_err):
+                logger.debug("community_decks.thumbnail_url not available yet, querying without it")
+                result = _build_query(_base_cols).execute()
+            else:
+                raise
 
         total = result.count if result.count else 0
 
@@ -191,6 +195,7 @@ async def list_community_decks(
                 tags=deck.get('tags', []),
                 slide_count=deck.get('slide_count', 0),
                 first_slide=deck.get('first_slide'),
+                thumbnail_url=deck.get('thumbnail_url'),
                 author_name=deck.get('author_name'),
                 remix_count=deck.get('remix_count', 0),
                 view_count=deck.get('view_count', 0),
@@ -317,7 +322,7 @@ async def submit_to_community(
 
         # Verify user owns the deck
         deck_result = supabase.table('decks').select(
-            'uuid, name, slides, data, user_id, slide_count, first_slide'
+            'uuid, name, slides, data, user_id, slide_count, first_slide, thumbnail_url'
         ).eq('uuid', request.deck_uuid).execute()
 
         if not deck_result.data:
@@ -360,6 +365,7 @@ async def submit_to_community(
             'status': 'pending',
             'slide_count': deck.get('slide_count') or len(deck.get('slides', [])),
             'first_slide': deck.get('first_slide') or (deck.get('slides', [{}])[0] if deck.get('slides') else None),
+            'thumbnail_url': deck.get('thumbnail_url'),
             'author_name': author_name,
             'author_email': author_email,
             'submitted_at': datetime.utcnow().isoformat(),
@@ -586,6 +592,7 @@ def _build_showcase_deck(deck: Dict[str, Any], has_upvoted: bool = False) -> Sho
         tags=deck.get('tags', []),
         slide_count=deck.get('slide_count', 0),
         first_slide=deck.get('first_slide'),
+        thumbnail_url=deck.get('thumbnail_url'),
         author_name=deck.get('author_name'),
         remix_count=deck.get('remix_count', 0),
         view_count=deck.get('view_count', 0),
@@ -617,8 +624,8 @@ async def get_showcase(
         # Build query - only approved decks
         select_fields = (
             'id, title, description, category, tags, slide_count, first_slide, '
-            'author_name, remix_count, view_count, upvote_count, is_featured, '
-            'approved_at, submitted_at'
+            'thumbnail_url, author_name, remix_count, view_count, upvote_count, '
+            'is_featured, approved_at, submitted_at'
         )
 
         query = supabase.table('community_decks').select(
@@ -717,8 +724,8 @@ async def get_weekly_top(
             # Fallback: return top 5 by total upvote_count
             fallback = supabase.table('community_decks').select(
                 'id, title, description, category, tags, slide_count, first_slide, '
-                'author_name, remix_count, view_count, upvote_count, is_featured, '
-                'approved_at, submitted_at'
+                'thumbnail_url, author_name, remix_count, view_count, upvote_count, '
+                'is_featured, approved_at, submitted_at'
             ).eq('status', 'approved').order('upvote_count', desc=True).limit(5).execute()
 
             user_upvoted_ids: set = set()
@@ -743,8 +750,8 @@ async def get_weekly_top(
         # Fetch deck details
         decks_result = supabase.table('community_decks').select(
             'id, title, description, category, tags, slide_count, first_slide, '
-            'author_name, remix_count, view_count, upvote_count, is_featured, '
-            'approved_at, submitted_at'
+            'thumbnail_url, author_name, remix_count, view_count, upvote_count, '
+            'is_featured, approved_at, submitted_at'
         ).eq('status', 'approved').in_('id', top_ids).execute()
 
         # Get user upvote status
@@ -959,6 +966,7 @@ async def approve_submission(
             'theme_snapshot': theme,
             'slide_count': len(deck.get('slides', [])),
             'first_slide': deck.get('slides', [{}])[0] if deck.get('slides') else None,
+            'thumbnail_url': deck.get('thumbnail_url'),
         }
 
         supabase.table('community_decks').update(update_data).eq('id', submission_id).execute()

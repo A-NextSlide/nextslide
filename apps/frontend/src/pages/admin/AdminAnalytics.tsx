@@ -62,6 +62,10 @@ const getTargets = (totalUsers: number) => ({
 
 const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
 
+// Shared design tokens (match AdminServices)
+const sectionHeading = "text-[10px] font-bold uppercase tracking-wider text-[#FF4301]";
+const cardClass = "bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl";
+
 type TabType = 'overview' | 'users' | 'content' | 'credits' | 'activity';
 
 // ============================================================================
@@ -98,7 +102,7 @@ const CompactMetric: React.FC<{
   suffix?: string;
 }> = ({ label, value, subValue, trend, status, icon, prefix = '', suffix = '' }) => (
   <div className={cn(
-    "bg-white dark:bg-[#111] border rounded p-2.5 min-w-0",
+    "bg-white dark:bg-[#111] border rounded-xl p-2.5 min-w-0",
     status === 'danger' ? "border-red-500/50" : status === 'warning' ? "border-amber-500/50" : "border-[#eaeaea] dark:border-[#333]"
   )}>
     <div className="flex items-center justify-between gap-1 mb-1">
@@ -140,21 +144,21 @@ const MilestoneTracker: React.FC<{ milestones: Milestone[]; currentUsers: number
   const progress = currentMilestoneIdx === -1 ? 100 : Math.min(100, ((currentUsers - (prevMilestone?.users || 0)) / (nextMilestone.users - (prevMilestone?.users || 0))) * 100);
 
   return (
-    <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
+    <div className={cn(cardClass, "p-3")}>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium flex items-center gap-1.5"><Target className="h-3.5 w-3.5 text-purple-500" />Milestone Progress</span>
+        <span className="text-xs font-medium flex items-center gap-1.5"><Target className="h-3.5 w-3.5 text-[#FF4301]" />Milestone Progress</span>
         <span className="text-xs text-[#888]">{currentUsers.toLocaleString()} users / ${currentMRR.toLocaleString()} MRR</span>
       </div>
       <div className="flex items-center gap-1 mb-2">
         {milestones.map((m, i) => (
           <div key={m.name} className={cn(
             "flex-1 h-1.5 rounded-full transition-all",
-            currentUsers >= m.users ? "bg-purple-500" : currentMilestoneIdx === i ? "bg-purple-500/30" : "bg-[#eee] dark:bg-[#333]"
+            currentUsers >= m.users ? "bg-[#FF4301]" : currentMilestoneIdx === i ? "bg-[#FF4301]/30" : "bg-[#eee] dark:bg-[#333]"
           )} />
         ))}
       </div>
       <div className="flex items-center justify-between text-[10px]">
-        <span className="text-purple-500 font-medium">Next: {nextMilestone.name}</span>
+        <span className="text-[#FF4301] font-medium">Next: {nextMilestone.name}</span>
         <span className="text-[#888]">{nextMilestone.users.toLocaleString()} users needed ({Math.max(0, nextMilestone.users - currentUsers).toLocaleString()} to go)</span>
       </div>
     </div>
@@ -170,7 +174,7 @@ const MilestoneTracker: React.FC<{ milestones: Milestone[]; currentUsers: number
 const QUICK_ACCESS_CARDS = [
   { title: 'Users', description: 'Manage user accounts', href: '/admin/users', icon: Users, color: 'text-blue-500' },
   { title: 'Decks', description: 'Browse all decks', href: '/admin/decks', icon: FileStack, color: 'text-emerald-500' },
-  { title: 'Brands', description: 'Manage brand styles', href: '/admin/brands', icon: Palette, color: 'text-purple-500' },
+  { title: 'Brands', description: 'Manage brand styles', href: '/admin/brands', icon: Palette, color: 'text-[#FF4301]' },
   { title: 'Services', description: 'Monitor services', href: '/admin/services', icon: Server, color: 'text-amber-500' },
 ];
 
@@ -178,7 +182,7 @@ const QUICK_ACCESS_CARDS = [
 const SystemHealthBanner: React.FC<{ health: any; isLoading: boolean }> = ({ health, isLoading }) => {
   if (isLoading) {
     return (
-      <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3 animate-pulse">
+      <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-3 animate-pulse">
         <div className="h-4 w-48 bg-zinc-200 dark:bg-zinc-800 rounded" />
       </div>
     );
@@ -191,7 +195,7 @@ const SystemHealthBanner: React.FC<{ health: any; isLoading: boolean }> = ({ hea
 
   return (
     <div className={cn(
-      "rounded-lg p-3 flex items-center justify-between",
+      "rounded-xl p-3 flex items-center justify-between",
       allOperational
         ? "bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30"
         : "bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30"
@@ -218,7 +222,7 @@ const SystemHealthBanner: React.FC<{ health: any; isLoading: boolean }> = ({ hea
 
 // Quick access card component
 const QuickAccessCard: React.FC<{ title: string; description: string; href: string; icon: any; color: string }> = ({ title, description, href, icon: Icon, color }) => (
-  <Link to={href} className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3 hover:border-[#ccc] dark:hover:border-[#555] transition-colors group">
+  <Link to={href} className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-3 hover:border-[#FF4301]/40 dark:hover:border-[#FF4301]/40 transition-colors group">
     <div className="flex items-start justify-between">
       <div>
         <Icon className={cn("h-4 w-4 mb-2", color)} />
@@ -300,9 +304,9 @@ const AdminAnalytics: React.FC = () => {
   return (
     <AdminLayoutV2>
       <div className="space-y-3">
-        {/* Header - Compact */}
+        {/* ── Page header ── */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h1 className="text-base font-semibold">Admin Dashboard</h1>
+          <h1 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Overview</h1>
           <div className="flex items-center gap-1.5 flex-wrap">
             <div className="relative">
               <Button variant="outline" size="sm" onClick={() => setShowDatePicker(!showDatePicker)} className="h-7 text-[11px] gap-1 px-2">
@@ -344,10 +348,10 @@ const AdminAnalytics: React.FC = () => {
           </div>
         </div>
 
-        {/* Tabs - Compact */}
+        {/* ── Tabs ── */}
         <div className="flex items-center gap-0.5 border-b border-[#eaeaea] dark:border-[#333] overflow-x-auto">
           {tabs.map((tab) => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={cn("flex items-center gap-1 px-2.5 py-1.5 text-[11px] border-b-2 transition-colors whitespace-nowrap", activeTab === tab.id ? "border-purple-500 text-purple-500" : "border-transparent text-[#666] hover:text-[#333]")}>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={cn("flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium border-b-2 transition-colors whitespace-nowrap", activeTab === tab.id ? "border-[#FF4301] text-[#FF4301]" : "border-transparent text-[#666] hover:text-[#333] dark:hover:text-white")}>
               {tab.icon}{tab.label}
             </button>
           ))}
@@ -375,7 +379,7 @@ const AdminAnalytics: React.FC = () => {
             {/* Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
               {/* User Signups Chart */}
-              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
+              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium">User Signups</span>
                   <span className="text-[10px] text-[#888]">Target: {targets.dailySignups.target}/day</span>
@@ -395,7 +399,7 @@ const AdminAnalytics: React.FC = () => {
               </div>
 
               {/* Deck Creation Chart */}
-              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
+              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium">Deck Creation</span>
                   <span className="text-[10px] text-[#888]">Target: {targets.dailyDecksCreated.target}/day</span>
@@ -417,7 +421,7 @@ const AdminAnalytics: React.FC = () => {
 
             {/* Quick Access Cards */}
             <div className="mt-4">
-              <h2 className="text-xs font-medium text-[#888] mb-2">Quick Access</h2>
+              <h2 className={sectionHeading} style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Quick Access</h2>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
                 {QUICK_ACCESS_CARDS.map((card) => (
                   <QuickAccessCard key={card.href} {...card} />
@@ -439,7 +443,7 @@ const AdminAnalytics: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
               {/* User Segments */}
-              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
+              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-3">
                 <div className="text-xs font-medium mb-2">Activity Segments</div>
                 <div className="space-y-2">
                   {(userSegments?.segments || []).map((seg: any, i: number) => (
@@ -457,7 +461,7 @@ const AdminAnalytics: React.FC = () => {
               </div>
 
               {/* Top Users */}
-              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
+              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-3">
                 <div className="text-xs font-medium mb-2">Top Users by Decks</div>
                 <div className="space-y-1.5 max-h-48 overflow-y-auto">
                   {(topUsers?.users || []).map((user: any, i: number) => (
@@ -485,7 +489,7 @@ const AdminAnalytics: React.FC = () => {
               <CompactMetric label="Share Views" value={metrics?.sharing?.total_views || 0} icon={<Eye className="h-3 w-3" />} />
             </div>
 
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
+            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-3">
               <div className="text-xs font-medium mb-2">Deck Creation Trend</div>
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%">
@@ -520,7 +524,7 @@ const AdminAnalytics: React.FC = () => {
 
             {creditBreakdown && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-                <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
+                <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-3">
                   <div className="text-xs font-medium mb-2">Credit Consumption by Type</div>
                   <div className="space-y-2">
                     {(creditBreakdown?.consumption_breakdown || []).map((item: any, i: number) => (
@@ -536,7 +540,7 @@ const AdminAnalytics: React.FC = () => {
                     ))}
                   </div>
                 </div>
-                <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
+                <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-3">
                   <div className="text-xs font-medium mb-2">Credit Additions</div>
                   <div className="space-y-2">
                     {(creditBreakdown?.additions_breakdown || []).map((item: any, i: number) => (
@@ -559,7 +563,7 @@ const AdminAnalytics: React.FC = () => {
 
         {/* Activity Tab */}
         {activeTab === 'activity' && (
-          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg">
+          <div className={cn(cardClass, "overflow-hidden")}>
             <div className="px-3 py-2 border-b border-[#eaeaea] dark:border-[#333]">
               <span className="text-xs font-medium">Recent Activity</span>
             </div>
@@ -570,7 +574,7 @@ const AdminAnalytics: React.FC = () => {
                     <div className="mt-0.5">
                       {activity.type === 'signup' && <UserPlus className="h-3.5 w-3.5 text-emerald-500" />}
                       {activity.type === 'deck_created' && <FileStack className="h-3.5 w-3.5 text-blue-500" />}
-                      {activity.type === 'share_created' && <Share2 className="h-3.5 w-3.5 text-purple-500" />}
+                      {activity.type === 'share_created' && <Share2 className="h-3.5 w-3.5 text-[#FF4301]" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-[11px]">{activity.description}</div>

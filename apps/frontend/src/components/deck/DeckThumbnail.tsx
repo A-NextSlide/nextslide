@@ -2,9 +2,24 @@ import React, { useMemo } from 'react';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { Presentation } from 'lucide-react';
 import MiniSlide from './MiniSlide';
+import { BROWSER } from '@/utils/browser';
 
 // Component to render a deck thumbnail using the first slide
 const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'background'; forceRender?: boolean }> = React.memo(({ deck, renderMode = 'full', forceRender = false }) => {
+  // On mobile, always prefer server-rendered thumbnail to prevent crashes
+  const serverThumbnail = (deck as any).thumbnail_url;
+  if (BROWSER.isMobile && serverThumbnail) {
+    return (
+      <img
+        src={serverThumbnail}
+        alt={deck.name || 'Deck thumbnail'}
+        className="w-full h-full object-cover"
+        draggable={false}
+        loading="lazy"
+      />
+    );
+  }
+
   // Get the first slide from the deck for the thumbnail
   const rawFirstSlide = (deck as any).first_slide || (deck.slides && deck.slides.length > 0 ? deck.slides[0] : null);
 

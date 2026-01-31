@@ -37,10 +37,11 @@ if SUPABASE_URL and not SUPABASE_URL.startswith(("http://", "https://")):
 # CONNECTION POOL CONFIGURATION
 # =============================================================================
 
-# Maximum connections per host (prevents pool exhaustion)
-# Keep low to allow horizontal scaling (100 instances × 5 = 500 connections)
-MAX_CONNECTIONS = 5
-MAX_KEEPALIVE_CONNECTIONS = 3
+# Maximum HTTP connections per host to the Supabase REST API.
+# With gunicorn workers (WEB_CONCURRENCY), each worker has its own pool:
+# e.g. 2 workers × 10 = 20 total connections.
+MAX_CONNECTIONS = 10
+MAX_KEEPALIVE_CONNECTIONS = 5
 
 # Timeouts (in seconds)
 CONNECT_TIMEOUT = 5.0

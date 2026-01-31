@@ -43,6 +43,15 @@ logger = logging.getLogger(__name__)
 _background_tasks = weakref.WeakSet()
 
 
+async def _fire_thumbnail_render(deck_uuid: str) -> None:
+    """Fire-and-forget thumbnail rendering. Never raises."""
+    try:
+        from services.thumbnail_dispatch import trigger_thumbnail_render
+        await trigger_thumbnail_render(deck_uuid)
+    except Exception as e:
+        logger.warning("Thumbnail render failed (non-fatal) for %s: %s", deck_uuid, e)
+
+
 class CreateDeckFromOutlineRequest(BaseModel):
     """Request for creating a deck from an outline with streaming"""
     outline: Dict[str, Any] = Field(description="The deck outline")
@@ -389,6 +398,9 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 yield _sse(response_data)
                 composition_completed = True
                 logger.info("Sent composition_complete event for deck %s", deck_uuid)
+
+                # Fire-and-forget thumbnail render
+                asyncio.create_task(_fire_thumbnail_render(deck_uuid))
 
                 # Activate referral if this is the user's first deck
                 if user_id:

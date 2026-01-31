@@ -300,6 +300,63 @@ async def edit_outline_via_modal(request_dict: dict) -> Dict[str, Any]:
         return await edit_outline_core(request)
 
 
+async def generate_narrative_flow_via_modal(
+    outline_dict: dict,
+    deck_uuid: str,
+    context: Optional[str] = None,
+) -> Optional[dict]:
+    """
+    Run narrative flow analysis in a Modal container.
+
+    Generates the narrative flow and persists it to decks.notes.
+    Falls back to local execution on any Modal error.
+    Returns the result dict or None.
+    """
+    try:
+        import modal
+
+        narrative_fn = modal.Function.from_name(
+            "nextslide", "generate_narrative_flow_remote"
+        )
+
+        logger.info(
+            "[modal_dispatch] Dispatching narrative flow for deck %s to Modal",
+            deck_uuid,
+        )
+
+        result = await _retry_modal_call(
+            narrative_fn.remote.aio,
+            outline_dict=outline_dict,
+            deck_uuid=deck_uuid,
+            context=context,
+        )
+
+        if result and result.get("error"):
+            raise RuntimeError(result["error"])
+
+        _log_dispatch("generate_narrative_flow", success=True)
+        return result
+
+    except Exception as exc:
+        _log_modal_failure(f"generate_narrative_flow ({deck_uuid})", exc)
+        _log_dispatch("generate_narrative_flow", success=False)
+
+        # Local fallback
+        from services.narrative_flow_analyzer import NarrativeFlowAnalyzer
+        from utils.supabase import update_deck_notes
+
+        analyzer = NarrativeFlowAnalyzer()
+        narrative_flow = await analyzer.analyze_narrative_flow(
+            outline_dict, context=context
+        )
+
+        if narrative_flow:
+            flow_dict = narrative_flow.model_dump()
+            update_deck_notes(deck_uuid, flow_dict)
+            return {"success": True, "narrative_flow": flow_dict}
+        return None
+
+
 async def generate_outline_via_modal(
     prompt: str,
     slide_count: int,

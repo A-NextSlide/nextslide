@@ -35,12 +35,7 @@ def _api_key_identifier(request: Request) -> str:
 
 def _build_storage_uri() -> Optional[str]:
     """Return Redis URI if available, else None (in-memory)."""
-    redis_url = os.getenv("REDIS_URL")
-    if redis_url:
-        logger.info("Rate limiter using Redis storage")
-        return redis_url
-    logger.info("Rate limiter using in-memory storage")
-    return None
+    return os.getenv("REDIS_URL")
 
 
 storage_uri = _build_storage_uri()

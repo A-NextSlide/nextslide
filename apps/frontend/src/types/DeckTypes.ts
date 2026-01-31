@@ -119,6 +119,9 @@ export interface CompleteDeckData {
   // Internal database ID (not usually exposed to frontend)
   id?: string;
   
+  // Server-rendered thumbnail URL (Playwright screenshot stored in Supabase Storage)
+  thumbnail_url?: string | null;
+
   // Sharing-related fields
   shared_by?: {
     id: string;

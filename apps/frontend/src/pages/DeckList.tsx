@@ -3188,7 +3188,7 @@ const DeckList: React.FC = () => {
       {!showConversationalOnboarding && !isMobileView && (
         <button
           onClick={() => setShowCommunity(true)}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-medium rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center gap-2"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2 bg-white dark:bg-[#111] text-sm font-medium rounded-lg border border-[#FF4301]/20 shadow-[0_0_16px_rgba(255,67,1,0.15)] hover:shadow-[0_0_24px_rgba(255,67,1,0.25)] hover:border-[#FF4301]/30 hover:scale-[1.02] transition-all duration-200 flex items-center gap-2 text-[#333] dark:text-white"
         >
           <Users2 className="h-4 w-4" />
           Community Slides

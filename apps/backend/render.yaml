@@ -5,11 +5,13 @@ services:
     repo: https://github.com/A-NextSlide/nextslide
     branch: main
     rootDirectory: apps/backend
-    region: oregon 
-    plan: free
+    region: oregon
+    plan: starter
     buildCommand: "pip install -r requirements.txt && modal deploy modal_app.py"
-    startCommand: "uvicorn api.chat_server:app --host 0.0.0.0 --port $PORT"
-    # For debugging: startCommand: "uvicorn api.test_server:app --host 0.0.0.0 --port $PORT"
+    # Single worker is safe: Modal handles heavy compute, this server just routes
+    # HTTP + proxies SSE streams. Scale to multi-worker only after adding Redis
+    # for shared state (dedup cache, agent stream bus, WebSocket connections).
+    startCommand: "gunicorn api.chat_server:app -w 1 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT} --timeout 120 --graceful-timeout 30"
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0

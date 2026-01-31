@@ -110,7 +110,7 @@ async def discover_schema(force_refresh: bool = False) -> Dict[str, Any]:
 # SQL safety
 # ---------------------------------------------------------------------------
 _BLOCKED_KEYWORDS = re.compile(
-    r"\b(DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE|VACUUM|REINDEX|CLUSTER|COPY|EXPLAIN\s+ANALYZE)\b",
+    r"\b(DROP\s+TABLE|DROP\s+DATABASE|DROP\s+SCHEMA|TRUNCATE|GRANT|REVOKE)\b",
     re.IGNORECASE,
 )
 
@@ -139,9 +139,9 @@ def validate_sql(sql: str, operation_type: str) -> Tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Query execution
 # ---------------------------------------------------------------------------
-MAX_READ_ROWS = 500
-READ_TIMEOUT = 15  # seconds
-WRITE_TIMEOUT = 30  # seconds
+MAX_READ_ROWS = 1000
+READ_TIMEOUT = 30  # seconds
+WRITE_TIMEOUT = 60  # seconds
 
 
 async def execute_read_query(
@@ -185,7 +185,7 @@ async def execute_read_query(
                     "truncated": len(rows) >= MAX_READ_ROWS,
                 }
             except asyncio.TimeoutError:
-                return {"error": "Query timed out (15s limit)", "columns": [], "rows": [], "row_count": 0}
+                return {"error": "Query timed out (30s limit)", "columns": [], "rows": [], "row_count": 0}
             except Exception as e:
                 logger.error(f"[AdminAgent] Read query error: {e}")
                 return {"error": str(e), "columns": [], "rows": [], "row_count": 0}
@@ -194,40 +194,79 @@ async def execute_read_query(
 async def execute_write_query(
     sql: str, params: Optional[List[Any]] = None
 ) -> Dict[str, Any]:
-    """Execute a write query (INSERT/UPDATE/DELETE)."""
-    # Determine operation type from SQL
+    """Execute a write query (INSERT/UPDATE/DELETE).
+
+    DELETEs are wrapped in a transaction and rolled back if more than 1 row is affected.
+    """
     op = sql.strip().split()[0].lower() if sql.strip() else ""
     is_valid, err = validate_sql(sql, op)
     if not is_valid:
         return {"error": err, "affected_rows": 0}
 
+    is_delete = op == "delete"
     pool = await _get_pool()
     async with pool.acquire() as conn:
         try:
             clean_sql = sql.rstrip(";").strip()
-            if params:
-                result = await asyncio.wait_for(
-                    conn.execute(clean_sql, *params),
-                    timeout=WRITE_TIMEOUT,
-                )
+
+            if is_delete:
+                # DELETE: run inside transaction, rollback if > 1 row affected
+                async with conn.transaction():
+                    if params:
+                        result = await asyncio.wait_for(
+                            conn.execute(clean_sql, *params),
+                            timeout=WRITE_TIMEOUT,
+                        )
+                    else:
+                        result = await asyncio.wait_for(
+                            conn.execute(clean_sql),
+                            timeout=WRITE_TIMEOUT,
+                        )
+                    affected = _parse_affected(result)
+                    if affected > 1:
+                        raise _DeleteTooManyError(affected)
+                    return {"affected_rows": affected, "status": result}
             else:
-                result = await asyncio.wait_for(
-                    conn.execute(clean_sql),
-                    timeout=WRITE_TIMEOUT,
-                )
-            # asyncpg returns e.g. "DELETE 3" or "UPDATE 5"
-            affected = 0
-            if result and " " in result:
-                try:
-                    affected = int(result.split()[-1])
-                except ValueError:
-                    pass
-            return {"affected_rows": affected, "status": result}
+                # INSERT / UPDATE — execute directly
+                if params:
+                    result = await asyncio.wait_for(
+                        conn.execute(clean_sql, *params),
+                        timeout=WRITE_TIMEOUT,
+                    )
+                else:
+                    result = await asyncio.wait_for(
+                        conn.execute(clean_sql),
+                        timeout=WRITE_TIMEOUT,
+                    )
+                affected = _parse_affected(result)
+                return {"affected_rows": affected, "status": result}
+
+        except _DeleteTooManyError as e:
+            return {
+                "error": f"DELETE aborted — would affect {e.count} rows. Only single-row deletes are allowed. Transaction was rolled back.",
+                "affected_rows": 0,
+            }
         except asyncio.TimeoutError:
-            return {"error": "Write query timed out (30s limit)", "affected_rows": 0}
+            return {"error": "Write query timed out (60s limit)", "affected_rows": 0}
         except Exception as e:
             logger.error(f"[AdminAgent] Write query error: {e}")
             return {"error": str(e), "affected_rows": 0}
+
+
+class _DeleteTooManyError(Exception):
+    """Raised when a DELETE would affect more than 1 row."""
+    def __init__(self, count: int):
+        self.count = count
+
+
+def _parse_affected(result: str) -> int:
+    """Parse affected row count from asyncpg result string (e.g. 'DELETE 3')."""
+    if result and " " in result:
+        try:
+            return int(result.split()[-1])
+        except ValueError:
+            pass
+    return 0
 
 
 async def count_affected_rows(sql: str, params: Optional[List[Any]] = None) -> int:

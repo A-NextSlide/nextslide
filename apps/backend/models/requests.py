@@ -272,6 +272,7 @@ class CommunityDeckResponse(BaseModel):
     tags: List[str] = []
     slide_count: int = 0
     first_slide: Optional[Dict[str, Any]] = None
+    thumbnail_url: Optional[str] = None
     author_name: Optional[str] = None
     remix_count: int = 0
     view_count: int = 0
@@ -333,6 +334,7 @@ class ShowcaseDeckResponse(BaseModel):
     tags: List[str] = []
     slide_count: int = 0
     first_slide: Optional[Dict[str, Any]] = None
+    thumbnail_url: Optional[str] = None
     author_name: Optional[str] = None
     remix_count: int = 0
     view_count: int = 0

@@ -354,6 +354,26 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       }}
       data-mini-slide-debug={`scale:${scale.toFixed(3)},render:${shouldRender}`}
     >
+      {/* Loading shimmer — visible until slide content fades in */}
+      {!isContentMounted && (
+        <div
+          className="absolute inset-0 z-10 pointer-events-none"
+          style={{
+            opacity: isContentMounted ? 0 : 1,
+            transition: 'opacity 400ms ease-out',
+          }}
+        >
+          <div className="absolute inset-0 bg-zinc-200/60 dark:bg-zinc-700/60" />
+          <div
+            className="absolute inset-0"
+            style={{
+              background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)',
+              animation: 'shimmer 1.5s infinite',
+            }}
+          />
+        </div>
+      )}
+
       {shouldRenderContent && (
         <div
           key={`scale-${Math.round(scale * 1000)}`}
@@ -371,7 +391,7 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
             willChange: 'transform',
             // Fade-in animation
             opacity: isContentMounted ? 1 : 0,
-            transition: 'opacity 300ms ease-out',
+            transition: 'opacity 400ms ease-out',
             ...lockedBlurStyle
           } as React.CSSProperties}
         >

@@ -12,20 +12,28 @@ import modal
 
 app = modal.App("nextslide")
 
+_local_dir_ignore = [
+    "__pycache__", "*.pyc", ".env", ".git", "node_modules",
+    "tests/", ".pytest_cache/", ".venv*", "venv/",
+    "*.bak", "*.backup", ".DS_Store", "test_output/",
+    "scripts/", "migrations/", "schemas/",
+]
+
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git")
     .pip_install_from_requirements("requirements.txt")
-    .add_local_dir(
-        ".", "/app",
-        ignore=[
-            "__pycache__", "*.pyc", ".env", ".git", "node_modules",
-            "tests/", ".pytest_cache/", ".venv*", "venv/",
-            "*.bak", "*.backup", ".DS_Store", "test_output/",
-            "scripts/", "migrations/",
-        ],
-    )
     .env({"PYTHONPATH": "/app"})
+    .add_local_dir(".", "/app", ignore=_local_dir_ignore)
+)
+
+# Separate lightweight image for Playwright thumbnail rendering (~400MB Chromium)
+playwright_image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .pip_install("playwright==1.49.1", "Pillow>=10.0.0", "supabase>=2.3.5", "python-dotenv>=1.0.0")
+    .run_commands("playwright install chromium", "playwright install-deps chromium")
+    .env({"PYTHONPATH": "/app"})
+    .add_local_dir(".", "/app", ignore=_local_dir_ignore)
 )
 
 
@@ -262,3 +270,68 @@ async def edit_outline_remote(request_dict: dict):
 
     request = EditOutlineRequest.model_validate(request_dict)
     return await edit_outline_core(request)
+
+
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("nextslide-env")],
+    timeout=120,
+    memory=1024,
+    cpu=1.0,
+)
+@modal.concurrent(max_inputs=8)
+async def generate_narrative_flow_remote(
+    outline_dict: dict,
+    deck_uuid: str,
+    context: Optional[str] = None,
+) -> dict:
+    """
+    Generate narrative flow analysis inside a Modal container.
+
+    Analyzes the outline and saves the result to decks.notes.
+    Returns the narrative flow dict or {"error": "..."}.
+    """
+    from services.narrative_flow_analyzer import NarrativeFlowAnalyzer
+    from utils.supabase import update_deck_notes
+
+    analyzer = NarrativeFlowAnalyzer()
+    narrative_flow = await analyzer.analyze_narrative_flow(outline_dict, context=context)
+
+    if not narrative_flow:
+        return {"error": "Narrative flow generation returned None"}
+
+    flow_dict = narrative_flow.model_dump()
+
+    # Persist to database
+    success = update_deck_notes(deck_uuid, flow_dict)
+    if not success:
+        return {"error": "Failed to save narrative flow to database", "narrative_flow": flow_dict}
+
+    return {"success": True, "narrative_flow": flow_dict}
+
+
+@app.function(
+    image=playwright_image,
+    secrets=[modal.Secret.from_name("nextslide-env")],
+    timeout=60,
+    memory=2048,
+    cpu=1.0,
+)
+@modal.concurrent(max_inputs=4)
+async def render_slide_thumbnail_remote(
+    deck_uuid: str,
+    slide_data: dict,
+    slide_size: dict,
+    theme_data: Optional[dict] = None,
+    slide_index: int = 0,
+) -> dict:
+    """Render a slide thumbnail via Playwright inside a Modal container."""
+    from services.thumbnail_renderer import render_and_upload_thumbnail
+
+    return await render_and_upload_thumbnail(
+        deck_uuid=deck_uuid,
+        slide_data=slide_data,
+        slide_size=slide_size,
+        theme_data=theme_data,
+        slide_index=slide_index,
+    )

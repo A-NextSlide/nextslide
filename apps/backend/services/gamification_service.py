@@ -281,7 +281,7 @@ async def _gather_user_stats(user_id: str) -> Dict[str, Any]:
 
     try:
         # Team invites sent
-        invite_result = client.table("team_invitations").select("id", count="exact").eq("invited_by", user_id).eq("status", "accepted").execute()
+        invite_result = client.table("invitations").select("id", count="exact").eq("invited_by", user_id).eq("status", "accepted").execute()
         stats["team_invites"] = invite_result.count if invite_result.count else 0
     except Exception as e:
         logger.warning(f"Failed to get team invites for {user_id}: {e}")
@@ -289,7 +289,7 @@ async def _gather_user_stats(user_id: str) -> Dict[str, Any]:
 
     try:
         # Share count
-        share_result = client.table("deck_shares").select("id", count="exact").eq("user_id", user_id).execute()
+        share_result = client.table("deck_shares").select("id", count="exact").eq("created_by", user_id).execute()
         stats["share_count"] = share_result.count if share_result.count else 0
     except Exception as e:
         logger.warning(f"Failed to get share count for {user_id}: {e}")
@@ -573,7 +573,7 @@ async def claim_streak_reward(user_id: str, milestone: int) -> Dict[str, Any]:
 
 _DECK_LEADERBOARD_FIELDS = (
     "id, deck_uuid, title, description, category, tags, slide_count, "
-    "first_slide, author_name, remix_count, view_count, upvote_count, "
+    "first_slide, thumbnail_url, author_name, remix_count, view_count, upvote_count, "
     "is_featured, approved_at"
 )
 
@@ -625,6 +625,7 @@ async def _leaderboard_by_views(client, period: str, limit: int) -> List[Dict[st
             "tags": row.get("tags"),
             "slide_count": row.get("slide_count"),
             "first_slide": row.get("first_slide"),
+            "thumbnail_url": row.get("thumbnail_url"),
             "author_name": row.get("author_name", "Anonymous"),
             "view_count": row.get("view_count", 0),
             "remix_count": row.get("remix_count", 0),
@@ -661,6 +662,7 @@ async def _leaderboard_by_remixes(client, period: str, limit: int) -> List[Dict[
             "tags": row.get("tags"),
             "slide_count": row.get("slide_count"),
             "first_slide": row.get("first_slide"),
+            "thumbnail_url": row.get("thumbnail_url"),
             "author_name": row.get("author_name", "Anonymous"),
             "view_count": row.get("view_count", 0),
             "remix_count": row.get("remix_count", 0),

@@ -1000,7 +1000,7 @@ const AdminCosts: React.FC = () => {
         {/* Header + Current Stats */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-base font-semibold">Unit Economics</h1>
+            <h1 className="text-sm font-bold uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Unit Economics</h1>
             <div className="flex items-center gap-3 text-[10px]">
               <span className="text-[#888]">Actual:</span>
               <span className="font-medium">{totalUsers} users</span>
@@ -1014,7 +1014,7 @@ const AdminCosts: React.FC = () => {
               )}
               <span className="text-[#666]">|</span>
               <span className="text-[#888]">Model:</span>
-              <span className="text-purple-600">{economics.estPaidUsers} paid</span>
+              <span className="text-[#FF4301]">{economics.estPaidUsers} paid</span>
               <span className="text-emerald-600">${fmtMoney(economics.subscriptionRevenue)} sub</span>
               {economics.enterpriseRevenue > 0 && (
                 <span className="text-orange-600">+${fmtMoney(economics.enterpriseRevenue)} ent</span>
@@ -1035,9 +1035,9 @@ const AdminCosts: React.FC = () => {
         {/* Main 3-Column Layout */}
         <div className="grid grid-cols-12 gap-2">
           {/* Left: Inputs (Compact) */}
-          <div className="col-span-2 bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-2 space-y-2">
-            <div className="text-[10px] font-medium flex items-center gap-1">
-              <Target className="h-3 w-3 text-purple-500" /> Inputs
+          <div className="col-span-2 bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2 space-y-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301] flex items-center gap-1" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+              <Target className="h-3 w-3" /> Inputs
             </div>
             <div className="space-y-1">
               <CompactInput label="Tok/Slide" value={inputs.tokensPerSlide} onChange={v => updateInput('tokensPerSlide', v)} />
@@ -1122,7 +1122,7 @@ const AdminCosts: React.FC = () => {
           {/* Center: Chart + Stats */}
           <div className="col-span-7 space-y-2">
             {/* Chart */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-2">
+            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-medium">Cumulative {projectionMonths}mo</span>
@@ -1181,7 +1181,7 @@ const AdminCosts: React.FC = () => {
             {/* Selected Month Stats */}
             <div className="grid grid-cols-6 gap-1.5">
               <div className="bg-white dark:bg-[#111] border border-purple-500/30 rounded p-1.5 text-center">
-                <div className="text-[9px] text-purple-600">M{selectedMonth} Users</div>
+                <div className="text-[9px] text-[#FF4301]">M{selectedMonth} Users</div>
                 <div className="text-sm font-semibold">{fmtNum(selectedData?.users || 0)}</div>
                 <div className="text-[8px] text-[#888]">{fmtNum(selectedData?.paidUsers || 0)} paid</div>
               </div>
@@ -1213,7 +1213,7 @@ const AdminCosts: React.FC = () => {
             </div>
 
             {/* Breakdown Tabs - Users | Expenses */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-2">
+            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2">
               {/* Tab Header */}
               <div className="flex items-center justify-between mb-2">
                 <Tabs value={breakdownTab} onValueChange={v => setBreakdownTab(v as 'users' | 'expenses')}>
@@ -1240,7 +1240,7 @@ const AdminCosts: React.FC = () => {
                   <div className="flex items-center gap-1 flex-1">
                     {manualScenario.slice(0, projectionMonths + 1).map((item, i) => (
                       <div key={`hdr-${i}`} className="flex-1 text-center">
-                        <div className={cn("text-[8px]", i === selectedMonth ? "text-purple-600 font-medium" : "text-[#888]")}>{item.month}</div>
+                        <div className={cn("text-[8px]", i === selectedMonth ? "text-[#FF4301] font-medium" : "text-[#888]")}>{item.month}</div>
                       </div>
                     ))}
                   </div>
@@ -1253,7 +1253,7 @@ const AdminCosts: React.FC = () => {
                     {/* Total Users Row */}
                     <div className="flex items-center gap-2">
                       <div className="w-14 flex-shrink-0 flex items-center gap-1">
-                        <Users className="h-3 w-3 text-purple-500" />
+                        <Users className="h-3 w-3 text-[#FF4301]" />
                         <span className="text-[9px] font-medium">Total</span>
                       </div>
                       <div className="flex items-center gap-1 flex-1">
@@ -1748,11 +1748,11 @@ const AdminCosts: React.FC = () => {
           {/* Right: Plans + Metrics */}
           <div className="col-span-3 space-y-2">
             {/* Plans with more detail */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-2">
+            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-1">
-                  <CreditCard className="h-3 w-3 text-emerald-500" />
-                  <span className="text-[10px] font-medium">Pricing Plans</span>
+                  <CreditCard className="h-3 w-3 text-[#FF4301]" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301]" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Plans</span>
                 </div>
                 <span className="text-[9px] text-emerald-600 font-medium">ARPU ${blendedARPU.toFixed(2)}</span>
               </div>
@@ -1785,10 +1785,10 @@ const AdminCosts: React.FC = () => {
             </div>
 
             {/* API Costs (Editable) */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-2">
-              <div className="text-[10px] font-medium mb-1.5 flex items-center gap-1">
-                <DollarSign className="h-3 w-3 text-red-500" />
-                API Costs (per op)
+            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301] mb-1.5 flex items-center gap-1" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                <DollarSign className="h-3 w-3" />
+                API Costs
               </div>
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-[9px]">
@@ -1827,8 +1827,8 @@ const AdminCosts: React.FC = () => {
             </div>
 
             {/* Annual Metrics */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-2">
-              <div className="text-[10px] font-medium mb-1.5">Annual @ M{selectedMonth}</div>
+            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301] mb-1.5" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Annual @ M{selectedMonth}</div>
               <div className="space-y-1 text-[10px]">
                 <div className="flex justify-between">
                   <span className="text-[#888]">ARR</span>
@@ -1854,8 +1854,8 @@ const AdminCosts: React.FC = () => {
             </div>
 
             {/* Key Metrics */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-2">
-              <div className="text-[10px] font-medium mb-1.5">Monthly Metrics</div>
+            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-xl p-2">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301] mb-1.5" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Monthly Metrics</div>
               <div className="space-y-0.5 text-[9px]">
                 <MetricRow label="Cost/Paid User" value={`$${economics.costPerPaidUser.toFixed(2)}`} status={getStatus(economics.costPerPaidUser, 5, 10, false)} />
                 <MetricRow label="LTV" value={`$${economics.ltv.toFixed(0)}`} sub={`${economics.ltvCac.toFixed(1)}x CAC`} status={getStatus(economics.ltvCac, 3, 1)} />

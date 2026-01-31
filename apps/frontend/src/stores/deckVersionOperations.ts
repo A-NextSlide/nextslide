@@ -15,13 +15,13 @@ import { DeckState } from './deckStoreTypes';
  */
 export const createVersionOperations = (set: StoreApi<DeckState>['setState'], get: StoreApi<DeckState>['getState']) => ({
   // Create a new version of the deck
-  createVersion: async (name: string, description?: string, bookmarked: boolean = false, notes?: string) => {
+  createVersion: async (name: string, description?: string, bookmarked: boolean = false, notes?: string, isAutoSave: boolean = false) => {
     const { deckData } = get();
-    
+
     try {
       // Set syncing state
       set({ isSyncing: true });
-      
+
       // Create version in backend
       const versionId = await versionHistoryService.createVersion(
         deckData.uuid || '',
@@ -29,7 +29,7 @@ export const createVersionOperations = (set: StoreApi<DeckState>['setState'], ge
         {
           description,
           deckData,
-          isAutoSave: false,
+          isAutoSave,
           bookmarked,
           notes
         }
@@ -197,7 +197,7 @@ export const createVersionOperations = (set: StoreApi<DeckState>['setState'], ge
           hour: '2-digit',
           minute: '2-digit'
         });
-        await get().createVersion(`Auto-save ${formattedDate}`, 'Automatically saved version');
+        await get().createVersion(`Auto-save ${formattedDate}`, 'Automatically saved version', false, undefined, true);
       }
     }, intervalMs);
     
