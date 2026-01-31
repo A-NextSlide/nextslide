@@ -36,6 +36,8 @@ interface GrowthChannel {
   cac: number;
   convToPaid: number;
   color: string;
+  signupsManual?: number;
+  paidUsersManual?: number;
 }
 
 interface ViralModel {
@@ -135,6 +137,7 @@ interface ScenarioPreset {
   funnel: FunnelStage[];
   channels: Partial<Record<string, Partial<GrowthChannel>>>;
   visitorBaseline: number;
+  baseUsers: number;
 }
 
 const SCENARIOS: Record<Exclude<ScenarioId, 'custom'>, ScenarioPreset> = {
@@ -153,6 +156,7 @@ const SCENARIOS: Record<Exclude<ScenarioId, 'custom'>, ScenarioPreset> = {
     ],
     channels: {},
     visitorBaseline: 10000,
+    baseUsers: 1000,
   },
   aggressive: {
     label: 'Aggressive Launch',
@@ -165,6 +169,7 @@ const SCENARIOS: Record<Exclude<ScenarioId, 'custom'>, ScenarioPreset> = {
     funnel: DEFAULT_FUNNEL,
     channels: {},
     visitorBaseline: 50000,
+    baseUsers: 5000,
   },
   viral: {
     label: 'Viral Breakout',
@@ -181,6 +186,7 @@ const SCENARIOS: Record<Exclude<ScenarioId, 'custom'>, ScenarioPreset> = {
     ],
     channels: {},
     visitorBaseline: 100000,
+    baseUsers: 5000,
   },
 };
 
@@ -259,6 +265,7 @@ const AdminCosts: React.FC = () => {
     return (stored === 'aggressive' || stored === 'conservative' || stored === 'viral' || stored === 'custom') ? stored : 'aggressive';
   });
   const [scenarioJustApplied, setScenarioJustApplied] = useState(false);
+  const [baselineUsers, setBaselineUsers] = useState<number | null>(null);
 
   // Persist
   useEffect(() => { save(SK.inputs, inputs); }, [inputs]);
@@ -276,7 +283,8 @@ const AdminCosts: React.FC = () => {
   useEffect(() => { localStorage.setItem(SK.scenario, activeScenario); }, [activeScenario]);
 
   // Real data
-  const totalUsers = actuals?.users?.total || overview?.metrics?.users?.total || 5000;
+  const dbUsers = actuals?.users?.total || overview?.metrics?.users?.total || 5000;
+  const totalUsers = baselineUsers ?? dbUsers;
   const realPaidUsers = actuals?.revenue?.paidUsers || 0;
   const realMRR = actuals?.revenue?.mrr || 0;
 
@@ -304,11 +312,20 @@ const AdminCosts: React.FC = () => {
   const blendedOverageDecks = useMemo(() => calcBlendedDecksPerOverageUser(plans, tokensPerDeck, proPlusPct), [plans, tokensPerDeck, proPlusPct]);
   const effectiveConvPct = useMemo(() => calcEffectivePaidConversionPct(inputs.paidConversionPct, inputs.freeToPayConvPct), [inputs.paidConversionPct, inputs.freeToPayConvPct]);
 
-  // User scenario
+  // Funnel-derived monthly signups (last stage = converted to paid, but total signups = stage 1)
+  const funnelSignupsPerMonth = funnelData.length >= 2 ? funnelData[1].count : 0;
+
+  // User scenario — compound growth + funnel-sourced signups each month
   const manualScenario = useMemo(() => {
     const ng = (inputs.monthlyGrowthPct - inputs.churnPct) / 100;
-    return MONTH_LABELS.map((month, i) => ({ month, users: i === 0 ? totalUsers : Math.round(totalUsers * Math.pow(1 + ng, i)), isManual: false }));
-  }, [totalUsers, inputs.monthlyGrowthPct, inputs.churnPct]);
+    return MONTH_LABELS.map((month, i) => {
+      if (i === 0) return { month, users: totalUsers, isManual: false };
+      // Compound growth on existing base + funnel signups accumulate
+      const compoundUsers = Math.round(totalUsers * Math.pow(1 + ng, i));
+      const funnelAccumulated = funnelSignupsPerMonth * i;
+      return { month, users: compoundUsers + funnelAccumulated, isManual: false };
+    });
+  }, [totalUsers, inputs.monthlyGrowthPct, inputs.churnPct, funnelSignupsPerMonth]);
 
   useEffect(() => {
     if (manualScenario.length === 0) return;
@@ -490,8 +507,8 @@ const AdminCosts: React.FC = () => {
   const channelMetrics = useMemo(() => {
     const newSig = Math.round(totalUsers * (inputs.monthlyGrowthPct / 100));
     return channels.map(ch => {
-      const signups = Math.round(newSig * (ch.pctOfSignups / 100));
-      const paidUsers = Math.round(signups * (ch.convToPaid / 100));
+      const signups = ch.signupsManual ?? Math.round(newSig * (ch.pctOfSignups / 100));
+      const paidUsers = ch.paidUsersManual ?? Math.round(signups * (ch.convToPaid / 100));
       return { ...ch, signups, paidUsers, monthlyCost: signups * ch.cac };
     });
   }, [channels, totalUsers, inputs.monthlyGrowthPct]);
@@ -626,30 +643,34 @@ const AdminCosts: React.FC = () => {
 
   const insights = useMemo(() => {
     const items: { type: 'critical' | 'warning' | 'info' | 'success'; title: string; detail: string }[] = [];
+    // Use selected month data for financial health
+    const sd = selectedData;
+    const mRev = sd?.revenue || 0;
+    const mCost = sd?.costs || 0;
+    const mProfit = mRev - mCost;
+    const mMargin = mRev > 0 ? ((mRev - mCost) / mRev) * 100 : 0;
+    const mo = `M${selectedMonth}`;
     // Critical
-    if (economics.grossMargin < 0) items.push({ type: 'critical', title: 'Negative Gross Margin', detail: `${economics.grossMargin.toFixed(0)}% margin — revenue does not cover costs.` });
-    if (economics.netMonthly < 0 && economics.estMRR > 0 && Math.abs(economics.netMonthly) > economics.estMRR * 2) items.push({ type: 'critical', title: 'Unsustainable Burn', detail: `Monthly loss ($${fmtMoney(Math.abs(economics.netMonthly))}) exceeds 2x revenue.` });
+    if (mMargin < 0 && mRev > 0) items.push({ type: 'critical', title: 'Negative Gross Margin', detail: `${mo}: ${mMargin.toFixed(0)}% margin — revenue does not cover costs.` });
+    if (mProfit < 0 && mRev > 0 && Math.abs(mProfit) > mRev * 2) items.push({ type: 'critical', title: 'Unsustainable Burn', detail: `${mo}: loss ($${fmtMoney(Math.abs(mProfit))}) exceeds 2x revenue.` });
     if (inputs.churnPct > inputs.monthlyGrowthPct) items.push({ type: 'critical', title: 'Negative Net Growth', detail: `Churn (${inputs.churnPct}%) > growth (${inputs.monthlyGrowthPct}%). User base is shrinking.` });
     // Warning
-    if (economics.grossMargin >= 0 && economics.grossMargin < 50) items.push({ type: 'warning', title: 'Low SaaS Margin', detail: `${economics.grossMargin.toFixed(0)}% is below the 70%+ target.` });
+    if (mMargin >= 0 && mMargin < 50 && mRev > 0) items.push({ type: 'warning', title: 'Low SaaS Margin', detail: `${mo}: ${mMargin.toFixed(0)}% is below the 70%+ target.` });
     if (economics.ltvCac > 0 && economics.ltvCac < 3) items.push({ type: 'warning', title: 'LTV:CAC Below 3x', detail: `${economics.ltvCac.toFixed(1)}x ratio. Target is 3x+.` });
     if (economics.paybackMonths > 18 && economics.paybackMonths < 99) items.push({ type: 'warning', title: 'Long Payback', detail: `${economics.paybackMonths.toFixed(0)} months. Target is <12.` });
-    if (economics.freeTrialCostMonthly > 0 && economics.estMRR > 0 && economics.freeTrialCostMonthly > economics.estMRR * 0.3) items.push({ type: 'warning', title: 'High Free Tier Cost', detail: `${((economics.freeTrialCostMonthly / economics.estMRR) * 100).toFixed(0)}% of MRR goes to free trials.` });
     // Info
     const topSensitive = sensitivity.filter(s => !s.noEffect && Math.abs(s.profitDelta) > 5);
-    if (topSensitive.length > 0) items.push({ type: 'info', title: 'High Sensitivity', detail: `Most sensitive to: ${topSensitive.slice(0, 3).map(s => s.label).join(', ')}. A 10% change significantly impacts profit.` });
-    const noEffectParams = sensitivity.filter(s => s.noEffect);
-    if (noEffectParams.length > 0) items.push({ type: 'info', title: 'Inactive Parameters', detail: `${noEffectParams.map(s => s.label).join(', ')} don't affect the current model.` });
+    if (topSensitive.length > 0) items.push({ type: 'info', title: 'High Sensitivity', detail: `Most sensitive to: ${topSensitive.slice(0, 3).map(s => s.label).join(', ')}.` });
     if (!inputs.overageEnabled) items.push({ type: 'info', title: 'Overage Disabled', detail: 'Enable overage to see its revenue/cost impact.' });
     // Success
-    if (economics.grossMargin >= 70) items.push({ type: 'success', title: 'Healthy Margin', detail: `${economics.grossMargin.toFixed(0)}% exceeds the 70% SaaS benchmark.` });
+    if (mMargin >= 70) items.push({ type: 'success', title: 'Healthy Margin', detail: `${mo}: ${mMargin.toFixed(0)}% exceeds the 70% SaaS benchmark.` });
     if (economics.ltvCac >= 3) items.push({ type: 'success', title: 'Strong Unit Economics', detail: `${economics.ltvCac.toFixed(1)}x LTV:CAC exceeds the 3x target.` });
     if (viralCoeff >= 0.3) items.push({ type: 'success', title: 'PLG Working', detail: `Viral coefficient ${viralCoeff.toFixed(2)} indicates effective product-led growth.` });
-    if (economics.netMonthly > 0) items.push({ type: 'success', title: 'Net Profitable', detail: `+$${fmtMoney(economics.netMonthly)}/mo after all costs.` });
+    if (mProfit > 0) items.push({ type: 'success', title: 'Net Profitable', detail: `${mo}: +$${fmtMoney(mProfit)}/mo after all costs.` });
     const sortOrder = { critical: 0, warning: 1, info: 2, success: 3 };
     items.sort((a, b) => sortOrder[a.type] - sortOrder[b.type]);
     return items;
-  }, [economics, inputs, viralCoeff, sensitivity]);
+  }, [economics, inputs, viralCoeff, sensitivity, selectedData, selectedMonth]);
 
   // Updaters
   const ui = <K extends keyof EconomicsInputs>(k: K, v: number) => {
@@ -670,7 +691,7 @@ const AdminCosts: React.FC = () => {
       return u;
     });
   };
-  const uc = (idx: number, field: keyof GrowthChannel, value: number) => {
+  const uc = (idx: number, field: string, value: number) => {
     setChannels(prev => { const u = [...prev]; u[idx] = { ...u[idx], [field]: value }; return u; });
     if (activeScenario !== 'custom') setActiveScenario('custom');
   };
@@ -680,7 +701,7 @@ const AdminCosts: React.FC = () => {
     setInputs(DEFAULT_INPUTS); setPlans(DEFAULT_PLANS); setEnterprise(DEFAULT_ENTERPRISE);
     setChannels(DEFAULT_CHANNELS); setViral(DEFAULT_VIRAL); setFunnel(DEFAULT_FUNNEL);
     setGeminiFlash(DEFAULT_GEMINI_FLASH); setExpenseRates(DEFAULT_EXPENSE_RATES); setUserBreakdown([]);
-    setActiveScenario('aggressive'); setVisitorBaseline(50000);
+    setActiveScenario('aggressive'); setVisitorBaseline(50000); setBaselineUsers(null);
     Object.values(SK).forEach(k => localStorage.removeItem(k));
   };
 
@@ -691,6 +712,7 @@ const AdminCosts: React.FC = () => {
     setViral(s.viral);
     setFunnel(s.funnel);
     setVisitorBaseline(s.visitorBaseline);
+    setBaselineUsers(s.baseUsers);
     setUserBreakdown([]);
     setActiveScenario(id);
     setScenarioJustApplied(true);
@@ -857,14 +879,25 @@ const AdminCosts: React.FC = () => {
         {activeTab === 'overview' && (
           <div className="space-y-3">
             <div className="grid grid-cols-4 lg:grid-cols-8 gap-2">
-              <KPI label="MRR" value={`$${fmtMoney(economics.estMRR)}`} sub={`${economics.estPaidUsers} paying`} status={gs(economics.estMRR, 1000, 100)} />
-              <KPI label="ARR" value={`$${fmtMoney(annualMetrics.arr)}`} sub="projected" status={gs(annualMetrics.arr, 10000, 1000)} />
-              <KPI label="Gross Margin" value={`${economics.grossMargin.toFixed(0)}%`} sub={economics.grossMargin >= 70 ? 'healthy' : 'below target'} status={gs(economics.grossMargin, 70, 50)} />
-              <KPI label="LTV:CAC" value={`${economics.ltvCac.toFixed(1)}x`} sub={`LTV $${economics.ltv.toFixed(0)}`} status={gs(economics.ltvCac, 3, 1)} />
-              <KPI label="Burn Rate" value={`$${fmtMoney(Math.max(0, -economics.netMonthly))}/mo`} sub={economics.netMonthly >= 0 ? 'profitable' : 'burning'} status={economics.netMonthly >= 0 ? 'good' : 'bad'} />
-              <KPI label="Breakeven" value={economics.breakEvenPaidUsers > 0 ? `${economics.breakEvenPaidUsers} users` : 'N/A'} sub={economics.estPaidUsers >= economics.breakEvenPaidUsers ? 'reached' : 'not yet'} status={economics.estPaidUsers >= economics.breakEvenPaidUsers ? 'good' : 'warn'} />
-              <KPI label="Blended CAC" value={`$${blendedCAC.toFixed(2)}`} sub={`${weightedConv.toFixed(1)}% conv`} status={gs(blendedCAC, 5, 15, false)} />
-              <KPI label="Rev/User" value={`$${economics.blendedARPU.toFixed(2)}`} sub="monthly" status={gs(economics.blendedARPU, 15, 8)} />
+              {(() => {
+                const sd = selectedData;
+                const mRev = sd?.revenue || 0;
+                const mCost = sd?.costs || 0;
+                const mProfit = mRev - mCost;
+                const mMargin = mRev > 0 ? (mProfit / mRev) * 100 : 0;
+                const mPaid = sd?.paidUsers || 0;
+                const revPerUser = mPaid > 0 ? mRev / mPaid : 0;
+                return <>
+                  <KPI label={`M${selectedMonth} MRR`} value={`$${fmtMoney(mRev)}`} sub={`${mPaid} paying`} status={gs(mRev, 1000, 100)} />
+                  <KPI label="ARR" value={`$${fmtMoney(mRev * 12)}`} sub={`M${selectedMonth} projected`} status={gs(mRev * 12, 10000, 1000)} />
+                  <KPI label="Gross Margin" value={`${mMargin.toFixed(0)}%`} sub={mMargin >= 70 ? 'healthy' : 'below target'} status={gs(mMargin, 70, 50)} />
+                  <KPI label="LTV:CAC" value={`${economics.ltvCac.toFixed(1)}x`} sub={`LTV $${economics.ltv.toFixed(0)}`} status={gs(economics.ltvCac, 3, 1)} />
+                  <KPI label="Burn Rate" value={mProfit >= 0 ? '$0/mo' : `$${fmtMoney(Math.abs(mProfit))}/mo`} sub={mProfit >= 0 ? 'profitable' : 'burning'} status={mProfit >= 0 ? 'good' : 'bad'} />
+                  <KPI label="Breakeven" value={economics.breakEvenPaidUsers > 0 ? `${economics.breakEvenPaidUsers} users` : 'N/A'} sub={mPaid >= economics.breakEvenPaidUsers ? 'reached' : 'not yet'} status={mPaid >= economics.breakEvenPaidUsers ? 'good' : 'warn'} />
+                  <KPI label="Blended CAC" value={`$${blendedCAC.toFixed(2)}`} sub={`${weightedConv.toFixed(1)}% conv`} status={gs(blendedCAC, 5, 15, false)} />
+                  <KPI label="Rev/User" value={`$${revPerUser.toFixed(2)}`} sub={`M${selectedMonth}`} status={gs(revPerUser, 15, 8)} />
+                </>;
+              })()}
             </div>
             <div className="grid grid-cols-6 gap-1.5">
               {[
@@ -1159,8 +1192,8 @@ const AdminCosts: React.FC = () => {
                   <Input type="number" value={ch.pctOfSignups} onChange={e => uc(i, 'pctOfSignups', Number(e.target.value))} className="h-5 text-[9px] text-right px-1" />
                   <div className="flex items-center justify-end"><span className="text-[8px] text-[#888]">$</span><Input type="number" value={ch.cac} onChange={e => uc(i, 'cac', Number(e.target.value))} className="h-5 w-14 text-[9px] text-right px-0.5" step={0.5} /></div>
                   <Input type="number" value={ch.convToPaid} onChange={e => uc(i, 'convToPaid', Number(e.target.value))} className="h-5 text-[9px] text-right px-1" />
-                  <span className="text-right tabular-nums text-[#888]">{ch.signups}</span>
-                  <span className="text-right tabular-nums font-medium text-emerald-600">{ch.paidUsers}</span>
+                  <Input type="number" value={ch.signups} onChange={e => uc(i, 'signupsManual', Number(e.target.value))} className={cn("h-5 text-[9px] text-right px-1", channels[i]?.signupsManual !== undefined && "border-blue-500 bg-blue-500/5")} />
+                  <Input type="number" value={ch.paidUsers} onChange={e => uc(i, 'paidUsersManual', Number(e.target.value))} className={cn("h-5 text-[9px] text-right px-1 font-medium text-emerald-600", channels[i]?.paidUsersManual !== undefined && "border-blue-500 bg-blue-500/5")} />
                   <span className="text-right tabular-nums text-red-600">{ch.monthlyCost > 0 ? `$${fmtMoney(ch.monthlyCost)}` : '$0'}</span>
                 </div>
               ))}
@@ -1174,8 +1207,43 @@ const AdminCosts: React.FC = () => {
                 <span className="text-right tabular-nums text-red-600">${fmtMoney(channelMetrics.reduce((s, c) => s + c.monthlyCost, 0))}</span>
               </div>
             </div>
+            {/* Conversion Funnel — full width */}
+            <div className={cn(cd, "p-3")}>
+              <div className="flex items-center justify-between mb-2">
+                <span className={sH} style={hk}>Conversion Funnel</span>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1 text-[8px] text-[#888]">
+                    <span>Visitors/mo:</span>
+                    <Input type="number" value={visitorBaseline} onChange={e => { setVisitorBaseline(Number(e.target.value)); if (activeScenario !== 'custom') setActiveScenario('custom'); }} className="h-5 w-20 text-[9px] text-right px-1" />
+                  </div>
+                  <span className="text-[9px] font-medium text-[#FF4301] tabular-nums">
+                    {funnelData.length > 0 ? ((funnelData[funnelData.length - 1].count / funnelData[0].count) * 100).toFixed(2) : 0}% end-to-end
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-[1fr_200px] gap-4">
+                <FunnelChart data={funnelData} />
+                <div className="space-y-1.5 pt-1">
+                  <div className="text-[8px] text-[#888] font-medium uppercase tracking-wider mb-1">Stage Rates</div>
+                  {funnel.slice(1).map((stage, i) => (
+                    <div key={stage.name} className="flex items-center justify-between gap-2">
+                      <span className="text-[8px] text-[#888] truncate">{stage.name.split('(')[0].trim()}</span>
+                      <div className="flex items-center gap-0.5">
+                        <Input type="number" value={stage.rate} onChange={e => {
+                          const v = Number(e.target.value);
+                          setFunnel(prev => { const u = [...prev]; u[i + 1] = { ...u[i + 1], rate: v }; return u; });
+                          if (activeScenario !== 'custom') setActiveScenario('custom');
+                        }} className="h-5 w-12 text-[9px] text-right px-1" step={1} />
+                        <span className="text-[8px] text-[#888]">%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-12 gap-3">
-              <div className="col-span-4">
+              <div className="col-span-5">
                 <div className={cn(cd, "p-3")}>
                   <span className={sH} style={hk}>Viral Coefficient</span>
                   <div className="mt-3 mb-3 text-center">
@@ -1195,39 +1263,7 @@ const AdminCosts: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <div className="col-span-4">
-                <div className={cn(cd, "p-3")}>
-                  <span className={sH} style={hk}>Conversion Funnel</span>
-                  <div className="mt-3 space-y-1">
-                    {funnelData.map((stage, i) => {
-                      const w = Math.max(8, stage.pct);
-                      const colors = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#FF4301'];
-                      return (
-                        <div key={stage.name}>
-                          <div className="flex items-center justify-between text-[8px] mb-0.5">
-                            <span className="text-[#888]">{stage.name}</span>
-                            <span className="tabular-nums font-medium">{fmtNum(stage.count)} <span className="text-[#888]">({stage.pct.toFixed(1)}%)</span></span>
-                          </div>
-                          <div className="h-5 bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded overflow-hidden mx-auto" style={{ width: `${w}%` }}>
-                            <div className="w-full h-full rounded" style={{ backgroundColor: colors[i] || '#666', opacity: 0.7 }} />
-                          </div>
-                          {i < funnelData.length - 1 && (
-                            <div className="flex items-center justify-center my-0.5">
-                              <ChevronRight className="h-2.5 w-2.5 text-[#ccc] dark:text-[#555] rotate-90" />
-                              <span className="text-[7px] text-[#888] ml-0.5">{funnel[i + 1]?.rate}%</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                    <div className="pt-2 border-t border-[#eaeaea] dark:border-[#333] text-[9px] flex justify-between">
-                      <span className="text-[#888]">Visitor → Paid</span>
-                      <span className="font-medium text-[#FF4301] tabular-nums">{funnelData.length > 0 ? ((funnelData[funnelData.length - 1].count / funnelData[0].count) * 100).toFixed(2) : 0}%</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="col-span-4">
+              <div className="col-span-7">
                 <div className={cn(cd, "p-3")}>
                   <span className={sH} style={hk}>Channel Mix</span>
                   <div className="h-[200px] mt-1">
@@ -1520,6 +1556,68 @@ const CTip = ({ active, payload, label }: any) => {
           <span className="font-medium tabular-nums">{p.name.includes('User') || p.name === 'Paid' ? fmtNum(p.value) : `$${fmtMoney(p.value)}`}</span>
         </div>
       ))}
+    </div>
+  );
+};
+
+const FUNNEL_COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#FF4301'];
+
+const FunnelChart = ({ data }: { data: { name: string; count: number; pct: number; rate: number }[] }) => {
+  if (data.length === 0) return null;
+  const maxCount = data[0].count;
+  if (maxCount === 0) return null;
+
+  return (
+    <div className="space-y-0">
+      {data.map((stage, i) => {
+        const widthPct = Math.max(12, (stage.count / maxCount) * 100);
+        const nextStage = data[i + 1];
+        const dropoff = nextStage ? stage.count - nextStage.count : 0;
+        const dropPct = stage.count > 0 && nextStage ? ((dropoff / stage.count) * 100) : 0;
+        return (
+          <div key={stage.name}>
+            {/* Stage bar */}
+            <div className="flex items-center gap-2">
+              <div className="flex-1 flex justify-center">
+                <div
+                  className="relative h-8 rounded-md flex items-center justify-between px-3 transition-all duration-300"
+                  style={{
+                    width: `${widthPct}%`,
+                    backgroundColor: FUNNEL_COLORS[i] + '18',
+                    borderLeft: `3px solid ${FUNNEL_COLORS[i]}`,
+                  }}
+                >
+                  <span className="text-[9px] font-medium truncate" style={{ color: FUNNEL_COLORS[i] }}>
+                    {stage.name}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold tabular-nums" style={{ color: FUNNEL_COLORS[i] }}>
+                      {fmtNum(stage.count)}
+                    </span>
+                    {i > 0 && (
+                      <span className="text-[8px] tabular-nums px-1 py-0.5 rounded"
+                        style={{ backgroundColor: FUNNEL_COLORS[i] + '20', color: FUNNEL_COLORS[i] }}>
+                        {stage.pct.toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* Dropoff connector */}
+            {nextStage && (
+              <div className="flex items-center justify-center h-4">
+                <div className="flex items-center gap-2 text-[8px]">
+                  <div className="w-px h-3 bg-[#ddd] dark:bg-[#444]" />
+                  <span className="text-red-400 tabular-nums">-{fmtNum(dropoff)}</span>
+                  <span className="text-[#bbb] dark:text-[#555]">({dropPct.toFixed(0)}% drop)</span>
+                  <div className="w-px h-3 bg-[#ddd] dark:bg-[#444]" />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };
