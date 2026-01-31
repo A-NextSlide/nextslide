@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Copy, FileStack, Loader2 } from 'lucide-react';
@@ -32,6 +32,14 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
 }) => {
   const category = COMMUNITY_CATEGORIES[deck.category as keyof typeof COMMUNITY_CATEGORIES];
 
+  // On desktop: mount live MiniSlide on first hover (stays rendered after)
+  const [showLive, setShowLive] = useState(false);
+  const handleMouseEnter = useCallback(() => {
+    if (!showLive && !BROWSER.isMobile && deck.firstSlide) {
+      setShowLive(true);
+    }
+  }, [showLive, deck.firstSlide]);
+
   const handleCardClick = (e: React.MouseEvent) => {
     // Don't trigger card click if clicking the remix button
     if ((e.target as HTMLElement).closest('button')) return;
@@ -45,12 +53,13 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
         className
       )}
       onClick={handleCardClick}
+      onMouseEnter={handleMouseEnter}
     >
       <div className="relative aspect-[16/9] w-full max-w-full overflow-hidden rounded-lg transition-all duration-300 ring-1 ring-zinc-200 dark:ring-zinc-700 hover:ring-zinc-300 dark:hover:ring-zinc-600 hover:shadow-lg">
-        {/* Thumbnail */}
+        {/* Thumbnail: PNG by default, live MiniSlide on hover (desktop only) */}
         <div className="absolute inset-0 w-full h-full">
+          {/* Base layer: PNG thumbnail or placeholder */}
           {cachedThumbnailUrl ? (
-            /* Show server-rendered PNG thumbnail */
             <img
               src={cachedThumbnailUrl}
               alt={deck.title}
@@ -58,22 +67,19 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
               draggable={false}
               loading="lazy"
             />
-          ) : BROWSER.isMobile ? (
-            /* Mobile: show placeholder when no PNG thumbnail available (never render MiniSlide) */
+          ) : (
             <div className="flex items-center justify-center h-full bg-gray-100 dark:bg-gray-800">
               <FileStack className="h-8 w-8 text-gray-300" />
             </div>
-          ) : deck.firstSlide ? (
-            /* Desktop: full live thumbnail */
-            <div ref={onThumbnailRef} className="w-full h-full">
+          )}
+
+          {/* Desktop hover layer: live MiniSlide mounts once on first hover, stays rendered */}
+          {showLive && deck.firstSlide && (
+            <div ref={onThumbnailRef} className="absolute inset-0 w-full h-full z-[1]">
               <MiniSlide
                 slide={deck.firstSlide}
                 className="w-full h-full"
               />
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-full bg-gray-100 dark:bg-gray-800">
-              <FileStack className="h-8 w-8 text-gray-300" />
             </div>
           )}
         </div>
