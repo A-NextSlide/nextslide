@@ -185,6 +185,7 @@ async def _handle_slash_command(
         await sessions.update_session(
             session_id,
             context_data={
+                "original_text": text,
                 "messages_summary": context.messages_summary,
                 "file_count": context.file_count,
                 "raw_message_count": context.raw_message_count,
@@ -220,15 +221,14 @@ async def _handle_slash_command(
         # 6. Skip to generation
         await sessions.update_session(session_id, state="generating")
 
-        # Determine slide count: agent result > parsed from text > default
-        num_slides = 15
-        if agent_result and agent_result.get("slide_count"):
+        # Determine slide count: user text > agent result > default
+        # User's explicit request always wins (e.g. "make 2 slides")
+        num_slides = _parse_slide_count(text)
+        if num_slides == 15 and agent_result and agent_result.get("slide_count"):
             try:
                 num_slides = int(agent_result["slide_count"])
             except (ValueError, TypeError):
                 pass
-        else:
-            num_slides = _parse_slide_count(text)
 
         create_background_task(
             bridge.generate_deck(
@@ -363,17 +363,16 @@ async def _handle_generate_from_form(
         )
 
         # Get topic from first answer or session context
-        topic = answers.get("topic", "") or session.get("clarification_data", {}).get("topic", "Presentation")
+        original_text = context_data.get("original_text", "")
+        topic = answers.get("topic", "") or original_text or session.get("clarification_data", {}).get("topic", "Presentation")
 
-        # Parse slide count from answers or topic
-        num_slides = 15
-        if answers.get("slide_count"):
+        # Parse slide count: user's original text > form answers > default
+        num_slides = _parse_slide_count(original_text)
+        if num_slides == 15 and answers.get("slide_count"):
             try:
                 num_slides = int(answers["slide_count"])
             except (ValueError, TypeError):
                 pass
-        else:
-            num_slides = _parse_slide_count(topic)
 
         # Use the interaction's response_url to replace the form
         response_url = payload.get("response_url") or session.get("slack_response_url")
