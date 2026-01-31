@@ -526,7 +526,7 @@ const AdminCosts: React.FC = () => {
       data.push({
         month: MONTH_LABELS[i], monthIndex: i, users, paidUsers: b.starter + b.pro + b.team + b.enterprise,
         freeUsers: b.free, starterUsers: b.starter, proUsers: b.pro, teamUsers: b.team, enterpriseDeals: b.enterprise,
-        revenue: monthRev, subscriptionRevenue: subRev, enterpriseRevenue: entRev, overageRevenue: ovRev,
+        revenue: monthRev, subscriptionRevenue: subRev, enterpriseRevenue: entRev, overageRevenue: ovRev, upgradeRevenue: upgRev,
         apiCosts, headcountCosts, infraCosts, serviceCosts, stripeFees,
         costs: monthCosts, profit: monthRev - monthCosts, cumRevenue: cumRev, cumCosts: cumCost, cumProfit: cumRev - cumCost,
       });
@@ -752,9 +752,9 @@ const AdminCosts: React.FC = () => {
               {realPaidUsers > 0 && <span className="text-emerald-600 font-medium tabular-nums">{realPaidUsers} paid</span>}
               {realMRR > 0 && <span className="text-emerald-600 font-medium tabular-nums">${realMRR.toFixed(0)} MRR</span>}
               <span className="text-[#333] dark:text-[#555]">|</span>
-              <span className="text-[#FF4301] font-medium tabular-nums">${fmtMoney(economics.estMRR)} MRR</span>
-              <span className={cn("font-medium tabular-nums", economics.netMonthly >= 0 ? "text-emerald-600" : "text-red-500")}>
-                {economics.netMonthly >= 0 ? '+' : ''}{fmtMoney(economics.netMonthly)} net
+              <span className="text-[#FF4301] font-medium tabular-nums">M{selectedMonth}: ${fmtMoney(selectedData?.revenue || 0)} MRR</span>
+              <span className={cn("font-medium tabular-nums", (selectedData?.profit || 0) >= 0 ? "text-emerald-600" : "text-red-500")}>
+                {(selectedData?.profit || 0) >= 0 ? '+' : ''}{fmtMoney(selectedData?.profit || 0)} net
               </span>
             </div>
           </div>
@@ -1010,7 +1010,8 @@ const AdminCosts: React.FC = () => {
                   </div>
                   <div className="space-y-2">
                     {plans.map((plan, i) => {
-                      const dpm = tokensPerDeck > 0 ? Math.floor(plan.tokens / tokensPerDeck) : 0;
+                      const derivedDpm = tokensPerDeck > 0 ? Math.floor(plan.tokens / tokensPerDeck) : 0;
+                      const dpm = (plan as any).decksPerMonth ?? derivedDpm;
                       return (
                         <div key={plan.name} className="border border-[#eaeaea] dark:border-[#333] rounded-lg p-2">
                           <div className="flex items-center gap-1.5 mb-1.5">
@@ -1022,8 +1023,15 @@ const AdminCosts: React.FC = () => {
                             <Input type="number" value={plan.pctOfPaid} onChange={e => updatePlan(i, 'pctOfPaid', Number(e.target.value))} className="h-5 w-14 text-[10px] px-1 text-center" />
                             <span className="text-[9px] text-[#888]">%</span>
                           </div>
-                          <div className="flex items-center justify-between text-[8px] text-[#888]">
-                            <span>{dpm} decks/mo</span><span>${dpm > 0 ? (plan.price / dpm).toFixed(2) : '0'}/deck</span><span>{inputs.slidesPerDeck} slides</span>
+                          <div className="flex items-center gap-3 text-[8px] text-[#888]">
+                            <div className="flex items-center gap-1">
+                              <Input type="number" value={dpm} onChange={e => {
+                                setPlans(prev => { const u = [...prev]; (u[i] as any).decksPerMonth = Number(e.target.value); return u; });
+                              }} className={cn("h-4 w-10 text-[8px] text-right px-0.5", (plan as any).decksPerMonth !== undefined && "border-blue-500 bg-blue-500/5")} />
+                              <span>decks/mo</span>
+                            </div>
+                            <span>${dpm > 0 ? (plan.price / dpm).toFixed(2) : '0'}/deck</span>
+                            <span>{inputs.slidesPerDeck} slides</span>
                           </div>
                         </div>
                       );
@@ -1040,30 +1048,37 @@ const AdminCosts: React.FC = () => {
               </div>
               <div className="col-span-7 space-y-3">
                 <div className={cn(cd, "p-3")}>
-                  <span className={sH} style={hk}>Revenue Streams (Monthly)</span>
-                  <div className="space-y-2 mt-2">
-                    {[
-                      { name: 'Subscriptions', value: economics.subscriptionRevenue, color: '#10b981' },
-                      { name: 'Enterprise', value: economics.enterpriseRevenue, color: '#f97316' },
-                      { name: 'Overage', value: economics.overageRevenue, color: '#8b5cf6' },
-                      { name: 'Upgrades', value: economics.upgradeRevenue, color: '#3b82f6' },
-                    ].map(st => {
-                      const pct = economics.estMRR > 0 ? (st.value / economics.estMRR) * 100 : 0;
-                      return (
-                        <div key={st.name} className="flex items-center gap-2">
-                          <span className="text-[9px] text-[#888] w-20">{st.name}</span>
-                          <div className="flex-1 h-4 bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded overflow-hidden">
-                            <div className="h-full rounded transition-all duration-500" style={{ width: `${Math.max(1, pct)}%`, backgroundColor: st.color }} />
-                          </div>
-                          <span className="text-[9px] font-medium tabular-nums w-16 text-right">${fmtMoney(st.value)}</span>
-                          <span className="text-[8px] text-[#888] w-10 text-right">{pct.toFixed(0)}%</span>
+                  <span className={sH} style={hk}>Revenue Streams (M{selectedMonth})</span>
+                  {(() => {
+                    const sd = selectedData;
+                    const mRev = sd?.revenue || 0;
+                    const streams = [
+                      { name: 'Subscriptions', value: sd?.subscriptionRevenue || 0, color: '#10b981' },
+                      { name: 'Enterprise', value: sd?.enterpriseRevenue || 0, color: '#f97316' },
+                      { name: 'Overage', value: sd?.overageRevenue || 0, color: '#8b5cf6' },
+                      { name: 'Upgrades', value: sd?.upgradeRevenue || 0, color: '#3b82f6' },
+                    ];
+                    return (
+                      <div className="space-y-2 mt-2">
+                        {streams.map(st => {
+                          const pct = mRev > 0 ? (st.value / mRev) * 100 : 0;
+                          return (
+                            <div key={st.name} className="flex items-center gap-2">
+                              <span className="text-[9px] text-[#888] w-20">{st.name}</span>
+                              <div className="flex-1 h-4 bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded overflow-hidden">
+                                <div className="h-full rounded transition-all duration-500" style={{ width: `${Math.max(1, pct)}%`, backgroundColor: st.color }} />
+                              </div>
+                              <span className="text-[9px] font-medium tabular-nums w-16 text-right">${fmtMoney(st.value)}</span>
+                              <span className="text-[8px] text-[#888] w-10 text-right">{pct.toFixed(0)}%</span>
+                            </div>
+                          );
+                        })}
+                        <div className="flex items-center justify-between pt-1.5 border-t border-[#eaeaea] dark:border-[#333] text-[10px] font-medium">
+                          <span>M{selectedMonth} MRR</span><span className="text-emerald-600 tabular-nums">${fmtMoney(mRev)}</span>
                         </div>
-                      );
-                    })}
-                    <div className="flex items-center justify-between pt-1.5 border-t border-[#eaeaea] dark:border-[#333] text-[10px] font-medium">
-                      <span>Total MRR</span><span className="text-emerald-600 tabular-nums">${fmtMoney(economics.estMRR)}</span>
-                    </div>
-                  </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className={cn(cd, "p-3")}>
                   <span className={sH} style={hk}>Conversion & Growth</span>
