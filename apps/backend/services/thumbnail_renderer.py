@@ -142,8 +142,10 @@ def _build_font_injection(html: str, theme_data: Optional[dict] = None) -> str:
     return "\n".join(tags)
 
 
-def _extract_custom_component_html(slide_data: dict) -> Optional[str]:
+def _extract_custom_component_html(slide_data: Optional[dict]) -> Optional[str]:
     """Extract the full HTML document from a CustomComponent render prop."""
+    if not slide_data:
+        return None
     components = slide_data.get("components", [])
     for comp in components:
         if comp.get("type") == "CustomComponent":
@@ -285,8 +287,12 @@ async def render_and_upload_thumbnail(
     """
     Build HTML, capture screenshot, upload to Supabase Storage, update DB.
 
-    Returns {"url": "...", "path": "..."} on success.
+    Returns {"url": "...", "path": "..."} on success, None if slide_data is empty.
     """
+    if not slide_data:
+        logger.warning("render_and_upload_thumbnail called with empty slide_data for deck %s", deck_uuid)
+        return None
+
     html = build_slide_html(slide_data, slide_size, theme_data)
 
     width = (slide_size or {}).get("width", THUMBNAIL_WIDTH)
