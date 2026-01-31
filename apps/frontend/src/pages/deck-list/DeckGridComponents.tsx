@@ -394,7 +394,6 @@ export const VirtualizedDeckGrid = React.memo(({
                 shouldAnimate={shouldAnimate}
                 thumbnailRenderMode="full"
                 cachedThumbnailUrl={cachedUrl}
-                forceRender={BROWSER.isMobile}
                 onThumbnailRef={(el) => {
                   if (el && deck.uuid) {
                     thumbnailRefsMapRef.current.set(deck.uuid, el);

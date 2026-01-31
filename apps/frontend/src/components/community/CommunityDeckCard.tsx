@@ -5,6 +5,7 @@ import { Copy, FileStack, Loader2 } from 'lucide-react';
 import { CommunityDeck, COMMUNITY_CATEGORIES } from '@/services/communityService';
 import MiniSlide from '@/components/deck/MiniSlide';
 import { cn } from '@/lib/utils';
+import { BROWSER } from '@/utils/browser';
 
 interface CommunityDeckCardProps {
   deck: CommunityDeck;
@@ -57,11 +58,12 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
               draggable={false}
             />
           ) : deck.firstSlide ? (
-            /* Render live thumbnail */
+            /* Render live thumbnail - background-only on mobile to prevent crashes */
             <div ref={onThumbnailRef} className="w-full h-full">
               <MiniSlide
                 slide={deck.firstSlide}
                 className="w-full h-full"
+                renderMode={BROWSER.isMobile ? 'background' : 'full'}
               />
             </div>
           ) : (

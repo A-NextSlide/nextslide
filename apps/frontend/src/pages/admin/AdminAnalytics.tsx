@@ -13,7 +13,7 @@ import { useAdminData, DATE_RANGE_PRESETS, GRANULARITY_OPTIONS } from '@/context
 import {
   useAdminOverview, useUserTimeseries, useDeckTimeseries, useUserSegments,
   useTopUsers, useContentDistribution, useCreditBreakdown, useRecentActivity,
-  useServiceHealth, invalidateAllAdminData, useAdminQueryClient
+  invalidateAllAdminData, useAdminQueryClient
 } from '@/hooks/useAdminQueries';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -247,8 +247,6 @@ const AdminAnalytics: React.FC = () => {
   const { data: userTimeseries } = useUserTimeseries(startDate, endDate, granularity, 'signups');
   const { data: deckTimeseries } = useDeckTimeseries(startDate, endDate, granularity, 'created');
   const { data: userSegments } = useUserSegments(startDate, endDate, 'activity');
-  const { data: serviceHealth, isLoading: healthLoading } = useServiceHealth();
-
   // Tab-specific data - only fetched when tab is active
   const { data: topUsers } = useTopUsers(startDate, endDate, 'decks', 10, activeTab === 'users');
   const { data: contentDist } = useContentDistribution(startDate, endDate, activeTab === 'content');
@@ -360,9 +358,6 @@ const AdminAnalytics: React.FC = () => {
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className="space-y-3">
-            {/* System Health Banner */}
-            <SystemHealthBanner health={serviceHealth} isLoading={healthLoading} />
-
             {/* Milestone tracker */}
             <MilestoneTracker milestones={MILESTONES} currentUsers={totalUsers} currentMRR={0} />
 

@@ -46,16 +46,20 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'b
     );
   }
 
+  // On mobile without a server thumbnail, use lightweight background-only mode
+  // to prevent crashes from full slide rendering in list views
+  const effectiveRenderMode = BROWSER.isMobile ? 'background' : renderMode;
+
   // Use MiniSlide - it has IntersectionObserver for lazy loading
   return (
     <div className="w-full h-full">
       <MiniSlide
-        key={renderMode} // Force remount on mode change to ensure clean measurement
+        key={effectiveRenderMode} // Force remount on mode change to ensure clean measurement
         slide={firstSlide}
         responsive={true}
         slideSize={deck.size}
         className="w-full h-full"
-        renderMode={renderMode}
+        renderMode={effectiveRenderMode}
         forceRender={forceRender}
       />
     </div>

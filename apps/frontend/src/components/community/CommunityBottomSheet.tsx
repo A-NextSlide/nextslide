@@ -29,6 +29,7 @@ import CommunityGallery from './CommunityGallery';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { BROWSER } from '@/utils/browser';
 
 // ---------------------------------------------------------------------------
 // Leaderboard helpers
@@ -298,8 +299,10 @@ const LbCard: React.FC<LbCardProps> = ({ entry, rank, onClick }) => {
       {/* Thumbnail */}
       <div className="relative w-full aspect-[16/9] overflow-hidden">
         <div className="absolute inset-0 w-full h-full pointer-events-none">
-          {entry.first_slide ? (
-            <MiniSlide slide={entry.first_slide} className="w-full h-full" />
+          {BROWSER.isMobile && entry.thumbnail_url ? (
+            <img src={entry.thumbnail_url} alt={entry.title} className="w-full h-full object-cover" loading="lazy" />
+          ) : entry.first_slide ? (
+            <MiniSlide slide={entry.first_slide} className="w-full h-full" renderMode={BROWSER.isMobile ? 'background' : 'full'} />
           ) : (
             <div className="flex items-center justify-center h-full bg-zinc-100 dark:bg-zinc-800">
               <FileStack className="h-6 w-6 text-zinc-300 dark:text-zinc-600" />
