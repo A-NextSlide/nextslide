@@ -89,6 +89,42 @@ class SlackGenerationBridge:
         progress_ts: Optional[str] = None
 
         try:
+            # Check credits before generating
+            from services.billing_service import get_billing_service, CreditAction
+            billing = get_billing_service()
+            balance = await billing.get_user_balance(user_id)
+            credit_cost = billing.get_credit_cost(CreditAction.SLIDE_GENERATION) * num_slides
+
+            if balance and balance.remaining_credits != -1 and balance.remaining_credits < credit_cost:
+                await self.sessions.update_session(
+                    session_id, state="failed",
+                    error_message=f"Insufficient credits. Need {credit_cost}, have {balance.remaining_credits}",
+                )
+                error_blocks = SlackBlockKit.error_message(
+                    f"You don't have enough credits to generate this deck. "
+                    f"Need {credit_cost}, have {balance.remaining_credits}. "
+                    f"Upgrade your plan at nextslide.ai/pricing"
+                )
+                await self._send_message(
+                    bot_token, channel_id, response_url,
+                    text="Insufficient credits",
+                    blocks=error_blocks,
+                    thread_ts=thread_ts,
+                    replace_original=True,
+                )
+                return
+
+            # Consume credits
+            await billing.consume_credits(
+                user_id,
+                CreditAction.SLIDE_GENERATION,
+                metadata={
+                    "deck_id": session_id,
+                    "num_slides": num_slides,
+                    "source": "slack",
+                },
+            )
+
             # Update session state
             await self.sessions.update_session(session_id, state="generating")
 
