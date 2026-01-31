@@ -44,8 +44,8 @@ const CommunityDeckView: React.FC = () => {
 
   // Compute deck slide size from the first slide or theme
   const deckSlideSize = useMemo(() => {
-    if (slides.length > 0 && slides[0]?.size) {
-      return slides[0].size;
+    if (slides.length > 0 && (slides[0] as any)?.size) {
+      return (slides[0] as any).size;
     }
     if (theme?.defaultSlideSize) {
       return theme.defaultSlideSize;

@@ -19,6 +19,7 @@ import {
   RefreshCw, Loader2, DollarSign, Users, TrendingUp, Target, Zap, Globe, Share2,
   MessageSquare, Mail, Megaphone, Search, Rocket, RotateCcw, ChevronRight,
   ArrowUpRight, ArrowDownRight, Award, BarChart3, PieChart as PieChartIcon,
+  ChevronUp, ChevronDown,
 } from 'lucide-react';
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -105,10 +106,10 @@ const DEFAULT_VIRAL: ViralModel = { sharesPerUserMonth: 3, viewsPerShare: 15, cl
 
 const DEFAULT_FUNNEL: FunnelStage[] = [
   { name: 'Monthly Visitors', rate: 100 },
-  { name: 'Signed Up', rate: 8 },
-  { name: 'Activated (created deck)', rate: 65 },
-  { name: 'Hit usage limit', rate: 45 },
-  { name: 'Converted to paid', rate: 18 },
+  { name: 'Signed Up', rate: 12 },
+  { name: 'Activated (created deck)', rate: 75 },
+  { name: 'Hit usage limit', rate: 55 },
+  { name: 'Converted to paid', rate: 22 },
 ];
 
 const DEFAULT_GEMINI_FLASH: GeminiFlashModel = { costPerDeck: 0.05, typingRate: 35, completionRate: 88, signupRate: 65 };
@@ -124,6 +125,65 @@ const BENCHMARK_DATA = [
 
 const INDUSTRY_BENCHMARKS = { freeToPaid: 5, grossMargin: 75, ltvCac: 3, viral: 0.3, nrr: 110, payback: 12 };
 
+type ScenarioId = 'aggressive' | 'conservative' | 'viral' | 'custom';
+
+interface ScenarioPreset {
+  label: string;
+  inputs: Partial<EconomicsInputs>;
+  enterprise: { dealsPerYear: number; avgDealSize: number };
+  viral: ViralModel;
+  funnel: FunnelStage[];
+  channels: Partial<Record<string, Partial<GrowthChannel>>>;
+  visitorBaseline: number;
+}
+
+const SCENARIOS: Record<Exclude<ScenarioId, 'custom'>, ScenarioPreset> = {
+  conservative: {
+    label: 'Conservative',
+    inputs: {
+      monthlyGrowthPct: 10, churnPct: 5, paidConversionPct: 2, freeToPayConvPct: 8,
+      cac: 8, paidAcquisitionPct: 15, starterUpgradePct: 12, overageEnabled: false,
+    },
+    enterprise: { dealsPerYear: 0, avgDealSize: 5000 },
+    viral: { sharesPerUserMonth: 2, viewsPerShare: 10, clickThroughRate: 4, signupRate: 12, referralBoost: 8 },
+    funnel: [
+      { name: 'Monthly Visitors', rate: 100 }, { name: 'Signed Up', rate: 8 },
+      { name: 'Activated (created deck)', rate: 60 }, { name: 'Hit usage limit', rate: 35 },
+      { name: 'Converted to paid', rate: 14 },
+    ],
+    channels: {},
+    visitorBaseline: 10000,
+  },
+  aggressive: {
+    label: 'Aggressive Launch',
+    inputs: {
+      monthlyGrowthPct: 25, churnPct: 8, paidConversionPct: 3, freeToPayConvPct: 12,
+      cac: 12, paidAcquisitionPct: 30, starterUpgradePct: 18, overageEnabled: true,
+    },
+    enterprise: { dealsPerYear: 1, avgDealSize: 5000 },
+    viral: DEFAULT_VIRAL,
+    funnel: DEFAULT_FUNNEL,
+    channels: {},
+    visitorBaseline: 50000,
+  },
+  viral: {
+    label: 'Viral Breakout',
+    inputs: {
+      monthlyGrowthPct: 40, churnPct: 10, paidConversionPct: 4, freeToPayConvPct: 15,
+      cac: 5, paidAcquisitionPct: 10, starterUpgradePct: 25, overageEnabled: true,
+    },
+    enterprise: { dealsPerYear: 2, avgDealSize: 8000 },
+    viral: { sharesPerUserMonth: 5, viewsPerShare: 25, clickThroughRate: 8, signupRate: 22, referralBoost: 18 },
+    funnel: [
+      { name: 'Monthly Visitors', rate: 100 }, { name: 'Signed Up', rate: 16 },
+      { name: 'Activated (created deck)', rate: 80 }, { name: 'Hit usage limit', rate: 60 },
+      { name: 'Converted to paid', rate: 28 },
+    ],
+    channels: {},
+    visitorBaseline: 100000,
+  },
+};
+
 // ════════════════════════════════════════════════════════════════════════════════
 // STORAGE HELPERS
 // ════════════════════════════════════════════════════════════════════════════════
@@ -133,6 +193,8 @@ const SK = {
   channels: 'admin_costs_v2_channels', viral: 'admin_costs_v2_viral', funnel: 'admin_costs_v2_funnel',
   gemini: 'admin_costs_v2_gemini', expenses: 'admin_costs_v2_expenses', expenseRates: 'admin_costs_v2_expense_rates',
   userBreakdown: 'admin_costs_v2_user_breakdown', tab: 'admin_costs_v2_tab',
+  chartOpen: 'admin_costs_v2_chart_open', chartSize: 'admin_costs_v2_chart_size',
+  scenario: 'admin_costs_v2_scenario',
 } as const;
 
 function load<T>(key: string, fb: T): T {
@@ -180,6 +242,24 @@ const AdminCosts: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState(6);
   const [patternsApplied, setPatternsApplied] = useState(false);
 
+  // Chart panel state
+  const [chartOpen, setChartOpen] = useState(() => {
+    const stored = localStorage.getItem(SK.chartOpen);
+    return stored !== null ? stored === 'true' : true;
+  });
+  const [chartSize, setChartSize] = useState<'S' | 'M' | 'L'>(() => {
+    const stored = localStorage.getItem(SK.chartSize);
+    return (stored === 'S' || stored === 'M' || stored === 'L') ? stored : 'M';
+  });
+  const chartHeight = chartSize === 'S' ? 200 : chartSize === 'L' ? 400 : 300;
+
+  // Scenario state
+  const [activeScenario, setActiveScenario] = useState<ScenarioId>(() => {
+    const stored = localStorage.getItem(SK.scenario);
+    return (stored === 'aggressive' || stored === 'conservative' || stored === 'viral' || stored === 'custom') ? stored : 'aggressive';
+  });
+  const [scenarioJustApplied, setScenarioJustApplied] = useState(false);
+
   // Persist
   useEffect(() => { save(SK.inputs, inputs); }, [inputs]);
   useEffect(() => { save(SK.plans, plans); }, [plans]);
@@ -191,9 +271,12 @@ const AdminCosts: React.FC = () => {
   useEffect(() => { save(SK.expenseRates, expenseRates); }, [expenseRates]);
   useEffect(() => { localStorage.setItem(SK.tab, activeTab); }, [activeTab]);
   useEffect(() => { if (userBreakdown.length > 0) save(SK.userBreakdown, userBreakdown); }, [userBreakdown]);
+  useEffect(() => { localStorage.setItem(SK.chartOpen, String(chartOpen)); }, [chartOpen]);
+  useEffect(() => { localStorage.setItem(SK.chartSize, chartSize); }, [chartSize]);
+  useEffect(() => { localStorage.setItem(SK.scenario, activeScenario); }, [activeScenario]);
 
   // Real data
-  const totalUsers = actuals?.users?.total || overview?.metrics?.users?.total || 100;
+  const totalUsers = actuals?.users?.total || overview?.metrics?.users?.total || 5000;
   const realPaidUsers = actuals?.revenue?.paidUsers || 0;
   const realMRR = actuals?.revenue?.mrr || 0;
 
@@ -245,16 +328,24 @@ const AdminCosts: React.FC = () => {
     });
   }, [manualScenario, effectiveConvPct, plans, enterprise.dealsPerYear]);
 
+  // Visitor baseline (scenario-driven)
+  const [visitorBaseline, setVisitorBaseline] = useState(50000);
+  useEffect(() => {
+    if (scenarioJustApplied && activeScenario !== 'custom') {
+      setVisitorBaseline(SCENARIOS[activeScenario].visitorBaseline);
+    }
+  }, [scenarioJustApplied, activeScenario]);
+
   // Funnel (moved before economics for dependency)
   const funnelData = useMemo(() => {
-    const visitors = 10000;
+    const visitors = visitorBaseline;
     let cur = visitors;
     return funnel.map((s, i) => {
       if (i === 0) return { ...s, count: visitors, pct: 100 };
       cur = Math.round(cur * (s.rate / 100));
       return { ...s, count: cur, pct: (cur / visitors) * 100 };
     });
-  }, [funnel]);
+  }, [funnel, visitorBaseline]);
 
   // Gemini Flash (moved before economics for dependency)
   const geminiMetrics = useMemo(() => {
@@ -561,7 +652,10 @@ const AdminCosts: React.FC = () => {
   }, [economics, inputs, viralCoeff, sensitivity]);
 
   // Updaters
-  const ui = <K extends keyof EconomicsInputs>(k: K, v: number) => setInputs(prev => ({ ...prev, [k]: v }));
+  const ui = <K extends keyof EconomicsInputs>(k: K, v: number) => {
+    setInputs(prev => ({ ...prev, [k]: v }));
+    if (activeScenario !== 'custom') setActiveScenario('custom');
+  };
   const updatePlan = (idx: number, field: keyof PlanConfig, value: number | string) => {
     setPlans(prev => {
       const u = [...prev]; u[idx] = { ...u[idx], [field]: value };
@@ -576,15 +670,33 @@ const AdminCosts: React.FC = () => {
       return u;
     });
   };
-  const uc = (idx: number, field: keyof GrowthChannel, value: number) => setChannels(prev => { const u = [...prev]; u[idx] = { ...u[idx], [field]: value }; return u; });
+  const uc = (idx: number, field: keyof GrowthChannel, value: number) => {
+    setChannels(prev => { const u = [...prev]; u[idx] = { ...u[idx], [field]: value }; return u; });
+    if (activeScenario !== 'custom') setActiveScenario('custom');
+  };
   const ub = (idx: number, tier: string, value: number) => setUserBreakdown(prev => { const u = [...prev]; if (u[idx]) u[idx] = { ...u[idx], [tier]: value, isManual: true }; return u; });
 
   const resetAll = () => {
     setInputs(DEFAULT_INPUTS); setPlans(DEFAULT_PLANS); setEnterprise(DEFAULT_ENTERPRISE);
     setChannels(DEFAULT_CHANNELS); setViral(DEFAULT_VIRAL); setFunnel(DEFAULT_FUNNEL);
     setGeminiFlash(DEFAULT_GEMINI_FLASH); setExpenseRates(DEFAULT_EXPENSE_RATES); setUserBreakdown([]);
+    setActiveScenario('aggressive'); setVisitorBaseline(50000);
     Object.values(SK).forEach(k => localStorage.removeItem(k));
   };
+
+  const applyScenario = (id: Exclude<ScenarioId, 'custom'>) => {
+    const s = SCENARIOS[id];
+    setInputs(prev => ({ ...prev, ...s.inputs }));
+    setEnterprise(prev => ({ ...prev, ...s.enterprise }));
+    setViral(s.viral);
+    setFunnel(s.funnel);
+    setVisitorBaseline(s.visitorBaseline);
+    setUserBreakdown([]);
+    setActiveScenario(id);
+    setScenarioJustApplied(true);
+    setTimeout(() => setScenarioJustApplied(false), 100);
+  };
+
 
   const gs = (v: number, good: number, warn: number, higher = true): 'good' | 'warn' | 'bad' => {
     if (higher) return v >= good ? 'good' : v >= warn ? 'warn' : 'bad';
@@ -655,6 +767,92 @@ const AdminCosts: React.FC = () => {
           </div>
         )}
 
+        {/* ═══ PERSISTENT CHART PANEL ═══ */}
+        {!chartOpen && (
+          <button onClick={() => setChartOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FF4301]/5 hover:bg-[#FF4301]/10 border border-[#FF4301]/20 rounded-lg text-[10px] text-[#FF4301] font-medium transition-colors">
+            <ChevronDown className="h-3 w-3" /> Show Chart
+          </button>
+        )}
+        <div className={cn(cd, "overflow-hidden transition-all duration-300 ease-in-out", chartOpen ? "opacity-100" : "h-0 p-0 border-0 opacity-0")}>
+          <div className="flex items-center justify-between p-2.5 pb-0">
+            <div className="flex items-center gap-3">
+              <span className={sH} style={hk}>Financial Projection</span>
+              {/* Scenario selector */}
+              <select
+                value={activeScenario}
+                onChange={e => {
+                  const val = e.target.value as ScenarioId;
+                  if (val !== 'custom') applyScenario(val);
+                }}
+                className="h-5 text-[9px] bg-[#f5f5f5] dark:bg-[#1a1a1a] border border-[#eaeaea] dark:border-[#333] rounded-md px-1.5 text-[#666] dark:text-[#aaa] cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#FF4301]/30"
+              >
+                <option value="conservative">Conservative</option>
+                <option value="aggressive">Aggressive Launch</option>
+                <option value="viral">Viral Breakout</option>
+                {activeScenario === 'custom' && <option value="custom">Custom</option>}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Month range control */}
+              <div className="flex items-center bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded-lg p-0.5">
+                {[1, 6, 12].map(n => (
+                  <button key={n} onClick={() => { setProjectionMonths(n); setSelectedMonth(Math.min(selectedMonth, n)); }} className={cn(
+                    "px-2.5 py-0.5 text-[9px] font-medium rounded-md transition-colors",
+                    projectionMonths === n ? "bg-white dark:bg-[#222] text-[#FF4301] shadow-sm" : "text-[#888] hover:text-[#666]"
+                  )}>{n}mo</button>
+                ))}
+              </div>
+              {/* Size toggle */}
+              <div className="flex items-center bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded-lg p-0.5">
+                {(['S', 'M', 'L'] as const).map(s => (
+                  <button key={s} onClick={() => setChartSize(s)} className={cn(
+                    "px-2 py-0.5 text-[9px] font-medium rounded-md transition-colors",
+                    chartSize === s ? "bg-white dark:bg-[#222] text-[#FF4301] shadow-sm" : "text-[#888] hover:text-[#666]"
+                  )}>{s}</button>
+                ))}
+              </div>
+              {/* Collapse button */}
+              <button onClick={() => setChartOpen(false)} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors" title="Collapse chart">
+                <ChevronUp className="h-3 w-3 text-[#888]" />
+              </button>
+            </div>
+          </div>
+          <div style={{ height: chartHeight }} className="transition-all duration-300">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={projectionData} margin={{ top: 5, right: 5, left: -15, bottom: 0 }} onClick={(e: any) => e?.activeTooltipIndex !== undefined && setSelectedMonth(e.activeTooltipIndex)}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" opacity={0.08} />
+                <XAxis dataKey="month" tick={{ fontSize: 9 }} tickLine={false} />
+                <YAxis yAxisId="users" orientation="left" tick={{ fontSize: 9 }} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
+                <YAxis yAxisId="money" orientation="right" tick={{ fontSize: 9 }} tickLine={false} tickFormatter={(v: number) => `$${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
+                <Tooltip content={<CTip />} />
+                <Legend wrapperStyle={{ fontSize: '9px' }} />
+                <ReferenceLine y={0} yAxisId="money" stroke="#666" strokeDasharray="3 3" />
+                <ReferenceLine x={MONTH_LABELS[selectedMonth]} yAxisId="users" stroke="#FF4301" strokeWidth={2} strokeDasharray="4 4" />
+                <Line yAxisId="users" type="monotone" dataKey="users" name="Users" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 2 }} />
+                <Line yAxisId="users" type="monotone" dataKey="paidUsers" name="Paid" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 1.5 }} strokeDasharray="3 2" />
+                <Area yAxisId="money" type="monotone" dataKey="cumRevenue" name="Cum. Revenue" fill="#10b981" fillOpacity={0.12} stroke="#10b981" strokeWidth={2} />
+                <Area yAxisId="money" type="monotone" dataKey="cumCosts" name="Cum. Costs" fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeWidth={2} />
+                <Line yAxisId="money" type="monotone" dataKey="cumProfit" name="Cum. Profit" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          {/* KPI strip */}
+          <div className="grid grid-cols-5 gap-2 px-3 pb-2.5 pt-1">
+            {[
+              { label: 'MRR', value: `$${fmtMoney(economics.estMRR)}`, color: economics.estMRR > 0 ? 'text-emerald-600' : 'text-[#888]' },
+              { label: 'Gross Margin', value: `${economics.grossMargin.toFixed(0)}%`, color: economics.grossMargin >= 70 ? 'text-emerald-600' : economics.grossMargin >= 50 ? 'text-amber-500' : 'text-red-500' },
+              { label: 'LTV:CAC', value: `${economics.ltvCac.toFixed(1)}x`, color: economics.ltvCac >= 3 ? 'text-emerald-600' : economics.ltvCac >= 1 ? 'text-amber-500' : 'text-red-500' },
+              { label: 'Burn Rate', value: economics.netMonthly >= 0 ? '$0' : `$${fmtMoney(Math.abs(economics.netMonthly))}`, color: economics.netMonthly >= 0 ? 'text-emerald-600' : 'text-red-500' },
+              { label: 'Breakeven', value: economics.breakEvenPaidUsers > 0 ? `${economics.breakEvenPaidUsers} users` : 'N/A', color: economics.estPaidUsers >= economics.breakEvenPaidUsers ? 'text-emerald-600' : 'text-amber-500' },
+            ].map((kpi, i) => (
+              <div key={i} className="flex items-center justify-between px-2 py-1 bg-[#fafafa] dark:bg-[#0a0a0a] rounded-md">
+                <span className="text-[8px] text-[#888]">{kpi.label}</span>
+                <span className={cn("text-[10px] font-semibold tabular-nums", kpi.color)}>{kpi.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* ═══ OVERVIEW ═══ */}
         {activeTab === 'overview' && (
           <div className="space-y-3">
@@ -667,38 +865,6 @@ const AdminCosts: React.FC = () => {
               <KPI label="Breakeven" value={economics.breakEvenPaidUsers > 0 ? `${economics.breakEvenPaidUsers} users` : 'N/A'} sub={economics.estPaidUsers >= economics.breakEvenPaidUsers ? 'reached' : 'not yet'} status={economics.estPaidUsers >= economics.breakEvenPaidUsers ? 'good' : 'warn'} />
               <KPI label="Blended CAC" value={`$${blendedCAC.toFixed(2)}`} sub={`${weightedConv.toFixed(1)}% conv`} status={gs(blendedCAC, 5, 15, false)} />
               <KPI label="Rev/User" value={`$${economics.blendedARPU.toFixed(2)}`} sub="monthly" status={gs(economics.blendedARPU, 15, 8)} />
-            </div>
-            <div className={cn(cd, "p-3")}>
-              <div className="flex items-center justify-between mb-2">
-                <span className={sH} style={hk}>Financial Projection</span>
-                <div className="flex items-center bg-[#f5f5f5] dark:bg-[#1a1a1a] rounded-lg p-0.5">
-                  {[1, 6, 12].map(n => (
-                    <button key={n} onClick={() => { setProjectionMonths(n); setSelectedMonth(Math.min(selectedMonth, n)); }} className={cn(
-                      "px-2.5 py-0.5 text-[9px] font-medium rounded-md transition-colors",
-                      projectionMonths === n ? "bg-white dark:bg-[#222] text-[#FF4301] shadow-sm" : "text-[#888] hover:text-[#666]"
-                    )}>{n}mo</button>
-                  ))}
-                </div>
-              </div>
-              <div className="h-[340px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={projectionData} margin={{ top: 5, right: 5, left: -15, bottom: 0 }} onClick={(e: any) => e?.activeTooltipIndex !== undefined && setSelectedMonth(e.activeTooltipIndex)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333" opacity={0.08} />
-                    <XAxis dataKey="month" tick={{ fontSize: 9 }} tickLine={false} />
-                    <YAxis yAxisId="users" orientation="left" tick={{ fontSize: 9 }} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
-                    <YAxis yAxisId="money" orientation="right" tick={{ fontSize: 9 }} tickLine={false} tickFormatter={(v: number) => `$${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
-                    <Tooltip content={<CTip />} />
-                    <Legend wrapperStyle={{ fontSize: '9px' }} />
-                    <ReferenceLine y={0} yAxisId="money" stroke="#666" strokeDasharray="3 3" />
-                    <ReferenceLine x={MONTH_LABELS[selectedMonth]} yAxisId="users" stroke="#FF4301" strokeWidth={2} strokeDasharray="4 4" />
-                    <Line yAxisId="users" type="monotone" dataKey="users" name="Users" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 2 }} />
-                    <Line yAxisId="users" type="monotone" dataKey="paidUsers" name="Paid" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 1.5 }} strokeDasharray="3 2" />
-                    <Area yAxisId="money" type="monotone" dataKey="cumRevenue" name="Cum. Revenue" fill="#10b981" fillOpacity={0.12} stroke="#10b981" strokeWidth={2} />
-                    <Area yAxisId="money" type="monotone" dataKey="cumCosts" name="Cum. Costs" fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeWidth={2} />
-                    <Line yAxisId="money" type="monotone" dataKey="cumProfit" name="Cum. Profit" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
             </div>
             <div className="grid grid-cols-6 gap-1.5">
               {[

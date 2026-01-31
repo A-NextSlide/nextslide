@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
 import { Button } from '@/components/ui/button';
@@ -35,8 +35,6 @@ import {
   Grid3X3,
   List,
   FileStack,
-  User,
-  Calendar,
   Eye,
   Edit,
   Share2,
@@ -44,9 +42,7 @@ import {
   Download,
   Trash2,
   ExternalLink,
-  Image as ImageIcon,
-  ChevronLeft,
-  ChevronRight,
+  Loader2,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { adminApi, DeckSummary } from '@/services/adminApi';
@@ -64,50 +60,66 @@ const cardClass = "bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[
 
 type ViewMode = 'grid' | 'list';
 
+const PAGE_SIZE = 24;
+
 const AdminDecks: React.FC = () => {
   const [decks, setDecks] = useState<DeckSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [visibilityFilter, setVisibilityFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [totalDecks, setTotalDecks] = useState(0);
   const [selectedDeck, setSelectedDeck] = useState<DeckSummary | null>(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewDeckIndex, setPreviewDeckIndex] = useState(0);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [prevDependencies, setPrevDependencies] = useState({ currentPage, searchQuery, visibilityFilter });
 
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const isFetchingRef = useRef(false);
+
+  // Initial load + reset on filter/search change
   useEffect(() => {
-    // Only use transition if it's a page change, not initial load or filter change
-    const isPageChange = prevDependencies.currentPage !== currentPage && 
-                        prevDependencies.searchQuery === searchQuery && 
-                        prevDependencies.visibilityFilter === visibilityFilter;
-    
-    setPrevDependencies({ currentPage, searchQuery, visibilityFilter });
-    fetchDecks(isPageChange);
-  }, [currentPage, searchQuery, visibilityFilter]);
+    setDecks([]);
+    setCurrentPage(1);
+    setHasMore(true);
+    fetchDecks(1, true);
+  }, [searchQuery, visibilityFilter]);
 
-  const fetchDecks = async (showTransition = false) => {
+  // Load more pages
+  useEffect(() => {
+    if (currentPage > 1) {
+      fetchDecks(currentPage, false);
+    }
+  }, [currentPage]);
+
+  const fetchDecks = async (page: number, isReset: boolean) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
     try {
-      if (showTransition) {
-        setIsTransitioning(true);
-      } else {
+      if (isReset) {
         setIsLoading(true);
+      } else {
+        setIsLoadingMore(true);
       }
-      
+
       const response = await adminApi.getAllDecks({
-        page: currentPage,
-        limit: viewMode === 'grid' ? 12 : 20,
+        page,
+        limit: PAGE_SIZE,
         search: searchQuery,
         visibility: visibilityFilter === 'all' ? undefined : visibilityFilter,
       });
 
-      setDecks(response.decks);
-      setTotalPages(response.totalPages);
+      if (isReset) {
+        setDecks(response.decks);
+      } else {
+        setDecks(prev => [...prev, ...response.decks]);
+      }
       setTotalDecks(response.total);
+      setHasMore(page < response.totalPages);
     } catch (error) {
       console.error('Error fetching decks:', error);
       toast({
@@ -117,18 +129,35 @@ const AdminDecks: React.FC = () => {
       });
     } finally {
       setIsLoading(false);
-      setIsTransitioning(false);
+      setIsLoadingMore(false);
+      isFetchingRef.current = false;
     }
   };
 
+  // IntersectionObserver for infinite scroll
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isFetchingRef.current) {
+          setCurrentPage(prev => prev + 1);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore]);
+
   const handleSearch = (value: string) => {
     setSearchQuery(value);
-    setCurrentPage(1);
   };
 
   const handleVisibilityFilter = (value: string) => {
     setVisibilityFilter(value);
-    setCurrentPage(1);
   };
 
   const handleDeleteDeck = async () => {
@@ -140,7 +169,8 @@ const AdminDecks: React.FC = () => {
         title: 'Success',
         description: 'Deck deleted successfully',
       });
-      fetchDecks();
+      setDecks(prev => prev.filter(d => d.id !== selectedDeck.id));
+      setTotalDecks(prev => prev - 1);
       setShowDeleteDialog(false);
       setSelectedDeck(null);
     } catch (error) {
@@ -164,7 +194,7 @@ const AdminDecks: React.FC = () => {
 
   const DeckGridItem: React.FC<{ deck: DeckSummary; index: number }> = ({ deck, index }) => (
     <div
-      className="relative aspect-[16/10] rounded-xl overflow-hidden cursor-pointer group shadow-sm hover:shadow-md transition-shadow"
+      className="relative aspect-video rounded-xl overflow-hidden cursor-pointer group shadow-sm hover:shadow-md transition-shadow"
       onClick={() => handleDeckClick(deck, index)}
     >
       {/* Thumbnail */}
@@ -373,11 +403,11 @@ const AdminDecks: React.FC = () => {
         <section>
           <h2 className={sectionHeading} style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Gallery</h2>
           <div className="mt-1.5">
-            {isLoading && !isTransitioning ? (
+            {isLoading ? (
               viewMode === 'grid' ? (
                 <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {[...Array(24)].map((_, i) => (
-                    <Skeleton key={i} className="aspect-[16/10] w-full rounded-lg" />
+                    <Skeleton key={i} className="aspect-video w-full rounded-lg" />
                   ))}
                 </div>
               ) : (
@@ -412,10 +442,7 @@ const AdminDecks: React.FC = () => {
                 </p>
               </div>
             ) : (
-              <div className={cn(
-                "transition-opacity duration-200",
-                isTransitioning ? "opacity-50" : "opacity-100"
-              )}>
+              <div>
                 {viewMode === 'grid' ? (
                   <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {decks.map((deck, index) => (
@@ -433,47 +460,16 @@ const AdminDecks: React.FC = () => {
             )}
         </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-[#888]">
-              {((currentPage - 1) * (viewMode === 'grid' ? 12 : 20)) + 1}–{Math.min(currentPage * (viewMode === 'grid' ? 12 : 20), totalDecks)} of {totalDecks}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-2 py-1 rounded border border-[#eaeaea] dark:border-[#333] hover:bg-[#f5f5f5] dark:hover:bg-[#222] disabled:opacity-30 transition-colors"
-              >
-                <ChevronLeft className="h-3 w-3" />
-              </button>
-              {[...Array(Math.min(5, totalPages))].map((_, i) => {
-                const page = i + 1;
-                return (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
-                    className={cn(
-                      "w-7 h-7 rounded transition-colors",
-                      currentPage === page
-                        ? "bg-[#FF4301] text-white font-medium"
-                        : "border border-[#eaeaea] dark:border-[#333] hover:bg-[#f5f5f5] dark:hover:bg-[#222]"
-                    )}
-                  >
-                    {page}
-                  </button>
-                );
-              })}
-              {totalPages > 5 && <span className="px-1 text-[#999]">...</span>}
-              <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-2 py-1 rounded border border-[#eaeaea] dark:border-[#333] hover:bg-[#f5f5f5] dark:hover:bg-[#222] disabled:opacity-30 transition-colors"
-              >
-                <ChevronRight className="h-3 w-3" />
-              </button>
-            </div>
-          </div>
+        {/* Infinite scroll sentinel */}
+        <div ref={sentinelRef} className="w-full py-4 flex justify-center">
+          {isLoadingMore && (
+            <Loader2 className="h-5 w-5 animate-spin text-[#999]" />
+          )}
+        </div>
+        {!hasMore && decks.length > 0 && (
+          <p className="text-center text-[11px] text-[#999] pb-2">
+            Showing all {totalDecks} decks
+          </p>
         )}
         </section>
 
