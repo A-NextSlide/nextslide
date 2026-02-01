@@ -6,6 +6,8 @@ interface DynamicMetaProps {
   image?: string;
   url?: string;
   type?: string;
+  canonical?: string;
+  schema?: Record<string, any>;
 }
 
 /**
@@ -24,7 +26,7 @@ interface DynamicMetaProps {
  *
  * All tags are cleaned up on unmount.
  */
-export default function DynamicMeta({ title, description, image, url, type = 'article' }: DynamicMetaProps) {
+export default function DynamicMeta({ title, description, image, url, type = 'article', canonical, schema }: DynamicMetaProps) {
   const prevTitleRef = useRef<string>(document.title);
   const addedTagsRef = useRef<HTMLElement[]>([]);
 
@@ -76,6 +78,20 @@ export default function DynamicMeta({ title, description, image, url, type = 'ar
       setMeta('name', 'twitter:image', image);
     }
 
+    // Canonical URL link tag
+    if (canonical) {
+      let canonicalLink = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+      if (canonicalLink) {
+        canonicalLink.setAttribute('href', canonical);
+      } else {
+        canonicalLink = document.createElement('link');
+        canonicalLink.setAttribute('rel', 'canonical');
+        canonicalLink.setAttribute('href', canonical);
+        document.head.appendChild(canonicalLink);
+        addedTagsRef.current.push(canonicalLink);
+      }
+    }
+
     // oEmbed discovery link (enables rich embeds in Notion, Medium, WordPress, Slack)
     if (url) {
       const oembedHref = `https://api.nextslide.ai/api/oembed?url=${encodeURIComponent(url)}&format=json`;
@@ -94,8 +110,8 @@ export default function DynamicMeta({ title, description, image, url, type = 'ar
       }
     }
 
-    // Schema.org JSON-LD for PresentationDigitalDocument
-    const jsonLd = {
+    // Schema.org JSON-LD — use custom schema if provided, else default PresentationDigitalDocument
+    const jsonLd = schema || {
       '@context': 'https://schema.org',
       '@type': 'PresentationDigitalDocument',
       name: title,
@@ -129,7 +145,7 @@ export default function DynamicMeta({ title, description, image, url, type = 'ar
       }
       addedTagsRef.current = [];
     };
-  }, [title, description, image, url, type]);
+  }, [title, description, image, url, type, canonical, schema]);
 
   // This component renders nothing
   return null;

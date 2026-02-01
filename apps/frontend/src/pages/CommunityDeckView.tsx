@@ -19,6 +19,9 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { usePresentationStore } from '@/stores/presentationStore';
 import PresentationMode from '@/components/deck/PresentationMode';
 import MadeWithBadge from '@/components/badges/MadeWithBadge';
+import DynamicMeta from '@/components/seo/DynamicMeta';
+import SlideTranscript from '@/components/seo/SlideTranscript';
+import { getSlideSummary } from '@/utils/slideTextExtractor';
 
 const CommunityDeckView: React.FC = () => {
   const { deckId } = useParams<{ deckId: string }>();
@@ -407,6 +410,22 @@ const CommunityDeckView: React.FC = () => {
     );
   }
 
+  // --- SEO metadata ---
+  const deckDescription = getSlideSummary(slides) || `View "${deck.title}" - a community presentation on NextSlide.`;
+  const canonicalUrl = `https://nextslide.ai/community/${deckId}`;
+  const communitySchema = {
+    '@context': 'https://schema.org',
+    '@type': 'PresentationDigitalDocument',
+    name: deck.title,
+    description: deckDescription,
+    url: canonicalUrl,
+    provider: {
+      '@type': 'Organization',
+      name: 'NextSlide',
+      url: 'https://nextslide.ai',
+    },
+  };
+
   // --- Desktop: Windowed viewer (unchanged) ---
   const scaledWidth = deckSlideSize.width * slideScale;
   const scaledHeight = deckSlideSize.height * slideScale;
@@ -416,6 +435,14 @@ const CommunityDeckView: React.FC = () => {
   const thumbWidth = deckSlideSize.width * thumbScale;
 
   return (
+    <>
+    <DynamicMeta
+      title={`${deck.title} | NextSlide Community`}
+      description={deckDescription}
+      url={canonicalUrl}
+      canonical={canonicalUrl}
+      schema={communitySchema}
+    />
     <NavigationProvider>
       <StaticEditorStateProvider slideSize={deckSlideSize}>
         <div className="h-screen bg-black flex flex-col overflow-hidden">
@@ -564,6 +591,12 @@ const CommunityDeckView: React.FC = () => {
         </div>
       </StaticEditorStateProvider>
     </NavigationProvider>
+
+    {/* SEO content below the presentation viewer - visible to crawlers */}
+    <div className="seo-below-fold bg-white">
+      <SlideTranscript slides={slides} deckTitle={deck.title} />
+    </div>
+    </>
   );
 };
 

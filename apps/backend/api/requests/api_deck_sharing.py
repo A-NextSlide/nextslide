@@ -25,6 +25,10 @@ class CreateShareLinkRequest(BaseModel):
     expires_in_hours: Optional[int] = Field(None, description="Expiration time in hours (optional)")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
     require_email: bool = Field(False, description="Require viewer email before viewing")
+    is_public: bool = Field(False, description="Make this presentation publicly discoverable")
+    public_title: Optional[str] = Field(None, description="Public display title")
+    public_description: Optional[str] = Field(None, description="Public description")
+    public_category: Optional[str] = Field(None, description="Public category slug")
 
 
 class ShareLinkResponse(BaseModel):
@@ -105,7 +109,11 @@ async def create_share_link(
             user_id=user_id,
             share_type=request.share_type,
             expires_in_hours=request.expires_in_hours,
-            metadata=metadata if metadata else None
+            metadata=metadata if metadata else None,
+            is_public=request.is_public,
+            public_title=request.public_title,
+            public_description=request.public_description,
+            public_category=request.public_category,
         )
         
         # Construct full URL (frontend will use appropriate domain)
@@ -205,6 +213,65 @@ async def revoke_share_link(
     except Exception as e:
         logger.error(f"Error revoking share link: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to revoke share link")
+
+
+class TogglePublicRequest(BaseModel):
+    """Request to toggle public visibility of a share link."""
+    is_public: bool = Field(..., description="Whether to make the share publicly discoverable")
+    public_title: Optional[str] = Field(None, description="Title for public listing")
+    public_description: Optional[str] = Field(None, description="Description for public listing")
+    public_category: Optional[str] = Field(None, description="Category for public listing")
+
+
+@router.patch("/shares/{share_id}/public")
+async def toggle_share_public(
+    share_id: str,
+    request: TogglePublicRequest,
+    token: Optional[str] = Depends(get_auth_header)
+):
+    """Toggle whether a share link is publicly discoverable."""
+    try:
+        # Get authenticated user
+        auth_service = get_auth_service()
+        user = auth_service.get_user_with_token(token) if token else None
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        user_id = user["id"]
+
+        # Verify ownership and update
+        from utils.supabase import get_supabase_client
+        supabase = get_supabase_client()
+
+        # Build update data
+        update_data = {
+            'is_public': request.is_public,
+        }
+        if request.public_title is not None:
+            update_data['public_title'] = request.public_title
+        if request.public_description is not None:
+            update_data['public_description'] = request.public_description
+        if request.public_category is not None:
+            update_data['public_category'] = request.public_category
+
+        result = supabase.table('deck_shares').update(update_data).eq(
+            'id', share_id
+        ).eq('created_by', user_id).execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Share link not found or no permission")
+
+        return {
+            "message": "Public visibility updated",
+            "share": result.data[0],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling share public: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update public visibility")
 
 
 @router.post("/{deck_uuid}/collaborators", response_model=CollaboratorResponse)

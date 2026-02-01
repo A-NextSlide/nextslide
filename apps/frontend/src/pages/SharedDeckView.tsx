@@ -7,6 +7,7 @@ import { Loader2, Lock, AlertCircle, Edit, Share2 } from 'lucide-react';
 import DynamicMeta from '@/components/seo/DynamicMeta';
 import RelatedPresentations from '@/components/seo/RelatedPresentations';
 import CreateYourOwnCTA from '@/components/seo/CreateYourOwnCTA';
+import SlideTranscript from '@/components/seo/SlideTranscript';
 import ShareDialog from '@/components/sharing/ShareDialog';
 import { trackEvent } from '@/services/analytics';
 import {
@@ -1020,6 +1021,7 @@ const SharedDeckView: React.FC = () => {
           accessible if users scroll past the full-screen presentation */}
       {shareCode && (
         <div className="seo-below-fold">
+          <SlideTranscript slides={deck.slides} deckTitle={deck.name || deckName} />
           <RelatedPresentations shareCode={shareCode} limit={4} />
           <CreateYourOwnCTA />
         </div>

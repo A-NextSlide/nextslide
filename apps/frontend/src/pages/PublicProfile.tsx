@@ -26,6 +26,7 @@ import {
   Copy,
   Award,
 } from 'lucide-react';
+import DynamicMeta from '@/components/seo/DynamicMeta';
 
 // Creator tier config
 const TIER_CONFIG: Record<string, { label: string; color: string; bgColor: string; borderColor: string }> = {
@@ -158,8 +159,28 @@ export default function PublicProfile() {
   const tier = TIER_CONFIG[profile.creator_tier] || TIER_CONFIG.none;
   const isOwnProfile = currentUser?.id === profile.id;
 
+  const displayName = profile.full_name || profile.username;
+  const profileCanonical = `https://nextslide.ai/u/${profile.username}`;
+  const profileDescription = profile.bio || `View presentations by ${displayName} on NextSlide`;
+  const personSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name: displayName,
+    url: profileCanonical,
+    description: profileDescription,
+    ...(profile.avatar_url ? { image: profile.avatar_url } : {}),
+  };
+
   return (
     <div className="min-h-screen bg-background">
+      <DynamicMeta
+        title={`${displayName}'s Presentations | NextSlide`}
+        description={profileDescription}
+        url={profileCanonical}
+        canonical={profileCanonical}
+        image={profile.avatar_url || undefined}
+        schema={personSchema}
+      />
       {/* Header bar */}
       <div className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">

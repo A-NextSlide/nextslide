@@ -1434,24 +1434,60 @@ async def create_deck(client: httpx.AsyncClient, api_key: str, pres: dict) -> di
     return response.json()
 
 
-async def poll_status(client: httpx.AsyncClient, api_key: str, deck_id: str, max_wait: int = 600) -> dict:
-    """Poll until deck is completed or failed."""
+def fix_stuck_deck(deck_id: str) -> bool:
+    """Check if a 'generating' deck actually has all slides and mark completed."""
+    try:
+        supabase = get_supabase_client()
+        result = supabase.table("decks").select(
+            "uuid, status, slide_count, slides"
+        ).eq("uuid", deck_id).single().execute()
+        if not result.data:
+            return False
+        d = result.data
+        status = d.get("status", {})
+        state = status.get("state", "") if isinstance(status, dict) else ""
+        slides = d.get("slides") or []
+        expected = d.get("slide_count") or 0
+        if state == "generating" and len(slides) >= expected and len(slides) > 0:
+            supabase.table("decks").update({
+                "status": {"state": "completed", "progress": 100},
+            }).eq("uuid", deck_id).execute()
+            return True
+        return state == "completed"
+    except Exception:
+        return False
+
+
+async def poll_status(client: httpx.AsyncClient, api_key: str, deck_id: str, max_wait: int = 900) -> dict:
+    """Poll until deck is completed or failed. Auto-fixes stuck decks."""
     start = time.time()
     while time.time() - start < max_wait:
-        response = await client.get(
-            f"{API_BASE}/v1/decks/{deck_id}/status",
-            headers={"X-API-Key": api_key},
-            timeout=10.0,
-        )
-        response.raise_for_status()
-        status = response.json()
+        try:
+            response = await client.get(
+                f"{API_BASE}/v1/decks/{deck_id}/status",
+                headers={"X-API-Key": api_key},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            status = response.json()
 
-        if status["status"] == "completed":
-            return status
-        elif status["status"] == "failed":
-            raise Exception(f"Failed: {status.get('error_message', 'Unknown')}")
+            if status["status"] == "completed":
+                return status
+            elif status["status"] == "failed":
+                raise Exception(f"Failed: {status.get('error_message', 'Unknown')}")
+        except httpx.TimeoutException:
+            pass  # retry
 
-        await asyncio.sleep(5)
+        # After 5 minutes, try fixing stuck decks directly via DB
+        if time.time() - start > 300:
+            if fix_stuck_deck(deck_id):
+                return {"status": "completed", "slides_count": "?"}
+
+        await asyncio.sleep(8)
+
+    # Last resort: try fixing via DB
+    if fix_stuck_deck(deck_id):
+        return {"status": "completed", "slides_count": "?"}
 
     raise Exception(f"Timeout after {max_wait}s for deck {deck_id}")
 
@@ -1462,7 +1498,7 @@ def add_to_featured(deck_uuid: str, pres: dict, order_index: int) -> bool:
         supabase = get_supabase_client()
 
         deck_result = supabase.table("decks").select(
-            "slides, data, slide_count, first_slide, short_code"
+            "slides, data, slide_count, name"
         ).eq("uuid", deck_uuid).single().execute()
 
         if not deck_result.data:
@@ -1471,23 +1507,20 @@ def add_to_featured(deck_uuid: str, pres: dict, order_index: int) -> bool:
 
         deck = deck_result.data
         slides = deck.get("slides", [])
-        theme = deck.get("data", {}).get("theme") if deck.get("data") else None
+        name = deck.get("name") or pres["topic"]
 
         featured_data = {
-            "deck_uuid": deck_uuid,
-            "user_id": USER_ID,
-            "title": pres["topic"],
-            "category": pres.get("category", pres["id"]),
-            "order_index": order_index,
+            "uuid": deck_uuid,
+            "name": name,
+            "description": pres["topic"],
+            "display_order": order_index,
             "is_active": True,
             "slide_count": len(slides),
-            "first_slide": slides[0] if slides else None,
-            "slides_snapshot": slides,
-            "theme_snapshot": theme,
+            "slides": slides,
         }
 
         supabase.table("featured_decks").upsert(
-            featured_data, on_conflict="order_index"
+            featured_data, on_conflict="display_order"
         ).execute()
         return True
 
@@ -1501,10 +1534,9 @@ def add_to_community(deck_uuid: str, pres: dict) -> bool:
     try:
         supabase = get_supabase_client()
 
-        # Mark the deck as shared/public for community
+        # Mark the deck as shared/public for community via visibility
         supabase.table("decks").update({
-            "is_public": True,
-            "community_category": pres.get("category", "business"),
+            "visibility": "public",
         }).eq("uuid", deck_uuid).execute()
 
         return True
@@ -1557,15 +1589,15 @@ async def run_batch(
     api_key: str,
     global_offset: int,
 ):
-    """Run a single batch of 20 presentations with one API key."""
+    """Run a single batch of presentations with one API key."""
     print(f"\n{'─' * 65}")
     print(f"  BATCH {batch_num}: {len(presentations)} presentations")
     print(f"{'─' * 65}")
 
     async with httpx.AsyncClient() as client:
-        # Process in sub-batches of 5 to respect concurrency limits
+        # Process in sub-batches of 2 to avoid overwhelming the backend
         results = []
-        sub_batch_size = 5
+        sub_batch_size = 2
         for i in range(0, len(presentations), sub_batch_size):
             sub_batch = presentations[i:i + sub_batch_size]
             tasks = [
@@ -1575,7 +1607,7 @@ async def run_batch(
                     pres,
                     batch_num,
                     i + j,
-                    global_offset + i + j,
+                    pres.get("_global_index", global_offset + i + j),
                 )
                 for j, pres in enumerate(sub_batch)
             ]
@@ -1583,23 +1615,43 @@ async def run_batch(
             results.extend(sub_results)
 
             if i + sub_batch_size < len(presentations):
-                print(f"  --- sub-batch done, next in 2s ---")
-                await asyncio.sleep(2)
+                print(f"  --- sub-batch done, next in 5s ---")
+                await asyncio.sleep(5)
 
     return results
+
+
+def get_existing_featured() -> set:
+    """Return set of display_order values already in featured_decks."""
+    try:
+        supabase = get_supabase_client()
+        result = supabase.table("featured_decks").select("display_order").execute()
+        return {r["display_order"] for r in (result.data or []) if r["display_order"] is not None}
+    except Exception:
+        return set()
 
 
 async def main():
     total = sum(len(b) for b in ALL_BATCHES)
 
     print("=" * 65)
-    print("  NextSlide Community Seeder — 100 Presentations")
+    print("  NextSlide Community Seeder — 100 Presentations (Resumable)")
     print(f"  {len(ALL_BATCHES)} API keys × 20 presentations each")
     print(f"  Total: {total} presentations")
     print("=" * 65)
 
-    # Step 1: Create 5 API keys
-    print("\nStep 1: Creating 5 API keys...")
+    # Check what's already done
+    existing = get_existing_featured()
+    if existing:
+        print(f"\n  Found {len(existing)} existing featured decks, will skip those indices.")
+
+    # Step 1: Create API keys (reuse existing seeder keys or create new ones)
+    print("\nStep 1: Creating API keys...")
+    supabase = get_supabase_client()
+    existing_keys = supabase.table("api_keys").select("*").like(
+        "name", "Community Seeder%"
+    ).order("created_at").execute()
+
     api_keys = []
     key_names = [
         "Community Seeder — Batch 1 (Business/Education/Marketing)",
@@ -1609,6 +1661,10 @@ async def main():
         "Community Seeder — Batch 5 (Advanced/Finance/Creative/Misc)",
     ]
 
+    if len(existing_keys.data or []) >= 5:
+        # Reuse: we need raw keys, so create fresh ones but reuse naming
+        print("  Found existing seeder keys, creating fresh batch...")
+
     for i, name in enumerate(key_names, 1):
         full_key, record = await create_api_key(name)
         api_keys.append(full_key)
@@ -1616,13 +1672,33 @@ async def main():
 
     print(f"\n  All 5 API keys created successfully.")
 
-    # Step 2: Run all batches sequentially (each batch runs 20 in parallel)
-    print(f"\nStep 2: Generating {total} presentations...")
+    # Step 2: Run all batches sequentially
+    print(f"\nStep 2: Generating presentations (skipping existing)...")
     all_results = []
 
     for batch_idx, (batch, api_key) in enumerate(zip(ALL_BATCHES, api_keys)):
         global_offset = batch_idx * 20
-        results = await run_batch(batch_idx + 1, batch, api_key, global_offset)
+
+        # Filter out presentations whose order_index already exists
+        filtered_batch = []
+        skipped = 0
+        for j, pres in enumerate(batch):
+            idx = global_offset + j
+            if idx in existing:
+                skipped += 1
+            else:
+                # Preserve original index info
+                pres["_global_index"] = idx
+                filtered_batch.append(pres)
+
+        if skipped:
+            print(f"\n  Batch {batch_idx + 1}: Skipping {skipped} already-generated, {len(filtered_batch)} to go")
+
+        if not filtered_batch:
+            print(f"  Batch {batch_idx + 1}: All done!")
+            continue
+
+        results = await run_batch(batch_idx + 1, filtered_batch, api_key, global_offset)
         all_results.extend(results)
 
     # Step 3: Add to featured_decks and community
