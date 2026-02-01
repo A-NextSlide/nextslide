@@ -49,7 +49,7 @@ const ComparisonSection = () => {
           {/* Main Visual Content */}
           {/* Height-driven layout: fixed height, width scales with aspect ratio */}
           {/* Reduced to 60vh to guarantee fit without cropping */}
-          <div className="relative mx-auto h-[50vh] sm:h-[60vh] aspect-video w-auto max-w-full flex items-center justify-center">
+          <div className="relative mx-auto h-[50vh] sm:h-[60vh] aspect-video w-auto max-w-[calc(100%-2rem)] sm:max-w-full flex items-center justify-center">
 
             {/* OLD WAY VISUAL - Boring PPT Interface */}
             <motion.div
@@ -113,7 +113,7 @@ const ComparisonSection = () => {
               </div>
 
               {/* Main Slide Content */}
-              <div className="flex-1 p-6 md:p-8 flex flex-col items-center justify-center relative overflow-hidden min-h-0">
+              <div className="flex-1 p-4 md:p-8 flex flex-col items-center justify-center relative overflow-hidden min-h-0">
                 {/* Background Grid - subtle */}
                 <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.02)_1px,transparent_1px)] bg-[size:24px_24px]" />
 
@@ -122,7 +122,7 @@ const ComparisonSection = () => {
                   initial={{ opacity: 0, y: 10 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50 dark:bg-orange-950/30 text-[#FF4301] text-[10px] font-bold uppercase tracking-wider mb-6 border border-[#FF4301]/20 shadow-sm"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50 dark:bg-orange-950/30 text-[#FF4301] text-[10px] font-bold uppercase tracking-wider mb-3 md:mb-6 border border-[#FF4301]/20 shadow-sm"
                 >
                   <Sparkles size={12} className="animate-pulse" /> Generated in 90s
                 </motion.div>
@@ -142,7 +142,7 @@ const ComparisonSection = () => {
                   initial={{ opacity: 0 }}
                   whileInView={{ opacity: 1 }}
                   transition={{ delay: 0.3 }}
-                  className="text-zinc-500 text-sm md:text-base mb-8 text-center max-w-md font-medium"
+                  className="text-zinc-500 text-sm md:text-base mb-4 md:mb-8 text-center max-w-md font-medium"
                 >
                   Beautifully designed without lifting a finger.
                 </motion.p>

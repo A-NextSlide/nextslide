@@ -348,8 +348,11 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
                                             className="w-full h-full"
                                             interactive={!BROWSER.isMobile}
                                         />
-                                        {/* Fullscreen hint overlay */}
-                                        <div className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity pointer-events-none">
+                                        {/* Fullscreen button */}
+                                        <div
+                                            className="absolute top-2 right-2 z-40 md:opacity-0 md:group-hover:opacity-100 transition-opacity cursor-pointer"
+                                            onClick={(e) => { e.stopPropagation(); openFullscreen(); }}
+                                        >
                                             <div className="bg-black/60 backdrop-blur-sm rounded-lg px-2.5 py-1.5 flex items-center gap-1.5 text-white text-xs font-medium">
                                                 <Maximize2 size={12} />
                                                 <span className="hidden md:inline">Present</span>

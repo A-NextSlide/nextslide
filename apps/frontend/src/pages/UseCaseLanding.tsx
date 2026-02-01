@@ -10,7 +10,6 @@ import {
   Target, BarChart3, Sparkles, Clock,
   GraduationCap, BookOpen, Users, Download,
   Megaphone, LineChart, Lightbulb, Repeat,
-  Eye, Layers,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/SupabaseAuthContext';
@@ -19,6 +18,8 @@ import { showcaseApi, type ShowcaseDeck } from '@/services/showcaseApi';
 import { showcaseService } from '@/services/showcaseService';
 import type { ShowcaseDeck as FeaturedDeck } from '@/services/showcaseService';
 import InteractiveHero, { type PromptItem } from '@/components/landing/InteractiveHero';
+import ExpandableUseCases from '@/components/landing/ExpandableUseCases';
+import CommunityShowcase from '@/components/landing/CommunityShowcase';
 import type { LandingPageConfig } from '@/config/landingPages';
 
 // Icon mapping from string names to Lucide components
@@ -49,32 +50,68 @@ function getIcon(name: string): React.ComponentType<{ className?: string }> {
 // deckIndex maps to featured_decks display_order (0-indexed)
 const USE_CASE_PROMPTS: Record<string, PromptItem[]> = {
   'pitch-deck': [
-    { id: 'vc-pitch', badge: 'VC Pitch', icon: TrendingUp, text: "Pitch deck for VCs who've already seen 500 this month", theme: 'light', deckIndex: 0 },
-    { id: 'seed', badge: 'Seed Round', icon: Sparkles, text: "Seed round deck that turns coffee chats into term sheets", theme: 'light', deckIndex: 25 },
-    { id: 'demo', badge: 'Demo Day', icon: Zap, text: "Demo day pitch that actually fits in 3 minutes", theme: 'orange', deckIndex: 4 },
-    { id: 'series-a', badge: 'Series A', icon: BarChart3, text: "Series A narrative showing 10x growth potential", theme: 'light', deckIndex: 12 },
-    { id: 'update', badge: 'Update', icon: Target, text: "Investor update that makes everyone reply", theme: 'light', deckIndex: 13 },
+    { id: 'saas-metrics', badge: 'SaaS', icon: BarChart3, text: "SaaS Metrics Dashboard: The 12 Numbers Every Founder Must Track", theme: 'light', deckIndex: 0 },
+    { id: 'series-b', badge: 'Series B', icon: TrendingUp, text: "Series B Fundraising Playbook: From $10M to $50M ARR", theme: 'light', deckIndex: 1 },
+    { id: 'marketplace', badge: 'Marketplace', icon: Sparkles, text: "Two-Sided Marketplace Pitch: Solving the Chicken-and-Egg Problem", theme: 'orange', deckIndex: 3 },
+    { id: 'fintech', badge: 'Fintech', icon: Zap, text: "Fintech Disruption: Neobanks, BNPL, and Embedded Finance", theme: 'light', deckIndex: 62 },
+    { id: 'ecommerce', badge: 'Ecommerce', icon: Target, text: "Scaling an Ecommerce Brand from $0 to $1M in 12 Months", theme: 'light', deckIndex: 36 },
+    { id: 'crypto', badge: 'Finance', icon: BarChart3, text: "Cryptocurrency Market Analysis: DeFi, NFTs, and Layer 2 Trends", theme: 'light', deckIndex: 12 },
+    { id: 'travel', badge: 'Travel Tech', icon: Sparkles, text: "Disrupting Travel: AI-Powered Personalized Trip Planning", theme: 'light', deckIndex: 42 },
+    { id: 'ip', badge: 'Legal', icon: Lightbulb, text: "Intellectual Property Strategy for Startups: Patents and Trade Secrets", theme: 'light', deckIndex: 38 },
+    { id: 'vc-fund', badge: 'VC Report', icon: TrendingUp, text: "Venture Capital Fund Overview: $100M Fund III Performance Report", theme: 'orange', deckIndex: 63 },
+    { id: 'pricing', badge: 'Pricing', icon: BarChart3, text: "Pricing Strategy Deep Dive: Value-Based Pricing for SaaS Products", theme: 'light', deckIndex: 82 },
+    { id: 'venture-studio', badge: 'Studio', icon: Sparkles, text: "The Venture Studio Model: Building Companies in Parallel", theme: 'light', deckIndex: 98 },
+    { id: 'board', badge: 'Board', icon: Target, text: "Board Meeting Deck: Q4 Performance, Strategy Update, and 2025 Planning", theme: 'light', deckIndex: 81 },
+    { id: 'failure', badge: 'Lessons', icon: Lightbulb, text: "Why Startups Fail: Data-Driven Analysis of 1,000 Post-Mortems", theme: 'light', deckIndex: 94 },
+    { id: 'real-estate', badge: 'Investing', icon: BarChart3, text: "Real Estate Investment Analysis: Residential vs Commercial ROI", theme: 'light', deckIndex: 13 },
   ],
   'sales-deck': [
-    { id: 'proposal', badge: 'Proposal', icon: Target, text: "Client proposal that closes itself", theme: 'light', deckIndex: 7 },
-    { id: 'product-demo', badge: 'Demo', icon: Sparkles, text: "Product demo that turns skeptics into champions", theme: 'orange', deckIndex: 26 },
-    { id: 'qbr', badge: 'QBR', icon: BarChart3, text: "Quarterly business review with clean metrics", theme: 'light', deckIndex: 27 },
-    { id: 'partnership', badge: 'Partnership', icon: Users, text: "Partnership pitch that aligns both roadmaps", theme: 'light', deckIndex: 28 },
-    { id: 'roi', badge: 'ROI', icon: TrendingUp, text: "ROI case study that finance teams actually believe", theme: 'light', deckIndex: 29 },
+    { id: 'enterprise', badge: 'Enterprise', icon: Target, text: "Enterprise Sales Playbook: Closing Six-Figure Deals", theme: 'light', deckIndex: 10 },
+    { id: 'demo', badge: 'Demo', icon: Sparkles, text: "SaaS Product Demo: Turning Free Trials into Enterprise Contracts", theme: 'orange', deckIndex: 11 },
+    { id: 'customer-success', badge: 'CS', icon: TrendingUp, text: "Customer Success Playbook: Reducing Churn from 8% to 2%", theme: 'light', deckIndex: 70 },
+    { id: 'channel', badge: 'Partners', icon: Users, text: "Channel Partner Program: Scaling Revenue Through Strategic Alliances", theme: 'light', deckIndex: 71 },
+    { id: 'brand', badge: 'Brand', icon: Palette, text: "Brand Positioning Strategy: Standing Out in a Crowded Market", theme: 'light', deckIndex: 8 },
+    { id: 'journey', badge: 'Journey', icon: Target, text: "Customer Journey Mapping: Every Touchpoint from Awareness to Advocacy", theme: 'light', deckIndex: 83 },
+    { id: 'd2c', badge: 'DTC', icon: Zap, text: "Direct-to-Consumer Brand Strategy: Building Loyalty Without Retailers", theme: 'orange', deckIndex: 37 },
+    { id: 'supply', badge: 'Supply Chain', icon: BarChart3, text: "Supply Chain Resilience: Lessons from Global Disruptions", theme: 'light', deckIndex: 55 },
+    { id: 'hotel', badge: 'Hospitality', icon: Sparkles, text: "Hotel Revenue Management: Dynamic Pricing Strategies for Max Occupancy", theme: 'light', deckIndex: 43 },
+    { id: 'restaurant', badge: 'Restaurant', icon: Lightbulb, text: "Restaurant Business Plan: From Concept to Grand Opening", theme: 'light', deckIndex: 60 },
+    { id: 'digital', badge: 'Digital', icon: Target, text: "Digital Transformation Roadmap: Legacy to Cloud-Native in 18 Months", theme: 'light', deckIndex: 20 },
+    { id: 'esg', badge: 'ESG', icon: Sparkles, text: "ESG Report: Our Journey Toward Net Zero by 2035", theme: 'light', deckIndex: 44 },
+    { id: 'org', badge: 'Org Change', icon: Users, text: "Organizational Restructuring: From Silos to Cross-Functional Teams", theme: 'light', deckIndex: 22 },
+    { id: 'real-estate', badge: 'Real Estate', icon: BarChart3, text: "Real Estate Investment Analysis: Residential vs Commercial ROI", theme: 'light', deckIndex: 13 },
   ],
   education: [
-    { id: 'biology', badge: 'Science', icon: Sparkles, text: "Cellular Respiration: From Glucose to ATP", theme: 'light', deckIndex: 5 },
-    { id: 'algebra', badge: 'Math', icon: Lightbulb, text: "Algebra for kids who ask 'when will I use this'", theme: 'light', deckIndex: 2 },
-    { id: 'history', badge: 'History', icon: BookOpen, text: "The French Revolution: From Monarchy to Republic", theme: 'orange', deckIndex: 6 },
-    { id: 'course', badge: 'Course', icon: GraduationCap, text: "Online course module that students actually complete", theme: 'light', deckIndex: 15 },
-    { id: 'training', badge: 'Training', icon: Users, text: "Workshop materials that engage every participant", theme: 'light', deckIndex: 16 },
+    { id: 'solar', badge: 'Space', icon: Sparkles, text: "A Tour of Our Solar System: From Mercury to the Kuiper Belt", theme: 'light', deckIndex: 4 },
+    { id: 'writing', badge: 'Writing', icon: BookOpen, text: "Creative Writing Workshop: Crafting Stories That Stick", theme: 'light', deckIndex: 5 },
+    { id: 'ml', badge: 'AI/ML', icon: Zap, text: "Machine Learning for Beginners: From Data to Predictions", theme: 'orange', deckIndex: 6 },
+    { id: 'ww2', badge: 'History', icon: BookOpen, text: "World War II: A Visual Timeline of the Global Conflict", theme: 'light', deckIndex: 7 },
+    { id: 'egypt', badge: 'Ancient', icon: GraduationCap, text: "Ancient Egypt: Pyramids, Pharaohs, and the Nile Civilization", theme: 'light', deckIndex: 17 },
+    { id: 'music', badge: 'Music', icon: Lightbulb, text: "Music Theory Crash Course: Scales, Chords, and Progressions", theme: 'light', deckIndex: 18 },
+    { id: 'space', badge: 'Future', icon: Sparkles, text: "The Future of Space Exploration: Mars Colonies to Interstellar Travel", theme: 'light', deckIndex: 32 },
+    { id: 'sleep', badge: 'Health', icon: Users, text: "The Science of Sleep: Why Your Brain Needs 8 Hours", theme: 'orange', deckIndex: 34 },
+    { id: 'speaking', badge: 'Skills', icon: Target, text: "The Art of Public Speaking: From Nervous to Confident in 10 Steps", theme: 'light', deckIndex: 50 },
+    { id: 'genetics', badge: 'Biology', icon: Sparkles, text: "Genetics and DNA: The Blueprint of Life", theme: 'light', deckIndex: 57 },
+    { id: 'climate-kids', badge: 'Climate', icon: Lightbulb, text: "Climate Change for Kids: What's Happening to Our Planet", theme: 'light', deckIndex: 64 },
+    { id: 'psychology', badge: 'Psych', icon: GraduationCap, text: "Introduction to Psychology: How the Mind Works", theme: 'light', deckIndex: 65 },
+    { id: 'dinosaurs', badge: 'Dinos', icon: Sparkles, text: "The Age of Dinosaurs: 165 Million Years of Prehistoric Life", theme: 'light', deckIndex: 74 },
+    { id: 'languages', badge: 'Linguistics', icon: BookOpen, text: "The Science of Language Learning: Why Immersion Beats Textbooks", theme: 'light', deckIndex: 79 },
   ],
   marketing: [
-    { id: 'strategy', badge: 'Strategy', icon: Target, text: "Marketing strategy deck that gets budget approved", theme: 'light', deckIndex: 18 },
-    { id: 'social', badge: 'Social', icon: Megaphone, text: "Social media strategy that actually converts", theme: 'orange', deckIndex: 11 },
-    { id: 'report', badge: 'Report', icon: BarChart3, text: "Campaign report with metrics that impress the CMO", theme: 'light', deckIndex: 17 },
-    { id: 'content', badge: 'Content', icon: Palette, text: "Content calendar presentation with visual roadmap", theme: 'light', deckIndex: 19 },
-    { id: 'launch', badge: 'Launch', icon: Zap, text: "Product launch plan that breaks through the noise", theme: 'light', deckIndex: 20 },
+    { id: 'brand', badge: 'Brand', icon: Palette, text: "Brand Positioning Strategy: Standing Out in a Crowded Market", theme: 'light', deckIndex: 8 },
+    { id: 'email', badge: 'Email', icon: Target, text: "Email Marketing Masterclass: Sequences That Convert at 40%", theme: 'orange', deckIndex: 9 },
+    { id: 'd2c', badge: 'DTC', icon: Zap, text: "Direct-to-Consumer Brand Strategy: Building Loyalty Without Retailers", theme: 'light', deckIndex: 37 },
+    { id: 'launch', badge: 'Launch', icon: Sparkles, text: "Go-to-Market Launch Plan: Coordinating Product, Sales, and Marketing", theme: 'light', deckIndex: 47 },
+    { id: 'podcast', badge: 'Podcast', icon: Megaphone, text: "Building a Podcast Empire: Content Strategy to Monetization", theme: 'light', deckIndex: 59 },
+    { id: 'influencer', badge: 'Influencer', icon: Users, text: "Influencer Marketing Strategy: Micro vs Macro vs Nano Creators", theme: 'light', deckIndex: 68 },
+    { id: 'seo', badge: 'SEO', icon: BarChart3, text: "SEO Strategy for 2025: Technical, Content, and Authority Building", theme: 'orange', deckIndex: 69 },
+    { id: 'journey', badge: 'Journey', icon: Target, text: "Customer Journey Mapping: Every Touchpoint from Awareness to Advocacy", theme: 'light', deckIndex: 83 },
+    { id: 'streaming', badge: 'Media', icon: Sparkles, text: "The Streaming Wars: Who Wins When Everyone Has a Platform", theme: 'light', deckIndex: 58 },
+    { id: 'growth', badge: 'Growth', icon: TrendingUp, text: "Growth Hacking Playbook: 10 Tactics from 0 to 1M Users", theme: 'light', deckIndex: 19 },
+    { id: 'ui-trends', badge: 'Design', icon: Palette, text: "UI Design Trends 2025: Glassmorphism, 3D, and Spatial Computing", theme: 'light', deckIndex: 53 },
+    { id: 'data-viz', badge: 'Data', icon: BarChart3, text: "The Art of Data Visualization: Telling Stories with Charts", theme: 'light', deckIndex: 99 },
+    { id: 'coffee', badge: 'Industry', icon: Lightbulb, text: "The $500 Billion Coffee Industry: From Bean to Cup Economics", theme: 'light', deckIndex: 76 },
+    { id: 'anime', badge: 'Culture', icon: Sparkles, text: "The History of Anime: From Astro Boy to Demon Slayer", theme: 'light', deckIndex: 75 },
   ],
 };
 
@@ -112,7 +149,7 @@ const UseCaseLanding: React.FC<UseCaseLandingProps> = ({ config }) => {
 
   // Load featured decks for the interactive slide viewer
   useEffect(() => {
-    showcaseService.getFeaturedDecks(30).then(decks => {
+    showcaseService.getFeaturedDecks(100).then(decks => {
       setFeaturedDecks(decks);
       setIsLoadingDecks(false);
     }).catch(() => setIsLoadingDecks(false));
@@ -406,140 +443,16 @@ const UseCaseLanding: React.FC<UseCaseLandingProps> = ({ config }) => {
         </div>
       </section>
 
-      {/* Use Cases Section */}
-      <section className="py-20 px-4 sm:px-8 bg-[#FCFBF8] dark:bg-[#0a0a0a]">
-        <div className="max-w-[1000px] mx-auto">
-          <motion.div
-            className="text-center mb-12"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-50px' }}
-            transition={{ duration: 0.6 }}
-          >
-            <h2
-              className="text-black dark:text-white mb-4"
-              style={{
-                fontFamily: '"HK Grotesk Wide", sans-serif',
-                fontWeight: 900,
-                fontSize: 'clamp(28px, 4vw, 48px)',
-                lineHeight: '1.1',
-                letterSpacing: '-0.02em',
-                textTransform: 'uppercase',
-              }}
-            >
-              Perfect for
-            </h2>
-          </motion.div>
-
-          <motion.div
-            className="grid grid-cols-1 sm:grid-cols-2 gap-4"
-            variants={containerVariants}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: '-50px' }}
-          >
-            {config.useCases.map((useCase, i) => (
-              <motion.div
-                key={i}
-                variants={itemVariants}
-                className="group flex items-center gap-4 p-5 rounded-xl bg-white dark:bg-zinc-900 border border-black/5 dark:border-white/5 hover:border-[#FF4301]/30 transition-all duration-200 cursor-pointer"
-                onClick={() => {
-                  trackLandingPageCtaClicked({ slug: config.slug, cta: `use_case_${useCase}` });
-                  navigate(isSignedIn ? '/app' : '/signup');
-                }}
-              >
-                <div className="w-10 h-10 rounded-lg bg-[#FF4301]/10 flex items-center justify-center flex-shrink-0 group-hover:bg-[#FF4301]/20 transition-colors">
-                  <Sparkles className="w-5 h-5 text-[#FF4301]" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-black dark:text-white" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                    {useCase}
-                  </h3>
-                </div>
-                <ArrowRight className="w-4 h-4 text-black/30 dark:text-white/30 group-hover:text-[#FF4301] transition-colors" />
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
+      {/* Use Cases Section — Expandable */}
+      <ExpandableUseCases config={config} sectionTitle="Perfect for" />
 
       {/* Community Presentations */}
-      {showcaseDecks.length > 0 && (
-        <section className="py-20 px-4 sm:px-8 bg-white dark:bg-zinc-950">
-          <div className="max-w-[1200px] mx-auto">
-            <motion.div
-              className="text-center mb-12"
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: '-50px' }}
-              transition={{ duration: 0.6 }}
-            >
-              <h2
-                className="text-black dark:text-white mb-4"
-                style={{
-                  fontFamily: '"HK Grotesk Wide", sans-serif',
-                  fontWeight: 900,
-                  fontSize: 'clamp(28px, 4vw, 48px)',
-                  lineHeight: '1.1',
-                  letterSpacing: '-0.02em',
-                  textTransform: 'uppercase',
-                }}
-              >
-                Made by the community
-              </h2>
-              <p className="text-lg text-black/60 dark:text-white/60 max-w-xl mx-auto">
-                See what others are creating with NextSlide
-              </p>
-            </motion.div>
-
-            <motion.div
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-              variants={containerVariants}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: '-50px' }}
-            >
-              {showcaseDecks.slice(0, 6).map((deck) => (
-                <motion.div
-                  key={deck.id}
-                  variants={itemVariants}
-                  className="group rounded-2xl border border-black/5 dark:border-white/5 overflow-hidden bg-[#FCFBF8] dark:bg-zinc-900 hover:border-[#FF4301]/30 transition-all duration-200 cursor-pointer"
-                  onClick={() => navigate(`/community/${deck.id}`)}
-                >
-                  <div className={cn('aspect-[16/10] bg-gradient-to-br flex items-center justify-center p-6', config.heroGradient)}>
-                    <div className="w-full h-full bg-white/90 dark:bg-zinc-800/90 rounded-lg shadow-lg flex items-center justify-center p-4">
-                      <p className="text-sm font-medium text-black/70 dark:text-white/70 text-center line-clamp-3" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                        {deck.title}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <h3 className="font-semibold text-black dark:text-white text-sm line-clamp-1" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                      {deck.title}
-                    </h3>
-                    <div className="flex items-center gap-3 mt-2 text-xs text-black/50 dark:text-white/50">
-                      {deck.authorName && <span>{deck.authorName}</span>}
-                      <span className="flex items-center gap-1"><Layers className="w-3 h-3" />{deck.slideCount} slides</span>
-                      <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{deck.viewCount}</span>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </motion.div>
-
-            <div className="text-center mt-8">
-              <Button
-                variant="outline"
-                className="border-[#FF4301] text-[#FF4301] hover:bg-[#FF4301]/5"
-                onClick={() => navigate('/showcase')}
-              >
-                View all presentations
-                <ArrowRight className="ml-2 w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        </section>
-      )}
+      <CommunityShowcase
+        decks={showcaseDecks}
+        config={config}
+        title="Made by the community"
+        subtitle="See what others are creating with NextSlide"
+      />
 
       {/* How It Works */}
       <section className="py-20 px-4 sm:px-8 bg-white dark:bg-zinc-950">

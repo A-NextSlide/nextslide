@@ -8,9 +8,7 @@ import { cn } from '@/lib/utils';
 import { DEFAULT_SLIDE_HEIGHT, DEFAULT_SLIDE_WIDTH } from '@/utils/deckUtils';
 import Watermark from '@/components/common/Watermark';
 import MiniSlide from './MiniSlide';
-import MobilePresentationThumbnail from './MobilePresentationThumbnail';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { BROWSER } from '@/utils/browser';
 import { useLockedSlides } from '@/hooks/useLockedSlides';
 import LockedSlideOverlay from './LockedSlideOverlay';
 
@@ -45,9 +43,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
   // Get locked slides info
   const { isLocked, lockedCount } = useLockedSlides();
-
-  // Use lightweight thumbnails on mobile to prevent crashes
-  const useMobileThumbnails = BROWSER.isMobile;
 
   // Edge detection state and timeout ref
   const [isInEdgeZone, setIsInEdgeZone] = useState(false);
@@ -494,25 +489,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
                         const slideIsLocked = isLocked(index);
 
-                        // On mobile, use lightweight background-only thumbnail to prevent crashes
-                        if (useMobileThumbnails) {
-                          return (
-                            <MobilePresentationThumbnail
-                              key={slide.id}
-                              slide={slide}
-                              width={thumbnailWidth}
-                              height={thumbnailHeight}
-                              isActive={validIndex === index}
-                              slideNumber={index + 1}
-                              onClick={() => { goToSlide(index); setShowThumbnails(false); }}
-                              cachedUrl={null}
-                              isCapturing={false}
-                              isLocked={slideIsLocked}
-                            />
-                          );
-                        }
-
-                        // Desktop: use MiniSlide directly (unchanged behavior)
                         return (
                           <button
                             key={slide.id}
