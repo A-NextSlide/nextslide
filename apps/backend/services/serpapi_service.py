@@ -1,6 +1,7 @@
 import os
 import re
 import asyncio
+import time
 import aiohttp
 import urllib.parse
 import logging
@@ -13,6 +14,23 @@ from services.image_validator import ImageValidator
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# Module-level circuit breaker (shared across all instances/coroutines)
+_circuit_open_until = 0.0  # timestamp when circuit can close again
+_CIRCUIT_COOLDOWN = 300  # 5 minutes
+
+
+def _is_circuit_open() -> bool:
+    return time.monotonic() < _circuit_open_until
+
+
+def _trip_circuit() -> None:
+    global _circuit_open_until
+    _circuit_open_until = time.monotonic() + _CIRCUIT_COOLDOWN
+    logger.error(
+        "[SERPAPI] Circuit breaker TRIPPED - blocking all searches for %ds",
+        _CIRCUIT_COOLDOWN,
+    )
 
 class SerpAPIService:
     """Service for interacting with SerpAPI for Google Images search."""
@@ -196,6 +214,10 @@ class SerpAPIService:
         if not query or not self.is_available:
             return {"photos": [], "total_results": 0}
 
+        if _is_circuit_open():
+            logger.warning("[SERPAPI] Circuit breaker OPEN - skipping search for '%s'", query[:50])
+            return {"photos": [], "total_results": 0}
+
         # Clamp and sanitize query to avoid huge prompts
         query = (query or "").strip()
         if len(query) > 100:
@@ -252,8 +274,18 @@ class SerpAPIService:
                     results = await response.json()
                     logger.debug(f"SERPAPI response for '{query}': {len(results.get('images_results', []))} images")
                     if 'error' in results:
-                        logger.warning(f"SERPAPI API WARNING: {results.get('error')}")
+                        error_msg = results.get('error', '')
+                        logger.warning(f"SERPAPI API WARNING: {error_msg}")
+                        # Trip circuit on quota exhaustion errors in the response body
+                        if 'out of searches' in str(error_msg).lower() or 'account limit' in str(error_msg).lower():
+                            _trip_circuit()
+                            return {"photos": [], "total_results": 0}
                     return self._process_image_results(results)
+                elif response.status == 429:
+                    error_text = await response.text()
+                    logger.error(f"SerpAPI HTTP 429 (rate limited): {error_text}")
+                    _trip_circuit()
+                    return {"photos": [], "total_results": 0}
                 else:
                     error_text = await response.text()
                     logger.error(f"SerpAPI HTTP error {response.status}: {error_text}")

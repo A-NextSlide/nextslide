@@ -11,6 +11,9 @@ import MiniSlide from './MiniSlide';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLockedSlides } from '@/hooks/useLockedSlides';
 import LockedSlideOverlay from './LockedSlideOverlay';
+import { usePreventMobileZoom, MOBILE_SLIDE_GUARD_STYLE } from '@/hooks/usePreventMobileZoom';
+import { useMobilePinchZoom } from '@/hooks/useMobilePinchZoom';
+import { BROWSER } from '@/utils/browser';
 
 interface PresentationModeProps {
   slides: SlideData[];
@@ -43,6 +46,12 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
   // Get locked slides info
   const { isLocked, lockedCount } = useLockedSlides();
+
+  // Prevent native browser zoom on mobile – pinch-to-zoom on heavy slide DOM crashes the tab.
+  // usePreventMobileZoom modifies the viewport meta tag; useMobilePinchZoom provides a
+  // GPU-composited CSS-transform zoom that replaces the crashy native zoom.
+  usePreventMobileZoom();
+  const { containerRef: zoomContainerRef, isZoomed, resetZoom } = useMobilePinchZoom();
 
   // Edge detection state and timeout ref
   const [isInEdgeZone, setIsInEdgeZone] = useState(false);
@@ -222,6 +231,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   // Dispatch slidechange event when slide changes
   useEffect(() => {
     if (!isPresenting || !currentSlide?.id) return;
+    // Reset pinch-zoom to 1× when navigating to a different slide
+    resetZoom();
     const event = new CustomEvent('slidechange', {
       detail: { slideId: currentSlide.id, index: currentSlideIndex }
     });
@@ -230,7 +241,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
         document.dispatchEvent(event);
       });
     });
-  }, [currentSlideIndex, currentSlide?.id, isPresenting]);
+  }, [currentSlideIndex, currentSlide?.id, isPresenting, resetZoom]);
 
   const handleExitPresentation = useCallback(() => {
     exitPresentation();
@@ -275,7 +286,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
-      if (showThumbnails || !e.changedTouches?.length) return;
+      // Skip swipe navigation when user is zoomed in (panning takes priority)
+      if (showThumbnails || !e.changedTouches?.length || isZoomed) return;
       const deltaX = e.changedTouches[0].clientX - touchStartX;
       const deltaY = e.changedTouches[0].clientY - touchStartY;
 
@@ -294,7 +306,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [isPresenting, showThumbnails, goToNextSlide, goToPrevSlide, handleExitPresentation, setShowControls, setShowThumbnails]);
+  }, [isPresenting, showThumbnails, isZoomed, goToNextSlide, goToPrevSlide, handleExitPresentation, setShowControls, setShowThumbnails]);
 
   // Render slide content
   const slideContent = useMemo(() => {
@@ -334,48 +346,55 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       style={containerStyle}
       onMouseMove={handleMouseMove}
     >
-      {/* Slide container */}
-      <div className="relative w-full h-full flex items-center justify-center">
-        <div
-          className="relative overflow-hidden rounded-lg bg-white"
-          style={{ width: scaledWidth, height: scaledHeight }}
-        >
+      {/* Slide container — overflow-hidden clips the zoomed slide at screen edges */}
+      <div
+        className="relative w-full h-full flex items-center justify-center overflow-hidden"
+        style={BROWSER.isMobile ? MOBILE_SLIDE_GUARD_STYLE : undefined}
+      >
+        {/* Zoom wrapper — useMobilePinchZoom applies CSS transform: scale() here
+            (GPU-composited, no reflow) to replace the crashy native browser zoom */}
+        <div ref={zoomContainerRef}>
           <div
-            className="absolute top-0 left-0 origin-top-left"
-            style={{
-              width: baseSlideWidth,
-              height: baseSlideHeight,
-              transform: `scale(${slideScale})`,
-            }}
+            className="relative overflow-hidden rounded-lg bg-white"
+            style={{ width: scaledWidth, height: scaledHeight }}
           >
-            {currentSlide && (
-              <div key={`slide-${currentSlide.id || validIndex}`} className="w-full h-full relative">
-                {/* Slide content - blurred if locked */}
-                <div
-                  className="w-full h-full"
-                  style={currentSlideIsLocked ? {
-                    filter: 'blur(16px) saturate(0.7) brightness(0.95)',
-                    pointerEvents: 'none'
-                  } : undefined}
-                >
-                  {slideContent}
+            <div
+              className="absolute top-0 left-0 origin-top-left"
+              style={{
+                width: baseSlideWidth,
+                height: baseSlideHeight,
+                transform: `scale(${slideScale})`,
+              }}
+            >
+              {currentSlide && (
+                <div key={`slide-${currentSlide.id || validIndex}`} className="w-full h-full relative">
+                  {/* Slide content - blurred if locked */}
+                  <div
+                    className="w-full h-full"
+                    style={currentSlideIsLocked ? {
+                      filter: 'blur(16px) saturate(0.7) brightness(0.95)',
+                      pointerEvents: 'none'
+                    } : undefined}
+                  >
+                    {slideContent}
+                  </div>
+
+                  {/* Locked slide overlay - shown on top of blurred content */}
+                  {currentSlideIsLocked && (
+                    <LockedSlideOverlay
+                      lockedCount={lockedCount}
+                      mode="full"
+                      openInNewTab={true}
+                      className="absolute inset-0"
+                    />
+                  )}
+
+                  {isViewOnly && !currentSlideIsLocked && (
+                    <Watermark text="VIEW ONLY" opacity={0.06} fontSize={120} rotation={-30} repeat={false} />
+                  )}
                 </div>
-
-                {/* Locked slide overlay - shown on top of blurred content */}
-                {currentSlideIsLocked && (
-                  <LockedSlideOverlay
-                    lockedCount={lockedCount}
-                    mode="full"
-                    openInNewTab={true}
-                    className="absolute inset-0"
-                  />
-                )}
-
-                {isViewOnly && !currentSlideIsLocked && (
-                  <Watermark text="VIEW ONLY" opacity={0.06} fontSize={120} rotation={-30} repeat={false} />
-                )}
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -56,6 +56,55 @@ GENERIC_VAR_NAMES = {
 }
 
 
+def _is_garbage_image_query(query: str) -> bool:
+    """Reject queries that are clearly JS variable names, not image descriptions.
+
+    Returns True if the query looks like a camelCase variable name or generic
+    JS identifier rather than a meaningful image search term.
+
+    Examples of garbage: "img trad", "bg images", "image alts", "photo el",
+                         "imgAi", "bgImage", "thumb alt"
+    Examples of valid:   "Tesla office building", "mountain landscape sunset"
+    """
+    if not query:
+        return True
+
+    q = query.strip().lower()
+    words = q.split()
+
+    # Single word that's just a generic image token → garbage
+    if len(words) == 1:
+        if q in {'image', 'img', 'photo', 'pic', 'bg', 'background', 'src',
+                 'thumbnail', 'thumb', 'icon', 'banner', 'cover', 'poster',
+                 'avatar', 'picture'}:
+            return True
+
+    # 1-2 word query where every word is a generic image/JS token → garbage
+    if len(words) <= 2:
+        garbage_tokens = {
+            'image', 'images', 'img', 'imgs', 'photo', 'photos', 'pic', 'pics',
+            'bg', 'background', 'src', 'thumbnail', 'thumb', 'icon', 'banner',
+            'cover', 'poster', 'avatar', 'picture', 'pictures',
+            # Common JS suffixes that leak through camelCase splitting
+            'el', 'alt', 'alts', 'url', 'urls', 'trad', 'ai', 'default',
+            'main', 'primary', 'secondary', 'item', 'items', 'data',
+            'card', 'cards', 'hero', 'featured', 'stage',
+        }
+        if all(w in garbage_tokens for w in words):
+            return True
+
+    # Detect camelCase variable names that got space-separated
+    # e.g., "imgTrad" → after splitting becomes "img trad"
+    # Original was likely a camelCase prop name with no real description
+    joined = ''.join(words)
+    if len(joined) <= 12 and not any(c == ' ' for c in query.strip()):
+        # Original query had no spaces — it's a raw variable name
+        if re.match(r'^[a-z]+[A-Z][a-zA-Z]*$', query.strip()):
+            return True
+
+    return False
+
+
 def _is_company_logo_query(query: str) -> Tuple[bool, str]:
     """
     Detect if a query is for a company logo and extract the company name.
@@ -351,6 +400,10 @@ def _extract_js_object_image_queries(html: str) -> List[str]:
             label = _extract_js_object_label(obj_text)
             cleaned = _simple_clean_query(label)
             if not cleaned:
+                continue
+            # Skip labels that are generic variable names, not real descriptions
+            if _is_garbage_image_query(cleaned):
+                logger.debug("[IMAGE_EXTRACT] Skipping garbage JS label: '%s'", cleaned)
                 continue
             key = cleaned.lower()
             if key in seen:
@@ -853,6 +906,11 @@ async def _search_images_for_props(
     for prop, query in prop_queries:
         q_lower = query.lower().strip()
 
+        # Skip garbage queries (JS variable names, not real descriptions)
+        if _is_garbage_image_query(query):
+            logger.info(f"[POST_SEARCH] Skipping garbage query: '{query}' (prop: {prop})")
+            continue
+
         # Skip generic logo queries entirely
         if q_lower in generic_logo_terms:
             logger.debug(f"[POST_SEARCH] Skipping generic logo query: {query}")
@@ -1062,9 +1120,8 @@ async def _search_images_for_props(
                 logger.warning("[POST_SEARCH] Error for '%s': %s", query, e)
                 return (prop_name, original_query, None, None, None)
 
-        # Process up to 15 image queries per slide (increased from 8 to handle
-        # tab-based components with multiple images per tab)
-        tasks = [search_and_pick_best(prop, query) for prop, query in regular_queries[:15]]
+        # Cap at 8 image queries per slide to limit SerpAPI usage
+        tasks = [search_and_pick_best(prop, query) for prop, query in regular_queries[:8]]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for result in results:

@@ -102,10 +102,10 @@ const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
           {/* Hero deck — large feature card */}
           <motion.div
             variants={itemVariants}
-            className="group relative rounded-2xl overflow-hidden bg-[#FCFBF8] dark:bg-zinc-900 border border-black/5 dark:border-white/5 hover:border-[#FF4301]/30 transition-all duration-300 cursor-pointer"
+            className="group relative aspect-video rounded-2xl overflow-hidden border border-black/5 dark:border-white/5 hover:border-[#FF4301]/30 transition-all duration-300 cursor-pointer"
             onClick={() => navigate(`/community/${heroDeck.id}`)}
           >
-            <div className="aspect-video relative overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+            <div className="absolute inset-0 bg-zinc-100 dark:bg-zinc-800">
               {heroDeck.thumbnailUrl ? (
                 <img
                   src={heroDeck.thumbnailUrl}
@@ -158,10 +158,10 @@ const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
               <motion.div
                 key={deck.id}
                 variants={itemVariants}
-                className="group rounded-xl overflow-hidden bg-[#FCFBF8] dark:bg-zinc-900 border border-black/5 dark:border-white/5 hover:border-[#FF4301]/30 transition-all duration-200 cursor-pointer"
+                className="group relative aspect-video rounded-xl overflow-hidden border border-black/5 dark:border-white/5 hover:border-[#FF4301]/30 transition-all duration-200 cursor-pointer"
                 onClick={() => navigate(`/community/${deck.id}`)}
               >
-                <div className="aspect-video relative overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+                <div className="absolute inset-0 bg-zinc-100 dark:bg-zinc-800">
                   {deck.thumbnailUrl ? (
                     <img
                       src={deck.thumbnailUrl}
@@ -184,13 +184,24 @@ const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                   <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-sm text-white text-[10px] font-bold">
                     {deck.slideCount} slides
                   </div>
-                </div>
-                <div className="p-3">
-                  <h3 className="font-semibold text-black dark:text-white text-xs line-clamp-1" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                    {deck.title}
-                  </h3>
-                  <div className="flex items-center gap-2 mt-1 text-[10px] text-black/40 dark:text-white/40">
-                    <span className="flex items-center gap-0.5"><Eye className="w-2.5 h-2.5" />{deck.viewCount}</span>
+
+                  {/* Gradient overlay at bottom */}
+                  <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
+
+                  {/* Title overlay */}
+                  <div className="absolute bottom-0 left-0 right-0 p-3">
+                    <h3 className="font-semibold text-white text-xs line-clamp-1" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                      {deck.title}
+                    </h3>
+                    <div className="flex items-center gap-2 mt-1 text-[10px] text-white/60">
+                      <span className="flex items-center gap-0.5"><Layers className="w-2.5 h-2.5" />{deck.slideCount} slides</span>
+                      <span className="flex items-center gap-0.5"><Eye className="w-2.5 h-2.5" />{deck.viewCount}</span>
+                    </div>
+                  </div>
+
+                  {/* Hover arrow */}
+                  <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <ArrowUpRight className="w-3 h-3 text-white" />
                   </div>
                 </div>
               </motion.div>

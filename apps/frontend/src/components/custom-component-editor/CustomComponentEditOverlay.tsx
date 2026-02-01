@@ -12,6 +12,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import { createPortal } from 'react-dom';
 
 import { VirtualElement, Bounds } from './types';
@@ -559,7 +560,7 @@ export function generateEditModeScript(componentId: string): string {
           var container = clone.querySelector(selector);
           if (container && container.children.length > 1) {
             console.log('[get-html] Resetting JS-rendered container:', selector, 'children:', container.children.length);
-            container.innerHTML = '';
+            container.innerHTML = DOMPurify.sanitize('');
           }
         } catch (e) { /* ignore invalid selectors */ }
       });
@@ -609,7 +610,7 @@ export function generateEditModeScript(componentId: string): string {
     if (e.data.type === 'update-element-html') {
       const el = document.querySelector(e.data.selector);
       if (el && e.data.html) {
-        el.innerHTML = e.data.html;
+        el.innerHTML = DOMPurify.sanitize(e.data.html);
       }
     }
 

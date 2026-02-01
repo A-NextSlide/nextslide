@@ -1,0 +1,164 @@
+import React, { useEffect, useRef, useState } from 'react';
+import DynamicMeta from '@/components/seo/DynamicMeta';
+import type { ToolPageConfig } from '@/config/toolPages';
+import ToolHero from '@/components/tool-landing/ToolHero';
+import HowToSection from '@/components/tool-landing/HowToSection';
+import BenefitCards from '@/components/tool-landing/BenefitCards';
+import UseCasesSection from '@/components/tool-landing/UseCasesSection';
+import FaqSection from '@/components/tool-landing/FaqSection';
+import ToolLinksFooter from '@/components/tool-landing/ToolLinksFooter';
+import InteractiveHero from '@/components/landing/InteractiveHero';
+import { showcaseService } from '@/services/showcaseService';
+import type { ShowcaseDeck } from '@/services/showcaseService';
+
+interface ToolLandingProps {
+  config: ToolPageConfig;
+}
+
+export default function ToolLanding({ config }: ToolLandingProps) {
+  const schemaRef = useRef<HTMLScriptElement | null>(null);
+  const [showcaseDecks, setShowcaseDecks] = useState<ShowcaseDeck[]>([]);
+  const [isLoadingShowcase, setIsLoadingShowcase] = useState(true);
+
+  const canonicalUrl = `https://nextslide.ai/${config.slug}`;
+
+  // Fetch featured decks for the slide showcase
+  useEffect(() => {
+    setIsLoadingShowcase(true);
+    showcaseService.getFeaturedDecks(30).then(decks => {
+      setShowcaseDecks(decks);
+      setIsLoadingShowcase(false);
+    });
+  }, []);
+
+  // Inject Schema.org JSON-LD for SoftwareApplication + FAQPage
+  useEffect(() => {
+    // Build FAQPage schema
+    const faqSchema = {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: config.faqs.map((faq) => ({
+        '@type': 'Question',
+        name: faq.question,
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: faq.answer,
+        },
+      })),
+    };
+
+    // Build SoftwareApplication schema
+    const appSchema = {
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: `NextSlide ${config.title}`,
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web',
+      offers: {
+        '@type': 'Offer',
+        price: '0',
+        priceCurrency: 'USD',
+      },
+      url: canonicalUrl,
+      description: config.metaDescription,
+      provider: {
+        '@type': 'Organization',
+        name: 'NextSlide',
+        url: 'https://nextslide.ai',
+      },
+    };
+
+    // Build HowTo schema
+    const howToSchema = {
+      '@context': 'https://schema.org',
+      '@type': 'HowTo',
+      name: `How to use ${config.title}`,
+      step: config.howToSteps.map((text, idx) => ({
+        '@type': 'HowToStep',
+        position: idx + 1,
+        text,
+      })),
+    };
+
+    const combinedSchema = [appSchema, faqSchema, howToSchema];
+
+    const script = document.createElement('script');
+    script.type = 'application/ld+json';
+    script.textContent = JSON.stringify(combinedSchema);
+    document.head.appendChild(script);
+    schemaRef.current = script;
+
+    // Inject canonical link
+    let canonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+    const hadCanonical = !!canonical;
+    if (!canonical) {
+      canonical = document.createElement('link');
+      canonical.rel = 'canonical';
+      document.head.appendChild(canonical);
+    }
+    canonical.href = canonicalUrl;
+
+    return () => {
+      if (schemaRef.current) {
+        try {
+          schemaRef.current.parentNode?.removeChild(schemaRef.current);
+        } catch {
+          // ignore
+        }
+        schemaRef.current = null;
+      }
+      // Remove canonical only if we created it
+      if (!hadCanonical && canonical) {
+        try {
+          canonical.parentNode?.removeChild(canonical);
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, [config, canonicalUrl]);
+
+  return (
+    <div className="min-h-screen bg-white" style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", system-ui, sans-serif' }}>
+      <DynamicMeta
+        title={config.metaTitle}
+        description={config.metaDescription}
+        url={canonicalUrl}
+        type="website"
+      />
+
+      <ToolHero config={config} />
+      <HowToSection steps={config.howToSteps} />
+
+      {/* Slide showcase — show visitors actual generated slides */}
+      <section className="py-16 px-4 sm:px-8 bg-[#FCFBF8]">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="text-center mb-8">
+            <h2
+              className="text-black mb-3"
+              style={{
+                fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", system-ui, sans-serif',
+                fontWeight: 900,
+                fontSize: 'clamp(24px, 3.5vw, 42px)',
+                lineHeight: '1.1',
+                letterSpacing: '-0.02em',
+                textTransform: 'uppercase',
+              }}
+            >
+              See what NextSlide creates
+            </h2>
+            <p className="text-base text-black/50 max-w-lg mx-auto">
+              Real presentations generated by AI — browse slides, click through, and see the quality for yourself
+            </p>
+          </div>
+          <InteractiveHero decks={showcaseDecks} isLoading={isLoadingShowcase} compact />
+        </div>
+      </section>
+
+      <BenefitCards benefits={config.benefits} />
+      <UseCasesSection useCases={config.useCases} />
+      <FaqSection faqs={config.faqs} toolTitle={config.title} />
+      <ToolLinksFooter currentSlug={config.slug} />
+    </div>
+  );
+}

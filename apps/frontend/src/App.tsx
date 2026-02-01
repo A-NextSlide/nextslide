@@ -32,6 +32,7 @@ import SlideTagging from './pages/SlideTagging';
 import SharedDeckView from './pages/SharedDeckView';
 import SharedDeckEdit from './pages/SharedDeckEdit';
 const EmbedView = lazy(() => import('./pages/EmbedView'));
+const ToolPageRouter = lazy(() => import('./pages/ToolPageRouter'));
 import CommunityDeckView from './pages/CommunityDeckView';
 import WebpageViewer from './pages/WebpageViewer';
 import BadgeLanding from './pages/BadgeLanding';
@@ -69,6 +70,9 @@ import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import DeckAnalytics from './pages/DeckAnalytics';
 import PublicProfile from './pages/PublicProfile';
 import LandingPageRouter from './pages/LandingPageRouter';
+import PresentationTemplateLanding from './pages/PresentationTemplateLanding';
+import CategoryBrowse from './pages/CategoryBrowse';
+const SlackBotLanding = lazy(() => import('./pages/SlackBotLanding'));
 
 // Component to initialize font optimization
 // Removed FontOptimizationInitializer
@@ -588,6 +592,9 @@ const AppContent = () => {
               <Route path="/templates" element={<TemplateGallery />} />
               <Route path="/templates/category/:category" element={<TemplateGallery />} />
               <Route path="/templates/:slug" element={<TemplateDetail />} />
+              {/* Programmatic template category pages (SEO) */}
+              <Route path="/presentation-templates" element={<PresentationTemplateLanding />} />
+              <Route path="/presentation-templates/:slug" element={<PresentationTemplateLanding />} />
               {/* Public profile / creator page */}
               <Route path="/u/:username" element={<PublicProfile />} />
               {/* Use-case landing pages */}
@@ -604,6 +611,32 @@ const AppContent = () => {
               <Route path="/for/:slug" element={<LandingPageRouter />} />
               {/* Published webpage viewer (public, no auth required) */}
               <Route path="/s/:slug" element={<WebpageViewer />} />
+              {/* Tool landing pages (SEO conversion tools) */}
+              <Route path="/pdf-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
+              <Route path="/doc-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
+              <Route path="/notes-to-presentation" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
+              <Route path="/pitch-deck-generator" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
+              <Route path="/website-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
+              <Route path="/google-slides-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
+              <Route path="/improve-my-slides" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
+              <Route path="/text-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
+              <Route path="/csv-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
+              <Route path="/image-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
+              {/* Slack bot landing page */}
+              <Route path="/slack-bot" element={<React.Suspense fallback={<div />}><SlackBotLanding /></React.Suspense>} />
+              {/* Tool page SEO redirects */}
+              <Route path="/pdf-to-presentation" element={<Navigate to="/pdf-to-ppt" replace />} />
+              <Route path="/doc-to-presentation" element={<Navigate to="/doc-to-ppt" replace />} />
+              <Route path="/notes-to-ppt" element={<Navigate to="/notes-to-presentation" replace />} />
+              <Route path="/website-to-presentation" element={<Navigate to="/website-to-ppt" replace />} />
+              <Route path="/link-to-ppt" element={<Navigate to="/website-to-ppt" replace />} />
+              <Route path="/link-to-presentation" element={<Navigate to="/website-to-ppt" replace />} />
+              <Route path="/csv-to-presentation" element={<Navigate to="/csv-to-ppt" replace />} />
+              <Route path="/data-to-ppt" element={<Navigate to="/csv-to-ppt" replace />} />
+              <Route path="/data-to-presentation" element={<Navigate to="/csv-to-ppt" replace />} />
+              {/* Public presentations browse */}
+              <Route path="/presentations" element={<CategoryBrowse />} />
+              <Route path="/presentations/:category" element={<CategoryBrowse />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/smart-gallery" element={<SmartGallery />} />

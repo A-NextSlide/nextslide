@@ -13,7 +13,7 @@ from models.narrative_flow import NarrativeFlow
 from services.narrative_flow_analyzer import NarrativeFlowAnalyzer
 
 from .models import OutlineRequest, OutlineResponse
-from .utils import _infer_requested_slide_count_from_prompt
+from .utils import _infer_requested_slide_count_from_prompt, _sanitize_extracted_data
 from .converter import _convert_to_api_format
 
 logger = logging.getLogger(__name__)

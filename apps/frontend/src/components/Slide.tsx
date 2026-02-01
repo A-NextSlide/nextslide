@@ -11,6 +11,7 @@ import TextBoundingBoxOverlay from '@/components/TextBoundingBoxOverlay';
 import MultiSelectionBoundingBox from '@/components/MultiSelectionBoundingBox';
 import { useEditorStore } from '@/stores/editorStore';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
+import { BROWSER } from '@/utils/browser';
 import GroupEditIndicator from '@/components/GroupEditIndicator';
 import { useDeckStore } from '@/stores/deckStore';
 import { isBackgroundOnlySelection } from '@/utils/selectionUtils';
@@ -382,7 +383,12 @@ const SlideContent: React.FC<SlideProps> = ({
         ...(useSimpleContainer ? { width: slideSize.width, height: slideSize.height } : {}),
         zIndex: isVisible ? 10 : 0,
         pointerEvents: isVisible ? 'auto' : 'none',
-        cursor: 'inherit' // Inherit cursor from parent
+        cursor: 'inherit', // Inherit cursor from parent
+        // Mobile: isolate paint and block zoom gestures to prevent reflow crashes
+        ...(BROWSER.isMobile ? {
+          touchAction: 'pan-x pan-y',
+          contain: 'paint',
+        } : {}),
       }}
       onClick={handleSlideClick}
       onDoubleClick={handleDoubleClick}

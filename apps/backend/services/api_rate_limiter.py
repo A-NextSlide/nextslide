@@ -46,7 +46,8 @@ RATE_LIMITER_BACKEND = "redis" if storage_uri else "in-memory"
 limiter = Limiter(
     key_func=_api_key_identifier,
     storage_uri=storage_uri or "memory://",
-    default_limits=[],
+    default_limits=["200/minute"],  # Global default for all endpoints
+    application_limits=["1000/minute"],  # Hard ceiling across all clients
 )
 
 

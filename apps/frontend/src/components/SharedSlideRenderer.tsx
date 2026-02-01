@@ -1,4 +1,5 @@
 import React from 'react';
+import DOMPurify from 'dompurify';
 import { SlideData } from '@/types/SlideTypes';
 import { ComponentInstance } from '@/types/components';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
@@ -46,7 +47,7 @@ export const SharedSlideRenderer: React.FC<SharedSlideRendererProps> = ({
               lineHeight: props.lineHeight || 1.5,
               padding: '8px'
             }}
-            dangerouslySetInnerHTML={{ __html: props.content || '' }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(props.content || '') }}
           />
         );
         

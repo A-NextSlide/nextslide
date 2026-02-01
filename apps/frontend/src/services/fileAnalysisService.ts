@@ -30,6 +30,10 @@ export interface FileAnalysisResponse {
   results: FileAnalysisResult[];
   combined_analysis: string;
   message: string;
+  /** Total pages in the original PDF (only set for PDFs). */
+  total_pages?: number | null;
+  /** Pages actually analyzed (capped at 3 for free preview). */
+  pages_analyzed?: number | null;
 }
 
 export interface ChatWithFilesResponse {

@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import { SlideData } from '@/types/SlideTypes';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 
@@ -340,7 +341,7 @@ function createOverlay(slideCount: number): { overlay: HTMLElement; updateProgre
     `;
   }
 
-  overlay.innerHTML = `
+  overlay.innerHTML = DOMPurify.sanitize(`
     <div style="text-align: center;">
       <div style="font-size: 18px; font-weight: 600; margin-bottom: 12px; color: #333;">Generating Offline HTML</div>
       <div style="font-size: 14px; color: #666;" id="html-progress">Preparing...</div>
@@ -348,7 +349,7 @@ function createOverlay(slideCount: number): { overlay: HTMLElement; updateProgre
         <div id="html-progress-bar" style="width: 0%; height: 100%; background: #3b82f6; transition: width 0.3s;"></div>
       </div>
     </div>
-  `;
+  `);
 
   document.body.appendChild(overlay);
 

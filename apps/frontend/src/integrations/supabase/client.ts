@@ -23,7 +23,7 @@ export const supabase = createClient<Database>(
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: true,
-      flowType: 'implicit'
+      flowType: 'pkce'
     }
   }
 );

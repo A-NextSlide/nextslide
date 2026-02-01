@@ -467,18 +467,33 @@ const DeckList: React.FC = () => {
     }
   }, [heroTextareaBaseHeight, setHeroInput, setOnboardingSeedPrompt, setOnboardingSessionId, setShowConversationalOnboarding]);
 
-  // Check for pending prompt from landing page after login
+  // Check for pending prompt from landing page or tool landing page after login
   useEffect(() => {
     if (!isAuthenticated) return;
 
     const pendingPrompt = localStorage.getItem('landing_prompt');
+    const pendingFileContext = localStorage.getItem('landing_file_context');
     if (pendingPrompt) {
-      // Clear it immediately to prevent re-triggering
+      // Clear both immediately to prevent re-triggering
       localStorage.removeItem('landing_prompt');
+      localStorage.removeItem('landing_file_context');
+
+      // If there is file context from a tool landing page, append a summary to the prompt
+      let enrichedPrompt = pendingPrompt;
+      if (pendingFileContext) {
+        try {
+          const ctx = JSON.parse(pendingFileContext);
+          if (ctx.combined_analysis) {
+            enrichedPrompt = `${pendingPrompt}\n\nFile analysis:\n${ctx.combined_analysis}`;
+          }
+        } catch {
+          // ignore parse errors
+        }
+      }
 
       // Small delay to ensure component is fully mounted
       setTimeout(() => {
-        openConversationalOnboarding(pendingPrompt);
+        openConversationalOnboarding(enrichedPrompt);
       }, 100);
     }
   }, [isAuthenticated, openConversationalOnboarding]);

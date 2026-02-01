@@ -23,9 +23,11 @@ load_dotenv()
 import httpx
 from services.supabase import get_supabase_client
 
-API_KEY = "ns_live_vry5hU9ezj4dTuzwF-qDOTTfxvWZ2Vea"
-API_BASE = "http://localhost:9090"
-USER_ID = "942ccba7-5346-4f99-8189-82284dafb255"
+API_KEY = os.getenv("SEED_API_KEY")
+if not API_KEY:
+    raise ValueError("SEED_API_KEY environment variable is required")
+API_BASE = os.getenv("API_BASE", "http://localhost:9090")
+USER_ID = os.getenv("SEED_USER_ID", "942ccba7-5346-4f99-8189-82284dafb255")
 
 FONT_INSTRUCTIONS = (
     "Use clean, professional fonts only — Inter, Montserrat, or similar sans-serif. "

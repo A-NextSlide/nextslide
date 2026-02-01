@@ -141,32 +141,46 @@ class SlideGeneratorAdapter:
 
 class ThemeManagerAdapter(IThemeManager):
     """Adapts the old ThemeStyleManager to the new interface."""
-    
+
     def __init__(self, theme_style_manager):
         self.manager = theme_style_manager
-    
+
     async def generate_theme(self, deck_outline: DeckOutline, global_theme: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate theme using the existing manager."""
+        """Generate theme, dispatching to Modal when available."""
         logger.info(f"[THEME ADAPTER] Generating theme for deck: {deck_outline.title}")
         if hasattr(deck_outline, 'stylePreferences'):
             logger.info(f"[THEME ADAPTER] StylePreferences present: {deck_outline.stylePreferences is not None}")
-            if deck_outline.stylePreferences:
-                logger.info(f"[THEME ADAPTER] VibeContext: {getattr(deck_outline.stylePreferences, 'vibeContext', 'NOT SET')}")
+
+        from agents.config import USE_MODAL
+
+        if USE_MODAL:
+            result = await self._generate_via_modal(deck_outline)
         else:
-            logger.info(f"[THEME ADAPTER] ⚠️ NO stylePreferences in deck_outline")
-            
-        result = await self.manager.analyze_theme_and_style(deck_outline)
+            result = await self.manager.analyze_theme_and_style(deck_outline)
+
         theme_dict = result.get('theme', {})
         search_terms = result.get('search_terms', [])
-        
+
         logger.info(f"[THEME ADAPTER] Theme analysis returned {len(search_terms)} search terms: {search_terms}")
-        
+
         # Return full result with theme and search_terms
         return {
             'theme': ThemeSpec.from_dict(theme_dict),
             'search_terms': search_terms,
             'style_spec': result.get('style_spec', {})
         }
+
+    async def _generate_via_modal(self, deck_outline: DeckOutline) -> Dict[str, Any]:
+        """Dispatch theme generation to Modal with local fallback."""
+        from services.modal_dispatch import generate_theme_via_modal
+
+        outline_dict = deck_outline.model_dump()
+        available_fonts = self.manager.available_fonts
+
+        return await generate_theme_via_modal(
+            outline_dict=outline_dict,
+            available_fonts=available_fonts,
+        )
     
     async def generate_palette(self, deck_outline: DeckOutline, theme: ThemeSpec) -> Dict[str, Any]:
         """Generate palette using the existing manager."""

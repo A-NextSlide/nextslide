@@ -325,7 +325,10 @@ async def execute_theme_update(
 
                 logger.info(f"[ThemeExecutor] Trying Brandfetch DB for domain: {brand_domain}")
 
-                db_url = os.getenv('DATABASE_URL', 'postgresql://postgres.iureiriffqcxrldisuqp:202War123!!@aws-0-us-west-1.pooler.supabase.com:6543/postgres')
+                db_url = os.getenv('DATABASE_URL')
+                if not db_url:
+                    logger.error("[ThemeExecutor] DATABASE_URL not set, skipping Brandfetch DB lookup")
+                    raise ValueError("DATABASE_URL environment variable is required")
                 async with SimpleBrandfetchCache(db_url) as bf_service:
                     brand_info = await bf_service.get_brand_data(brand_domain)
 

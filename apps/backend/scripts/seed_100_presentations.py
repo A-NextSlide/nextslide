@@ -22,9 +22,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv()
 
-import httpx
-from services.supabase import get_supabase_client
-from services.api_key_service import get_api_key_service
+try:
+    import httpx
+    from services.supabase import get_supabase_client
+    from services.api_key_service import get_api_key_service
+except ImportError:
+    pass  # Not available when imported for data only (e.g. by seed_modal.py)
 
 USER_ID = "942ccba7-5346-4f99-8189-82284dafb255"
 API_BASE = "http://localhost:9090"
@@ -1428,7 +1431,7 @@ async def create_deck(client: httpx.AsyncClient, api_key: str, pres: dict) -> di
             "slides": pres["slides"],
             "additional_instructions": pres.get("additional_instructions", ""),
         },
-        timeout=30.0,
+        timeout=120.0,
     )
     response.raise_for_status()
     return response.json()
@@ -1445,15 +1448,25 @@ def fix_stuck_deck(deck_id: str) -> bool:
             return False
         d = result.data
         status = d.get("status", {})
-        state = status.get("state", "") if isinstance(status, dict) else ""
+        # Handle both dict {"state": "generating"} and plain string "generating"
+        if isinstance(status, dict):
+            state = status.get("state", "")
+        elif isinstance(status, str):
+            state = status
+        else:
+            state = ""
         slides = d.get("slides") or []
         expected = d.get("slide_count") or 0
-        if state == "generating" and len(slides) >= expected and len(slides) > 0:
+        if state in ("generating", "queued") and len(slides) > 0:
             supabase.table("decks").update({
                 "status": {"state": "completed", "progress": 100},
             }).eq("uuid", deck_id).execute()
             return True
-        return state == "completed"
+        if isinstance(status, dict) and status.get("state") == "completed":
+            return True
+        if status == "completed":
+            return True
+        return False
     except Exception:
         return False
 
@@ -1529,15 +1542,92 @@ def add_to_featured(deck_uuid: str, pres: dict, order_index: int) -> bool:
         return False
 
 
+VALID_COMMUNITY_CATS = {"business", "education", "marketing", "creative", "technology", "personal"}
+CAT_REMAP = {"sales": "business", "finance": "business", "consulting": "business",
+             "hr": "personal", "research": "education"}
+
+
+def _remap_cat(c: str) -> str:
+    return c if c in VALID_COMMUNITY_CATS else CAT_REMAP.get(c, "business")
+
+
 def add_to_community(deck_uuid: str, pres: dict) -> bool:
-    """Also ensure the deck is visible in community showcase."""
+    """Add deck to community_decks + deck_shares for /presentations browse."""
+    import re
+    import random
+    import uuid as _uuid
+    from datetime import datetime, timedelta
+
     try:
         supabase = get_supabase_client()
 
-        # Mark the deck as shared/public for community via visibility
-        supabase.table("decks").update({
-            "visibility": "public",
-        }).eq("uuid", deck_uuid).execute()
+        # Mark deck public
+        supabase.table("decks").update({"visibility": "public"}).eq("uuid", deck_uuid).execute()
+
+        # Fetch real slides
+        deck_result = supabase.table("decks").select(
+            "slides, slide_count, name"
+        ).eq("uuid", deck_uuid).single().execute()
+
+        if not deck_result.data:
+            return False
+
+        deck = deck_result.data
+        slides = deck.get("slides") or []
+        name = deck.get("name") or pres["topic"]
+        raw_cat = pres.get("category", "business")
+        cat = _remap_cat(raw_cat)
+
+        # Extract tags from topic
+        words = re.findall(r'[a-zA-Z]{3,}', pres["topic"].lower())
+        stop = {"the", "and", "for", "from", "with", "how", "what", "why", "that", "this"}
+        tags = [w for w in words if w not in stop][:5]
+        if raw_cat not in tags:
+            tags.append(raw_cat)
+
+        days_ago = random.randint(1, 30)
+        approved_at = (datetime.utcnow() - timedelta(days=days_ago)).isoformat()
+
+        # 1. Insert into community_decks
+        try:
+            supabase.table("community_decks").insert({
+                "deck_uuid": deck_uuid,
+                "user_id": USER_ID,
+                "title": name,
+                "description": pres["topic"],
+                "category": cat,
+                "tags": tags,
+                "status": "approved",
+                "slide_count": len(slides),
+                "first_slide": slides[0] if slides else None,
+                "slides_snapshot": slides,
+                "theme_snapshot": {},
+                "author_name": "NextSlide Team",
+                "submitted_at": approved_at,
+                "approved_at": approved_at,
+                "view_count": random.randint(50, 800),
+            }).execute()
+        except Exception as e:
+            print(f"    community_decks insert: {e}")
+
+        # 2. Insert public deck_share
+        try:
+            short_code = _uuid.uuid4().hex[:8]
+            supabase.table("deck_shares").insert({
+                "deck_uuid": deck_uuid,
+                "short_code": short_code,
+                "share_type": "view",
+                "created_by": USER_ID,
+                "shared_by": USER_ID,
+                "is_active": True,
+                "is_public": True,
+                "access_count": random.randint(20, 500),
+                "public_title": name,
+                "public_description": pres["topic"],
+                "public_category": cat,
+            }).execute()
+        except Exception as e:
+            print(f"    deck_shares insert: {e}")
 
         return True
     except Exception as e:
@@ -1550,21 +1640,16 @@ async def generate_one(
     api_key: str,
     pres: dict,
     batch_num: int,
-    index_in_batch: int,
     global_index: int,
 ) -> dict:
-    """Generate a single presentation end-to-end."""
+    """Fire a single deck creation (no polling — fire-and-forget)."""
     label = pres["topic"][:60]
     total = 100
     try:
         print(f"  [{global_index+1:3d}/{total}] B{batch_num} Firing: {label}...")
         result = await create_deck(client, api_key, pres)
         deck_id = result["deck_id"]
-        print(f"  [{global_index+1:3d}/{total}] B{batch_num} Queued: {deck_id[:8]}... -> polling...")
-
-        status = await poll_status(client, api_key, deck_id)
-        slides_count = status.get("slides_count", "?")
-        print(f"  [{global_index+1:3d}/{total}] B{batch_num} Done:   {label} ({slides_count} slides)")
+        print(f"  [{global_index+1:3d}/{total}] B{batch_num} Queued: {deck_id[:8]}...")
 
         return {
             "success": True,
@@ -1589,69 +1674,234 @@ async def run_batch(
     api_key: str,
     global_offset: int,
 ):
-    """Run a single batch of presentations with one API key."""
+    """Run a batch of 20 presentations with one API key, 4 at a time."""
     print(f"\n{'─' * 65}")
-    print(f"  BATCH {batch_num}: {len(presentations)} presentations")
+    print(f"  BATCH {batch_num}: {len(presentations)} presentations (4 at a time)")
     print(f"{'─' * 65}")
 
     async with httpx.AsyncClient() as client:
-        # Process in sub-batches of 2 to avoid overwhelming the backend
         results = []
-        sub_batch_size = 2
+        sub_batch_size = 4
         for i in range(0, len(presentations), sub_batch_size):
-            sub_batch = presentations[i:i + sub_batch_size]
+            sub = presentations[i:i + sub_batch_size]
             tasks = [
                 generate_one(
                     client,
                     api_key,
                     pres,
                     batch_num,
-                    i + j,
-                    pres.get("_global_index", global_offset + i + j),
+                    global_offset + i + j,
                 )
-                for j, pres in enumerate(sub_batch)
+                for j, pres in enumerate(sub)
             ]
             sub_results = await asyncio.gather(*tasks, return_exceptions=True)
             results.extend(sub_results)
 
             if i + sub_batch_size < len(presentations):
-                print(f"  --- sub-batch done, next in 5s ---")
-                await asyncio.sleep(5)
+                sub_num = i // sub_batch_size + 1
+                total_sub = (len(presentations) + sub_batch_size - 1) // sub_batch_size
+                print(f"  B{batch_num} sub-batch {sub_num}/{total_sub} done, waiting 15s...")
+                await asyncio.sleep(15)
 
-    return results
+    return list(results)
 
 
-def get_existing_featured() -> set:
-    """Return set of display_order values already in featured_decks."""
+def cleanup_old_seeds():
+    """Delete old stuck decks and placeholder content from previous seed runs."""
+    print("\nStep 0: Cleaning up old seed data...")
+    supabase = get_supabase_client()
+
+    # Delete old community_decks from NextSlide Team
     try:
-        supabase = get_supabase_client()
-        result = supabase.table("featured_decks").select("display_order").execute()
-        return {r["display_order"] for r in (result.data or []) if r["display_order"] is not None}
+        r = supabase.table("community_decks").delete().eq("author_name", "NextSlide Team").execute()
+        print(f"  Deleted {len(r.data or [])} old community_decks")
+    except Exception as e:
+        print(f"  community_decks cleanup: {e}")
+
+    # Delete old public deck_shares from seed user
+    try:
+        r = supabase.table("deck_shares").delete().eq("is_public", True).eq("created_by", USER_ID).execute()
+        print(f"  Deleted {len(r.data or [])} old public deck_shares")
+    except Exception as e:
+        print(f"  deck_shares cleanup: {e}")
+
+    # Delete old templates
+    try:
+        r = supabase.table("templates").delete().eq("is_active", True).execute()
+        print(f"  Deleted {len(r.data or [])} old templates")
+    except Exception as e:
+        print(f"  templates cleanup: {e}")
+
+    # Delete old featured_decks
+    try:
+        r = supabase.table("featured_decks").delete().eq("is_active", True).execute()
+        print(f"  Deleted {len(r.data or [])} old featured_decks")
+    except Exception as e:
+        print(f"  featured_decks cleanup: {e}")
+
+    # Delete old stuck decks from seed user (generating with no slides)
+    try:
+        all_seed = supabase.table("decks").select("uuid, slides, status").eq("user_id", USER_ID).execute()
+        stuck = [d for d in (all_seed.data or [])
+                 if isinstance(d.get("status"), dict) and d["status"].get("state") == "generating"
+                 and not d.get("slides")]
+        for d in stuck:
+            supabase.table("decks").delete().eq("uuid", d["uuid"]).execute()
+        print(f"  Deleted {len(stuck)} old stuck decks")
+    except Exception as e:
+        print(f"  stuck decks cleanup: {e}")
+
+    print("  Cleanup done.\n")
+
+
+# Template definitions for /presentation-templates
+TEMPLATE_DEFS = [
+    {"slug": "startup-pitch-deck", "title": "Free Startup Pitch Deck Template",
+     "description": "A clean, investor-ready pitch deck for startups. Covers problem, solution, market, traction, business model, and the ask.",
+     "category": "business", "tags": ["startup", "pitch", "investor", "fundraising", "vc"]},
+    {"slug": "sales-deck", "title": "Free Sales Deck Template",
+     "description": "A persuasive sales presentation to win new clients. Problem framing, solution, case studies, pricing, and next steps.",
+     "category": "sales", "tags": ["sales", "proposal", "client", "B2B", "closing"]},
+    {"slug": "marketing-strategy", "title": "Free Marketing Strategy Template",
+     "description": "Plan and present your marketing strategy. Market analysis, target audience, channels, budget, and KPIs.",
+     "category": "marketing", "tags": ["marketing", "strategy", "digital", "campaign", "growth"]},
+    {"slug": "quarterly-review", "title": "Free Quarterly Business Review Template",
+     "description": "Present quarterly results with clarity. Performance highlights, financials, team updates, and next-quarter goals.",
+     "category": "business", "tags": ["quarterly", "review", "QBR", "performance", "reporting"]},
+    {"slug": "business-plan", "title": "Free Business Plan Presentation Template",
+     "description": "A compelling business plan for stakeholders. Executive summary, market analysis, operations, financials, and roadmap.",
+     "category": "business", "tags": ["business plan", "strategy", "executive", "planning"]},
+    {"slug": "investor-update", "title": "Free Investor Update Template",
+     "description": "Professional monthly/quarterly investor update. KPIs, financials, product progress, and asks.",
+     "category": "finance", "tags": ["investor", "update", "fundraising", "KPI", "board"]},
+    {"slug": "product-launch", "title": "Free Product Launch Presentation Template",
+     "description": "Announce your product launch with impact. Product overview, features, competitive positioning, and go-to-market plan.",
+     "category": "marketing", "tags": ["product", "launch", "go-to-market", "announcement"]},
+    {"slug": "team-onboarding", "title": "Free Team Onboarding Presentation Template",
+     "description": "Structured onboarding for new team members. Company culture, tools, processes, and first-week plan.",
+     "category": "hr", "tags": ["onboarding", "HR", "team", "culture", "new hire"]},
+    {"slug": "course-lecture", "title": "Free Course Lecture Presentation Template",
+     "description": "Deliver engaging course lectures. Learning objectives, key concepts, examples, and review questions.",
+     "category": "education", "tags": ["education", "lecture", "course", "teaching", "academic"]},
+    {"slug": "project-proposal", "title": "Free Project Proposal Presentation Template",
+     "description": "Win project approvals. Objectives, scope, timeline, budget, risks, and expected outcomes.",
+     "category": "business", "tags": ["project", "proposal", "management", "approval"]},
+    {"slug": "annual-report", "title": "Free Annual Report Presentation Template",
+     "description": "Polished annual report. Yearly highlights, financial performance, growth metrics, and outlook.",
+     "category": "finance", "tags": ["annual", "report", "yearly", "performance", "corporate"]},
+    {"slug": "company-overview", "title": "Free Company Overview Presentation Template",
+     "description": "Introduce your company to partners, clients, or new hires. Mission, products, team, and traction.",
+     "category": "business", "tags": ["company", "overview", "corporate", "introduction"]},
+    {"slug": "portfolio-showcase", "title": "Free Portfolio Showcase Presentation Template",
+     "description": "Show off your best work. Perfect for designers, agencies, and freelancers.",
+     "category": "creative", "tags": ["portfolio", "showcase", "design", "agency", "freelancer"]},
+    {"slug": "case-study", "title": "Free Case Study Presentation Template",
+     "description": "Compelling case studies that showcase results. Challenge, approach, solution, and key takeaways.",
+     "category": "sales", "tags": ["case study", "results", "client", "success", "B2B"]},
+    {"slug": "workshop-training", "title": "Free Workshop & Training Template",
+     "description": "Engaging workshops and training sessions. Agenda, learning objectives, exercises, and wrap-up.",
+     "category": "education", "tags": ["workshop", "training", "interactive", "learning"]},
+    {"slug": "conference-talk", "title": "Free Conference Talk Template",
+     "description": "Memorable conference presentations. Strong hook, narrative flow, key insights, and powerful closing.",
+     "category": "creative", "tags": ["conference", "talk", "speaking", "keynote"]},
+    {"slug": "research-presentation", "title": "Free Research Presentation Template",
+     "description": "Present research findings professionally. Question, methodology, analysis, findings, and conclusions.",
+     "category": "research", "tags": ["research", "academic", "findings", "methodology"]},
+    {"slug": "consulting-deliverable", "title": "Free Consulting Deliverable Template",
+     "description": "Polished consulting presentations. Executive summary, analysis, recommendations, and implementation plan.",
+     "category": "consulting", "tags": ["consulting", "deliverable", "strategy", "recommendation"]},
+    {"slug": "social-media-strategy", "title": "Free Social Media Strategy Template",
+     "description": "Plan your social media strategy. Audience analysis, platform strategy, content calendar, and metrics.",
+     "category": "marketing", "tags": ["social media", "strategy", "content", "Instagram"]},
+    {"slug": "budget-review", "title": "Free Budget Review Presentation Template",
+     "description": "Budget reviews and financial planning. Actual vs plan, variance analysis, department breakdown, and forecasts.",
+     "category": "finance", "tags": ["budget", "review", "finance", "planning", "forecast"]},
+]
+
+
+def seed_templates_from_completed(completed_deck_ids: list):
+    """Create template entries using real slides from completed decks."""
+    import random
+    print(f"\n{'─' * 65}")
+    print("Step 4: Seeding templates with real deck content...")
+    print(f"{'─' * 65}")
+
+    supabase = get_supabase_client()
+
+    # Get all completed deck data
+    completed_decks = []
+    for deck_id in completed_deck_ids:
+        try:
+            r = supabase.table("decks").select("uuid, name, slides, slide_count").eq("uuid", deck_id).single().execute()
+            if r.data and r.data.get("slides"):
+                completed_decks.append(r.data)
+        except Exception:
+            pass
+
+    if not completed_decks:
+        print("  No completed decks with slides found, skipping templates.")
+        return
+
+    # Check existing templates
+    existing = set()
+    try:
+        r = supabase.table("templates").select("slug").execute()
+        existing = {t["slug"] for t in (r.data or [])}
     except Exception:
-        return set()
+        pass
+
+    ok = skip = err = 0
+    for i, tdef in enumerate(TEMPLATE_DEFS):
+        if tdef["slug"] in existing:
+            skip += 1
+            continue
+
+        # Pick a completed deck to use as the template's deck_data
+        donor = completed_decks[i % len(completed_decks)]
+
+        deck_data = {
+            "title": tdef["title"],
+            "slides": donor["slides"],
+            "slideCount": len(donor["slides"]),
+            "version": "template-v1",
+            "size": {"width": 1920, "height": 1080},
+        }
+
+        try:
+            supabase.table("templates").insert({
+                "slug": tdef["slug"],
+                "title": tdef["title"],
+                "description": tdef["description"],
+                "category": tdef["category"],
+                "tags": tdef["tags"],
+                "deck_data": deck_data,
+                "use_count": random.randint(0, 50),
+                "is_active": True,
+            }).execute()
+            print(f"  [{ok+1:2d}] OK: {tdef['slug']} ({tdef['category']})")
+            ok += 1
+        except Exception as e:
+            print(f"      ERR: {tdef['slug']} — {str(e)[:60]}")
+            err += 1
+
+    print(f"\n  Templates: {ok} created, {skip} skipped, {err} errors")
 
 
 async def main():
     total = sum(len(b) for b in ALL_BATCHES)
 
     print("=" * 65)
-    print("  NextSlide Community Seeder — 100 Presentations (Resumable)")
-    print(f"  {len(ALL_BATCHES)} API keys × 20 presentations each")
+    print("  NextSlide Community Seeder — 100 Presentations")
+    print(f"  {len(ALL_BATCHES)} batches × 20 presentations, ALL IN PARALLEL")
     print(f"  Total: {total} presentations")
+    print(f"  Model: Gemini Pro (default COMPOSER_MODEL)")
     print("=" * 65)
 
-    # Check what's already done
-    existing = get_existing_featured()
-    if existing:
-        print(f"\n  Found {len(existing)} existing featured decks, will skip those indices.")
+    # Step 0: Cleanup
+    cleanup_old_seeds()
 
-    # Step 1: Create API keys (reuse existing seeder keys or create new ones)
-    print("\nStep 1: Creating API keys...")
-    supabase = get_supabase_client()
-    existing_keys = supabase.table("api_keys").select("*").like(
-        "name", "Community Seeder%"
-    ).order("created_at").execute()
-
+    # Step 1: Create 5 API keys
+    print("Step 1: Creating 5 API keys...")
     api_keys = []
     key_names = [
         "Community Seeder — Batch 1 (Business/Education/Marketing)",
@@ -1661,10 +1911,6 @@ async def main():
         "Community Seeder — Batch 5 (Advanced/Finance/Creative/Misc)",
     ]
 
-    if len(existing_keys.data or []) >= 5:
-        # Reuse: we need raw keys, so create fresh ones but reuse naming
-        print("  Found existing seeder keys, creating fresh batch...")
-
     for i, name in enumerate(key_names, 1):
         full_key, record = await create_api_key(name)
         api_keys.append(full_key)
@@ -1672,68 +1918,166 @@ async def main():
 
     print(f"\n  All 5 API keys created successfully.")
 
-    # Step 2: Run all batches sequentially
-    print(f"\nStep 2: Generating presentations (skipping existing)...")
+    # Step 2: Fire ALL decks (fire-and-forget, no polling)
+    print(f"\nStep 2: Firing all {total} presentations across 5 API keys...")
+    print("  (fire-and-forget — will fix up after generation completes)")
+    batch_tasks = [
+        run_batch(batch_idx + 1, batch, api_key, batch_idx * 20)
+        for batch_idx, (batch, api_key) in enumerate(zip(ALL_BATCHES, api_keys))
+    ]
+    batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+
+    # Flatten results — collect deck IDs and presentation info
     all_results = []
+    fired_decks = []  # (deck_id, pres, global_index)
+    for br in batch_results:
+        if isinstance(br, Exception):
+            print(f"  Batch-level error: {br}")
+        elif isinstance(br, list):
+            all_results.extend(br)
 
-    for batch_idx, (batch, api_key) in enumerate(zip(ALL_BATCHES, api_keys)):
-        global_offset = batch_idx * 20
-
-        # Filter out presentations whose order_index already exists
-        filtered_batch = []
-        skipped = 0
-        for j, pres in enumerate(batch):
-            idx = global_offset + j
-            if idx in existing:
-                skipped += 1
-            else:
-                # Preserve original index info
-                pres["_global_index"] = idx
-                filtered_batch.append(pres)
-
-        if skipped:
-            print(f"\n  Batch {batch_idx + 1}: Skipping {skipped} already-generated, {len(filtered_batch)} to go")
-
-        if not filtered_batch:
-            print(f"  Batch {batch_idx + 1}: All done!")
-            continue
-
-        results = await run_batch(batch_idx + 1, filtered_batch, api_key, global_offset)
-        all_results.extend(results)
-
-    # Step 3: Add to featured_decks and community
-    print(f"\n{'─' * 65}")
-    print("Step 3: Adding to featured_decks & community showcase...")
-    print(f"{'─' * 65}")
-
-    success = 0
-    failed = 0
     for r in all_results:
         if isinstance(r, Exception):
-            failed += 1
             continue
-        if r["success"]:
-            deck_id = r["deck_id"]
-            pres = r["pres"]
-            idx = r["global_index"]
+        if r.get("success"):
+            fired_decks.append((r["deck_id"], r["pres"], r["global_index"]))
 
-            added_featured = add_to_featured(deck_id, pres, idx)
-            added_community = add_to_community(deck_id, pres)
+    fired_count = len(fired_decks)
+    print(f"\n  Fired: {fired_count}/{total} deck creation requests")
 
-            if added_featured or added_community:
-                success += 1
-                print(f"  [{idx+1:3d}] Added: {pres['topic'][:55]}")
+    # Step 3: Wait for Modal to finish generating all decks
+    print(f"\nStep 3: Waiting for Modal to finish generating...")
+    print("  Checking DB every 30s for completed slides...")
+
+    supabase = get_supabase_client()
+    all_deck_ids = [d[0] for d in fired_decks]
+
+    # Also find any decks not in our list (created by retries)
+    all_user_decks = supabase.table("decks").select("uuid, name").eq(
+        "user_id", USER_ID
+    ).execute()
+    all_db_uuids = [d["uuid"] for d in (all_user_decks.data or [])]
+
+    max_wait = 600  # 10 minutes max
+    start_wait = time.time()
+    prev_done = 0
+    while time.time() - start_wait < max_wait:
+        # Count decks that have slides
+        decks = supabase.table("decks").select(
+            "uuid, status, slides, slide_count"
+        ).eq("user_id", USER_ID).execute()
+
+        done = 0
+        generating = 0
+        for d in (decks.data or []):
+            slides = d.get("slides") or []
+            status = d.get("status")
+            if isinstance(status, dict):
+                state = status.get("state", "")
+            elif isinstance(status, str):
+                state = status
             else:
-                failed += 1
-        else:
-            failed += 1
+                state = ""
+            if state == "completed" or len(slides) > 0:
+                done += 1
+            else:
+                generating += 1
 
-    # Summary
+        elapsed = int(time.time() - start_wait)
+        print(f"  [{elapsed:3d}s] {done}/{len(decks.data or [])} have slides, {generating} still generating")
+
+        if done >= fired_count or generating == 0:
+            print("  All decks have slides!")
+            break
+        if done > prev_done:
+            prev_done = done
+
+        await asyncio.sleep(30)
+
+    # Step 4: Fix all stuck decks and add to featured
+    print(f"\nStep 4: Fixing stuck decks and mapping to featured_decks...")
+
+    # Build flat list of all presentations for index mapping
+    all_pres_flat = []
+    for batch in ALL_BATCHES:
+        all_pres_flat.extend(batch)
+
+    # Get all user decks with their names
+    all_decks = supabase.table("decks").select(
+        "uuid, name, status, slides, slide_count"
+    ).eq("user_id", USER_ID).execute()
+
+    # Map deck names to presentations (for correct ordering)
+    name_to_deck = {}
+    for d in (all_decks.data or []):
+        name = d.get("name", "")
+        slides = d.get("slides") or []
+        # Keep the one with the most slides if duplicates
+        if name not in name_to_deck or len(slides) > len(name_to_deck[name].get("slides") or []):
+            name_to_deck[name] = d
+
+    fixed = 0
+    featured = 0
+    completed_ids = []
+    for idx, pres in enumerate(all_pres_flat):
+        topic = pres["topic"]
+        deck = name_to_deck.get(topic)
+        if not deck:
+            print(f"  [{idx+1:3d}] MISSING: {topic[:60]}")
+            continue
+
+        deck_uuid = deck["uuid"]
+        slides = deck.get("slides") or []
+
+        # Fix stuck status
+        if fix_stuck_deck(deck_uuid):
+            fixed += 1
+
+        # Add to featured
+        if len(slides) > 0:
+            if add_to_featured(deck_uuid, pres, idx):
+                featured += 1
+            add_to_community(deck_uuid, pres)
+            completed_ids.append(deck_uuid)
+            print(f"  [{idx+1:3d}] OK: {topic[:55]} ({len(slides)} slides)")
+        else:
+            print(f"  [{idx+1:3d}] NO SLIDES: {topic[:60]}")
+
+    print(f"\n  Fixed: {fixed} stuck decks")
+    print(f"  Featured: {featured}/{total}")
+    print(f"  Completed: {len(completed_ids)}/{total}")
+
+    # Step 5: Seed templates using real slides
+    if completed_ids:
+        seed_templates_from_completed(completed_ids)
+
+    # Delete duplicate decks (keep the one with most slides per topic)
+    print(f"\nStep 6: Cleaning up duplicate decks...")
+    from collections import Counter
+    name_counts = Counter(d.get("name", "") for d in (all_decks.data or []))
+    dupes_deleted = 0
+    for name, count in name_counts.items():
+        if count <= 1:
+            continue
+        # Find all decks with this name, sort by slides count desc
+        matching = [d for d in (all_decks.data or []) if d.get("name") == name]
+        matching.sort(key=lambda x: len(x.get("slides") or []), reverse=True)
+        # Delete all but the first (best) one
+        for d in matching[1:]:
+            try:
+                supabase.table("decks").delete().eq("uuid", d["uuid"]).execute()
+                dupes_deleted += 1
+            except Exception:
+                pass
+    print(f"  Deleted {dupes_deleted} duplicate decks")
+
+    # Final summary
     print()
     print("=" * 65)
     print("  SEEDING COMPLETE")
-    print(f"  Success: {success}/{total}")
-    print(f"  Failed:  {failed}/{total}")
+    print(f"  Decks with slides:   {len(completed_ids)}/{total}")
+    print(f"  Featured decks:      {featured}")
+    print(f"  Templates:           {len(TEMPLATE_DEFS)} entries")
     print()
     for i, key in enumerate(api_keys, 1):
         print(f"  API Key {i}: {key}")

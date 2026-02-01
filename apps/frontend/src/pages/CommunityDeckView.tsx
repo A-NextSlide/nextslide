@@ -22,6 +22,8 @@ import MadeWithBadge from '@/components/badges/MadeWithBadge';
 import DynamicMeta from '@/components/seo/DynamicMeta';
 import SlideTranscript from '@/components/seo/SlideTranscript';
 import { getSlideSummary } from '@/utils/slideTextExtractor';
+import { usePreventMobileZoom, MOBILE_SLIDE_GUARD_STYLE, preventSafariGestureZoom } from '@/hooks/usePreventMobileZoom';
+import { BROWSER } from '@/utils/browser';
 
 const CommunityDeckView: React.FC = () => {
   const { deckId } = useParams<{ deckId: string }>();
@@ -44,6 +46,16 @@ const CommunityDeckView: React.FC = () => {
   const isPresenting = usePresentationStore(state => state.isPresenting);
   const enterPresentation = usePresentationStore(state => state.enterPresentation);
   const hasLoadedDeck = useRef(false);
+
+  // Prevent native browser zoom on mobile – pinch-to-zoom on heavy slide DOM crashes the tab
+  usePreventMobileZoom();
+  const slideAreaRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!BROWSER.isMobile) return;
+    const el = slideAreaRef.current;
+    if (!el) return;
+    return preventSafariGestureZoom(el);
+  }, []);
 
   // Compute deck slide size from the first slide or theme
   const deckSlideSize = useMemo(() => {
@@ -300,8 +312,13 @@ const CommunityDeckView: React.FC = () => {
   if (isMobile && isPresenting) {
     return (
       <div
+        ref={slideAreaRef}
         className="w-screen overflow-hidden relative touch-manipulation"
-        style={{ height: '100dvh', overscrollBehavior: 'none' }}
+        style={{
+          height: '100dvh',
+          overscrollBehavior: 'none',
+          ...(BROWSER.isMobile ? MOBILE_SLIDE_GUARD_STYLE : {}),
+        }}
       >
         <NavigationProvider
           initialSlideIndex={currentSlideIndex}
@@ -351,7 +368,11 @@ const CommunityDeckView: React.FC = () => {
     return (
       <div
         className="w-screen bg-black flex flex-col touch-manipulation"
-        style={{ height: '100dvh', overscrollBehavior: 'none' }}
+        style={{
+          height: '100dvh',
+          overscrollBehavior: 'none',
+          ...(BROWSER.isMobile ? MOBILE_SLIDE_GUARD_STYLE : {}),
+        }}
       >
         {/* Remix button - top right */}
         <div className="absolute top-4 right-4 z-50">

@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import html2canvas from 'html2canvas';
 import * as htmlToImage from 'html-to-image';
 
@@ -408,7 +409,7 @@ async function captureFromSrcDoc(
     const contentDiv = document.createElement('div');
     contentDiv.style.width = '100%';
     contentDiv.style.height = '100%';
-    contentDiv.innerHTML = doc.body.innerHTML;
+    contentDiv.innerHTML = DOMPurify.sanitize(doc.body.innerHTML);
     wrapper.appendChild(contentDiv);
     tempContainer.appendChild(wrapper);
 
@@ -577,7 +578,7 @@ function inlineIframeIntoClone(
   let bodyHTML = sourceDoc.body.innerHTML;
   // Resolve any var() in inline styles
   bodyHTML = resolveCSSVariables(bodyHTML, cssVariables);
-  replacement.innerHTML = bodyHTML;
+  replacement.innerHTML = DOMPurify.sanitize(bodyHTML);
 
   clonedIframe.replaceWith(replacement);
 }

@@ -456,8 +456,8 @@ async def _search_fallback_image(alt_text: str, storage: ImageStorageService) ->
                 logger.warning("[UPLOAD_EXTERNAL] No fallback results for: '%s'", search_query[:40])
                 return None
 
-            # Try multiple results in case some fail
-            for photo in photos[:3]:
+            # Try only the first result to limit SerpAPI + upload overhead
+            for photo in photos[:1]:
                 fallback_url = photo.get('url') or photo.get('original') or photo.get('thumbnail')
                 if not fallback_url:
                     continue
@@ -521,10 +521,10 @@ async def upload_external_urls_to_bucket(html_content: str) -> str:
                 upload_failed = True
                 logger.warning("[UPLOAD_EXTERNAL] EXCEPTION: %s - %s", decoded_url[:60], exc)
 
-            # Only try fallback if upload actually failed
+            # If upload failed, skip SerpAPI fallback - go straight to local fallback
+            # (searching again won't help if the image was unreachable)
             if upload_failed:
-                alt_text = _extract_alt_for_url(html_content, raw_url)
-                bucket_url = await _search_fallback_image(alt_text, storage)
+                bucket_url = None
 
             # Replace URL in HTML only if we got a valid bucket URL
             if bucket_url and any(domain in bucket_url for domain in BUCKET_DOMAINS):
@@ -668,16 +668,13 @@ async def resolve_remaining_placeholders(html_content: str) -> str:
                     len(placeholders), len(js_placeholders))
 
         async with ImageStorageService() as storage:
-            # Handle HTML img tag placeholders
+            # Handle HTML img tag placeholders — one search attempt per placeholder
             for img_tag, alt_text in placeholders:
                 logger.info("[PLACEHOLDER_CLEANUP] Resolving HTML placeholder with alt: '%s'", alt_text[:50])
 
-                # Search for an image using the alt text
                 bucket_url = await _search_fallback_image(alt_text, storage)
 
                 if bucket_url and any(domain in bucket_url for domain in BUCKET_DOMAINS):
-                    # Create new img tag with the bucket URL
-                    # Handle placeholder with optional query string like placeholder?q=...
                     new_img_tag = re.sub(
                         r'src\s*=\s*["\']?placeholder(?:\?[^"\'>\s]*)?["\']?',
                         f'src="{bucket_url}"',
@@ -687,9 +684,7 @@ async def resolve_remaining_placeholders(html_content: str) -> str:
                     html_content = html_content.replace(img_tag, new_img_tag)
                     logger.info("[PLACEHOLDER_CLEANUP] SUCCESS: Replaced HTML placeholder -> %s", bucket_url[:80])
                 else:
-                    logger.warning("[PLACEHOLDER_CLEANUP] Could not find image for HTML: '%s' - removing placeholder", alt_text[:50])
-                    # Remove the broken placeholder - replace img tag with empty string or a subtle gradient div
-                    # Use a subtle gradient placeholder that won't look broken
+                    # Search failed or circuit breaker open — use gradient fallback
                     fallback_div = (
                         '<div style="width:100%;height:100%;background:linear-gradient(135deg,rgba(99,102,241,0.1) 0%,rgba(139,92,246,0.1) 100%);'
                         'border-radius:8px;"></div>'
@@ -697,20 +692,17 @@ async def resolve_remaining_placeholders(html_content: str) -> str:
                     html_content = html_content.replace(img_tag, fallback_div)
                     logger.info("[PLACEHOLDER_CLEANUP] Replaced unresolved placeholder with gradient fallback")
 
-            # Handle JavaScript object placeholders
+            # Handle JavaScript object placeholders — one search attempt per placeholder
+            transparent_pixel = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
             for obj_text, prop_name, label in js_placeholders:
                 logger.info("[PLACEHOLDER_CLEANUP] Resolving JS placeholder %s with label: '%s'", prop_name, label[:50])
 
-                # Search for an image using the label
                 bucket_url = await _search_fallback_image(label, storage)
 
                 if bucket_url and any(domain in bucket_url for domain in BUCKET_DOMAINS):
-                    # Replace the placeholder value in the JS object
-                    # First try: quoted placeholder like image: "placeholder" or image: 'placeholder'
                     pattern_quoted = rf'(\b{re.escape(prop_name)}\s*:\s*)(["\'])placeholder(?:\?[^"\']*)?(\2)'
                     new_obj_text = re.sub(pattern_quoted, rf'\1\2{bucket_url}\3', obj_text, flags=re.IGNORECASE)
 
-                    # Second try: unquoted placeholder like image: placeholder (no quotes)
                     if new_obj_text == obj_text:
                         pattern_unquoted = rf'(\b{re.escape(prop_name)}\s*:\s*)placeholder(\s*[,}}\]])'
                         new_obj_text = re.sub(pattern_unquoted, rf'\1"{bucket_url}"\2', obj_text, flags=re.IGNORECASE)
@@ -719,15 +711,10 @@ async def resolve_remaining_placeholders(html_content: str) -> str:
                         html_content = html_content.replace(obj_text, new_obj_text)
                         logger.info("[PLACEHOLDER_CLEANUP] SUCCESS: Replaced JS %s placeholder -> %s", prop_name, bucket_url[:80])
                 else:
-                    logger.warning("[PLACEHOLDER_CLEANUP] Could not find image for JS %s: '%s' - using transparent fallback", prop_name, label[:50])
-                    # Replace with transparent 1x1 pixel to prevent broken image display
-                    transparent_pixel = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
-
-                    # First try: quoted placeholder
+                    # Search failed — use transparent pixel fallback
                     pattern_quoted = rf'(\b{re.escape(prop_name)}\s*:\s*)(["\'])placeholder(?:\?[^"\']*)?(\2)'
                     new_obj_text = re.sub(pattern_quoted, rf'\1\2{transparent_pixel}\3', obj_text, flags=re.IGNORECASE)
 
-                    # Second try: unquoted placeholder
                     if new_obj_text == obj_text:
                         pattern_unquoted = rf'(\b{re.escape(prop_name)}\s*:\s*)placeholder(\s*[,}}\]])'
                         new_obj_text = re.sub(pattern_unquoted, rf'\1"{transparent_pixel}"\2', obj_text, flags=re.IGNORECASE)

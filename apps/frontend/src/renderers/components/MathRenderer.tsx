@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { ComponentInstance } from "../../types/components";
@@ -119,11 +120,11 @@ const MathContent: React.FC<{
       } catch (err) {
         console.error('KaTeX rendering error:', err);
         if (containerRef.current) {
-          containerRef.current.innerHTML = `
+          containerRef.current.innerHTML = DOMPurify.sanitize(`
             <div style="color: #cc0000; font-size: 14px;">
               Error rendering LaTeX: ${err instanceof Error ? err.message : 'Unknown error'}
             </div>
-          `;
+          `);
         }
       }
     }

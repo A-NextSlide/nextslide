@@ -173,30 +173,6 @@ class SupabaseAuthService:
             # Reset client on unexpected errors
             _reset_auth_httpx_client()
 
-        # Development fallback: decode JWT locally without verification
-        # This runs when Supabase validation fails (403, network error, etc.)
-        try:
-            env = os.getenv("ENVIRONMENT", os.getenv("ENV", "development")).lower()
-            allow_fallback = os.getenv("ALLOW_UNVERIFIED_TOKEN_FALLBACK", "true").lower() == "true"
-            if access_token and env != "production" and allow_fallback:
-                import jwt  # PyJWT
-                payload = jwt.decode(access_token, options={"verify_signature": False, "verify_exp": False})
-                user_id = payload.get("sub") or payload.get("user_id") or payload.get("id")
-                email = payload.get("email")
-                if user_id:
-                    logger.info(f"Using local JWT decode fallback for user {user_id}")
-                    return {
-                        "id": user_id,
-                        "email": email,
-                        "created_at": None,
-                        "updated_at": None,
-                        "user_metadata": payload.get("user_metadata", {}),
-                        "app_metadata": payload.get("app_metadata", {}),
-                        "_unverified": True
-                    }
-        except Exception as fallback_error:
-            logger.warning(f"Local JWT decode fallback also failed: {fallback_error}")
-
         return None
     
     # User Authentication Methods
@@ -234,7 +210,7 @@ class SupabaseAuthService:
             response = self.supabase.auth.sign_up(sign_up_data)
             
             if response.user:
-                logger.info(f"User signed up successfully: {email}")
+                logger.info("User signed up successfully")
                 # Convert Supabase objects to dictionaries
                 user_dict = {
                     "id": response.user.id,
@@ -305,7 +281,7 @@ class SupabaseAuthService:
             response = self.supabase.table("users").insert(profile_data).execute()
 
             if response.data:
-                logger.info(f"Created profile for user {email}")
+                logger.info(f"Created profile for user {user_id}")
 
                 # Copy tutorial deck for new user
                 self._ensure_tutorial_deck_for_user(user_id)
@@ -421,7 +397,7 @@ class SupabaseAuthService:
             })
             
             if response.user:
-                logger.info(f"User signed in successfully: {email}")
+                logger.info("User signed in successfully")
                 # Convert Supabase objects to dictionaries
                 user_dict = {
                     "id": response.user.id,
@@ -459,7 +435,7 @@ class SupabaseAuthService:
                 
         except Exception as e:
             error_str = str(e)
-            logger.error(f"Sign in error for {email}: {error_str}")
+            logger.error(f"Sign in error: {error_str}")
             
             # Handle specific Supabase auth errors
             if "Invalid login credentials" in error_str:
@@ -940,7 +916,7 @@ class SupabaseAuthService:
             user_response = self.supabase.table("users").select("id").eq("email", with_user_email).single().execute()
             
             if not user_response.data:
-                raise ValueError(f"User with email {with_user_email} not found")
+                raise ValueError("User with provided email not found")
             
             target_user_id = user_response.data['id']
             
@@ -952,7 +928,7 @@ class SupabaseAuthService:
                 "last_accessed": datetime.utcnow().isoformat()
             }, on_conflict="user_id,deck_uuid").execute()
             
-            logger.info(f"Shared deck {deck_uuid} with user {with_user_email}")
+            logger.info(f"Shared deck {deck_uuid} with user [EMAIL_REDACTED]")
             return response.data[0]
         except Exception as e:
             logger.error(f"Share deck error: {str(e)}")
@@ -994,7 +970,7 @@ class SupabaseAuthService:
         """
         try:
             self.supabase.auth.reset_password_email(email)
-            logger.info(f"Password reset email sent to {email}")
+            logger.info("Password reset email sent")
             return True
         except Exception as e:
             logger.error(f"Password reset error: {str(e)}")
@@ -1198,7 +1174,7 @@ class SupabaseAuthService:
                 })
                 
                 if response:
-                    logger.info(f"Magic link sent to {email} via Supabase OTP")
+                    logger.info("Magic link sent via Supabase OTP")
                     return
                     
             except Exception as e:
@@ -1498,20 +1474,20 @@ class SupabaseAuthService:
                     }
                     
                     email_sent = resend.Emails.send(params)
-                    logger.info(f"Magic link email sent to {email} via Resend, ID: {email_sent.get('id')}")
+                    logger.info(f"Magic link email sent via Resend, ID: {email_sent.get('id')}")
                     return
                     
                 except Exception as e:
                     logger.warning(f"Resend email failed, falling back: {str(e)}")
             
             # Fallback to console logging for development
-            logger.info(f"Magic link for {email}: {magic_link_url}")
-            print(f"\n🔗 MAGIC LINK for {email}:\n{magic_link_url}\n")
+            logger.info("Magic link generated (dev fallback)")
+            print("\nMAGIC LINK generated (check email or use Supabase dashboard)\n")
                 
         except Exception as e:
             logger.error(f"Send magic link email error: {str(e)}")
-            # Don't raise - still log the link so testing can continue
-            logger.info(f"Fallback - Magic link URL: {base_url}/magic-link-verify?token={token}")
+            # Don't raise - log that fallback was used (without exposing token)
+            logger.info("Fallback - Magic link generation failed, email delivery may not have completed")
     
     async def _get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         """Get user by email using admin API"""

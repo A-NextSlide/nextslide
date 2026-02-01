@@ -36,6 +36,7 @@ import { CommentsPanel } from './CommentsPanel';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useSlideViewportSize } from './viewport/useSlideViewportSize';
 import { clampZoom, ZOOM_STEP } from '@/utils/zoom';
+import { usePreventMobileZoom, MOBILE_SLIDE_GUARD_STYLE, preventSafariGestureZoom } from '@/hooks/usePreventMobileZoom';
 
 // Lazy load the waiting game
 import GenerationGameOverlay from '@/components/common/GenerationGameOverlay';
@@ -137,6 +138,15 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       setZoomLevel(100);
     }
   }, [isMobileView, setZoomLevel, zoomLevel]);
+
+  // Prevent native browser zoom on mobile – pinch-to-zoom on heavy slide DOM crashes the tab
+  usePreventMobileZoom();
+  useEffect(() => {
+    if (!BROWSER.isMobile) return;
+    const el = viewportRef.current;
+    if (!el) return;
+    return preventSafariGestureZoom(el);
+  }, []);
 
   const zoomScale = zoomLevel / 100;
   const scaledSlideWidth = Math.max(1, Math.round(slideWidth * zoomScale));
@@ -884,6 +894,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       className="flex-1 relative overflow-hidden flex items-center justify-center max-w-full w-full h-full bg-background"
       onClick={handleViewportClick}
       tabIndex={-1}
+      style={BROWSER.isMobile ? MOBILE_SLIDE_GUARD_STYLE : undefined}
     >
       {/* Waiting Game Overlay */}
       <GenerationGameOverlay isVisible={showWaitingGame} />

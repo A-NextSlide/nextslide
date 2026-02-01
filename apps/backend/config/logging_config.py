@@ -2,7 +2,74 @@
 Environment-specific logging configuration
 """
 import os
+import re
+import logging
 from typing import Dict, Any
+
+
+# =============================================================================
+# PII REDACTION FILTER
+# =============================================================================
+# This filter automatically scrubs sensitive data from log messages in
+# production to prevent PII leakage. It catches anything that slips through
+# manual redaction as a safety net.
+
+class PIIRedactionFilter(logging.Filter):
+    """
+    Logging filter that redacts Personally Identifiable Information (PII)
+    and sensitive credentials from log messages.
+
+    Redacts:
+      - Email addresses         -> [EMAIL_REDACTED]
+      - Bearer / JWT tokens     -> [TOKEN_REDACTED]
+      - Long base64-ish strings -> [TOKEN_REDACTED]
+      - API keys (sk-*, pk_*, ns_live_*, key-*) -> [KEY_REDACTED]
+    """
+
+    # Pre-compiled patterns for performance
+    _EMAIL_RE = re.compile(
+        r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
+    )
+    _BEARER_RE = re.compile(
+        r'(?i)(bearer\s+)[A-Za-z0-9\-_\.]+',
+    )
+    _JWT_RE = re.compile(
+        r'eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+'
+    )
+    _BASE64_LONG_RE = re.compile(
+        r'[A-Za-z0-9\-_]{40,}'
+    )
+    _API_KEY_RE = re.compile(
+        r'(?:sk-|pk_|ns_live_|key-)[A-Za-z0-9\-_]{8,}'
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Redact PII from the log record message and args, then allow it."""
+        if isinstance(record.msg, str):
+            record.msg = self._redact(record.msg)
+        # Also redact any string arguments that get formatted into the message
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {
+                    k: self._redact(v) if isinstance(v, str) else v
+                    for k, v in record.args.items()
+                }
+            elif isinstance(record.args, tuple):
+                record.args = tuple(
+                    self._redact(a) if isinstance(a, str) else a
+                    for a in record.args
+                )
+        return True
+
+    def _redact(self, text: str) -> str:
+        """Apply all redaction patterns to a string."""
+        # Order matters: JWT before generic base64 to get a cleaner match
+        text = self._API_KEY_RE.sub('[KEY_REDACTED]', text)
+        text = self._BEARER_RE.sub(r'\1[TOKEN_REDACTED]', text)
+        text = self._JWT_RE.sub('[TOKEN_REDACTED]', text)
+        text = self._EMAIL_RE.sub('[EMAIL_REDACTED]', text)
+        text = self._BASE64_LONG_RE.sub('[TOKEN_REDACTED]', text)
+        return text
 
 
 def get_logging_config() -> Dict[str, Any]:
@@ -76,18 +143,22 @@ def get_logging_config() -> Dict[str, Any]:
 
 def apply_logging_config(config: Dict[str, Any] = None):
     """Apply logging configuration to Python's logging system"""
-    import logging
-    
+
     if config is None:
         config = get_logging_config()
-    
+
     # Set default logging level
     logging.getLogger().setLevel(getattr(logging, config["default_level"]))
-    
+
     # Configure console handler format
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(logging.Formatter(config["console_format"]))
-    
+
+    # Attach PII redaction filter in production so any accidentally logged
+    # emails, tokens, or API keys are scrubbed before they hit the log sink.
+    if config.get("environment") == "production":
+        console_handler.addFilter(PIIRedactionFilter())
+
     # Remove existing handlers and add new one
     root_logger = logging.getLogger()
     root_logger.handlers = []

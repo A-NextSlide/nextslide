@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { SlideData } from '@/types/SlideTypes';
@@ -410,7 +411,7 @@ function createOverlay(slideCount: number): { overlay: HTMLElement; updateProgre
     `;
   }
 
-  overlay.innerHTML = `
+  overlay.innerHTML = DOMPurify.sanitize(`
     <div style="text-align: center;">
       <div style="font-size: 18px; font-weight: 600; margin-bottom: 12px; color: #333;">Generating PDF</div>
       <div style="font-size: 14px; color: #666;" id="pdf-progress">Preparing...</div>
@@ -418,7 +419,7 @@ function createOverlay(slideCount: number): { overlay: HTMLElement; updateProgre
         <div id="pdf-progress-bar" style="width: 0%; height: 100%; background: #3b82f6; transition: width 0.3s;"></div>
       </div>
     </div>
-  `;
+  `);
 
   document.body.appendChild(overlay);
 

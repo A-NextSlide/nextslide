@@ -1,4 +1,5 @@
 import React from 'react';
+import DOMPurify from 'dompurify';
 import { getContrastTextColor, isLightColor, getColorDistance, ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors } from '@/utils/colorUtils';
 import * as d3Import from 'd3';
 import animeImport from 'animejs';
@@ -173,7 +174,7 @@ export const compileRenderCode = (renderCode: any): CompiledRenderResult => {
           width: '100%',
           height: '100%'
         },
-        dangerouslySetInnerHTML: { __html: code }
+        dangerouslySetInnerHTML: { __html: DOMPurify.sanitize(code) }
       });
     };
     return { compiledRender: htmlRenderer as Function, compilationError: null };
@@ -323,7 +324,7 @@ export const compileRenderCode = (renderCode: any): CompiledRenderResult => {
             .replace(/\r?\n/g, '\\n');
           const attrsTrim = attrs.trim();
           const attrsWithComma = attrsTrim ? attrsTrim + ', ' : '';
-          return "React.createElement('style', { " + attrsWithComma + "dangerouslySetInnerHTML: { __html: '" + escaped + "' } })";
+          return "React.createElement('style', { " + attrsWithComma + "dangerouslySetInnerHTML: { __html: DOMPurify.sanitize('" + escaped + "') } })";
         } catch (_) {
           return _match;
         }

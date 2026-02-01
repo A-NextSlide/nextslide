@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import DOMPurify from 'dompurify';
 import mermaid from 'mermaid';
 import { ComponentInstance } from "../../types/components";
 
@@ -112,7 +113,7 @@ const DiagramContent: React.FC<{
           const { svg } = await mermaid.render(diagramId, mermaidCode);
           
           // Insert rendered SVG
-          containerRef.current.innerHTML = svg;
+          containerRef.current.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true } });
           
           // Scale SVG to fit if needed
           setTimeout(() => {
@@ -140,12 +141,12 @@ const DiagramContent: React.FC<{
           
           // Show error in container
           if (containerRef.current) {
-            containerRef.current.innerHTML = `
+            containerRef.current.innerHTML = DOMPurify.sanitize(`
               <div style="color: #cc0000; padding: 20px; font-size: 14px;">
                 <strong>Error rendering diagram:</strong><br/>
                 ${err instanceof Error ? err.message : 'Unknown error'}
               </div>
-            `;
+            `);
           }
         }
       }

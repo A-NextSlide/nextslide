@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Microscope, Trash2, ChevronLeft, ChevronRight, Plus, Table, BarChart3, X, GripVertical, ImageIcon } from 'lucide-react';
@@ -438,7 +439,7 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
     try {
       if (typeof window !== 'undefined' && /<\w+[^>]*>/i.test(content)) {
         const wrapper = document.createElement('div');
-        wrapper.innerHTML = content;
+        wrapper.innerHTML = DOMPurify.sanitize(content);
         // Prefer an <ol> immediately following a paragraph containing "Sources"
         let ol: HTMLOListElement | null = null;
         const ps = Array.from(wrapper.querySelectorAll('p')) as HTMLParagraphElement[];

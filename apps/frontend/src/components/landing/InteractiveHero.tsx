@@ -228,7 +228,7 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
     const isOrange = activePrompt.theme === 'orange';
 
     return (
-        <section className={cn("relative w-full z-20", compact ? "py-8" : "min-h-0 md:h-screen py-2 md:py-0")}>
+        <section className={cn("relative w-full z-20", compact ? "py-8" : "min-h-0 md:min-h-screen py-2 md:py-0")}>
 
             {/* Main Content - The slides */}
             <div className={cn("relative w-full flex flex-col items-center overflow-visible pointer-events-none", compact ? "justify-start" : "h-full justify-start md:justify-center")}>
@@ -237,7 +237,7 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
                 <div className={cn("container relative z-10 px-1 md:px-4 w-full max-w-[1400px] mx-auto pointer-events-auto", compact ? "" : "h-full flex flex-col justify-start md:justify-center")}>
 
                     {/* The "Binder" Card */}
-                    <div className={cn("bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-2xl md:rounded-[32px] shadow-2xl shadow-black/10 border border-black/5 dark:border-white/5 p-1.5 md:p-6 w-full flex flex-col md:flex-row gap-1.5 md:gap-6 relative overflow-visible", compact ? "md:h-[65vh]" : "md:h-[80vh]")}>
+                    <div className={cn("bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-2xl md:rounded-[32px] shadow-2xl shadow-black/10 border border-black/5 dark:border-white/5 p-1.5 md:p-6 w-full flex flex-col md:flex-row gap-1.5 md:gap-6 relative overflow-visible", compact ? "md:h-[65vh] md:min-h-[500px]" : "md:h-[80vh] md:min-h-[600px] lg:min-h-[680px]")}>
 
                         {/* LEFT SIDEBAR - Thumbnails (hidden on mobile/tablet) */}
                         <div className="hidden md:flex md:w-[200px] lg:w-[240px] flex-shrink-0 flex-col gap-4 h-full overflow-hidden">

@@ -23,7 +23,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git")
     .pip_install_from_requirements("requirements.txt")
-    .env({"PYTHONPATH": "/app"})
+    .env({"PYTHONPATH": "/app", "USE_MODAL": "false"})
     .add_local_dir(".", "/app", ignore=_local_dir_ignore)
 )
 
@@ -54,7 +54,7 @@ playwright_image = (
     memory=2048,
     cpu=2.0,
 )
-@modal.concurrent(max_inputs=2)
+@modal.concurrent(max_inputs=20)
 async def compose_deck_remote(
     outline_dict: dict,
     schemas_dict: dict,
@@ -86,6 +86,27 @@ async def compose_deck_remote(
         user_id=user_id,
     ):
         yield event
+
+
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("nextslide-env")],
+    timeout=60,
+    memory=1024,
+    cpu=1.0,
+)
+@modal.concurrent(max_inputs=8)
+async def generate_theme_remote(
+    outline_dict: dict,
+    available_fonts: list,
+) -> dict:
+    """Run theme generation inside a Modal container."""
+    from models.requests import DeckOutline
+    from agents.generation.theme_style_manager import ThemeStyleManager
+
+    deck_outline = DeckOutline.model_validate(outline_dict)
+    manager = ThemeStyleManager(available_fonts)
+    return await manager.analyze_theme_and_style(deck_outline)
 
 
 @app.function(

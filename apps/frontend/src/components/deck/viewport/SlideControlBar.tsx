@@ -34,16 +34,16 @@ const SlideControlBar: React.FC<SlideControlBarProps> = ({
         <div className="flex items-center gap-1 justify-start flex-1 min-w-8">
           {/* Empty */}
         </div>
-        
+
         {/* Slide indicator - centered */}
-        <div 
+        <div
           className="glass-panel px-3 py-1 rounded-full text-xs font-medium text-muted-foreground mx-auto"
         >
           {currentSlideIndex + 1} / {totalSlides}
         </div>
-        
+
         {/* Navigation buttons - right aligned */}
-        <div 
+        <div
           className="flex items-center gap-2 justify-end flex-1"
         >
           <IconButton
@@ -52,20 +52,20 @@ const SlideControlBar: React.FC<SlideControlBarProps> = ({
             variant="ghost"
             size="xs"
             className="hover:bg-transparent"
-            style={{ 
+            style={{
               color: COLORS.SUGGESTION_PINK
             }}
           >
             <ChevronLeft size={18} />
           </IconButton>
-          
+
           <IconButton
             onClick={goToNextSlide}
             disabled={currentSlideIndex >= totalSlides - 1}
             variant="ghost"
             size="xs"
             className="hover:bg-transparent"
-            style={{ 
+            style={{
               color: COLORS.SUGGESTION_PINK
             }}
           >
@@ -73,7 +73,7 @@ const SlideControlBar: React.FC<SlideControlBarProps> = ({
           </IconButton>
         </div>
       </div>
-      
+
       {/* Theme selector and editor removed */}
     </div>
   );

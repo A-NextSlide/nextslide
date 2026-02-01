@@ -221,7 +221,7 @@ class ColorPaletteManager:
             from agents.tools.theme import enhance_minimal_brand_colors
 
             logger.info(f"[COLOR MANAGER] Enhancing {len(colors)} colors with AI...")
-            enhanced = enhance_minimal_brand_colors(colors, context)
+            enhanced = await enhance_minimal_brand_colors(colors, context)
 
             if enhanced and enhanced.get('generated_colors'):
                 new_colors = enhanced['generated_colors']

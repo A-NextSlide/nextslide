@@ -62,6 +62,8 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { shareService, ShareLink, ApiResponse, CollaboratorResponse, ShareAnalytics, ShareViewer } from '@/services/shareService';
+import { authService } from '@/services/authService';
+import { API_ENDPOINTS } from '@/config/apiEndpoints';
 import { mockShareService } from '@/services/mockShareService';
 import { generateShareOGImage, findSlideElement, findAnySlideElement } from '@/utils/ogImageCapture';
 import { formatDistanceToNow } from 'date-fns';
@@ -101,6 +103,10 @@ interface ShareLinkExtended extends ShareLink {
   used_count?: number;
   name?: string;
   require_email?: boolean;
+  is_public?: boolean;
+  public_title?: string;
+  public_description?: string;
+  public_category?: string;
 }
 
 
@@ -136,7 +142,12 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
   const [password, setPassword] = useState('');
   const [maxUses, setMaxUses] = useState<number | undefined>(undefined);
   const [requireEmail, setRequireEmail] = useState(true);
-  
+
+  // Public visibility state
+  const [isPublic, setIsPublic] = useState(false);
+  const [publicTitle, setPublicTitle] = useState('');
+  const [publicCategory, setPublicCategory] = useState('');
+
   // Edit mode states
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
   const [editingLink, setEditingLink] = useState<ShareLinkExtended | null>(null);
@@ -282,7 +293,12 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
       const request: any = {
         share_type: shareType,
         expires_in_hours: expiresInHours,
-        require_email: requireEmail
+        require_email: requireEmail,
+        is_public: isPublic,
+        ...(isPublic ? {
+          public_title: publicTitle || deckName,
+          public_category: publicCategory || undefined,
+        } : {}),
       };
 
       // Add password and max uses if enabled
@@ -336,6 +352,9 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
         setRequirePassword(false);
         setMaxUses(undefined);
         setRequireEmail(false);
+        setIsPublic(false);
+        setPublicTitle('');
+        setPublicCategory('');
 
         await loadShareData();
       } else {
@@ -619,6 +638,36 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
       title: "QR code downloaded",
       description: "The QR code has been saved to your downloads",
     });
+  };
+
+  const handleTogglePublic = async (link: ShareLinkExtended) => {
+    try {
+      const response = await fetch(`${API_ENDPOINTS.BASE_URL}/decks/shares/${link.id}/public`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authService.getAuthToken() ? { 'Authorization': `Bearer ${authService.getAuthToken()}` } : {}),
+        },
+        body: JSON.stringify({
+          is_public: !link.is_public,
+          public_title: deckName,
+        }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: link.is_public ? "Made private" : "Made public",
+          description: link.is_public
+            ? "This link is no longer publicly discoverable"
+            : "This presentation is now publicly discoverable",
+        });
+        await loadShareData();
+      } else {
+        toast({ title: "Error", description: "Failed to update visibility", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to update", variant: "destructive" });
+    }
   };
 
   const loadViewers = async (shareId: string) => {
@@ -916,6 +965,56 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                     />
                   </div>
 
+                  {/* Make Public Toggle */}
+                  <div className="flex items-center justify-between py-1">
+                    <div className="flex items-center gap-2">
+                      <Globe size={12} className="text-zinc-400" />
+                      <span className="text-xs text-zinc-600">Make publicly discoverable</span>
+                    </div>
+                    <Switch
+                      checked={isPublic}
+                      onCheckedChange={setIsPublic}
+                      className="scale-75 data-[state=checked]:bg-[#FF6B00]"
+                    />
+                  </div>
+
+                  {isPublic && (
+                    <div className="space-y-2 pt-1">
+                      <div>
+                        <Label className="text-xs text-zinc-500">Public Title</Label>
+                        <Input
+                          placeholder={deckName}
+                          value={publicTitle}
+                          onChange={e => setPublicTitle(e.target.value)}
+                          className="h-7 text-xs bg-white border-zinc-200 text-zinc-900"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-zinc-500">Category</Label>
+                        <div className="relative">
+                          <select
+                            value={publicCategory}
+                            onChange={e => setPublicCategory(e.target.value)}
+                            className="h-7 w-full text-xs bg-white border border-zinc-200 text-zinc-900 rounded-md pl-3 pr-8 appearance-none cursor-pointer hover:border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:border-[#FF6B00] transition-colors"
+                          >
+                            <option value="">Select category...</option>
+                            <option value="business">Business</option>
+                            <option value="education">Education</option>
+                            <option value="marketing">Marketing</option>
+                            <option value="technology">Technology</option>
+                            <option value="design">Design</option>
+                            <option value="other">Other</option>
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                            <svg className="h-4 w-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <Button
                     onClick={handleCreateShareLink}
                     disabled={isLoading}
@@ -1025,6 +1124,13 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                                     Email
                                   </span>
                                 )}
+
+                                {link.is_public && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-600">
+                                    <Globe size={8} className="inline mr-0.5" />
+                                    Public
+                                  </span>
+                                )}
                               </div>
 
                               <div className="text-[10px] text-zinc-400">
@@ -1036,6 +1142,20 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                             </div>
 
                             <div className="flex items-center gap-1 ml-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={cn(
+                                  "h-7 w-7",
+                                  link.is_public
+                                    ? "text-green-500 hover:text-green-700 hover:bg-green-50"
+                                    : "text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100"
+                                )}
+                                onClick={() => handleTogglePublic(link)}
+                                title={link.is_public ? "Make private" : "Make public"}
+                              >
+                                <Globe size={12} />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"

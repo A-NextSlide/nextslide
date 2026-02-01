@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export interface LoaderBrandTheme {
@@ -178,8 +179,8 @@ const slideSketchLayouts: SlideSketch[] = [
   }
 ];
 
-// Total duration for progress: 1 minute 35 seconds = 95 seconds
-const TOTAL_DURATION_MS = 95 * 1000;
+// Total duration for progress: 1 minute = 60 seconds
+const TOTAL_DURATION_MS = 60 * 1000;
 
 export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = (props) => {
   const {
@@ -382,12 +383,12 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = (props) => {
       
       {/* Add shimmer animation keyframes */}
       <style dangerouslySetInnerHTML={{
-        __html: `
+        __html: DOMPurify.sanitize(`
           @keyframes shimmer {
             0% { transform: translateX(-100%); }
             100% { transform: translateX(200%); }
           }
-        `
+        `)
       }} />
     </div>
   );

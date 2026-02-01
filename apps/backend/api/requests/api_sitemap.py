@@ -33,6 +33,29 @@ STATIC_PAGES = [
     {"path": "/smart-gallery", "changefreq": "weekly", "priority": "0.7"},
     {"path": "/developers", "changefreq": "monthly", "priority": "0.6"},
     {"path": "/help", "changefreq": "monthly", "priority": "0.5"},
+    {"path": "/templates", "changefreq": "weekly", "priority": "0.7"},
+    {"path": "/showcase", "changefreq": "weekly", "priority": "0.6"},
+    # Use-case landing pages
+    {"path": "/pitch-deck", "changefreq": "monthly", "priority": "0.8"},
+    {"path": "/sales-deck", "changefreq": "monthly", "priority": "0.8"},
+    {"path": "/education", "changefreq": "monthly", "priority": "0.8"},
+    {"path": "/marketing", "changefreq": "monthly", "priority": "0.8"},
+    # Industry landing pages
+    {"path": "/for-startups", "changefreq": "monthly", "priority": "0.7"},
+    {"path": "/for-educators", "changefreq": "monthly", "priority": "0.7"},
+    {"path": "/for-marketers", "changefreq": "monthly", "priority": "0.7"},
+    {"path": "/for-consultants", "changefreq": "monthly", "priority": "0.7"},
+    # Template category pages
+    {"path": "/presentation-templates/business", "changefreq": "weekly", "priority": "0.7"},
+    {"path": "/presentation-templates/sales", "changefreq": "weekly", "priority": "0.7"},
+    {"path": "/presentation-templates/marketing", "changefreq": "weekly", "priority": "0.7"},
+    {"path": "/presentation-templates/education", "changefreq": "weekly", "priority": "0.7"},
+    {"path": "/presentation-templates/technology", "changefreq": "weekly", "priority": "0.7"},
+    {"path": "/presentation-templates/finance", "changefreq": "weekly", "priority": "0.7"},
+    {"path": "/presentation-templates/creative", "changefreq": "weekly", "priority": "0.7"},
+    {"path": "/presentation-templates/consulting", "changefreq": "weekly", "priority": "0.7"},
+    {"path": "/presentation-templates/research", "changefreq": "weekly", "priority": "0.7"},
+    {"path": "/presentation-templates/hr", "changefreq": "weekly", "priority": "0.7"},
 ]
 
 
@@ -49,6 +72,8 @@ async def sitemap_index():
     xml += '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
     xml += f"  <sitemap><loc>{FRONTEND_BASE_URL}/sitemap-pages.xml</loc></sitemap>\n"
     xml += f"  <sitemap><loc>{FRONTEND_BASE_URL}/sitemap-presentations.xml</loc></sitemap>\n"
+    xml += f"  <sitemap><loc>{FRONTEND_BASE_URL}/sitemap-categories.xml</loc></sitemap>\n"
+    xml += f"  <sitemap><loc>{FRONTEND_BASE_URL}/sitemap-profiles.xml</loc></sitemap>\n"
     xml += "</sitemapindex>\n"
 
     return Response(content=xml, media_type="application/xml", headers={
@@ -160,6 +185,90 @@ async def sitemap_presentations():
 
 
 # ============================================================================
+# Categories Sitemap
+# ============================================================================
+
+@router.get("/sitemap-categories.xml")
+async def sitemap_categories():
+    """Return a sitemap for category browse pages."""
+    categories = ["business", "education", "marketing", "technology", "design"]
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+
+    # Main browse page
+    xml += f'  <url>\n    <loc>{FRONTEND_BASE_URL}/presentations</loc>\n    <lastmod>{today}</lastmod>\n    <changefreq>daily</changefreq>\n    <priority>0.7</priority>\n  </url>\n'
+
+    # Category pages
+    for cat in categories:
+        xml += f'  <url>\n    <loc>{FRONTEND_BASE_URL}/presentations/{cat}</loc>\n    <lastmod>{today}</lastmod>\n    <changefreq>daily</changefreq>\n    <priority>0.6</priority>\n  </url>\n'
+
+    xml += '</urlset>\n'
+    return Response(content=xml, media_type="application/xml", headers={
+        "Cache-Control": "public, max-age=3600",
+    })
+
+
+# ============================================================================
+# Profiles Sitemap
+# ============================================================================
+
+@router.get("/sitemap-profiles.xml")
+async def sitemap_profiles():
+    """
+    Return a sitemap for public user profiles.
+    Queries users who have public profiles (is_public=true or have community decks).
+    """
+    try:
+        supabase = get_supabase_client()
+        urls: List[Dict[str, str]] = []
+
+        # Users with public profiles
+        try:
+            users_result = supabase.table("users").select(
+                "username, updated_at"
+            ).eq("is_public", True).not_.is_("username", "null").limit(5000).execute()
+
+            for user in (users_result.data or []):
+                username = user.get("username")
+                if not username:
+                    continue
+                updated = (user.get("updated_at") or "")[:10] or datetime.utcnow().strftime("%Y-%m-%d")
+                urls.append({
+                    "loc": f"{FRONTEND_BASE_URL}/u/{username}",
+                    "lastmod": updated,
+                    "changefreq": "weekly",
+                    "priority": "0.5",
+                })
+        except Exception as e:
+            logger.warning(f"Could not query users for profiles sitemap: {e}")
+
+        # Build XML
+        xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+        xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+
+        for entry in urls:
+            xml += "  <url>\n"
+            xml += f"    <loc>{entry['loc']}</loc>\n"
+            xml += f"    <lastmod>{entry['lastmod']}</lastmod>\n"
+            xml += f"    <changefreq>{entry['changefreq']}</changefreq>\n"
+            xml += f"    <priority>{entry['priority']}</priority>\n"
+            xml += "  </url>\n"
+
+        xml += "</urlset>\n"
+
+        return Response(content=xml, media_type="application/xml", headers={
+            "Cache-Control": "public, max-age=3600",
+        })
+
+    except Exception as e:
+        logger.error(f"Error generating profiles sitemap: {e}")
+        xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n</urlset>\n'
+        return Response(content=xml, media_type="application/xml")
+
+
+# ============================================================================
 # Robots.txt
 # ============================================================================
 
@@ -173,10 +282,23 @@ async def robots_txt():
         "Allow: /\n"
         "Allow: /p/\n"
         "Allow: /community/\n"
+        "Allow: /presentations/\n"
+        "Allow: /u/\n"
         "Allow: /smart-gallery/\n"
         "Allow: /pricing\n"
         "Allow: /developers\n"
         "Allow: /help\n"
+        "Allow: /templates\n"
+        "Allow: /showcase\n"
+        "Allow: /presentation-templates/\n"
+        "Allow: /pitch-deck\n"
+        "Allow: /sales-deck\n"
+        "Allow: /education\n"
+        "Allow: /marketing\n"
+        "Allow: /for-startups\n"
+        "Allow: /for-educators\n"
+        "Allow: /for-marketers\n"
+        "Allow: /for-consultants\n"
         "Disallow: /app\n"
         "Disallow: /admin\n"
         "Disallow: /api/\n"

@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import { SlideData } from '@/types/SlideTypes';
 
 interface SlideText {
@@ -66,7 +67,7 @@ function stripHtml(html: string): string {
   // Decode common HTML entities
   const textarea = typeof document !== 'undefined' ? document.createElement('textarea') : null;
   if (textarea) {
-    textarea.innerHTML = clean;
+    textarea.innerHTML = DOMPurify.sanitize(clean);
     clean = textarea.value;
   }
   return clean;

@@ -87,6 +87,44 @@ def _serialize_classification(classification) -> Optional[dict]:
 
 # ── Dispatch functions ──────────────────────────────────────────────────────
 
+async def generate_theme_via_modal(
+    outline_dict: dict,
+    available_fonts: list,
+) -> dict:
+    """
+    Proxy theme generation through a Modal container.
+
+    Returns the theme result dict.  Falls back to local execution on error.
+    """
+    try:
+        import modal
+
+        theme_fn = modal.Function.from_name("nextslide", "generate_theme_remote")
+
+        logger.info("[modal_dispatch] Dispatching theme generation to Modal")
+
+        result = await _retry_modal_call(
+            theme_fn.remote.aio,
+            outline_dict=outline_dict,
+            available_fonts=available_fonts,
+        )
+
+        _log_dispatch("generate_theme", success=True)
+        return result
+
+    except Exception as exc:
+        _log_modal_failure("generate_theme", exc)
+        _log_dispatch("generate_theme", success=False)
+
+        # Local fallback
+        from models.requests import DeckOutline
+        from agents.generation.theme_style_manager import ThemeStyleManager
+
+        deck_outline = DeckOutline.model_validate(outline_dict)
+        manager = ThemeStyleManager(available_fonts)
+        return await manager.analyze_theme_and_style(deck_outline)
+
+
 async def compose_deck_stream_via_modal(
     deck_outline: DeckOutline,
     registry: ComponentRegistry,

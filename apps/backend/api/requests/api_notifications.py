@@ -79,6 +79,10 @@ class NotificationPreferencesUpdate(BaseModel):
     in_app_notifications: Optional[bool] = None
 
 
+class SocialClickBody(BaseModel):
+    platform: str  # "instagram" | "linkedin" | "twitter"
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -154,3 +158,42 @@ async def update_preferences(
         raise HTTPException(status_code=400, detail="No fields to update")
     prefs = await ns.update_preferences(user["id"], update_dict)
     return prefs
+
+
+# ---------------------------------------------------------------------------
+# Social Follow Reward
+# ---------------------------------------------------------------------------
+
+@router.post("/social-follow/ensure")
+async def ensure_social_follow(
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Create the social-follow notification if it doesn't exist yet."""
+    ns = get_notification_service()
+    notif = await ns.ensure_social_follow_notification(user["id"])
+    return {"notification": notif}
+
+
+@router.post("/social-follow/click")
+async def track_social_click(
+    body: SocialClickBody,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Record that the user clicked a social platform link."""
+    ns = get_notification_service()
+    notif = await ns.track_social_click(user["id"], body.platform)
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"notification": notif}
+
+
+@router.post("/social-follow/claim")
+async def claim_social_follow_reward(
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Claim the 25-credit reward for following on all 3 platforms."""
+    ns = get_notification_service()
+    result = await ns.claim_social_follow_reward(user["id"])
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed"))
+    return result

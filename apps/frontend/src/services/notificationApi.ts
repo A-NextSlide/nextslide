@@ -17,7 +17,7 @@ const API_BASE = rawApiBase.replace(/\/api\/?$/, '');
 // Types
 // ---------------------------------------------------------------------------
 
-export type NotificationType = 'view' | 'remix' | 'badge' | 'referral' | 'system';
+export type NotificationType = 'view' | 'remix' | 'badge' | 'referral' | 'system' | 'social_follow';
 
 export interface Notification {
   id: string;
@@ -130,6 +130,52 @@ class NotificationApi {
       body: JSON.stringify(prefs),
     });
     if (!res.ok) throw new Error(`Failed to update preferences: ${res.status}`);
+    return res.json();
+  }
+
+  // -------------------------------------------------------------------------
+  // Social Follow Reward
+  // -------------------------------------------------------------------------
+
+  /**
+   * Ensure the social-follow notification exists for the current user.
+   */
+  async ensureSocialFollow(): Promise<Notification | null> {
+    const res = await fetch(`${API_BASE}/api/notifications/social-follow/ensure`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.notification ?? null;
+  }
+
+  /**
+   * Track a click on a social platform link.
+   */
+  async trackSocialClick(platform: string): Promise<Notification | null> {
+    const res = await fetch(`${API_BASE}/api/notifications/social-follow/click`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ platform }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.notification ?? null;
+  }
+
+  /**
+   * Claim the 25-credit reward after following all 3 platforms.
+   */
+  async claimSocialFollowReward(): Promise<{ success: boolean; credits_awarded?: number }> {
+    const res = await fetch(`${API_BASE}/api/notifications/social-follow/claim`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, ...err };
+    }
     return res.json();
   }
 }

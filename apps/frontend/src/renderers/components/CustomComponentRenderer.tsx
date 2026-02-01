@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, RefObject, useMemo, useState, useCallback, memo } from "react";
+import DOMPurify from 'dompurify';
 import { ComponentInstance } from "../../types/components";
 import { useComponentInstance } from "../../context/CustomComponentStateContext";
 import { useNavigation } from '../../context/NavigationContext';
@@ -1686,7 +1687,7 @@ img.ns-img-ready {
         return (
           <div
             style={{ width: '100%', height: '100%' }}
-            dangerouslySetInnerHTML={{ __html: element }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(element) }}
           />
         );
       }
@@ -1704,7 +1705,7 @@ img.ns-img-ready {
       // Check if it's a DOM element
       if (element instanceof HTMLElement) {
         const htmlString = element.outerHTML;
-        return <div dangerouslySetInnerHTML={{ __html: htmlString }} />;
+        return <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(htmlString) }} />;
       }
 
       DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Invalid element returned:', element);

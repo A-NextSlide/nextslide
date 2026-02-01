@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import DOMPurify from 'dompurify';
 import { Zap, Sparkles, Wand2, Type, Image as ImageIcon, Grid3x3, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -707,7 +708,7 @@ export const ReactBitsButton: React.FC<ReactBitsButtonProps> = ({ onComponentAdd
   // Add keyframes for animations
   React.useEffect(() => {
     const style = document.createElement('style');
-    style.innerHTML = `
+    style.innerHTML = DOMPurify.sanitize(`
       @keyframes shimmer {
         0% { background-position: -200% center; }
         100% { background-position: 200% center; }
@@ -829,7 +830,7 @@ export const ReactBitsButton: React.FC<ReactBitsButtonProps> = ({ onComponentAdd
         from { transform: translateX(-10px); opacity: 0; }
         to { transform: translateX(0); opacity: 1; }
       }
-    `;
+    `);
     document.head.appendChild(style);
     return () => {
       document.head.removeChild(style);

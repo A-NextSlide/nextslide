@@ -362,6 +362,8 @@ const MiniSlide: React.FC<MiniSlideProps> = ({
       style={{
         ...(overlayMode ? {} : backgroundStyle),
         position: 'relative',
+        // Mobile: block zoom gestures to prevent reflow crashes on heavy slide DOM
+        ...(BROWSER.isMobile ? { touchAction: 'pan-x pan-y', contain: 'paint' } : {}),
       }}
       data-mini-slide-debug={`scale:${scale.toFixed(3)},render:${shouldRender}`}
     >

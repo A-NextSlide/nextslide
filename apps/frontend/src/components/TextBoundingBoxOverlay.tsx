@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import { ComponentInstance } from '@/types/components';
 import { getComponentBounds, measureTextBounds } from '@/utils/overlapDetection';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
@@ -243,7 +244,7 @@ const TextBoundingBoxOverlay: React.FC<TextBoundingBoxOverlayProps> = ({
     
     // For TiptapTextBlock, we need to create the proper structure
     if (componentType === 'TiptapTextBlock') {
-      measureEl.innerHTML = container.innerHTML;
+      measureEl.innerHTML = DOMPurify.sanitize(container.innerHTML);
       measureEl.className = container.className;
     }
     

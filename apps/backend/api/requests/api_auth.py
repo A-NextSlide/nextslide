@@ -5,6 +5,12 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Header, 
 from typing import Optional, Dict, Any, List, Union
 from pydantic import BaseModel, EmailStr, ValidationError
 from services.supabase_auth_service import get_auth_service
+from services.api_rate_limiter import limiter
+from slowapi.util import get_remote_address
+from config.rate_limits import (
+    AUTH_RATE_LIMIT, AUTH_SIGNUP_RATE_LIMIT, AUTH_PASSWORD_RESET_RATE_LIMIT,
+    DECK_CREATION_RATE_LIMIT, SHARING_RATE_LIMIT,
+)
 from utils.supabase import get_deck
 import logging
 import os
@@ -12,8 +18,41 @@ import httpx
 import json
 import uuid
 from datetime import datetime
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+# Allowed redirect domains for open-redirect protection
+ALLOWED_REDIRECT_DOMAINS = {
+    "nextslide.ai",
+    "www.nextslide.ai",
+    "app.nextslide.ai",
+    "localhost",
+    "127.0.0.1",
+}
+
+
+def _is_safe_redirect(url: str) -> bool:
+    """Validate redirect URL against allowed domains to prevent open redirects."""
+    try:
+        parsed = urlparse(url)
+        # Allow relative paths (no scheme/host)
+        if not parsed.scheme and not parsed.netloc:
+            return True
+        host = parsed.hostname or ""
+        # Only allow http and https schemes
+        if parsed.scheme not in ("http", "https"):
+            return False
+        # Allow exact matches
+        if host in ALLOWED_REDIRECT_DOMAINS:
+            return True
+        # Allow subdomains of nextslide.ai
+        if host.endswith(".nextslide.ai"):
+            return True
+        return False
+    except Exception:
+        return False
+
 
 # Create router
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -1224,18 +1263,21 @@ async def confirm_email(
         )
         
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
-        
+
+        # Validate the next parameter to prevent open redirects
+        safe_next = next if _is_safe_redirect(next) else "/"
+
         if verify_response.status_code == 200:
             # Email confirmed successfully
             session_data = verify_response.json()
-            
+
             # Redirect to frontend with session tokens
             redirect_url = f"{frontend_url}/auth-callback"
             redirect_url += f"?access_token={session_data.get('access_token', '')}"
             redirect_url += f"&refresh_token={session_data.get('refresh_token', '')}"
             redirect_url += f"&expires_in={session_data.get('expires_in', 3600)}"
             redirect_url += f"&type=email_confirmation"
-            redirect_url += f"&next={next}"
+            redirect_url += f"&next={safe_next}"
             
             logger.info(f"Email confirmed successfully, redirecting to frontend")
             from fastapi.responses import RedirectResponse

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -585,12 +586,12 @@ const ThemeGeneratingUI: React.FC<ThemeGeneratingUIProps> = ({
       
       {/* Add shimmer animation keyframes */}
       <style dangerouslySetInnerHTML={{
-        __html: `
+        __html: DOMPurify.sanitize(`
           @keyframes shimmer {
             0% { transform: translateX(-100%); }
             100% { transform: translateX(200%); }
           }
-        `
+        `)
       }} />
     </div>
   );

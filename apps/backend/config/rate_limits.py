@@ -5,6 +5,13 @@ Adjust these settings based on your API tier and usage patterns.
 """
 
 # =============================================================================
+# Tool Page Generation Rate Limits (unauthenticated)
+# =============================================================================
+
+TOOL_GENERATION_RATE_LIMIT = "5/hour"
+TOOL_GENERATION_BURST_LIMIT = "2/minute"
+
+# =============================================================================
 # Public Developer API v1 Rate Limits
 # =============================================================================
 
@@ -37,6 +44,37 @@ RATE_LIMIT_SAFE_SETTINGS = {
     "retry_delay": 5.0,  # Wait 5 seconds before retrying after rate limit
 }
 
+# =============================================================================
+# Authenticated Endpoint Rate Limits
+# =============================================================================
+
+# Chat / streaming generation endpoints
+CHAT_RATE_LIMIT = "30/minute"
+CHAT_BURST_LIMIT = "5/10seconds"
+
+# Deck creation / composition
+DECK_CREATION_RATE_LIMIT = "10/minute"
+
+# File upload and analysis
+FILE_UPLOAD_RATE_LIMIT = "20/minute"
+FILE_ANALYSIS_RATE_LIMIT = "15/minute"
+
+# Authentication endpoints (login, signup, password reset)
+AUTH_RATE_LIMIT = "10/minute"
+AUTH_SIGNUP_RATE_LIMIT = "5/hour"
+AUTH_PASSWORD_RESET_RATE_LIMIT = "3/hour"
+
+# Admin endpoints
+ADMIN_RATE_LIMIT = "60/minute"
+
+# Sharing and collaboration
+SHARING_RATE_LIMIT = "30/minute"
+
+# Public/unauthenticated endpoints
+PUBLIC_DECK_VIEW_RATE_LIMIT = "60/minute"
+PUBLIC_SEARCH_RATE_LIMIT = "20/minute"
+
+# =============================================================================
 # Settings for different usage scenarios
 USAGE_PROFILES = {
     "conservative": {

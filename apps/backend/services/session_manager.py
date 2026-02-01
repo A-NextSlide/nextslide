@@ -84,29 +84,6 @@ class SessionManager:
                 
         except Exception as e:
             logger.error(f"Token validation error: {str(e)}")
-            # Development fallback: decode JWT locally without verification to avoid UI hangs
-            try:
-                env = os.getenv("ENVIRONMENT", os.getenv("ENV", "development")).lower()
-                allow_fallback = os.getenv("ALLOW_UNVERIFIED_TOKEN_FALLBACK", "true").lower() == "true"
-                if token and env != "production" and allow_fallback:
-                    import jwt  # PyJWT
-                    payload = jwt.decode(token, options={"verify_signature": False, "verify_exp": False})
-                    user_id = payload.get("sub") or payload.get("user_id") or payload.get("id")
-                    email = payload.get("email")
-                    if user_id:
-                        user = {
-                            "id": user_id,
-                            "email": email,
-                            "created_at": None,
-                            "user_metadata": payload.get("user_metadata", {}),
-                            "_unverified": True,
-                            "_cache_expiry": datetime.now() + timedelta(minutes=5)
-                        }
-                        self._token_cache[token] = user
-                        logger.warning("Using unverified token fallback for development")
-                        return user
-            except Exception:
-                pass
             return None
     
     def clear_token_cache(self, token: str = None):

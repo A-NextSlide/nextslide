@@ -1,4 +1,5 @@
 import React from 'react';
+import DOMPurify from 'dompurify';
 import { Loader2, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -27,26 +28,26 @@ interface SlideGeneratingPlaceholderProps {
 if (typeof document !== 'undefined' && !document.getElementById('slide-generating-styles')) {
   const style = document.createElement('style');
   style.id = 'slide-generating-styles';
-  style.innerHTML = `
+  style.innerHTML = DOMPurify.sanitize(`
     @keyframes slidePattern {
       0% { transform: translate(0, 0); }
       100% { transform: translate(40px, 40px); }
     }
-    
+
     @keyframes slideProgress {
       0% { width: 0%; }
       50% { width: 70%; }
       100% { width: 95%; }
     }
-    
+
     .animate-slide-progress {
       animation: slideProgress 2s ease-in-out infinite;
     }
-    
+
     .animate-spin-slow {
       animation: spin 3s linear infinite;
     }
-  `;
+  `);
   document.head.appendChild(style);
 }
 
@@ -60,7 +61,7 @@ export default function SlideGeneratingPlaceholder({
   // Inject styles
   React.useEffect(() => {
     const styleElement = document.createElement('style');
-    styleElement.innerHTML = styles;
+    styleElement.innerHTML = DOMPurify.sanitize(styles);
     document.head.appendChild(styleElement);
     return () => {
       document.head.removeChild(styleElement);

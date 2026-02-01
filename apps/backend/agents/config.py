@@ -49,6 +49,9 @@ MODEL_FALLBACK = CLAUDE_OPUS   # Rate limit fallback
 MODEL_RESEARCH = PERPLEXITY_SONAR_PRO  # Web search
 AGENT_MODEL = os.getenv('AGENT_MODEL', GEMINI_3_FLASH)
 
+# Tool page conversion: use cheapest model for unauthenticated ephemeral generations
+TOOL_CONVERSION_MODEL = GEMINI_3_FLASH
+
 def get_model(task: str) -> str:
     """Get model for a task. Single source of truth."""
     return TASK_MODELS.get(task, MODEL_EASY)
@@ -144,6 +147,12 @@ TASK_MODELS = {
     # RESEARCH
     # ─────────────────────────────────────────────────────────────────────────
     "outline_research": MODEL_RESEARCH,
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # TOOL PAGE (unauthenticated ephemeral generations)
+    # ─────────────────────────────────────────────────────────────────────────
+    "tool_outline": GEMINI_3_FLASH,
+    "tool_compose": GEMINI_3_FLASH,
 
     # ─────────────────────────────────────────────────────────────────────────
     # FALLBACK

@@ -45,7 +45,11 @@ class DeckSharingService:
         user_id: str,
         share_type: str = 'view',
         expires_in_hours: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        is_public: bool = False,
+        public_title: Optional[str] = None,
+        public_description: Optional[str] = None,
+        public_category: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a new share link for a deck.
@@ -56,6 +60,10 @@ class DeckSharingService:
             share_type: 'view' for read-only, 'edit' for collaboration
             expires_in_hours: Optional expiration time in hours
             metadata: Optional metadata (e.g., password protection settings)
+            is_public: Whether this link should be publicly discoverable
+            public_title: Title for public listing
+            public_description: Description for public listing
+            public_category: Category slug for public listing
 
         Returns:
             Dict containing the share link details
@@ -92,6 +100,15 @@ class DeckSharingService:
 
             if metadata:
                 insert_data['metadata'] = metadata
+
+            if is_public:
+                insert_data['is_public'] = True
+            if public_title:
+                insert_data['public_title'] = public_title
+            if public_description:
+                insert_data['public_description'] = public_description
+            if public_category:
+                insert_data['public_category'] = public_category
 
             result = self.supabase.table('deck_shares').insert(insert_data).execute()
 

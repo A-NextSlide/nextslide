@@ -26,9 +26,11 @@ load_dotenv()
 from services.supabase import get_supabase_client
 
 # Configuration
-API_KEY = "ns_live_J4jcuVdm-HE0zyEFLSm-A4pC6mBJFKZR"
-API_BASE = "http://localhost:9090"  # Local backend (production API has Cloudflare protection)
-USER_ID = "942ccba7-5346-4f99-8189-82284dafb255"
+API_KEY = os.getenv("SEED_API_KEY")
+if not API_KEY:
+    raise ValueError("SEED_API_KEY environment variable is required")
+API_BASE = os.getenv("API_BASE", "http://localhost:9090")
+USER_ID = os.getenv("SEED_USER_ID", "942ccba7-5346-4f99-8189-82284dafb255")
 
 # Educational lessons - specific classes for each age group
 LESSONS = {

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import DOMPurify from 'dompurify';
 import LightsOut from '@/components/common/games/LightsOut';
 
 interface MiniGameWidgetProps {
@@ -93,11 +94,11 @@ const MiniGameWidget: React.FC<MiniGameWidgetProps> = ({ className, title = 'Tin
           Almost! Gotta be quicker!
         </div>
       )}
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`
         @media (max-width: 1024px) {
           .mini-game-hide-on-small { display: none; }
         }
-      `}} />
+      `) }} />
     </div>
   );
 };

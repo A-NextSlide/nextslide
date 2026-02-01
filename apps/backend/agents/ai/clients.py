@@ -581,6 +581,13 @@ def _invoke_freeform(client, model: str, messages: List[Dict], system: str, kwar
                                     mime = src.get("media_type") or "image/png"
                                     if data:
                                         parts.append({"inline_data": {"mime_type": mime, "data": data}})
+                            elif ptype == "document":
+                                src = (p or {}).get("source") or {}
+                                if src.get("type") == "base64":
+                                    data = src.get("data")
+                                    mime = src.get("media_type") or "application/pdf"
+                                    if data:
+                                        parts.append({"inline_data": {"mime_type": mime, "data": data}})
                     else:
                         # Fallback to text part
                         if content:

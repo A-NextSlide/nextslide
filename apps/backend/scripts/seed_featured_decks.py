@@ -27,7 +27,9 @@ load_dotenv()
 
 from services.supabase import get_supabase_client
 
-API_KEY = os.getenv("SEED_API_KEY", "ns_live_Lwd5HS7g4O7jJCZT2yr1OrU6wQdlCElt")
+API_KEY = os.getenv("SEED_API_KEY")
+if not API_KEY:
+    raise ValueError("SEED_API_KEY environment variable is required")
 API_BASE = os.getenv("API_BASE", "https://nextslide-backend.onrender.com")
 
 # ── DESIGN PHILOSOPHY ─────────────────────────────────────────────

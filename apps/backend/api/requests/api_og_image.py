@@ -726,14 +726,97 @@ async def get_og_meta_json(short_code: str):
 # The original function is kept as-is above; the share_router handlers
 # call it directly so the injection happens via the new _build_meta_html helper.
 
+def _extract_all_slide_texts(slides: list) -> list:
+    """
+    Extract text content from ALL slides for the bot-served transcript.
+    Returns a list of dicts with slide_number, title, and texts.
+    """
+    result = []
+    for idx, slide in enumerate(slides or []):
+        if not isinstance(slide, dict):
+            continue
+        components = slide.get("components", [])
+        title = None
+        texts = []
+
+        for comp in components:
+            if not isinstance(comp, dict):
+                continue
+            props = comp.get("props", {})
+            if not isinstance(props, dict):
+                continue
+
+            # Extract title
+            if not title:
+                title_val = props.get("title") or props.get("heading")
+                if isinstance(title_val, str) and title_val.strip():
+                    title = title_val.strip()
+
+            # Extract text from common props
+            for key in ("text", "content", "subtitle", "body"):
+                val = props.get(key)
+                if isinstance(val, str) and val.strip():
+                    texts.append(val.strip())
+
+            # Extract from HTML (CustomComponent)
+            html_val = props.get("html", "")
+            if isinstance(html_val, str) and html_val:
+                stripped = re.sub(r"<style[^>]*>[\s\S]*?</style>", "", html_val, flags=re.IGNORECASE)
+                stripped = re.sub(r"<script[^>]*>[\s\S]*?</script>", "", stripped, flags=re.IGNORECASE)
+                stripped = re.sub(r"<[^>]+>", " ", stripped)
+                stripped = re.sub(r"\s+", " ", stripped).strip()
+                if stripped:
+                    texts.append(stripped)
+
+            # Extract list items
+            items = props.get("items") or props.get("bullets") or props.get("listItems")
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, str) and item.strip():
+                        texts.append(item.strip())
+                    elif isinstance(item, dict) and item.get("text"):
+                        texts.append(item["text"])
+
+        if title or texts:
+            result.append({
+                "slide_number": idx + 1,
+                "title": title,
+                "texts": texts,
+            })
+
+    return result
+
+
+def _build_transcript_html(slides: list, deck_name_escaped: str) -> str:
+    """Build semantic HTML transcript of all slide content for crawlers."""
+    slide_texts = _extract_all_slide_texts(slides)
+    if not slide_texts:
+        return ""
+
+    sections = []
+    sections.append(f'<article><h1>{deck_name_escaped}</h1>')
+    sections.append('<h2>Slide Content Transcript</h2>')
+
+    for slide in slide_texts:
+        title = html.escape(slide["title"]) if slide["title"] else f'Slide {slide["slide_number"]}'
+        sections.append(f'<section><h3>{title}</h3>')
+        for text in slide["texts"]:
+            sections.append(f'<p>{html.escape(text[:500])}</p>')
+        sections.append('</section>')
+
+    sections.append('</article>')
+    return "\n    ".join(sections)
+
+
 def _build_meta_html(
     deck_name: str,
     short_code: str,
     share_type: str = "view",
     description: str = "",
     slide_count: int = 0,
+    slides: list | None = None,
 ) -> str:
-    """Build the full OG meta HTML including Schema.org JSON-LD."""
+    """Build the full OG meta HTML including Schema.org JSON-LD and slide transcript."""
     deck_name_escaped = html.escape(deck_name[:100])
     desc_escaped = html.escape(description[:300]) if description else \
         "View this presentation on NextSlide - AI-Powered Presentation Builder"
@@ -760,6 +843,9 @@ def _build_meta_html(
         json_ld["numberOfPages"] = slide_count
 
     json_ld_str = json_module.dumps(json_ld, ensure_ascii=False)
+
+    # Build transcript HTML for crawlers
+    transcript_html = _build_transcript_html(slides or [], deck_name_escaped) if slides else ""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -797,7 +883,7 @@ def _build_meta_html(
     <script>window.location.href = "{canonical_url}";</script>
 </head>
 <body>
-    <p>Redirecting to <a href="{canonical_url}">{deck_name_escaped}</a>...</p>
+    {transcript_html if transcript_html else f'<p>Redirecting to <a href="{canonical_url}">{deck_name_escaped}</a>...</p>'}
 </body>
 </html>"""
 
@@ -832,11 +918,12 @@ async def _serve_bot_meta_html(short_code: str, share_type_override: str = "view
         deck_name = "Presentation"
         deck_data: dict = {}
         slide_count = 0
+        slides_data: list = []
         if deck_result.data:
             deck_data = deck_result.data[0]
             deck_name = deck_data.get('name', 'Presentation')
-            slides = deck_data.get('slides', [])
-            slide_count = len(slides) if isinstance(slides, list) else 0
+            slides_data = deck_data.get('slides', [])
+            slide_count = len(slides_data) if isinstance(slides_data, list) else 0
 
         description = _extract_slide_text(deck_data)
         html_content = _build_meta_html(
@@ -845,6 +932,7 @@ async def _serve_bot_meta_html(short_code: str, share_type_override: str = "view
             share_type=share_type,
             description=description,
             slide_count=slide_count,
+            slides=slides_data,
         )
 
         return HTMLResponse(

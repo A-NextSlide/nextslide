@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { Progress } from '@/components/ui/progress';
 import { Loader2, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -104,7 +105,7 @@ export default function DeckGenerationProgress({ status, className }: DeckGenera
   // Inject styles
   useEffect(() => {
     const styleEl = document.createElement('style');
-    styleEl.innerHTML = styles;
+    styleEl.innerHTML = DOMPurify.sanitize(styles);
     document.head.appendChild(styleEl);
     
     return () => {
@@ -169,7 +170,7 @@ export default function DeckGenerationProgress({ status, className }: DeckGenera
   // Inject animation styles
   React.useEffect(() => {
     const styleElement = document.createElement('style');
-    styleElement.innerHTML = styles;
+    styleElement.innerHTML = DOMPurify.sanitize(styles);
     document.head.appendChild(styleElement);
     return () => {
       document.head.removeChild(styleElement);

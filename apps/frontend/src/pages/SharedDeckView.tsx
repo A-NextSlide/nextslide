@@ -54,6 +54,8 @@ import Slide from '@/components/Slide';
 import MadeWithBadge from '@/components/badges/MadeWithBadge';
 import { extractDeckFonts } from '@/utils/fontUtils';
 import { FontLoadingService } from '@/services/FontLoadingService';
+import { usePreventMobileZoom, MOBILE_SLIDE_GUARD_STYLE, preventSafariGestureZoom } from '@/hooks/usePreventMobileZoom';
+import { BROWSER } from '@/utils/browser';
 
 // Error boundary to catch component rendering errors and prevent page crashes
 interface ErrorBoundaryProps {
@@ -141,6 +143,16 @@ const SharedDeckView: React.FC = () => {
   const [viewerName, setViewerName] = useState('');
   const [isSubmittingEmail, setIsSubmittingEmail] = useState(false);
   const [deckName, setDeckName] = useState('');
+
+  // Prevent native browser zoom on mobile – pinch-to-zoom on heavy slide DOM crashes the tab
+  usePreventMobileZoom();
+  const slideAreaRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!BROWSER.isMobile) return;
+    const el = slideAreaRef.current;
+    if (!el) return;
+    return preventSafariGestureZoom(el);
+  }, []);
 
   // Share dialog state
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
@@ -949,12 +961,15 @@ const SharedDeckView: React.FC = () => {
       )}
 
       <div
+        ref={slideAreaRef}
         className="w-screen overflow-hidden relative touch-manipulation"
         style={{
           height: '100dvh',
           // Prevent pull-to-refresh and overscroll on mobile
           overscrollBehavior: 'none',
           WebkitOverflowScrolling: 'touch',
+          // Prevent pinch-to-zoom on mobile — native zoom causes reflow crashes on heavy slide DOM
+          ...(BROWSER.isMobile ? MOBILE_SLIDE_GUARD_STYLE : {}),
         }}
       >
         {/* Presentation Mode */}

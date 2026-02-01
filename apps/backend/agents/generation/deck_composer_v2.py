@@ -15,6 +15,10 @@ from typing import Dict, Any, Optional, AsyncIterator
 import asyncio
 from datetime import datetime
 
+# Theme generation timeout (seconds). If the theme LLM call hangs, we fall
+# back to a default theme so slide generation can still proceed.
+THEME_GENERATION_TIMEOUT = 45
+
 import sentry_sdk
 
 from agents.core import IDeckComposer
@@ -364,7 +368,10 @@ class DeckComposerV2(IDeckComposer):
         logger.info(f"[COMPOSER V2] Generating new theme (reason: {result.regenerate_reason})")
 
         try:
-            theme_result = await self.theme_manager.generate_theme(deck_outline, {})
+            theme_result = await asyncio.wait_for(
+                self.theme_manager.generate_theme(deck_outline, {}),
+                timeout=THEME_GENERATION_TIMEOUT,
+            )
             theme = theme_result.get('theme')
             search_terms = theme_result.get('search_terms')
 
@@ -382,6 +389,11 @@ class DeckComposerV2(IDeckComposer):
 
                 return theme, normalized.to_dict(), search_terms
 
+        except asyncio.TimeoutError:
+            logger.error(
+                "[COMPOSER V2] Theme generation timed out after %ds, using default theme",
+                THEME_GENERATION_TIMEOUT,
+            )
         except Exception as e:
             logger.error(f"[COMPOSER V2] Theme generation failed: {e}")
 

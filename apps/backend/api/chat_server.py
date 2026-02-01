@@ -178,6 +178,7 @@ from api.requests.api_chatbase import router as chatbase_router, help_router as 
 from api.requests.api_referral import router as referral_router
 from api.requests.api_gamification import router as gamification_router
 from api.requests.api_sitemap import router as sitemap_router
+from api.requests.api_browse import router as browse_router
 from api.requests.api_preview import router as preview_router
 from api.requests.api_notifications import router as notifications_router
 from api.requests.api_oembed import router as oembed_router
@@ -189,6 +190,7 @@ from api.requests.api_sharing import router as sharing_router
 from api.requests.api_webpage import router as webpage_router
 from api.requests.api_pqa import router as pqa_router
 from api.requests.api_slack import router as slack_router
+from api.requests.api_tool_generate import router as tool_generate_router
 from fastapi import Depends
 
 # Middleware imports removed - files were deleted
@@ -253,11 +255,30 @@ app.add_middleware(
     # Allow any subdomain of nextslide.ai over HTTPS, localhost over HTTP, and local network IPs for mobile testing
     allow_origin_regex=r"https://([a-z0-9-]+\\.)?nextslide\\.ai$|http://(localhost|127\\.0\\.0\\.1|192\\.168\\.\\d+\\.\\d+|10\\.\\d+\\.\\d+\\.\\d+|169\\.254\\.\\d+\\.\\d+)(:\\d+)?$",
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods to simplify dev preflights
-    allow_headers=["*"],  # Echo requested headers for preflight
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "X-Request-ID", "Cache-Control"],
     expose_headers=["X-Request-ID", "X-Process-Time", "X-Auth-Status", "X-User-ID", "X-Token-Status"],
     max_age=3600,  # Cache preflight requests for 1 hour
 )
+
+# ---------------------------------------------------------------------------
+# Security headers middleware
+# ---------------------------------------------------------------------------
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # ---------------------------------------------------------------------------
 # Developer API v1: Rate limiter (slowapi) + stale generation cleanup
@@ -303,7 +324,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     # Build response with CORS headers
     response = JSONResponse(
         status_code=500,
-        content={"error": {"code": "INTERNAL_ERROR", "message": str(exc)}}
+        content={"error": {"code": "INTERNAL_ERROR", "message": "An unexpected error occurred. Please try again later."}}
     )
 
     # Add CORS headers manually for unhandled exceptions
@@ -364,6 +385,8 @@ app.include_router(notifications_router, tags=["Notifications"])
 app.include_router(analytics_dashboard_router, tags=["Analytics Dashboard"])
 # SEO: sitemap.xml, robots.txt, SEO meta, related presentations
 app.include_router(sitemap_router, tags=["SEO"])
+# Public presentations browse page
+app.include_router(browse_router, tags=["Browse"])
 app.include_router(oembed_router, tags=["oEmbed"])
 # Template gallery (public browsing, auth for "use template")
 app.include_router(templates_router, tags=["Templates"])
@@ -381,6 +404,8 @@ app.include_router(sharing_router, tags=["Sharing"])
 app.include_router(pqa_router, tags=["PQA Enterprise"])
 # Slack integration (slash command, interactions, events, OAuth)
 app.include_router(slack_router, tags=["Slack Integration"])
+# Tool page ephemeral slide generation (no auth required)
+app.include_router(tool_generate_router, tags=["Tool Generation"])
 # Mount public API at /v1 (clean URLs for api.nextslide.ai) and /api/v1 (backward compatibility)
 app.include_router(public_api_v1_router, prefix="/v1", tags=["Public API v1"])
 app.include_router(public_api_v1_router, prefix="/api/v1", tags=["Public API v1"])

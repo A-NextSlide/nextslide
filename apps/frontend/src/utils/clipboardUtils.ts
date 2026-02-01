@@ -1,4 +1,5 @@
 
+import DOMPurify from 'dompurify';
 import { v4 as uuidv4 } from 'uuid';
 import { ComponentInstance } from '../types/components';
 
@@ -18,7 +19,7 @@ export const extractTextFromComponent = (component: ComponentInstance): string =
   if (component.type === 'CustomComponent' && props.render) {
     // Create a temporary DOM element to parse HTML
     const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = props.render;
+    tempDiv.innerHTML = DOMPurify.sanitize(props.render);
 
     // Remove script and style tags
     tempDiv.querySelectorAll('script, style').forEach(el => el.remove());

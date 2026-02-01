@@ -350,6 +350,159 @@ class NotificationService:
             }
 
     # ------------------------------------------------------------------
+    # Social Follow Reward
+    # ------------------------------------------------------------------
+
+    SOCIAL_FOLLOW_CREDITS = 25
+    SOCIAL_PLATFORMS = ["instagram", "linkedin", "twitter"]
+
+    async def ensure_social_follow_notification(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Create the social-follow notification if the user doesn't already have one."""
+        try:
+            existing = (
+                self.supabase.table("notifications")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("type", "social_follow")
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                return existing.data[0]
+
+            result = (
+                self.supabase.table("notifications")
+                .insert({
+                    "user_id": user_id,
+                    "type": "social_follow",
+                    "title": "Come along for the ride!",
+                    "message": "We're early on an exciting journey — follow us on Instagram, LinkedIn, and X to get 25 free credits.",
+                    "data": {
+                        "clicked_platforms": [],
+                        "credits_claimed": False,
+                    },
+                })
+                .execute()
+            )
+            if result.data:
+                logger.info(f"Social follow notification created for user {user_id}")
+                return result.data[0]
+            return None
+        except Exception as e:
+            logger.error(f"Failed to ensure social follow notification for {user_id}: {e}")
+            return None
+
+    async def track_social_click(self, user_id: str, platform: str) -> Optional[Dict[str, Any]]:
+        """Record that the user clicked a social platform link."""
+        if platform not in self.SOCIAL_PLATFORMS:
+            return None
+        try:
+            existing = (
+                self.supabase.table("notifications")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("type", "social_follow")
+                .limit(1)
+                .execute()
+            )
+            if not existing.data:
+                return None
+
+            notif = existing.data[0]
+            data = notif.get("data", {})
+            clicked = data.get("clicked_platforms", [])
+
+            if platform not in clicked:
+                clicked.append(platform)
+                data["clicked_platforms"] = clicked
+                self.supabase.table("notifications").update(
+                    {"data": data}
+                ).eq("id", notif["id"]).execute()
+
+            notif["data"] = data
+            return notif
+        except Exception as e:
+            logger.error(f"Failed to track social click for {user_id}: {e}")
+            return None
+
+    async def claim_social_follow_reward(self, user_id: str) -> Dict[str, Any]:
+        """Award credits if the user has clicked all 3 social platforms."""
+        try:
+            existing = (
+                self.supabase.table("notifications")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("type", "social_follow")
+                .limit(1)
+                .execute()
+            )
+            if not existing.data:
+                return {"success": False, "error": "No social follow notification found"}
+
+            notif = existing.data[0]
+            data = notif.get("data", {})
+
+            if data.get("credits_claimed"):
+                return {"success": False, "error": "Credits already claimed"}
+
+            clicked = set(data.get("clicked_platforms", []))
+            if not set(self.SOCIAL_PLATFORMS).issubset(clicked):
+                missing = set(self.SOCIAL_PLATFORMS) - clicked
+                return {"success": False, "error": f"Follow all 3 platforms first. Missing: {', '.join(missing)}"}
+
+            # Award credits using the same pattern as gamification_service
+            awarded = await self._award_social_credits(user_id)
+            if not awarded:
+                return {"success": False, "error": "Failed to award credits"}
+
+            # Mark as claimed and read
+            data["credits_claimed"] = True
+            self.supabase.table("notifications").update(
+                {"data": data, "read": True}
+            ).eq("id", notif["id"]).execute()
+
+            logger.info(f"Social follow reward claimed by user {user_id}: {self.SOCIAL_FOLLOW_CREDITS} credits")
+            return {"success": True, "credits_awarded": self.SOCIAL_FOLLOW_CREDITS}
+        except Exception as e:
+            logger.error(f"Failed to claim social follow reward for {user_id}: {e}")
+            return {"success": False, "error": "Internal error"}
+
+    async def _award_social_credits(self, user_id: str) -> bool:
+        """Add bonus credits to the user's balance for following socials."""
+        try:
+            balance_result = (
+                self.supabase.table("credit_balances")
+                .select("purchased_credits")
+                .eq("user_id", user_id)
+                .execute()
+            )
+            if not balance_result.data:
+                logger.warning(f"No credit balance found for user {user_id}")
+                return False
+
+            current = balance_result.data[0].get("purchased_credits", 0)
+            new_total = current + self.SOCIAL_FOLLOW_CREDITS
+
+            self.supabase.table("credit_balances").update({
+                "purchased_credits": new_total,
+                "updated_at": datetime.utcnow().isoformat(),
+            }).eq("user_id", user_id).execute()
+
+            self.supabase.table("credit_transactions").insert({
+                "user_id": user_id,
+                "amount": self.SOCIAL_FOLLOW_CREDITS,
+                "balance_after": new_total,
+                "transaction_type": "bonus",
+                "description": f"Social follow reward: followed on Instagram, LinkedIn, and X",
+                "metadata": {"source": "social_follow"},
+            }).execute()
+
+            return True
+        except Exception as e:
+            logger.error(f"Failed to award social credits for {user_id}: {e}")
+            return False
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
