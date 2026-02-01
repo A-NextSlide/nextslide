@@ -512,6 +512,15 @@ class SerpAPIService:
             'reddit.com', 'redd.it',  # Often blocks
             'deviantart.com',  # Blocks hotlinking
             'wikimedia.org', 'wikipedia.org',  # Aggressive rate limiting (HTTP 429)
+            # Stock photo sites - hotlink protection returns 403/HTML redirects
+            'vecteezy.com',
+            'shutterstock.com',
+            'gettyimages.com',
+            'istockphoto.com',
+            'stock.adobe.com',
+            '123rf.com',
+            'dreamstime.com',
+            'alamy.com',
         }
 
         # Domains known to be reliable for direct image access

@@ -88,6 +88,10 @@ class ImageStorageService:
             # Try to get extension from content type
             ext = mimetypes.guess_extension(content_type) or ''
             
+        # Remap AVIF to JPEG - Supabase rejects image/avif uploads
+        if ext == '.avif':
+            ext = '.jpg'
+
         if not ext:
             # Default to .jpg for images
             ext = '.jpg'
@@ -120,7 +124,7 @@ class ImageStorageService:
                 # Variant 1: Standard browser with Google referer
                 {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                    'Accept': 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.9',
                     'Accept-Encoding': 'gzip, deflate',
                     'Cache-Control': 'no-cache',
@@ -133,7 +137,7 @@ class ImageStorageService:
                 # Variant 2: Same origin referer (pretend we're from the same site)
                 {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                    'Accept': 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.9',
                     'Accept-Encoding': 'identity',
                     'Sec-Fetch-Dest': 'image',
@@ -225,6 +229,11 @@ class ImageStorageService:
             if len(content) < 1000:
                 logger.warning(f"Downloaded content too small to be a real image ({len(content)} bytes): {self._truncate_data_url(image_url)}")
                 raise Exception(f"Downloaded content too small ({len(content)} bytes)")
+
+            # Guard against AVIF content type - Supabase rejects image/avif uploads
+            if 'avif' in content_type.lower():
+                logger.warning(f"Remapping AVIF content type to image/jpeg for Supabase compatibility: {self._truncate_data_url(image_url)}")
+                content_type = 'image/jpeg'
 
             # Generate file path
             file_path = self._generate_file_path(image_url, content_type)

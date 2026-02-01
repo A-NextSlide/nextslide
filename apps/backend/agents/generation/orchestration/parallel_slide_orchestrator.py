@@ -38,7 +38,7 @@ from agents.domain.models import (
 from agents.generation.context_builder import build_slide_context
 from agents.application.event_bus import get_event_bus, Events
 from setup_logging_optimized import get_logger
-from agents.config import ENABLE_PROMPT_CACHE_PREWARM
+from agents.config import ENABLE_PROMPT_CACHE_PREWARM, SLIDE_GENERATION_TIMEOUT, DECK_GENERATION_TIMEOUT
 from services.gemini_cache_manager import get_gemini_cache_manager
 
 logger = get_logger(__name__)
@@ -295,7 +295,7 @@ class ParallelSlideOrchestrator:
         pending_tasks = set(tasks)
         
         # Add a global timeout to prevent infinite hangs
-        max_wait_time = 600  # 10 minutes total for all slides
+        max_wait_time = DECK_GENERATION_TIMEOUT
         start_time = datetime.now()
         
         while pending_tasks or not event_queue.empty():
@@ -558,7 +558,7 @@ class ParallelSlideOrchestrator:
                 logger.debug(f"Skipping pre-generation save for slide {slide_index + 1} to enable parallelism")
 
                 # Generate slide with timeout
-                logger.debug(f"Starting generation for slide {slide_index + 1} with 300s timeout...")
+                logger.debug(f"Starting generation for slide {slide_index + 1} with {SLIDE_GENERATION_TIMEOUT}s timeout...")
                 start_time = datetime.now()
                 
                 # Stream updates directly from slide generator
@@ -566,7 +566,7 @@ class ParallelSlideOrchestrator:
                 elapsed = 0
                 
                 try:
-                    async with async_timeout(300.0):  # 5 minute timeout per slide
+                    async with async_timeout(SLIDE_GENERATION_TIMEOUT):
                         async for update in self.slide_generator.generate_slide(context):
                             # Add slide index to all updates
                             update['slide_index'] = slide_index
@@ -620,7 +620,7 @@ class ParallelSlideOrchestrator:
                     # Do not auto-apply pending images during slide generation (use placeholders)
                 
             except asyncio.TimeoutError:
-                logger.error(f"❌ Slide {slide_index + 1} timed out after 300 seconds")
+                logger.error(f"❌ Slide {slide_index + 1} timed out after {SLIDE_GENERATION_TIMEOUT} seconds")
                 # Mark slide as errored but continue processing other slides
                 mark_slide_error()
 
@@ -633,7 +633,7 @@ class ParallelSlideOrchestrator:
                         'order': slide_index,
                         'status': SlideStatus.ERROR.value,
                         'components': [],  # Empty but status is ERROR not pending
-                        'error': 'Generation timed out after 300 seconds'
+                        'error': f'Generation timed out after {SLIDE_GENERATION_TIMEOUT} seconds'
                     }
                     await self.persistence.update_slide(
                         deck_state.deck_uuid, slide_index, error_slide_data, force_immediate=True
@@ -645,7 +645,7 @@ class ParallelSlideOrchestrator:
                 await event_queue.put({
                     'type': 'slide_error',
                     'slide_index': slide_index,
-                    'error': 'Generation timed out after 300 seconds',
+                    'error': f'Generation timed out after {SLIDE_GENERATION_TIMEOUT} seconds',
                     'message': f'Slide {slide_index + 1} generation timed out',
                     'slide_title': slide_outline.title
                 })

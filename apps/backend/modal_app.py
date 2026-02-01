@@ -50,7 +50,7 @@ playwright_image = (
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("nextslide-env")],
-    timeout=600,
+    timeout=900,
     memory=2048,
     cpu=2.0,
 )

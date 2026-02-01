@@ -398,13 +398,13 @@ export const HeroTitle = React.memo(() => {
             <div className="flex flex-col items-center gap-1">
                 {/* Line 1: Ideas to [Text] */}
                 <h1
-                    className="text-black dark:text-white relative flex items-baseline justify-center flex-wrap"
+                    className="text-zinc-950 dark:text-white relative flex items-baseline justify-center flex-wrap"
                     style={{
                         fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
                         fontWeight: 900,
-                        fontSize: 'clamp(36px, 6vw, 72px)',
-                        lineHeight: '1.1',
-                        letterSpacing: '-0.02em',
+                        fontSize: 'clamp(48px, 8vw, 80px)',
+                        lineHeight: '1.05',
+                        letterSpacing: '-0.03em',
                         textTransform: 'uppercase',
                     }}
                 >
@@ -512,13 +512,13 @@ export const HeroTitle = React.memo(() => {
 
                 {/* Line 2: Presentations in Seconds */}
                 <h1
-                    className="text-black dark:text-white"
+                    className="text-zinc-950 dark:text-white"
                     style={{
                         fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
                         fontWeight: 900,
-                        fontSize: 'clamp(36px, 6vw, 72px)',
-                        lineHeight: '1.1',
-                        letterSpacing: '-0.02em',
+                        fontSize: 'clamp(48px, 8vw, 80px)',
+                        lineHeight: '1.05',
+                        letterSpacing: '-0.03em',
                         textTransform: 'uppercase',
                     }}
                 >
