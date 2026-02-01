@@ -516,7 +516,7 @@ export const HeroTitle = React.memo(() => {
                     style={{
                         fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
                         fontWeight: 900,
-                        fontSize: 'clamp(48px, 8vw, 80px)',
+                        fontSize: 'clamp(38px, 8vw, 80px)',
                         lineHeight: '1.05',
                         letterSpacing: '-0.03em',
                         textTransform: 'uppercase',

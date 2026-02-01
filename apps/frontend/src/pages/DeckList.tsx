@@ -2497,8 +2497,14 @@ const DeckList: React.FC = () => {
                           <div className="space-y-4 sm:space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
                             <div className="flex flex-col items-center justify-center mb-4 sm:mb-10 space-y-3 sm:space-y-6 text-center z-10 relative">
                               <h1
-                                className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
-                                style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
+                                className="uppercase text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto"
+                                style={{
+                                  fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                                  fontWeight: 900,
+                                  fontSize: 'clamp(32px, 7vw, 64px)',
+                                  lineHeight: '1.05',
+                                  letterSpacing: '-0.03em',
+                                }}
                               >
                                 TURN<RotatingWords compact={isMobileView} />INTO<br />PERFECT PRESENTATIONS
                               </h1>
