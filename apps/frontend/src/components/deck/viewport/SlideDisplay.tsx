@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, memo, useState } from 'react';
+import React, { useRef, useEffect, memo, useState, useCallback } from 'react';
 import { SlideData } from '@/types/SlideTypes';
 import { ComponentInstance } from '@/types/components';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
@@ -74,8 +74,65 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   const elapsedTime = progressState?.elapsedTime || 0;
 
   const deckData = useDeckStore(state => state.deckData);
+  const isSyncing = useDeckStore(state => state.isSyncing);
   // Get deck's lastModified to force re-render on restore
   const lastModified = useDeckStore(state => state.deckData.lastModified);
+
+  // Track how long we've been showing "Loading presentation..." with no slides
+  const [loadingElapsed, setLoadingElapsed] = useState(0);
+  const loadingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasRetriedRef = useRef(false);
+
+  // Retry loading the deck from the store
+  const retryLoadDeck = useCallback(() => {
+    const deckId = useDeckStore.getState().deckData?.uuid;
+    if (!deckId) {
+      // No deck ID in store - try to extract from URL
+      const pathParts = window.location.pathname.split('/');
+      const deckIndex = pathParts.findIndex(part => part === 'deck');
+      const urlDeckId = deckIndex !== -1 ? pathParts[deckIndex + 1] : null;
+      if (urlDeckId) {
+        useDeckStore.getState().initialize?.({ deckId: urlDeckId, isNewDeck: false, syncEnabled: true });
+      } else {
+        window.location.reload();
+      }
+      return;
+    }
+    useDeckStore.getState().initialize?.({ deckId, isNewDeck: false, syncEnabled: true });
+  }, []);
+
+  useEffect(() => {
+    if (slides.length === 0 && !isNewDeck) {
+      // Start tracking loading time
+      setLoadingElapsed(0);
+      hasRetriedRef.current = false;
+      loadingTimerRef.current = setInterval(() => {
+        setLoadingElapsed(prev => prev + 1);
+      }, 1000);
+    } else {
+      // Clear timer when slides are available
+      if (loadingTimerRef.current) {
+        clearInterval(loadingTimerRef.current);
+        loadingTimerRef.current = null;
+      }
+      setLoadingElapsed(0);
+    }
+    return () => {
+      if (loadingTimerRef.current) {
+        clearInterval(loadingTimerRef.current);
+        loadingTimerRef.current = null;
+      }
+    };
+  }, [slides.length, isNewDeck]);
+
+  // Auto-retry once after 8 seconds if still no slides and not syncing
+  useEffect(() => {
+    if (loadingElapsed >= 8 && !isSyncing && slides.length === 0 && !isNewDeck && !hasRetriedRef.current) {
+      hasRetriedRef.current = true;
+      console.log('[SlideDisplay] Auto-retrying deck load after timeout');
+      retryLoadDeck();
+    }
+  }, [loadingElapsed, isSyncing, slides.length, isNewDeck, retryLoadDeck]);
   
   const loaderBrand = React.useMemo<LoaderBrandTheme>(() => {
     const stylePrefs = (deckData?.outline?.stylePreferences || (deckData as any)?.data?.outline?.stylePreferences || {}) as any;
@@ -505,33 +562,74 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
       );
     }
     
+    // Determine if loading has failed: syncing finished but still no slides
+    const loadingFailed = !isSyncing && loadingElapsed > 3;
+    const showRetry = loadingFailed && hasRetriedRef.current;
+
     return (
-      <div 
+      <div
         className="flex justify-center items-center w-full h-full relative"
         style={{ overflow: 'hidden', position: 'relative' }}
       >
-        <div 
+        <div
           className="aspect-[16/9] relative bg-secondary/20 rounded-sm overflow-hidden flex-shrink-0 border border-border"
           style={{ width: `${slideWidthComputed}px`, height: `${slideHeightComputed}px` }}
         >
-          {/* Bottom-left loading label styled like generation UI */}
-          <div className="absolute bottom-4 left-4 right-4 pointer-events-none">
-            <div className="flex items-center justify-between">
-              <span 
-                className="font-black tracking-wider"
-                style={{ 
+          {showRetry ? (
+            /* Loading failed after auto-retry - show error with manual retry */
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6">
+              <span
+                className="font-semibold tracking-wide text-center"
+                style={{
                   color: theme === 'dark' ? '#e0e0e0' : '#333333',
                   fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-                  fontSize: '18.95px',
-                  textTransform: 'uppercase',
-                  WebkitFontSmoothing: 'antialiased',
-                  MozOsxFontSmoothing: 'grayscale'
+                  fontSize: '15px',
                 }}
               >
-                Loading presentation…
+                Unable to load presentation
               </span>
+              <span
+                className="text-center"
+                style={{
+                  color: theme === 'dark' ? '#999' : '#666',
+                  fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                  fontSize: '12px',
+                }}
+              >
+                Please check your connection and try again
+              </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); retryLoadDeck(); }}
+                className="mt-2 px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: theme === 'dark' ? '#333' : '#e5e5e5',
+                  color: theme === 'dark' ? '#e0e0e0' : '#333',
+                  border: `1px solid ${theme === 'dark' ? '#555' : '#ccc'}`,
+                }}
+              >
+                Retry
+              </button>
             </div>
-          </div>
+          ) : (
+            /* Still loading or auto-retrying */
+            <div className="absolute bottom-4 left-4 right-4 pointer-events-none">
+              <div className="flex items-center justify-between">
+                <span
+                  className="font-black tracking-wider"
+                  style={{
+                    color: theme === 'dark' ? '#e0e0e0' : '#333333',
+                    fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                    fontSize: '18.95px',
+                    textTransform: 'uppercase',
+                    WebkitFontSmoothing: 'antialiased',
+                    MozOsxFontSmoothing: 'grayscale'
+                  }}
+                >
+                  Loading presentation…
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );

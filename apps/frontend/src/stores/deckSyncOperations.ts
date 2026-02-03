@@ -995,12 +995,12 @@ export const createSyncOperations = (set: Function, get: Function) => {
           set({ isSyncing: true, error: null });
 
           // Retry logic: new decks may not be immediately available so we retry more aggressively.
-          // Existing decks should load on the first try; use minimal retries to avoid long waits
-          // when the real problem is auth expiry or a missing deck.
+          // Existing decks use 5 retries with 2s delay to handle backend cold starts
+          // (Render free/starter tier can take 15-30s to wake up).
           let deck = null;
           let retryCount = 0;
-          const maxRetries = isNewDeck ? 30 : 3;
-          const baseRetryDelay = isNewDeck ? 3000 : 1500;
+          const maxRetries = isNewDeck ? 30 : 5;
+          const baseRetryDelay = isNewDeck ? 3000 : 2000;
 
           while (!deck && retryCount < maxRetries) {
             try {

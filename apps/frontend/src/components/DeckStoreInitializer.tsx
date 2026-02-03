@@ -5,6 +5,7 @@ import { createLogger, LogCategory, LogLevel, configureLogging } from '../utils/
 import { FontLoadingService } from '../services/FontLoadingService';
 import { extractFontFamiliesFromDeck } from '../utils/fontLoaderUtils';
 import { useUpgradeSuccess } from '../hooks/useUpgradeSuccess';
+import { useAuth } from '../context/SupabaseAuthContext';
 
 interface DeckStoreInitializerProps {
   syncEnabled?: boolean;
@@ -47,7 +48,12 @@ export function DeckStoreInitializer({
   const deckData = useDeckStore(state => state.deckData);
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  
+
+  // Wait for Supabase auth to finish loading before initializing deck data.
+  // Without this, initialize() fires before the session is available,
+  // causing getAuthTokenAsync() to return null and deck loading to fail.
+  const { isLoading: isAuthLoading } = useAuth();
+
   // Get Yjs status if available (using optional chaining to handle potential undefined)
   const getYjsConnectionStatus = useDeckStore(state => (state as any).getYjsConnectionStatus);
   const yjsStatus = getYjsConnectionStatus && getYjsConnectionStatus();
@@ -93,6 +99,12 @@ export function DeckStoreInitializer({
 
     // Initialize the store when the component mounts
   useEffect(() => {
+    // Don't initialize until auth has finished loading.
+    // On mobile especially, Supabase needs time to restore the session from
+    // localStorage; calling getAuthTokenAsync() before this completes returns
+    // null and causes all deck loading to fail permanently.
+    if (isAuthLoading) return;
+
     // Extract deckId from URL if present
     const extractDeckIdFromUrl = () => {
       const pathParts = location.pathname.split('/');
@@ -187,7 +199,7 @@ export function DeckStoreInitializer({
     }
     // Clear unmounting flag after initialization completes
     try { (window as any).__isUnmounting = false; } catch {}
-  }, [location, searchParams]);
+  }, [location, searchParams, isAuthLoading]);
   
   // Preload all fonts used in the deck when deck data changes
   useEffect(() => {

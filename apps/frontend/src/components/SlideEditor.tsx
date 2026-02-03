@@ -38,6 +38,7 @@ import DeckNotes from './deck/DeckNotes';
 import { debugSlideImages } from '@/utils/debugSlideImages';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useAuth } from '@/context/SupabaseAuthContext';
 
 /**
  * SlideEditor content component that assumes all context providers are in place
@@ -54,6 +55,8 @@ const SlideEditorContent: React.FC = () => {
 
   // Get onboarding state for tutorial and AI hints
   const { shouldShowTutorial, shouldShowAiHints, incrementTutorialViews, state: onboardingState } = useOnboarding();
+  // Wait for auth to be ready before loading deck data
+  const { isLoading: isAuthLoading } = useAuth();
   // Initialize with pending state for new decks
   const [deckStatus, setDeckStatus] = useState<DeckStatus | null>(() => {
     if (isNewDeck) {
@@ -911,7 +914,7 @@ const SlideEditorContent: React.FC = () => {
 
   // Subscribe to realtime deck status updates for new decks
   useEffect(() => {
-    if (!deckId || realtimeSetupRef.current) return;
+    if (!deckId || realtimeSetupRef.current || isAuthLoading) return;
 
 
     realtimeSetupRef.current = true;
@@ -1555,7 +1558,7 @@ const SlideEditorContent: React.FC = () => {
       }
       realtimeSetupRef.current = false;
     };
-  }, [deckId, isNewDeck, toast]);
+  }, [deckId, isNewDeck, toast, isAuthLoading]);
 
   useSlideGenerationFlow({
     deckId,
