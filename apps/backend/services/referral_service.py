@@ -235,6 +235,43 @@ class ReferralService:
                 # Award signup bonus credits to the referee
                 await self._award_credits(referee_id, referee_credits, f"Referral signup bonus (code: {referral_code})")
                 logger.info(f"Tracked referral signup: referrer={referrer_id}, referee={referee_id}, code={referral_code}")
+
+                # Create notification for the referrer
+                try:
+                    referee_name = None
+                    try:
+                        user_result = client.table("users").select("full_name, email").eq("id", referee_id).execute()
+                        if user_result.data and len(user_result.data) > 0:
+                            referee_name = user_result.data[0].get("full_name") or user_result.data[0].get("email", "").split("@")[0]
+                    except Exception:
+                        pass
+
+                    referrer_activation_credits = get_growth_config().get_int("referral.referrer_activation_credits", REFERRER_ACTIVATION_CREDITS)
+                    client.table("notifications").insert({
+                        "user_id": referrer_id,
+                        "type": "referral",
+                        "title": "New referral signup!",
+                        "message": f"{referee_name or 'Someone'} just signed up with your referral link! You'll earn {referrer_activation_credits} credits when they create their first presentation.",
+                        "data": {"referee_id": referee_id, "referral_code": referral_code},
+                        "read": False,
+                    }).execute()
+                except Exception as notif_err:
+                    logger.warning(f"Failed to create referral signup notification: {notif_err}")
+
+                # Create welcome notification for the referee
+                try:
+                    referrer_name = code_info.get("referrer_name") or "Your friend"
+                    client.table("notifications").insert({
+                        "user_id": referee_id,
+                        "type": "referral",
+                        "title": f"Welcome! +{referee_credits} bonus credits",
+                        "message": f"{referrer_name} invited you to NextSlide. {referee_credits} bonus credits have been added to your account!",
+                        "data": {"referrer_id": referrer_id, "credits_awarded": referee_credits},
+                        "read": False,
+                    }).execute()
+                except Exception as notif_err:
+                    logger.warning(f"Failed to create referee welcome notification: {notif_err}")
+
                 return referral.data[0]
 
             return None
@@ -286,6 +323,28 @@ class ReferralService:
             )
 
             logger.info(f"Activated referral: referrer={referrer_id} awarded {referrer_credits} credits for referee={referee_id}")
+
+            # Create notification for the referrer
+            try:
+                referee_name = None
+                try:
+                    user_result = client.table("users").select("full_name, email").eq("id", referee_id).execute()
+                    if user_result.data and len(user_result.data) > 0:
+                        referee_name = user_result.data[0].get("full_name") or user_result.data[0].get("email", "").split("@")[0]
+                except Exception:
+                    pass
+
+                client.table("notifications").insert({
+                    "user_id": referrer_id,
+                    "type": "referral",
+                    "title": f"+{referrer_credits} referral credits!",
+                    "message": f"{referee_name or 'Your referral'} created their first presentation! {referrer_credits} bonus credits have been added to your account.",
+                    "data": {"referee_id": referee_id, "credits_awarded": referrer_credits},
+                    "read": False,
+                }).execute()
+            except Exception as notif_err:
+                logger.warning(f"Failed to create referral activation notification: {notif_err}")
+
             return True
 
         except Exception as e:

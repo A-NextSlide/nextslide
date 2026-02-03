@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import LoadingDisplay from '@/components/common/LoadingDisplay';
 import { useToast } from '@/hooks/use-toast';
+import { referralApi } from '@/services/referralApi';
+import { trackEvent } from '@/services/analytics';
 
 const AuthCallback: React.FC = () => {
   const navigate = useNavigate();
@@ -157,11 +159,38 @@ const AuthCallback: React.FC = () => {
             return;
           }
 
+          // Track referral signup if there's a pending referral code
+          let isReferral = false;
+          try {
+            const referralCode = localStorage.getItem('referral_code');
+            if (referralCode && session.user?.id) {
+              localStorage.removeItem('referral_code');
+              try {
+                const result = await referralApi.trackReferralSignup(session.user.id, referralCode);
+                if (result.success) {
+                  isReferral = true;
+                  trackEvent('referral_signup_completed', { code: referralCode });
+                }
+              } catch {
+                // Non-critical - don't block auth flow
+              }
+            }
+          } catch {
+            // localStorage not available
+          }
+
           // Successfully authenticated
-          toast({
-            title: "Welcome!",
-            description: "You have been successfully signed in.",
-          });
+          if (isReferral) {
+            toast({
+              title: "Welcome! You received 25 bonus credits",
+              description: "Your referral bonus has been added to your account.",
+            });
+          } else {
+            toast({
+              title: "Welcome!",
+              description: "You have been successfully signed in.",
+            });
+          }
 
           // Check for pending share code
           const pendingShareCode = sessionStorage.getItem('pending_share_code');
