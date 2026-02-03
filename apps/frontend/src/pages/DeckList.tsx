@@ -2568,10 +2568,10 @@ const DeckList: React.FC = () => {
                           <div className="space-y-4 sm:space-y-4">
                             <div className="flex flex-col items-center justify-center mb-4 sm:mb-10 space-y-3 sm:space-y-6 text-center z-10 relative">
                               <h1
-                                className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-6xl mx-auto leading-tight"
+                                className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
                                 style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
                               >
-                                <span className="whitespace-nowrap">TURN<RotatingWords compact={isMobileView} />INTO</span><br /><span className="whitespace-nowrap">PERFECT PRESENTATIONS</span>
+                                TURN<RotatingWords compact={isMobileView} />INTO<br /><span className="whitespace-nowrap">PERFECT PRESENTATIONS</span>
                               </h1>
                               <div className="space-y-2">
                                 <p className="text-sm sm:text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
