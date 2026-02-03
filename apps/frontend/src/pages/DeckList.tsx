@@ -726,12 +726,14 @@ const DeckList: React.FC = () => {
         pendingData.stylePrefs,
         (event) => {
           if (hasNavigated) return;
-          const emittedDeckId = (event as any).deck_id || (event as any).deck_uuid || (event as any).deckId;
-          if (emittedDeckId) {
-            hasNavigated = true;
-            console.log('[DeckList] 🚀 Navigating to deck (overage retry):', emittedDeckId);
-            localStorage.removeItem('nextslide_pending_outline');
-            navigate(`/deck/${emittedDeckId}?new=true`);
+          if (event.type === 'deck_created') {
+            const emittedDeckId = (event as any).deck_id || (event as any).deck_uuid || (event as any).deckId;
+            if (emittedDeckId) {
+              hasNavigated = true;
+              console.log('[DeckList] 🚀 Navigating to deck (overage retry):', emittedDeckId);
+              localStorage.removeItem('nextslide_pending_outline');
+              navigate(`/deck/${emittedDeckId}?new=true`);
+            }
           }
         },
         { confirmOverage: true }
@@ -1076,13 +1078,15 @@ const DeckList: React.FC = () => {
           (event) => {
             // Navigate to deck when we get the deck ID (only once)
             if (hasNavigated) return;
-            const emittedDeckId = (event as any).deck_id || (event as any).deck_uuid || (event as any).deckId;
-            if (emittedDeckId) {
-              hasNavigated = true;
-              console.log('[DeckList] 🚀 Navigating to deck:', emittedDeckId);
-              // Clear pending outline since generation succeeded
-              localStorage.removeItem('nextslide_pending_outline');
-              navigate(`/deck/${emittedDeckId}?new=true`);
+            if (event.type === 'deck_created') {
+              const emittedDeckId = (event as any).deck_id || (event as any).deck_uuid || (event as any).deckId;
+              if (emittedDeckId) {
+                hasNavigated = true;
+                console.log('[DeckList] 🚀 Navigating to deck:', emittedDeckId);
+                // Clear pending outline since generation succeeded
+                localStorage.removeItem('nextslide_pending_outline');
+                navigate(`/deck/${emittedDeckId}?new=true`);
+              }
             }
           }
         );
@@ -1796,7 +1800,9 @@ const DeckList: React.FC = () => {
           if (emittedDeckId) {
             deckId = emittedDeckId;
             persistDeckContext(emittedDeckId);
-            navigateToDeck(emittedDeckId);
+            if (event.type === 'deck_created') {
+              navigateToDeck(emittedDeckId);
+            }
           }
 
           // Track slide generation progress - but we're already on the deck page

@@ -154,8 +154,8 @@ async def compose_deck_stream_via_modal(
         logger.info(f"[modal_dispatch] Dispatching deck {deck_uuid} to Modal")
 
         # Wrap the remote generator with a timeout on the first event.
-        # If Modal is cold-starting or stuck, fall back to local after 60s.
-        _FIRST_EVENT_TIMEOUT = 60  # seconds
+        # If Modal is cold-starting or stuck, fall back to local after 15s.
+        _FIRST_EVENT_TIMEOUT = 15  # seconds
         got_first_event = False
         remote_gen = compose_deck_remote.remote_gen.aio(
             outline_dict=outline_dict,

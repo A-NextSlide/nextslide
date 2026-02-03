@@ -3616,3 +3616,477 @@ async def export_share_viewers(
     except Exception as e:
         logger.error(f"Error exporting share viewers: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Admin Deck Seeder ====================
+
+class SeedGenerateRequest(BaseModel):
+    topic: str
+    slides: int = 8
+    style: Optional[str] = None
+
+class SeedBatchGenerateRequest(BaseModel):
+    prompts: List[str]
+    slides: int = 8
+    style: Optional[str] = None
+
+class SeedPushFeaturedRequest(BaseModel):
+    deck_uuid: str
+    title: Optional[str] = None
+    description: Optional[str] = None
+    display_order: int = 99
+
+class SeedPushCommunityRequest(BaseModel):
+    deck_uuid: str
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: str = "business"
+    tags: List[str] = []
+
+
+async def _admin_generate_deck(deck_uuid: str, user_id: str, topic: str, num_slides: int, style: Optional[str]):
+    """Background task: full outline -> compose pipeline for admin seed decks.
+
+    Routes through Modal when USE_MODAL=true and enables component fallback
+    (Gemini → Claude Opus) for maximum reliability.
+    """
+    try:
+        import os
+        import uuid as uuid_module
+        from services.outline import OutlineGenerator, OutlineOptions
+        from models.registry import get_global_registry
+        from models.requests import DeckOutline, SlideOutline, StylePreferencesItem
+        from api.requests.deck_create import build_initial_deck_payload
+        from agents.generation.deck_composer import compose_deck_stream
+        from agents.config import MAX_PARALLEL_SLIDES, DELAY_BETWEEN_SLIDES, USE_MODAL
+        from utils.supabase import upload_deck
+
+        # Enable component fallback for this generation (Gemini → Claude Opus on failure)
+        os.environ["CUSTOM_COMPONENT_ALLOW_FALLBACK"] = "true"
+
+        design_directive = (
+            "\n\nDESIGN DIRECTIVES: "
+            "Keep text minimal — max 3-4 bullet points or one short paragraph per slide. "
+            "Favour large imagery, full-bleed backgrounds, icon grids, and dramatic whitespace. "
+            "Use clean sans-serif fonts. Each slide should convey ONE clear idea with a powerful visual. "
+            "Make it look like a premium design agency produced it."
+        )
+        enhanced_topic = topic + design_directive
+
+        registry = get_global_registry()
+
+        client = get_supabase_client()
+        client.table("decks").update({
+            "status": {"state": "generating", "message": "Generating outline..."}
+        }).eq("uuid", deck_uuid).execute()
+
+        # Phase 1: Generate outline — route through Modal when available
+        deck_outline = None
+
+        if USE_MODAL:
+            try:
+                from services.modal_dispatch import generate_outline_via_modal
+                logger.info(f"[admin_seed] Routing outline for {deck_uuid} to Modal")
+                modal_result = await generate_outline_via_modal(
+                    prompt=enhanced_topic,
+                    slide_count=num_slides,
+                    style_context=style,
+                    async_images=False,
+                )
+                if modal_result and modal_result.get("slides"):
+                    deck_outline = DeckOutline(
+                        id=deck_uuid,
+                        title=modal_result.get("title") or topic[:100],
+                        slides=[
+                            SlideOutline(
+                                id=str(uuid_module.uuid4()),
+                                title=s["title"],
+                                content=s.get("content", ""),
+                            )
+                            for s in modal_result["slides"]
+                        ],
+                    )
+                    logger.info(f"[admin_seed] Modal outline OK for {deck_uuid}: {len(modal_result['slides'])} slides")
+                else:
+                    logger.warning(f"[admin_seed] Modal outline empty for {deck_uuid}, falling back to local")
+            except Exception as modal_err:
+                logger.warning(f"[admin_seed] Modal outline failed for {deck_uuid}: {modal_err}, falling back to local")
+
+        if deck_outline is None:
+            # Local fallback
+            generator = OutlineGenerator(registry)
+            options = OutlineOptions(
+                prompt=enhanced_topic,
+                slide_count=num_slides,
+                style_context=style,
+                async_images=False,
+            )
+            outline_result = await generator.generate(options)
+            if not outline_result or not outline_result.slides:
+                raise Exception("Failed to generate outline")
+
+            deck_outline = DeckOutline(
+                id=deck_uuid,
+                title=outline_result.title or topic[:100],
+                slides=[
+                    SlideOutline(
+                        id=str(uuid_module.uuid4()),
+                        title=s.title,
+                        content=s.content or "",
+                    )
+                    for s in outline_result.slides
+                ],
+            )
+
+        deck_outline.stylePreferences = StylePreferencesItem(
+            initialIdea=topic,
+            vibeContext=style or topic,
+        )
+
+        deck_data = build_initial_deck_payload(deck_outline, deck_uuid)
+        deck_data["data"] = deck_data.get("data", {})
+        deck_data["data"]["source"] = "admin_seed"
+        upload_deck(deck_data, deck_uuid, user_id)
+
+        client.table("decks").update({
+            "status": {"state": "generating", "message": "Composing slides via Modal..." if USE_MODAL else "Composing slides..."}
+        }).eq("uuid", deck_uuid).execute()
+
+        # Phase 2: Compose slides — compose_deck_stream auto-routes to Modal when USE_MODAL=true
+        slides_generated = 0
+        async for update in compose_deck_stream(
+            deck_outline, registry, deck_uuid,
+            max_parallel=MAX_PARALLEL_SLIDES,
+            delay_between_slides=DELAY_BETWEEN_SLIDES,
+            async_images=False,
+            user_id=user_id,
+        ):
+            utype = update.get("type", "")
+            if utype == "slide_generated":
+                slides_generated += 1
+                try:
+                    client.table("decks").update({
+                        "status": {
+                            "state": "generating",
+                            "message": f"Generated slide {slides_generated}/{num_slides}",
+                            "progress": round(slides_generated / num_slides * 100),
+                        }
+                    }).eq("uuid", deck_uuid).execute()
+                except Exception:
+                    pass
+            elif utype in ("deck_complete", "composition_complete", "complete"):
+                break
+
+        final_count = slides_generated
+        try:
+            data_result = client.table("decks").select("slides").eq("uuid", deck_uuid).single().execute()
+            if data_result.data:
+                final_count = len(data_result.data.get("slides") or [])
+        except Exception:
+            pass
+
+        # Auto-create public share link for all seed decks
+        try:
+            await _ensure_public_share(client, deck_uuid, user_id)
+        except Exception:
+            pass
+
+        client.table("decks").update({
+            "status": {"state": "completed"},
+            "slide_count": final_count,
+        }).eq("uuid", deck_uuid).execute()
+
+        logger.info(f"Admin seed deck {deck_uuid} completed with {final_count} slides (modal={USE_MODAL})")
+
+    except Exception as e:
+        logger.error(f"Admin seed deck generation failed for {deck_uuid}: {e}", exc_info=True)
+        try:
+            get_supabase_client().table("decks").update({
+                "status": {"state": "failed", "error": str(e)[:500]}
+            }).eq("uuid", deck_uuid).execute()
+        except Exception:
+            pass
+
+
+async def _ensure_public_share(supabase, deck_uuid: str, user_id: str) -> Optional[str]:
+    """Create a public view share link if none exists. Returns the short_code."""
+    import random
+    import string
+
+    existing = supabase.table("deck_shares").select("short_code").eq(
+        "deck_uuid", deck_uuid
+    ).eq("is_active", True).eq("share_type", "view").limit(1).execute()
+
+    if existing.data:
+        return existing.data[0]["short_code"]
+
+    chars = string.ascii_letters + string.digits
+    chars = chars.replace("0", "").replace("O", "").replace("l", "").replace("I", "")
+
+    for _ in range(5):
+        code = "".join(random.choices(chars, k=8))
+        collision = supabase.table("deck_shares").select("id").eq("short_code", code).execute()
+        if not collision.data:
+            import uuid as uuid_module
+            supabase.table("deck_shares").insert({
+                "id": str(uuid_module.uuid4()),
+                "deck_uuid": deck_uuid,
+                "short_code": code,
+                "share_type": "view",
+                "created_by": user_id,
+                "is_active": True,
+                "is_public": True,
+                "access_count": 0,
+            }).execute()
+            return code
+
+    return None
+
+
+@router.post("/seed/generate")
+async def admin_seed_generate(
+    body: SeedGenerateRequest,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Start generating a seed deck from a prompt. Returns deck_id for status polling."""
+    import asyncio
+    import uuid as uuid_module
+
+    deck_uuid = str(uuid_module.uuid4())
+    user_id = admin["id"]
+
+    supabase = get_supabase_client()
+    supabase.table("decks").insert({
+        "uuid": deck_uuid,
+        "user_id": user_id,
+        "name": body.topic[:100],
+        "slides": [],
+        "size": {"width": 1920, "height": 1080},
+        "status": {"state": "generating", "message": "Starting..."},
+        "data": {"source": "admin_seed"},
+        "slide_count": 0,
+    }).execute()
+
+    asyncio.create_task(_admin_generate_deck(deck_uuid, user_id, body.topic, body.slides, body.style))
+
+    return {"deck_id": deck_uuid, "status": "generating", "message": "Deck generation started"}
+
+
+@router.post("/seed/batch-generate")
+async def admin_seed_batch_generate(
+    body: SeedBatchGenerateRequest,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Start generating multiple seed decks in parallel. Returns list of deck_ids for polling."""
+    import asyncio
+    import uuid as uuid_module
+
+    user_id = admin["id"]
+    supabase = get_supabase_client()
+    results = []
+
+    for prompt in body.prompts:
+        deck_uuid = str(uuid_module.uuid4())
+
+        supabase.table("decks").insert({
+            "uuid": deck_uuid,
+            "user_id": user_id,
+            "name": prompt[:100],
+            "slides": [],
+            "size": {"width": 1920, "height": 1080},
+            "status": {"state": "generating", "message": "Queued..."},
+            "data": {"source": "admin_seed"},
+            "slide_count": 0,
+        }).execute()
+
+        asyncio.create_task(_admin_generate_deck(deck_uuid, user_id, prompt, body.slides, body.style))
+
+        results.append({
+            "deck_id": deck_uuid,
+            "topic": prompt,
+            "status": "generating",
+        })
+
+    return {
+        "count": len(results),
+        "decks": results,
+        "message": f"Started generating {len(results)} decks",
+    }
+
+
+@router.get("/seed/status/{deck_uuid}")
+async def admin_seed_status(
+    deck_uuid: str,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Poll the generation status of a seed deck."""
+    supabase = get_supabase_client()
+    result = supabase.table("decks").select(
+        "uuid, name, status, slide_count, slides, created_at"
+    ).eq("uuid", deck_uuid).single().execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    deck = result.data
+    status = deck.get("status") or {}
+    slides = deck.get("slides") or []
+
+    return {
+        "deck_id": deck["uuid"],
+        "name": deck.get("name", ""),
+        "status": status.get("state", "unknown"),
+        "message": status.get("message", ""),
+        "progress": status.get("progress", 0),
+        "slide_count": len(slides),
+        "error": status.get("error"),
+        "created_at": deck.get("created_at", ""),
+    }
+
+
+@router.post("/seed/push-featured")
+async def admin_seed_push_featured(
+    body: SeedPushFeaturedRequest,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Push a deck to the featured_decks table for landing page display."""
+    supabase = get_supabase_client()
+
+    deck_result = supabase.table("decks").select("uuid, name, slides, description").eq("uuid", body.deck_uuid).single().execute()
+    if not deck_result.data:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    deck = deck_result.data
+    slides = deck.get("slides") or []
+    if not slides:
+        raise HTTPException(status_code=400, detail="Deck has no slides")
+
+    share_code = await _ensure_public_share(supabase, body.deck_uuid, admin["id"])
+
+    supabase.table("featured_decks").upsert({
+        "uuid": body.deck_uuid,
+        "name": body.title or deck.get("name", "Untitled"),
+        "description": body.description or deck.get("description", ""),
+        "slides": slides,
+        "slide_count": len(slides),
+        "display_order": body.display_order,
+        "is_active": True,
+    }, on_conflict="uuid").execute()
+
+    return {
+        "success": True,
+        "message": f"Deck featured with {len(slides)} slides",
+        "share_url": f"/p/{share_code}" if share_code else None,
+    }
+
+
+@router.post("/seed/push-community")
+async def admin_seed_push_community(
+    body: SeedPushCommunityRequest,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Push a deck to community_decks (auto-approved by admin)."""
+    supabase = get_supabase_client()
+
+    deck_result = supabase.table("decks").select("*").eq("uuid", body.deck_uuid).single().execute()
+    if not deck_result.data:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    deck = deck_result.data
+    slides = deck.get("slides") or []
+    if not slides:
+        raise HTTPException(status_code=400, detail="Deck has no slides")
+
+    share_code = await _ensure_public_share(supabase, body.deck_uuid, admin["id"])
+    now = datetime.utcnow().isoformat()
+
+    supabase.table("community_decks").upsert({
+        "deck_uuid": body.deck_uuid,
+        "user_id": deck.get("user_id", admin["id"]),
+        "title": body.title or deck.get("name", "Untitled"),
+        "description": body.description or deck.get("description", ""),
+        "category": body.category,
+        "tags": body.tags,
+        "status": "approved",
+        "slide_count": len(slides),
+        "first_slide": slides[0] if slides else None,
+        "slides_snapshot": slides,
+        "theme_snapshot": (deck.get("data") or {}).get("theme"),
+        "author_name": admin.get("email", "NextSlide Team"),
+        "author_email": admin.get("email", ""),
+        "submitted_at": now,
+        "reviewed_at": now,
+        "reviewed_by": admin["id"],
+        "approved_at": now,
+    }, on_conflict="deck_uuid").execute()
+
+    return {
+        "success": True,
+        "message": f"Published to community ({body.category}) with {len(slides)} slides",
+        "share_url": f"/p/{share_code}" if share_code else None,
+    }
+
+
+@router.post("/seed/create-share/{deck_uuid}")
+async def admin_seed_create_share(
+    deck_uuid: str,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Create a public share link for a deck."""
+    supabase = get_supabase_client()
+    deck_result = supabase.table("decks").select("uuid").eq("uuid", deck_uuid).single().execute()
+    if not deck_result.data:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    short_code = await _ensure_public_share(supabase, deck_uuid, admin["id"])
+
+    return {
+        "success": True,
+        "short_code": short_code,
+        "share_url": f"/p/{short_code}",
+    }
+
+
+@router.delete("/seed/cleanup")
+async def admin_seed_cleanup(
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Delete all decks with 0 or missing slides."""
+    supabase = get_supabase_client()
+
+    empty_result = supabase.table("decks").select("uuid, name, slide_count").or_(
+        "slide_count.eq.0,slides.is.null"
+    ).execute()
+
+    deleted_uuids = []
+    skipped = []
+
+    for deck in (empty_result.data or []):
+        deck_uuid = deck["uuid"]
+        try:
+            full = supabase.table("decks").select("slides").eq("uuid", deck_uuid).single().execute()
+            slides = full.data.get("slides") if full.data else None
+            if slides and len(slides) > 0:
+                skipped.append(deck_uuid)
+                continue
+
+            try:
+                supabase.table("featured_decks").delete().eq("uuid", deck_uuid).execute()
+            except Exception:
+                pass
+            try:
+                supabase.table("community_decks").delete().eq("deck_uuid", deck_uuid).execute()
+            except Exception:
+                pass
+
+            supabase.table("decks").delete().eq("uuid", deck_uuid).execute()
+            deleted_uuids.append(deck_uuid)
+        except Exception as e:
+            logger.warning(f"Error cleaning up deck {deck_uuid}: {e}")
+
+    return {
+        "success": True,
+        "deleted_count": len(deleted_uuids),
+        "skipped_count": len(skipped),
+        "deleted_uuids": deleted_uuids[:50],
+    }

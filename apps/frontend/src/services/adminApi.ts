@@ -1282,6 +1282,71 @@ class AdminApi {
   async getNotificationHistory(page = 1, limit = 50): Promise<NotificationHistoryResponse> {
     return this.request<NotificationHistoryResponse>(`/admin/growth/notifications/history?page=${page}&limit=${limit}`);
   }
+
+  // ==================== Seed / Generator ====================
+
+  async seedGenerate(params: {
+    topic: string;
+    slides?: number;
+    style?: string;
+  }): Promise<{ deck_id: string; status: string; message: string }> {
+    return this.request('/admin/seed/generate', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  }
+
+  async seedBatchGenerate(params: {
+    prompts: string[];
+    slides?: number;
+    style?: string;
+  }): Promise<{ count: number; decks: { deck_id: string; topic: string; status: string }[]; message: string }> {
+    return this.request('/admin/seed/batch-generate', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  }
+
+  async seedStatus(deckUuid: string): Promise<SeedStatusResponse> {
+    return this.request<SeedStatusResponse>(`/admin/seed/status/${deckUuid}`);
+  }
+
+  async seedPushFeatured(params: {
+    deck_uuid: string;
+    title?: string;
+    description?: string;
+    display_order?: number;
+  }): Promise<{ success: boolean; message: string; share_url?: string }> {
+    return this.request('/admin/seed/push-featured', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  }
+
+  async seedPushCommunity(params: {
+    deck_uuid: string;
+    title?: string;
+    description?: string;
+    category?: string;
+    tags?: string[];
+  }): Promise<{ success: boolean; message: string; share_url?: string }> {
+    return this.request('/admin/seed/push-community', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  }
+
+  async seedCreateShare(deckUuid: string): Promise<{ success: boolean; short_code: string; share_url: string }> {
+    return this.request(`/admin/seed/create-share/${deckUuid}`, {
+      method: 'POST',
+    });
+  }
+
+  async seedCleanup(): Promise<{ success: boolean; deleted_count: number; skipped_count: number }> {
+    return this.request('/admin/seed/cleanup', {
+      method: 'DELETE',
+    });
+  }
 }
 
 export interface Brand {
@@ -1520,6 +1585,17 @@ export interface AgentConfirmResponse {
   affected_rows: number;
   message: string;
   error?: string;
+}
+
+export interface SeedStatusResponse {
+  deck_id: string;
+  name: string;
+  status: string;
+  message: string;
+  progress: number;
+  slide_count: number;
+  error?: string;
+  created_at: string;
 }
 
 export const adminApi = new AdminApi();
