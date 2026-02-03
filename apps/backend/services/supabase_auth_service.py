@@ -729,7 +729,7 @@ class SupabaseAuthService:
 
     def get_shared_decks(self, user_id: str, limit: int = 20, offset: int = 0, search_query: Optional[str] = None) -> Dict[str, Any]:
         """
-        Get decks shared with the user
+        Get decks that the user has shared (have active share links).
 
         Args:
             user_id: The user's UUID
@@ -741,86 +741,68 @@ class SupabaseAuthService:
             Dict with shared decks list and pagination info
         """
         try:
-            # Get user's email - first try from users table with a timeout
-            user_email = None
-            try:
-                # Try to get user email from users table first (faster and more reliable)
-                users_response = self.supabase.table("users").select("email").eq("id", user_id).execute()
-                if users_response.data and len(users_response.data) > 0:
-                    user_email = users_response.data[0].get("email")
-                else:
-                    # If not in users table, try auth.admin API with timeout
-                    # Use ThreadPoolExecutor for cross-platform timeout support
-                    def get_user_email_from_admin():
-                        try:
-                            user = self.supabase.auth.admin.get_user_by_id(user_id)
-                            return user.user.email if user and user.user else None
-                        except Exception as e:
-                            logger.warning(f"[get_shared_decks] Admin API error: {e}")
-                            return None
+            logger.debug(f"[get_shared_decks] user={user_id} limit={limit} offset={offset} search={search_query}")
 
-                    # Run with timeout using ThreadPoolExecutor
-                    with ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(get_user_email_from_admin)
-                        try:
-                            # Wait maximum 2 seconds for the result
-                            user_email = future.result(timeout=2.0)
-                        except (FutureTimeoutError, Exception) as e:
-                            logger.warning(f"[get_shared_decks] Admin API timeout: {e}")
-                            user_email = None
-                            # Cancel the future to prevent it from running in background
-                            future.cancel()
-
-            except Exception as e:
-                logger.error(f"[get_shared_decks] Error getting user email: {e}")
-                user_email = None
-            
-            # Query deck_collaborators table
-            # Avoid PostgREST schema-qualified joins which can fail across versions.
-            # We'll fetch inviter user details in a separate query.
-            # TODO: PostgREST doesn't support array slicing or cardinality in select.
-            # For now, fetching full slides array but only using first slide.
-            collaborator_query = self.supabase.table("deck_collaborators").select(
-                """
-                id,invited_by,invited_at,status,permissions,share_link_id,last_accessed_at,access_count,user_id,email,
-                decks!inner(uuid,name,created_at,updated_at,last_modified,user_id,status,description)
-                """
+            # Step 1: Get distinct deck UUIDs from deck_shares that this user has shared
+            shares_query = self.supabase.table("deck_shares").select(
+                "deck_uuid,share_type,permission,short_code,is_public,access_count,last_accessed_at,created_at"
+            ).or_(f"shared_by.eq.{user_id},created_by.eq.{user_id}").eq("is_active", True).order(
+                "created_at", desc=True
             )
-            
-            # Match by user_id or email
-            if user_email:
-                collaborator_query = collaborator_query.or_(f"user_id.eq.{user_id},email.eq.{user_email}")
-            else:
-                collaborator_query = collaborator_query.eq("user_id", user_id)
-            
-            # Filter active collaborations only
-            collaborator_query = collaborator_query.eq("status", "active")
-            
-            # Apply pagination and ordering
-            collaborator_query = collaborator_query.order("invited_at", desc=True).range(offset, offset + limit - 1)
-            
-            collaborator_response = collaborator_query.execute()
+            shares_response = shares_query.execute()
 
-            # Build inviter map from users table (optional enrichment)
-            inviter_map = {}
+            if not shares_response.data:
+                return {"decks": [], "total": 0, "has_more": False}
+
+            # Deduplicate by deck_uuid, keeping the most recent share info per deck
+            seen_uuids = {}
+            for share in shares_response.data:
+                deck_uuid = share.get("deck_uuid")
+                if deck_uuid and deck_uuid not in seen_uuids:
+                    seen_uuids[deck_uuid] = share
+
+            deck_uuids = list(seen_uuids.keys())
+
+            if not deck_uuids:
+                return {"decks": [], "total": 0, "has_more": False}
+
+            total_count = len(deck_uuids)
+
+            # Step 2: Fetch deck details for the shared deck UUIDs (with pagination)
+            paginated_uuids = deck_uuids[offset:offset + limit]
+
+            if not paginated_uuids:
+                return {"decks": [], "total": total_count, "has_more": False}
+
+            _cols = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,thumbnail_url,data"
             try:
-                inviter_ids = list({c.get("invited_by") for c in collaborator_response.data if c.get("invited_by")})
-                if inviter_ids:
-                    users_resp = self.supabase.table("users").select(
-                        "id,email,full_name,company,avatar_url,metadata"
-                    ).in_("id", inviter_ids).execute()
-                    inviter_map = {u["id"]: u for u in (users_resp.data or [])}
-            except Exception as e:
-                logger.warning(f"[get_shared_decks] Could not fetch inviter user details: {e}")
-            
-            logger.debug(f"[get_shared_decks] Query returned {len(collaborator_response.data)} records")
-            
-            # Process shared decks
+                decks_response = self.supabase.table("decks_optimized").select(_cols).in_(
+                    "uuid", paginated_uuids
+                ).execute()
+            except Exception:
+                # Fallback to decks table if optimized view fails
+                try:
+                    decks_response = self.supabase.table("decks").select(_cols).in_(
+                        "uuid", paginated_uuids
+                    ).execute()
+                except Exception:
+                    _cols = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,data"
+                    decks_response = self.supabase.table("decks").select(_cols).in_(
+                        "uuid", paginated_uuids
+                    ).execute()
+
+            # Build deck map for easy lookup
+            deck_map = {d["uuid"]: d for d in (decks_response.data or [])}
+
+            # Step 3: Build response with share metadata
             shared_decks = []
-            for collab in collaborator_response.data:
-                deck = collab.get("decks", {})
-                inviter = inviter_map.get(collab.get("invited_by"), {})
-                
+            for deck_uuid in paginated_uuids:
+                deck = deck_map.get(deck_uuid)
+                if not deck:
+                    continue
+
+                share_info = seen_uuids.get(deck_uuid, {})
+
                 deck_data = {
                     "uuid": deck.get("uuid"),
                     "name": deck.get("name"),
@@ -830,66 +812,29 @@ class SupabaseAuthService:
                     "user_id": deck.get("user_id"),
                     "status": deck.get("status"),
                     "description": deck.get("description"),
-                    "is_owner": False,
+                    "is_owner": True,
                     "is_shared": True,
-                    
-                    # Sharing metadata
-                    "shared_by": {
-                        "id": inviter.get("id") or collab.get("invited_by"),
-                        "email": inviter.get("email"),
-                        "name": inviter.get("full_name") or inviter.get("email")
-                    },
-                    "share_type": "edit" if "edit" in collab.get("permissions", []) else "view",
-                    "shared_at": collab.get("invited_at"),
-                    "permissions": collab.get("permissions", ["view"]),
-                    "share_link_id": collab.get("share_link_id"),
-                    "collaborator_id": collab.get("id"),
-                    
-                    # Access metadata
-                    "last_accessed_at": collab.get("last_accessed_at"),
-                    "access_count": collab.get("access_count", 0),
-
-                    # Server-rendered thumbnail URL
+                    "share_type": share_info.get("share_type") or share_info.get("permission") or "view",
+                    "short_code": share_info.get("short_code"),
+                    "is_public": share_info.get("is_public", False),
+                    "access_count": share_info.get("access_count", 0),
+                    "first_slide": deck.get("first_slide"),
+                    "slide_count": deck.get("slide_count", 0) or 0,
+                    "data": deck.get("data"),
                     "thumbnail_url": deck.get("thumbnail_url"),
                 }
-
-                # Include only the first slide for thumbnail
-                slides = deck.get("slides", [])
-                if slides and len(slides) > 0:
-                    deck_data["first_slide"] = slides[0]
-                    deck_data["slide_count"] = len(slides)
-                else:
-                    deck_data["first_slide"] = None
-                    deck_data["slide_count"] = 0
-                
                 shared_decks.append(deck_data)
 
-            # Apply search filter if provided (post-filter since search is on joined table)
+            # Apply search filter if provided
             if search_query:
                 search_lower = search_query.lower()
                 shared_decks = [d for d in shared_decks if search_lower in (d.get("name") or "").lower()]
-
-            # Get total count
-            total_query = self.supabase.table("deck_collaborators").select("id", count="exact")
-
-            if user_email:
-                total_query = total_query.or_(f"user_id.eq.{user_id},email.eq.{user_email}")
-            else:
-                total_query = total_query.eq("user_id", user_id)
-
-            total_query = total_query.eq("status", "active")
-            total_response = total_query.execute()
-
-            # If searching, total count is the filtered count
-            if search_query:
                 total_count = len(shared_decks)
-            else:
-                total_count = total_response.count if hasattr(total_response, 'count') else len(shared_decks)
 
             return {
                 "decks": shared_decks,
                 "total": total_count,
-                "has_more": (offset + len(shared_decks)) < total_count
+                "has_more": (offset + limit) < total_count
             }
 
         except Exception as e:

@@ -1272,6 +1272,18 @@ const DeckList: React.FC = () => {
     }
   }, [isAuthenticated]);
 
+  // Compute "My Decks" by excluding shared and API decks so tabs are non-overlapping
+  const sharedDeckUuids = useMemo(() => new Set(sharedDecks.map(d => d.uuid)), [sharedDecks]);
+  const apiDeckUuids = useMemo(() => new Set(apiDecks.map(d => d.uuid)), [apiDecks]);
+  const myDecksOnly = useMemo(
+    () => filteredDecks.filter(d => !sharedDeckUuids.has(d.uuid) && !apiDeckUuids.has(d.uuid)),
+    [filteredDecks, sharedDeckUuids, apiDeckUuids]
+  );
+  const myPopupDecksOnly = useMemo(
+    () => filteredPopupDecks.filter(d => !sharedDeckUuids.has(d.uuid) && !apiDeckUuids.has(d.uuid)),
+    [filteredPopupDecks, sharedDeckUuids, apiDeckUuids]
+  );
+
   // Lifted from OutlineEditor
   const {
     researchingSlides,
@@ -2862,15 +2874,15 @@ const DeckList: React.FC = () => {
                                 <div key={i} className="aspect-[16/9] bg-zinc-100 dark:bg-zinc-800 rounded-xl animate-pulse" />
                               ))}
                             </div>
-                          ) : filteredDecks.length === 0 ? (
+                          ) : myDecksOnly.length === 0 ? (
                             <EmptyDeckList searchQuery={searchQuery} onCreateDeck={handleCreateDeck} authError={authError} onReload={loadDecks} isSearching={isSearching} />
                           ) : (
                             <VirtualizedDeckGrid
-                              decks={filteredDecks}
+                              decks={myDecksOnly}
                               onEdit={handleEditDeck}
                               onShowDeleteDialog={handleShowDeleteDialog}
                               onLoadMore={loadMoreDecks}
-                              hasMore={searchQuery ? false : hasMore} // Disable load more when searching (server returns all results)
+                              hasMore={searchQuery ? false : hasMore}
                               isLoadingMore={isLoadingMore}
                               isInitialLoad={true}
                             />
@@ -2881,7 +2893,7 @@ const DeckList: React.FC = () => {
                           {isLoadingShared ? (
                             <div className="flex justify-center py-12"><Loader2 className="animate-spin text-orange-500" /></div>
                           ) : sharedDecks.length === 0 ? (
-                            <div className="text-center py-12 text-zinc-500 dark:text-zinc-400 text-sm">No shared presentations found.</div>
+                            <div className="text-center py-12 text-zinc-500 dark:text-zinc-400 text-sm">No shared presentations yet. Share a deck to see it here.</div>
                           ) : (
                             <VirtualizedDeckGrid
                               decks={sharedDecks}
@@ -3000,7 +3012,7 @@ const DeckList: React.FC = () => {
                           <div className="flex-grow overflow-y-auto">
                             <div className="p-8">
                               <TabsContent value="by-me" className="mt-0 data-[state=active]:flex data-[state=active]:flex-col">
-                                {(isLoadingPopup || isPopupSearching) && filteredPopupDecks.length === 0 ? (
+                                {(isLoadingPopup || isPopupSearching) && myPopupDecksOnly.length === 0 ? (
                                   <div className="flex flex-col items-center justify-center py-20">
                                     <div className="relative">
                                       <div className="absolute inset-0 bg-orange-500/20 rounded-full blur-xl animate-pulse" />
@@ -3010,7 +3022,7 @@ const DeckList: React.FC = () => {
                                       {isPopupSearching ? 'Searching...' : 'Loading your presentations...'}
                                     </p>
                                   </div>
-                                ) : filteredPopupDecks.length === 0 && popupSearchQuery.trim() && !isPopupSearching ? (
+                                ) : myPopupDecksOnly.length === 0 && popupSearchQuery.trim() && !isPopupSearching ? (
                                   <div className="flex flex-col items-center justify-center py-20">
                                     <div className="w-16 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-4">
                                       <SearchIcon className="h-7 w-7 text-zinc-400 dark:text-zinc-500" />
@@ -3018,7 +3030,7 @@ const DeckList: React.FC = () => {
                                     <p className="text-lg text-zinc-600 dark:text-zinc-300">No results for "{popupSearchQuery}"</p>
                                     <p className="text-sm text-zinc-400 dark:text-zinc-500 mt-1">Try a different search term</p>
                                   </div>
-                                ) : filteredPopupDecks.length === 0 && !popupSearchQuery.trim() ? (
+                                ) : myPopupDecksOnly.length === 0 && !popupSearchQuery.trim() ? (
                                   <div className="flex flex-col items-center justify-center py-20">
                                     <div className="w-16 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-4">
                                       <Grid className="h-7 w-7 text-zinc-400 dark:text-zinc-500" />
@@ -3028,7 +3040,7 @@ const DeckList: React.FC = () => {
                                   </div>
                                 ) : (
                                   <VirtualizedPopupDeckGrid
-                                    decks={filteredPopupDecks}
+                                    decks={myPopupDecksOnly}
                                     onEdit={(deck) => {
                                       handleEditDeck(deck);
                                       setShowGallery(false);
@@ -3074,7 +3086,7 @@ const DeckList: React.FC = () => {
                                       <UserIcon className="h-7 w-7 text-zinc-400 dark:text-zinc-500" />
                                     </div>
                                     <p className="text-lg font-light text-zinc-600 dark:text-zinc-300">No shared presentations</p>
-                                    <p className="text-sm text-zinc-400 dark:text-zinc-500 mt-1">Presentations shared with you will appear here</p>
+                                    <p className="text-sm text-zinc-400 dark:text-zinc-500 mt-1">Share a deck and it will appear here</p>
                                   </div>
                                 ) : (
                                   <VirtualizedPopupDeckGrid
