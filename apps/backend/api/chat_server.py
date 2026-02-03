@@ -256,7 +256,7 @@ app.add_middleware(
     allow_origin_regex=r"https://([a-z0-9-]+\\.)?nextslide\\.ai$|http://(localhost|127\\.0\\.0\\.1|192\\.168\\.\\d+\\.\\d+|10\\.\\d+\\.\\d+\\.\\d+|169\\.254\\.\\d+\\.\\d+)(:\\d+)?$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "X-Request-ID", "Cache-Control"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "X-Request-ID", "Cache-Control", "Pragma"],
     expose_headers=["X-Request-ID", "X-Process-Time", "X-Auth-Status", "X-User-ID", "X-Token-Status"],
     max_age=3600,  # Cache preflight requests for 1 hour
 )
