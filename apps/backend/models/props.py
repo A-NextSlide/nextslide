@@ -43,7 +43,29 @@ class PropsDiffModelBase(BaseModel, PartialLiteralMixin):
         filtered_dict = {k: v for k, v in model_dict.items() if v is not None}
         return self.model_validate(filtered_dict)
 
+def _flatten_allof(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten allOf constructs into a single object schema.
+
+    Works around a bug in json_schema_to_pydantic where handle_all_of passes
+    model_config as a kwarg to pydantic.create_model, which Pydantic v2.12+
+    rejects as a reserved field name.
+    """
+    if "allOf" not in schema:
+        return schema
+    merged = {"type": "object", "properties": {}, "required": []}
+    for sub in schema["allOf"]:
+        sub = _flatten_allof(sub)
+        merged["properties"].update(sub.get("properties", {}))
+        merged["required"].extend(sub.get("required", []))
+    for key in schema:
+        if key not in ("allOf", "properties", "required"):
+            merged.setdefault(key, schema[key])
+    if not merged["required"]:
+        del merged["required"]
+    return merged
+
 def create_props_model(type_name: str, schema: Dict[str, Any]) -> type[BaseModel]:
+    schema = _flatten_allof(schema)
     model = create_model_from_schema(schema)
     fields = {}
 
