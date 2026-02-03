@@ -849,7 +849,7 @@ const AdminDecks: React.FC = () => {
                   </SelectContent>
                 </Select>
                 <Select value={seedSlides} onValueChange={setSeedSlides}>
-                  <SelectTrigger className="w-[70px] h-8 text-[10px] border-[#eaeaea] dark:border-[#333]">
+                  <SelectTrigger className="w-[90px] h-8 text-[10px] border-[#eaeaea] dark:border-[#333]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
