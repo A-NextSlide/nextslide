@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Sparkles, Rocket, TrendingUp, Microscope, Coffee, Timer, FlaskConical, BookOpen, Handshake, Globe, Skull, Wifi, Megaphone, MousePointer2, X, Maximize2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles, Rocket, TrendingUp, Microscope, Coffee, Timer, FlaskConical, BookOpen, Handshake, Globe, Wifi, Megaphone, MousePointer2, X, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ShowcaseDeck } from '@/services/showcaseService';
 import MiniSlide from '@/components/deck/MiniSlide';
@@ -25,100 +25,100 @@ interface InteractiveHeroProps {
 
 const PROMPTS = [
     {
-        id: 'startup',
-        badge: 'Startup',
-        icon: Rocket,
-        text: "Pitch deck for VCs who've already seen 500 this month",
+        id: 'solar-system',
+        badge: 'Science',
+        icon: Microscope,
+        text: "A tour of our solar system from Mercury to the Kuiper Belt",
         theme: 'light' as const,
         deckIndex: 0
     },
     {
-        id: 'investment',
-        badge: 'Investment',
-        icon: TrendingUp,
-        text: "Short-term stock analysis that reads like a Goldman memo",
-        theme: 'light' as const,
-        deckIndex: 1
-    },
-    {
-        id: 'education-algebra',
-        badge: 'Education',
-        icon: Microscope,
-        text: "Algebra for kids who ask 'when will I use this'",
+        id: 'series-b',
+        badge: 'Startup',
+        icon: Rocket,
+        text: "Series B fundraising playbook for a company scaling past $10M ARR",
         theme: 'light' as const,
         deckIndex: 2
     },
     {
-        id: 'learn-coffee',
-        badge: 'Learn',
-        icon: Coffee,
-        text: "How coffee conquered the world",
-        theme: 'light' as const,
-        deckIndex: 3
-    },
-    {
-        id: 'pitch',
-        badge: 'Pitch',
-        icon: Timer,
-        text: "Demo day pitch that actually fits in 3 minutes",
-        theme: 'light' as const,
-        deckIndex: 4
-    },
-    {
-        id: 'education-biology',
-        badge: 'Education',
+        id: 'machine-learning',
+        badge: 'AI / ML',
         icon: FlaskConical,
-        text: "Cellular Respiration: From Glucose to ATP",
+        text: "Machine learning crash course that makes AI feel simple",
         theme: 'light' as const,
-        deckIndex: 5
+        deckIndex: 7
     },
     {
-        id: 'learn-history',
-        badge: 'Learn',
+        id: 'ww2',
+        badge: 'History',
         icon: BookOpen,
-        text: "The French Revolution: From Monarchy to Republic",
+        text: "World War II: a visual timeline of the global conflict",
         theme: 'light' as const,
-        deckIndex: 6
+        deckIndex: 8
+    },
+    {
+        id: 'brand',
+        badge: 'Marketing',
+        icon: Megaphone,
+        text: "Brand positioning strategy for a crowded market",
+        theme: 'light' as const,
+        deckIndex: 9
     },
     {
         id: 'sales',
         badge: 'Sales',
         icon: Handshake,
-        text: "Client proposal that closes itself",
+        text: "Enterprise sales playbook for closing six-figure deals",
         theme: 'orange' as const,
-        deckIndex: 7
-    },
-    {
-        id: 'learn-2000s',
-        badge: 'Learn',
-        icon: Globe,
-        text: "Interactive Presentation About 2000s Internet Culture",
-        theme: 'light' as const,
-        deckIndex: 8
-    },
-    {
-        id: 'science-zombie',
-        badge: 'Science',
-        icon: Skull,
-        text: "How to Survive a Zombie Apocalypse Using Science",
-        theme: 'light' as const,
-        deckIndex: 9
-    },
-    {
-        id: 'learn-90s',
-        badge: 'Culture',
-        icon: Wifi,
-        text: "Why the 90s Internet Was the Wild West of Creativity",
-        theme: 'light' as const,
-        deckIndex: 10
-    },
-    {
-        id: 'marketing',
-        badge: 'Marketing',
-        icon: Megaphone,
-        text: "Social media strategy that actually converts",
-        theme: 'light' as const,
         deckIndex: 11
+    },
+    {
+        id: 'crypto',
+        badge: 'Finance',
+        icon: TrendingUp,
+        text: "Cryptocurrency market analysis covering DeFi and Layer 2",
+        theme: 'light' as const,
+        deckIndex: 13
+    },
+    {
+        id: 'photography',
+        badge: 'Creative',
+        icon: Sparkles,
+        text: "Photography masterclass on composition and visual storytelling",
+        theme: 'light' as const,
+        deckIndex: 17
+    },
+    {
+        id: 'egypt',
+        badge: 'History',
+        icon: Globe,
+        text: "Ancient Egypt: pyramids, pharaohs, and the Nile civilization",
+        theme: 'light' as const,
+        deckIndex: 18
+    },
+    {
+        id: 'music',
+        badge: 'Education',
+        icon: Coffee,
+        text: "Music theory crash course from scales to chord progressions",
+        theme: 'light' as const,
+        deckIndex: 19
+    },
+    {
+        id: 'digital-transform',
+        badge: 'Business',
+        icon: Wifi,
+        text: "Digital transformation roadmap from legacy to cloud-native",
+        theme: 'light' as const,
+        deckIndex: 21
+    },
+    {
+        id: 'nutrition',
+        badge: 'Health',
+        icon: Timer,
+        text: "The science of nutrition: macros, micros, and metabolic health",
+        theme: 'light' as const,
+        deckIndex: 29
     }
 ];
 

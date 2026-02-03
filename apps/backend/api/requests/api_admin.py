@@ -3849,17 +3849,27 @@ async def _admin_generate_deck(
                 source = reseed_info.get("source", "")
                 deck_name = topic[:100]
 
+                # Fetch slides from the newly generated deck
+                deck_row = sb.table("decks").select("slides, description").eq("uuid", deck_uuid).maybe_single().execute()
+                slides_data = []
+                deck_description = ""
+                if deck_row and getattr(deck_row, "data", None):
+                    slides_data = deck_row.data.get("slides") or []
+                    deck_description = deck_row.data.get("description") or ""
+
                 if source in ("featured", "both"):
                     display_order = reseed_info.get("display_order", 0)
                     sb.table("featured_decks").delete().eq("uuid", old_uuid).execute()
                     sb.table("featured_decks").upsert({
                         "uuid": deck_uuid,
                         "name": deck_name,
+                        "description": deck_description,
+                        "slides": slides_data,
                         "display_order": display_order,
                         "slide_count": final_count,
                         "is_active": True,
                     }).execute()
-                    logger.info(f"[admin_seed] Reseed swap: featured {old_uuid} -> {deck_uuid} (slot {display_order})")
+                    logger.info(f"[admin_seed] Reseed swap: featured {old_uuid} -> {deck_uuid} (slot {display_order}, {len(slides_data)} slides)")
 
                 if source in ("community", "both"):
                     category = reseed_info.get("category", "business")
@@ -3874,12 +3884,13 @@ async def _admin_generate_deck(
                         "tags": [category],
                         "status": "approved",
                         "slide_count": final_count,
+                        "first_slide": slides_data[0] if slides_data else None,
                         "author_name": "NextSlide",
                         "view_count": 0,
                         "remix_count": 0,
                         "thumbnail_url": thumbnail,
                     }).execute()
-                    logger.info(f"[admin_seed] Reseed swap: community {old_uuid} -> {deck_uuid} (cat={category})")
+                    logger.info(f"[admin_seed] Reseed swap: community {old_uuid} -> {deck_uuid} (cat={category}, {len(slides_data)} slides)")
             except Exception as swap_err:
                 logger.error(f"[admin_seed] Reseed swap failed: {swap_err}", exc_info=True)
 
