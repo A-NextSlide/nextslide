@@ -240,9 +240,6 @@ async def api_get_leaderboard(
     limit: int = Query(10, ge=1, le=50, description="Number of results"),
 ):
     """Get the deck leaderboard for a given period and metric."""
-    if not _is_gamification_enabled():
-        return {"entries": [], "period": period, "metric": metric}
-
     if metric not in ("views", "remixes"):
         metric = "views"
 
