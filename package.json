@@ -2,15 +2,13 @@
   "name": "nextslide",
   "version": "1.0.0",
   "private": true,
-  "workspaces": [
-    "apps/frontend"
-  ],
   "scripts": {
     "dev": "npm-run-all --parallel dev:frontend dev:backend",
-    "dev:frontend": "npm run dev --workspace=apps/frontend",
+    "dev:frontend": "cd apps/frontend && npm run dev",
     "dev:backend": "cd apps/backend && ./venv/bin/python -m api.chat_server",
-    "build:frontend": "npm run build --workspace=apps/frontend",
-    "test:frontend": "npm run test --workspace=apps/frontend",
+    "build": "cd apps/frontend && npm install --legacy-peer-deps && npm run build",
+    "build:frontend": "cd apps/frontend && npm run build",
+    "test:frontend": "cd apps/frontend && npm run test",
     "kill": "cd apps/backend && make kill-all",
     "restart": "npm run kill && npm run dev",
     "nextslide": "npm-run-all --parallel dev:frontend dev:backend",
@@ -42,5 +40,7 @@
   ],
   "author": "",
   "license": "ISC",
-  "dependencies": {}
+  "dependencies": {
+    "npm-run-all": "^4.1.5"
+  }
 }
