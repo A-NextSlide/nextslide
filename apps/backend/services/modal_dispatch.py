@@ -153,7 +153,11 @@ async def compose_deck_stream_via_modal(
 
         logger.info(f"[modal_dispatch] Dispatching deck {deck_uuid} to Modal")
 
-        async for event in compose_deck_remote.remote_gen.aio(
+        # Wrap the remote generator with a timeout on the first event.
+        # If Modal is cold-starting or stuck, fall back to local after 60s.
+        _FIRST_EVENT_TIMEOUT = 60  # seconds
+        got_first_event = False
+        remote_gen = compose_deck_remote.remote_gen.aio(
             outline_dict=outline_dict,
             schemas_dict=schemas_dict,
             deck_uuid=deck_uuid,
@@ -163,7 +167,19 @@ async def compose_deck_stream_via_modal(
             prefetch_images=prefetch_images,
             enable_visual_analysis=enable_visual_analysis,
             user_id=user_id,
-        ):
+        )
+        ait = remote_gen.__aiter__()
+        try:
+            first = await asyncio.wait_for(ait.__anext__(), timeout=_FIRST_EVENT_TIMEOUT)
+            got_first_event = True
+            yield first
+        except (asyncio.TimeoutError, StopAsyncIteration) as te:
+            if isinstance(te, asyncio.TimeoutError):
+                logger.warning(f"[modal_dispatch] Timed out waiting for first event from Modal for {deck_uuid} after {_FIRST_EVENT_TIMEOUT}s")
+                raise  # caught by outer except → falls back to local
+
+        # First event received; stream remaining events without a per-event timeout
+        async for event in ait:
             yield event
 
         _log_dispatch("compose_deck_stream", success=True)
