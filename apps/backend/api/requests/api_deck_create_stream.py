@@ -191,6 +191,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                         'type': 'deck_created',
                         'deck_id': deck_uuid,
                         'deck_url': f'/deck/{deck_uuid}',
+                        'deck_name': deck_outline.title or '',
                         'status': 'exists',
                         'message': f'Deck already {status_state}'
                     })
@@ -219,6 +220,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                     'type': 'deck_created',
                     'deck_id': deck_uuid,
                     'deck_url': f'/deck/{deck_uuid}',
+                    'deck_name': deck_outline.title or '',
                     'status': 'completed',
                     'message': 'Deck already completed'
                 })
@@ -234,6 +236,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                     'type': 'deck_created',
                     'deck_id': deck_uuid,
                     'deck_url': f'/deck/{deck_uuid}',
+                    'deck_name': deck_outline.title or '',
                     'status': 'generating',
                     'message': 'Deck is already being generated'
                 })
@@ -250,6 +253,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                     'type': 'deck_created',
                     'deck_id': deck_uuid,
                     'deck_url': f'/deck/{deck_uuid}',
+                    'deck_name': deck_outline.title or '',
                     'status': 'locked',
                     'message': 'Deck generation in progress'
                 })
@@ -304,6 +308,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                     'type': 'deck_created',
                     'deck_id': deck_uuid,  # Frontend expects 'deck_id' not 'deck_uuid'
                     'deck_url': f'/deck/{deck_uuid}',
+                    'deck_name': deck_outline.title or '',
                     'status': 'pending',
                     'message': 'Deck created, starting generation...'
                 }

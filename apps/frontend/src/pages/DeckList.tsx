@@ -732,6 +732,11 @@ const DeckList: React.FC = () => {
               hasNavigated = true;
               console.log('[DeckList] 🚀 Navigating to deck (overage retry):', emittedDeckId);
               localStorage.removeItem('nextslide_pending_outline');
+              const deckTitle = pendingData.outline?.title || '';
+              if (deckTitle) {
+                try { sessionStorage.setItem('activeGenerationDeckName', deckTitle); } catch {}
+                (window as any).__activeGenerationDeckName = deckTitle;
+              }
               navigate(`/deck/${emittedDeckId}?new=true`);
             }
           }
@@ -1085,6 +1090,11 @@ const DeckList: React.FC = () => {
                 console.log('[DeckList] 🚀 Navigating to deck:', emittedDeckId);
                 // Clear pending outline since generation succeeded
                 localStorage.removeItem('nextslide_pending_outline');
+                const deckTitle = newOutline?.title || '';
+                if (deckTitle) {
+                  try { sessionStorage.setItem('activeGenerationDeckName', deckTitle); } catch {}
+                  (window as any).__activeGenerationDeckName = deckTitle;
+                }
                 navigate(`/deck/${emittedDeckId}?new=true`);
               }
             }
