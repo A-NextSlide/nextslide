@@ -1,5 +1,6 @@
 import os
 import hashlib
+import time
 import aiohttp
 import asyncio
 from typing import Dict, Any, Optional, List, Tuple
@@ -303,17 +304,24 @@ class ImageStorageService:
                 return {'url': image_url, 'error': f"Upload failed: {error_message}"}
 
             # Verify the upload actually succeeded by checking if file exists
+            # Retry a few times since Supabase storage indexing is eventually consistent
             try:
-                verify_list = self.supabase.storage.from_(self.bucket_name).list(path=os.path.dirname(file_path))
-                verify_file = next((f for f in verify_list if f.get('name') == os.path.basename(file_path)), None)
-                if not verify_file:
-                    logger.error(f"Upload verification failed - file not found after upload: {file_path}")
-                    return {'url': image_url, 'error': "Upload verification failed - file not found"}
-                verify_size = verify_file.get('metadata', {}).get('size', 0) if isinstance(verify_file.get('metadata'), dict) else verify_file.get('size', 0)
-                if verify_size and verify_size < 1000:
-                    logger.error(f"Upload verification failed - file too small ({verify_size} bytes): {file_path}")
-                    return {'url': image_url, 'error': f"Upload verification failed - file too small ({verify_size} bytes)"}
-                logger.debug(f"Upload verified: {file_path} ({verify_size} bytes)")
+                verified = False
+                for attempt in range(3):
+                    if attempt > 0:
+                        time.sleep(0.3 * attempt)
+                    verify_list = self.supabase.storage.from_(self.bucket_name).list(path=os.path.dirname(file_path))
+                    verify_file = next((f for f in verify_list if f.get('name') == os.path.basename(file_path)), None)
+                    if verify_file:
+                        verify_size = verify_file.get('metadata', {}).get('size', 0) if isinstance(verify_file.get('metadata'), dict) else verify_file.get('size', 0)
+                        if verify_size and verify_size < 1000:
+                            logger.error(f"Upload verification failed - file too small ({verify_size} bytes): {file_path}")
+                            return {'url': image_url, 'error': f"Upload verification failed - file too small ({verify_size} bytes)"}
+                        logger.debug(f"Upload verified: {file_path} ({verify_size} bytes)")
+                        verified = True
+                        break
+                if not verified:
+                    logger.warning(f"Upload verification: file not found after retries, proceeding anyway: {file_path}")
             except Exception as verify_err:
                 logger.warning(f"Could not verify upload (proceeding anyway): {verify_err}")
 

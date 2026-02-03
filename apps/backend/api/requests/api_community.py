@@ -302,7 +302,7 @@ async def get_community_deck(deck_id: str):
             view_count=deck.get('view_count', 0) + 1,
             approved_at=deck.get('approved_at'),
             submitted_at=deck.get('submitted_at'),
-            slides=deck.get('slides_snapshot', []),
+            slides=deck.get('slides_snapshot') or [],
             theme=deck.get('theme_snapshot'),
         )
 
