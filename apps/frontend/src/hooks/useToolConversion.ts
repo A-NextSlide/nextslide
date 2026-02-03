@@ -182,6 +182,7 @@ export function useToolConversion(config: ToolPageConfig): UseToolConversionRetu
     (prompt: string, fileContext?: FileAnalysisResponse) => {
       try {
         localStorage.setItem('landing_prompt', prompt);
+        localStorage.setItem('landing_prompt_ts', String(Date.now()));
         if (fileContext) localStorage.setItem('landing_file_context', JSON.stringify(fileContext));
       } catch { /* private browsing */ }
     },

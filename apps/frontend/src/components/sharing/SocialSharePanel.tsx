@@ -3,6 +3,7 @@ import { Check, Copy, Mail, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { trackEvent } from '@/services/analytics';
+import { nativeBridge } from '@/utils/nativeBridge';
 
 // ---------- Types ----------
 
@@ -52,18 +53,8 @@ function WhatsAppIcon({ className }: { className?: string }) {
 
 // ---------- Platform Share Actions ----------
 
-function openShareWindow(url: string, platform: string): void {
-  // Standard social share window dimensions
-  const w = 600;
-  const h = 500;
-  const left = Math.round((window.screen.width - w) / 2);
-  const top = Math.round((window.screen.height - h) / 2);
-
-  window.open(
-    url,
-    `share_${platform}`,
-    `width=${w},height=${h},left=${left},top=${top},toolbar=no,menubar=no`
-  );
+function openShareWindow(url: string, _platform: string): void {
+  nativeBridge.openExternal(url);
 }
 
 // ---------- Component ----------
@@ -118,7 +109,7 @@ export default function SocialSharePanel({
     const link = urlWithUtm(shareUrl, 'email');
     const subject = `Check out "${title}" - made with NextSlide`;
     const body = `I wanted to share this presentation with you:\n\n${title}\n\n${link}\n\nCreated with NextSlide - AI-Powered Presentations`;
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    nativeBridge.openExternal(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
     completeShare('email');
   }, [title, shareUrl, trackShare, completeShare]);
 

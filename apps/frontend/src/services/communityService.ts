@@ -12,6 +12,7 @@ import { extractApiError } from '@/utils/extractErrorMessage';
 
 export interface CommunityDeck {
   id: string;
+  deckUuid?: string;
   title: string;
   description?: string;
   category: string;
@@ -330,15 +331,25 @@ class CommunityService {
   // --------------------------------------------------------------------------
 
   private transformDeck(deck: any): CommunityDeck {
+    const deckUuid: string | undefined = deck.deck_uuid || undefined;
+
+    // Resolve thumbnail: prefer API value, then construct from bucket path
+    let thumbnailUrl: string | null = deck.thumbnail_url || null;
+    if (!thumbnailUrl && deckUuid) {
+      const base = import.meta.env.VITE_SUPABASE_URL || 'https://auth.nextslide.ai';
+      thumbnailUrl = `${base}/storage/v1/object/public/thumbnails/thumbnails/${deckUuid}_s0.png`;
+    }
+
     return {
       id: deck.id,
+      deckUuid,
       title: deck.title,
       description: deck.description,
       category: deck.category,
       tags: deck.tags || [],
       slideCount: deck.slide_count || 0,
       firstSlide: deck.first_slide,
-      thumbnailUrl: deck.thumbnail_url || null,
+      thumbnailUrl,
       authorName: deck.author_name,
       remixCount: deck.remix_count || 0,
       viewCount: deck.view_count || 0,

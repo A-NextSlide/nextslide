@@ -25,10 +25,17 @@ def build_system_prompt(
     has_palette = bool(accent and text_color and bg_color)
     hero_font, body_font = _extract_fonts_from_typography(typography)
 
-    logo_line = (
-        "LOGO: Available at props.logoUrl - place small (max 48px height) in a corner, never center or dominate."
+    logo_instruction = (
+        "- Logo: ALWAYS render at props.logoUrl. position:absolute; left:60px; bottom:30px; max-height:40px; pointer-events:none."
         if logo_url
-        else "LOGO: If props.logoUrl is provided, place small (max 48px height) in a corner, never center or dominate."
+        else "- Logo: If props.logoUrl is provided, render it at position:absolute; left:60px; bottom:30px; max-height:40px; pointer-events:none."
+    )
+    element_positions = (
+        "\n\nFIXED ELEMENT POSITIONS (MUST follow on EVERY slide for consistency across the deck):\n"
+        f"{logo_instruction}\n"
+        "- Page number: ALWAYS render the slide number (from the SLIDE info). position:absolute; right:60px; bottom:30px; font-size:13px; color:var(--text); opacity:0.4; pointer-events:none.\n"
+        "  Format: just the number (e.g. \"3\"), no \"Slide\" prefix, no \"of N\".\n"
+        "- These two elements must be in IDENTICAL positions on every slide. Never move, center, enlarge, or omit them."
     )
 
     # Visual toolkit guidance - both built components and images
@@ -73,7 +80,7 @@ def build_system_prompt(
             "  - NEVER hard-code font names directly in CSS rules - ALWAYS use var(--font-heading) or var(--font-body)\n"
             "COLOR USE: Only use the CSS variables above (plus white/black for legibility).\n"
             f"{visual_component_guidance}"
-            f"{logo_line}"
+            f"{element_positions}"
         ).format(
             accent=accent,
             secondary=secondary,
@@ -99,7 +106,7 @@ def build_system_prompt(
             "  - ALWAYS apply: p,.body-text {{ font-family: var(--font-body); }}\n"
             "  - NEVER hard-code font names directly in CSS rules - ALWAYS use var(--font-heading) or var(--font-body)\n"
             f"{visual_component_guidance}"
-            f"{logo_line}"
+            f"{element_positions}"
         ).format(
             hero=hero_font,
             body=body_font,
@@ -136,10 +143,12 @@ def build_system_prompt(
             "  * 4+ cards: use 180-200px height OR switch to 2-column grid\n"
             "- If content doesn't fit: use smaller cards, fewer items, or multi-column layout\n"
             "- NEVER let flex/grid children auto-grow beyond available space - set explicit max-heights\n\n"
-            "ELEMENT POSITIONS (use these when the element appears for cross-slide consistency):\n"
-            "- Title: top-left (x:80px, y:50px), 48-56px font\n"
-            "- Logo: bottom-left (x:60px, y:1020px), max 40px height\n"
-            "- Source/footnote: bottom-right (right-aligned to x:1860px, y:1050px), 12px muted\n\n"
+            "FIXED ELEMENT POSITIONS (MUST follow on EVERY slide for consistency across the deck):\n"
+            "- Title: top-left (position:absolute; left:80px; top:50px), 48-56px font\n"
+            "- Logo: bottom-left (position:absolute; left:60px; bottom:30px), max-height:40px, pointer-events:none\n"
+            "- Page number: bottom-right (position:absolute; right:60px; bottom:30px), 13px, var(--text) at 40% opacity, pointer-events:none. Just the number (e.g. \"3\").\n"
+            "- Source/footnote: bottom-right above page number if both present (right:60px; bottom:54px), 12px muted\n"
+            "- These elements must be in IDENTICAL positions on every slide. Never move, center, enlarge, or omit them.\n\n"
             "LAYERING & POINTER EVENTS:\n"
             "- Background/decorative: z-index 1-10\n"
             "- Media: 20-30\n"

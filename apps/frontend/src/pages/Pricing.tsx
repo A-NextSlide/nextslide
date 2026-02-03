@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { BROWSER } from '@/utils/browser';
+import { nativeBridge } from '@/utils/nativeBridge';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import BrandWordmark from '@/components/common/BrandWordmark';
@@ -40,7 +42,7 @@ const Pricing: React.FC = () => {
     } else if (user) {
       navigate('/app');
     } else {
-      navigate('/');
+      navigate(BROWSER.isNativeApp ? '/app' : '/');
     }
   };
 
@@ -121,8 +123,14 @@ const Pricing: React.FC = () => {
         return;
       }
 
-      // New subscription - redirect to Stripe checkout
-      window.location.href = session.url;
+      // New subscription - open Stripe checkout
+      // Native apps: open in system browser (Stripe requires it)
+      // Web: redirect in same tab
+      if (BROWSER.isNativeApp) {
+        nativeBridge.openExternal(session.url);
+      } else {
+        window.location.href = session.url;
+      }
     } catch (err) {
       toast({
         title: 'Error',
@@ -264,7 +272,7 @@ const Pricing: React.FC = () => {
               <ArrowLeft className="h-4 w-4" />
               {fromSettings ? 'Settings' : user ? 'Dashboard' : 'Home'}
             </Button>
-            <div className="cursor-pointer" onClick={() => navigate('/')}>
+            <div className="cursor-pointer" onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}>
               <BrandWordmark
                 tag="h1"
                 sizePx={18.95}

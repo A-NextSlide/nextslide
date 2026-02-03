@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Lock, Sparkles, ArrowRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Lock, Sparkles, ArrowRight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -48,19 +49,21 @@ interface SlideCardProps {
   index: number;
   total: number;
   onSignupClick: () => void;
+  onSlideClick?: () => void;
 }
 
-const SlideCard: React.FC<SlideCardProps> = ({ slide, index, total, onSignupClick }) => {
+const SlideCard: React.FC<SlideCardProps> = ({ slide, index, total, onSignupClick, onSlideClick }) => {
   const isLocked = slide.locked;
 
   return (
     <div className="w-full max-w-[520px] mx-auto select-none">
       <div
+        onClick={!isLocked ? onSlideClick : undefined}
         className={cn(
           'relative bg-white dark:bg-zinc-900 rounded-2xl border overflow-hidden transition-shadow duration-300',
           isLocked
             ? 'border-zinc-200 dark:border-zinc-700'
-            : 'border-black/10 dark:border-white/10 shadow-lg shadow-black/5 dark:shadow-black/30',
+            : 'border-black/10 dark:border-white/10 shadow-lg shadow-black/5 dark:shadow-black/30 cursor-pointer active:scale-[0.98] transition-transform',
         )}
       >
         {/* Slide content */}
@@ -167,6 +170,10 @@ const PreviewCarousel: React.FC<PreviewCarouselProps> = ({
   const [direction, setDirection] = useState(0); // -1 = left, 1 = right
   const touchStartX = useRef<number | null>(null);
 
+  // Fullscreen presentation mode
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fsSlideIndex, setFsSlideIndex] = useState(0);
+
   const total = slides.length;
 
   const goTo = useCallback(
@@ -192,15 +199,73 @@ const PreviewCarousel: React.FC<PreviewCarouselProps> = ({
     }
   }, [currentIndex]);
 
-  // Keyboard navigation
+  // Fullscreen handlers
+  const openFullscreen = useCallback((index: number) => {
+    if (slides[index]?.locked) return;
+    setFsSlideIndex(index);
+    setIsFullscreen(true);
+  }, [slides]);
+
+  const closeFullscreen = useCallback(() => {
+    setIsFullscreen(false);
+  }, []);
+
+  const fsNext = useCallback(() => {
+    setFsSlideIndex((prev) => {
+      let next = prev + 1;
+      // Skip locked slides
+      while (next < slides.length && slides[next]?.locked) next++;
+      return next < slides.length ? next : prev;
+    });
+  }, [slides]);
+
+  const fsPrev = useCallback(() => {
+    setFsSlideIndex((prev) => {
+      let next = prev - 1;
+      while (next >= 0 && slides[next]?.locked) next--;
+      return next >= 0 ? next : prev;
+    });
+  }, [slides]);
+
+  // Keyboard + touch for fullscreen
   useEffect(() => {
+    if (!isFullscreen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeFullscreen();
+      else if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); fsNext(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); fsPrev(); }
+    };
+    let fsTouchStartX = 0;
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length) fsTouchStartX = e.touches[0].clientX;
+    };
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (!e.changedTouches.length) return;
+      const dx = e.changedTouches[0].clientX - fsTouchStartX;
+      if (Math.abs(dx) > 50) { dx < 0 ? fsNext() : fsPrev(); }
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKey);
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKey);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isFullscreen, fsNext, fsPrev, closeFullscreen]);
+
+  // Keyboard navigation (carousel, only when not fullscreen)
+  useEffect(() => {
+    if (isFullscreen) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight') goNext();
       if (e.key === 'ArrowLeft') goPrev();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [goNext, goPrev]);
+  }, [goNext, goPrev, isFullscreen]);
 
   // Touch swipe
   const onTouchStart = (e: React.TouchEvent) => {
@@ -261,6 +326,7 @@ const PreviewCarousel: React.FC<PreviewCarouselProps> = ({
   if (slides.length === 0) return null;
 
   return (
+    <>
     <motion.div
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
@@ -326,6 +392,7 @@ const PreviewCarousel: React.FC<PreviewCarouselProps> = ({
                 index={currentIndex}
                 total={total}
                 onSignupClick={onSignupClick}
+                onSlideClick={() => openFullscreen(currentIndex)}
               />
             </motion.div>
           </AnimatePresence>
@@ -334,7 +401,93 @@ const PreviewCarousel: React.FC<PreviewCarouselProps> = ({
 
       {/* Dots navigation */}
       <Dots total={total} current={currentIndex} onSelect={goTo} slides={slides} />
+
     </motion.div>
+
+    {/* Fullscreen Presentation Overlay — portaled to body to escape stacking contexts */}
+    {isFullscreen && slides.length > 0 && createPortal(
+      <div
+        className="fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center"
+        onClick={closeFullscreen}
+      >
+        {/* Top bar */}
+        <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-3 md:p-5">
+          <div className="bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5 text-white/90 text-sm font-medium border border-white/20">
+            {fsSlideIndex + 1} / {slides.filter((s) => !s.locked).length}
+          </div>
+          <button
+            onClick={closeFullscreen}
+            className="bg-black/60 backdrop-blur-sm rounded-full w-9 h-9 flex items-center justify-center text-white/90 hover:bg-black/80 active:scale-95 border border-white/20 transition-all"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Slide content in landscape card */}
+        <div
+          className="relative w-full h-full flex items-center justify-center p-4 md:p-12"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="relative w-full max-w-[900px] aspect-video bg-white dark:bg-zinc-900 rounded-xl overflow-hidden shadow-2xl flex flex-col justify-center p-8 sm:p-12 md:p-16">
+            {/* Slide number */}
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-[#FF4301] mb-3 sm:mb-4">
+              Slide {fsSlideIndex + 1}
+            </span>
+
+            {/* Title */}
+            <h2
+              className="text-xl sm:text-3xl md:text-4xl font-bold text-black dark:text-white mb-4 sm:mb-6 leading-tight"
+              style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}
+            >
+              {slides[fsSlideIndex].title}
+            </h2>
+
+            {/* Content */}
+            <p className="text-sm sm:text-base md:text-lg text-black/70 dark:text-white/70 leading-relaxed max-w-[700px]">
+              {slides[fsSlideIndex].content}
+            </p>
+          </div>
+
+          {/* Nav buttons */}
+          <button
+            onClick={(e) => { e.stopPropagation(); fsPrev(); }}
+            className={cn(
+              'absolute left-1 md:left-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm border border-white/20 transition-all',
+              fsSlideIndex === 0 ? 'opacity-30' : 'hover:bg-black/70 active:scale-95',
+            )}
+            disabled={fsSlideIndex === 0}
+          >
+            <ChevronLeft size={22} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); fsNext(); }}
+            className={cn(
+              'absolute right-1 md:right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm border border-white/20 transition-all',
+              fsSlideIndex >= slides.length - 1 || slides[fsSlideIndex + 1]?.locked
+                ? 'opacity-30'
+                : 'hover:bg-black/70 active:scale-95',
+            )}
+            disabled={fsSlideIndex >= slides.length - 1 || !!slides[fsSlideIndex + 1]?.locked}
+          >
+            <ChevronRight size={22} />
+          </button>
+        </div>
+
+        {/* Progress bar */}
+        <div className="absolute bottom-3 md:bottom-5 left-6 right-6 z-10">
+          <div className="bg-white/20 rounded-full h-1 overflow-hidden">
+            <div
+              className="bg-white/80 h-full rounded-full transition-all duration-300"
+              style={{
+                width: `${((fsSlideIndex + 1) / slides.filter((s) => !s.locked).length) * 100}%`,
+              }}
+            />
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   );
 };
 

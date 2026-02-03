@@ -56,66 +56,10 @@ TITLE_SPLIT_SEPARATORS = (":", " - ", " \u2014 ", " \u2013 ", " | ", ";")
 
 
 def normalize_deck_title(value: Optional[str]) -> str:
+    """Clean up whitespace/quotes only — let the AI title through as-is."""
     if not value or not str(value).strip():
         return value or ""
-    original = " ".join(str(value).split()).strip().strip('"').strip("'")
-    cleaned = original
-
-    # Apply prefix patterns (removes from start)
-    for pattern in TITLE_PREFIX_PATTERNS:
-        cleaned = pattern.sub("", cleaned)
-    cleaned = re.sub(r"^\s*the\s+", "", cleaned, flags=re.IGNORECASE).strip()
-
-    # Apply trailing patterns (removes from end)
-    # Pattern for "based on real-time data" etc.
-    cleaned = re.sub(
-        r"\s+based\s+on\s+(?:real[- ]?time|current|live|latest)\s+(?:data|analytics|metrics|statistics)\.?$",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    ).strip()
-
-    # Pattern for trailing ellipsis from LLM
-    cleaned = re.sub(r"\.{2,}$", "", cleaned).strip()
-
-    def exceeds_limits(text: str) -> bool:
-        return len(text) > TITLE_MAX_CHARS or len(text.split()) > TITLE_MAX_WORDS
-
-    for sep in TITLE_SPLIT_SEPARATORS:
-        if sep in cleaned:
-            candidate = cleaned.split(sep, 1)[0].strip()
-            if candidate and len(candidate.split()) >= 2:  # Reduced from 3 for shorter titles
-                cleaned = candidate
-                break
-
-    if exceeds_limits(cleaned) and "," in cleaned:
-        candidate = cleaned.split(",", 1)[0].strip()
-        if candidate:
-            cleaned = candidate
-
-    if exceeds_limits(cleaned):
-        cleaned = re.sub(r"\s+for\s+[^,]+$", "", cleaned, flags=re.IGNORECASE).strip()
-
-    # Remove trailing prepositions/articles that look incomplete
-    cleaned = re.sub(r"\s+(?:and|or|the|a|an|of|on|in|for|to|with|about)$", "", cleaned, flags=re.IGNORECASE).strip()
-
-    truncated = False
-    words = cleaned.split()
-    if len(words) > TITLE_MAX_WORDS:
-        cleaned = " ".join(words[:TITLE_MAX_WORDS]).strip()
-        truncated = True
-
-    if len(cleaned) > TITLE_MAX_CHARS:
-        truncated = True
-        shortened = cleaned[:TITLE_MAX_CHARS].rsplit(" ", 1)[0].strip()
-        cleaned = shortened if shortened else cleaned[:TITLE_MAX_CHARS].strip()
-
-    cleaned = cleaned.rstrip(" ,;:-")
-
-    if truncated and cleaned and not cleaned.endswith("..."):
-        cleaned = f"{cleaned}..."
-
-    return cleaned or original
+    return " ".join(str(value).split()).strip().strip('"').strip("'")
 
 
 def _sync_first_slide_title(deck_outline: DeckOutline, original_title: str, normalized_title: str) -> None:
@@ -378,6 +322,22 @@ def broadcast_uploaded_media_to_slide_models(deck_outline: DeckOutline) -> None:
 
 def ensure_deck_title(deck_outline: DeckOutline) -> None:
     logger.info("[DECK_TITLE_DEBUG] Title from outline: '%s'", deck_outline.title)
+
+    # Always prefer the first slide's title as the deck name — it reflects
+    # the actual outline heading the user approved, not the AI-generated
+    # meta-description (e.g. "A comprehensive sales deck for …").
+    if deck_outline.slides:
+        first_slide_title = (deck_outline.slides[0].title or "").strip()
+        if first_slide_title and first_slide_title != "Untitled Slide":
+            normalized = normalize_deck_title(first_slide_title)
+            logger.info(
+                "[DECK_TITLE_DEBUG] Using first slide title as deck name: '%s'",
+                normalized,
+            )
+            deck_outline.title = normalized
+            return
+
+    # Fallback: use the outline-level title if no usable first slide title
     original_title = (deck_outline.title or "").strip()
     if original_title and original_title != "Untitled Deck":
         normalized = normalize_deck_title(original_title)
@@ -392,17 +352,7 @@ def ensure_deck_title(deck_outline: DeckOutline) -> None:
     )
 
     new_title = None
-    if deck_outline.slides:
-        first_slide_title = deck_outline.slides[0].title
-        if (
-            first_slide_title
-            and first_slide_title.strip()
-            and first_slide_title != "Untitled Slide"
-        ):
-            new_title = first_slide_title
-            logger.info("[DECK_TITLE_DEBUG] Using first slide title: '%s'", new_title)
-
-    if not new_title and getattr(deck_outline, "stylePreferences", None):
+    if getattr(deck_outline, "stylePreferences", None):
         vibe = getattr(deck_outline.stylePreferences, "vibeContext", None)
         if vibe:
             new_title = (

@@ -368,8 +368,9 @@ export const VirtualizedDeckGrid = React.memo(({
           hasBeenRenderedRef.current.add(deck.uuid);
         }
 
-        // Mobile: prefer server thumbnail or client cache; Desktop: always render live
-        const cachedUrl = BROWSER.isMobile
+        // Mobile & Desktop app: prefer server thumbnail or client cache to avoid
+        // heavy MiniSlide DOM rendering that exceeds Chromium's GPU tile budget
+        const cachedUrl = (BROWSER.isMobile || BROWSER.isDesktopApp)
           ? ((deck as any).thumbnail_url || (deck.uuid ? getCachedThumbnail(deck.uuid) : null))
           : null;
 

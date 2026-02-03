@@ -266,6 +266,7 @@ class SubmitToCommunityRequest(BaseModel):
 class CommunityDeckResponse(BaseModel):
     """Response model for a community deck (list view)"""
     id: str
+    deck_uuid: Optional[str] = None
     title: str
     description: Optional[str] = None
     category: str
@@ -328,6 +329,7 @@ class RejectCommunitySubmissionRequest(BaseModel):
 class ShowcaseDeckResponse(BaseModel):
     """Response model for a showcase deck (includes upvote data)"""
     id: str
+    deck_uuid: Optional[str] = None
     title: str
     description: Optional[str] = None
     category: str

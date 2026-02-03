@@ -12,7 +12,7 @@ import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, date, timedelta
 
-from services.supabase import get_supabase_client
+from services.supabase import get_supabase_client, SUPABASE_URL
 from services.growth_config_service import get_growth_config
 
 logger = logging.getLogger(__name__)
@@ -601,6 +601,50 @@ async def get_leaderboard(
         return []
 
 
+def _backfill_thumbnails(client, rows: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Batch-fetch thumbnail URLs from source decks for rows missing them."""
+    missing = [r["deck_uuid"] for r in rows if not r.get("thumbnail_url") and r.get("deck_uuid")]
+    if not missing:
+        return {}
+    try:
+        src = client.table("decks").select("uuid, thumbnail_url").in_("uuid", missing).execute()
+        return {r["uuid"]: r["thumbnail_url"] for r in (src.data or []) if r.get("thumbnail_url")}
+    except Exception as e:
+        logger.debug("Thumbnail backfill failed: %s", e)
+        return {}
+
+
+def _thumbnail_url_for(deck_uuid: str | None) -> str | None:
+    """Construct public thumbnail URL from deck UUID (bucket path fallback)."""
+    if not deck_uuid or not SUPABASE_URL:
+        return None
+    return f"{SUPABASE_URL}/storage/v1/object/public/thumbnails/thumbnails/{deck_uuid}_s0.png"
+
+
+def _build_entry(row: Dict[str, Any], rank: int, score_field: str, thumb_map: Dict[str, str]) -> Dict[str, Any]:
+    """Build a single leaderboard entry dict with thumbnail fallback."""
+    du = row.get("deck_uuid", "")
+    return {
+        "rank": rank,
+        "id": row.get("id"),
+        "deck_uuid": du,
+        "title": row.get("title"),
+        "description": row.get("description"),
+        "category": row.get("category"),
+        "tags": row.get("tags"),
+        "slide_count": row.get("slide_count"),
+        "first_slide": row.get("first_slide"),
+        "thumbnail_url": row.get("thumbnail_url") or thumb_map.get(du) or _thumbnail_url_for(du),
+        "author_name": row.get("author_name", "Anonymous"),
+        "view_count": row.get("view_count", 0),
+        "remix_count": row.get("remix_count", 0),
+        "upvote_count": row.get("upvote_count", 0),
+        "is_featured": row.get("is_featured", False),
+        "approved_at": row.get("approved_at"),
+        "score": row.get(score_field, 0),
+    }
+
+
 async def _leaderboard_by_views(client, period: str, limit: int) -> List[Dict[str, Any]]:
     """Deck leaderboard ranked by view_count."""
     query = client.table("community_decks").select(
@@ -612,30 +656,9 @@ async def _leaderboard_by_views(client, period: str, limit: int) -> List[Dict[st
         query = query.gte("approved_at", week_ago)
 
     result = query.execute()
-
-    entries = []
-    for i, row in enumerate(result.data or []):
-        entries.append({
-            "rank": i + 1,
-            "id": row.get("id"),
-            "deck_uuid": row.get("deck_uuid"),
-            "title": row.get("title"),
-            "description": row.get("description"),
-            "category": row.get("category"),
-            "tags": row.get("tags"),
-            "slide_count": row.get("slide_count"),
-            "first_slide": row.get("first_slide"),
-            "thumbnail_url": row.get("thumbnail_url"),
-            "author_name": row.get("author_name", "Anonymous"),
-            "view_count": row.get("view_count", 0),
-            "remix_count": row.get("remix_count", 0),
-            "upvote_count": row.get("upvote_count", 0),
-            "is_featured": row.get("is_featured", False),
-            "approved_at": row.get("approved_at"),
-            "score": row.get("view_count", 0),
-        })
-
-    return entries
+    rows = result.data or []
+    thumb_map = _backfill_thumbnails(client, rows)
+    return [_build_entry(row, i + 1, "view_count", thumb_map) for i, row in enumerate(rows)]
 
 
 async def _leaderboard_by_remixes(client, period: str, limit: int) -> List[Dict[str, Any]]:
@@ -649,30 +672,9 @@ async def _leaderboard_by_remixes(client, period: str, limit: int) -> List[Dict[
         query = query.gte("approved_at", week_ago)
 
     result = query.execute()
-
-    entries = []
-    for i, row in enumerate(result.data or []):
-        entries.append({
-            "rank": i + 1,
-            "id": row.get("id"),
-            "deck_uuid": row.get("deck_uuid"),
-            "title": row.get("title"),
-            "description": row.get("description"),
-            "category": row.get("category"),
-            "tags": row.get("tags"),
-            "slide_count": row.get("slide_count"),
-            "first_slide": row.get("first_slide"),
-            "thumbnail_url": row.get("thumbnail_url"),
-            "author_name": row.get("author_name", "Anonymous"),
-            "view_count": row.get("view_count", 0),
-            "remix_count": row.get("remix_count", 0),
-            "upvote_count": row.get("upvote_count", 0),
-            "is_featured": row.get("is_featured", False),
-            "approved_at": row.get("approved_at"),
-            "score": row.get("remix_count", 0),
-        })
-
-    return entries
+    rows = result.data or []
+    thumb_map = _backfill_thumbnails(client, rows)
+    return [_build_entry(row, i + 1, "remix_count", thumb_map) for i, row in enumerate(rows)]
 
 
 # ============================================================================

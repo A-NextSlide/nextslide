@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { BROWSER } from '@/utils/browser';
+import { nativeBridge } from '@/utils/nativeBridge';
 import { Button } from '@/components/ui/button';
 import BrandWordmark from '@/components/common/BrandWordmark';
 import { Mail, CheckCircle, ArrowRight } from 'lucide-react';
@@ -41,7 +43,7 @@ const EmailVerification: React.FC = () => {
           <BrandWordmark
             tag="h1"
             className="text-zinc-900 dark:text-zinc-100 cursor-pointer"
-            onClick={() => navigate('/')}
+            onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}
             sizePx={18.95}
             xImageUrl="/brand/nextslide-x.png"
             gapLeftPx={-3}
@@ -98,7 +100,7 @@ const EmailVerification: React.FC = () => {
             </Button>
             
             <Button
-              onClick={() => window.open('https://mail.google.com', '_blank')}
+              onClick={() => nativeBridge.openExternal('https://mail.google.com')}
               variant="outline"
               className="w-full"
             >

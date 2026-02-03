@@ -14,8 +14,8 @@ from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
-THUMBNAIL_WIDTH = 1280
-THUMBNAIL_HEIGHT = 720
+THUMBNAIL_WIDTH = 1920
+THUMBNAIL_HEIGHT = 1080
 THUMBNAIL_BUCKET = "thumbnails"
 
 _bucket_verified = False
@@ -150,6 +150,9 @@ def _build_font_injection(html: str, theme_data: Optional[dict] = None) -> str:
 
     seen_lower: Set[str] = set()
     tags: list = []
+    # Preconnect to font CDNs so the browser starts TLS handshake early
+    needs_google = False
+    needs_fontshare = False
     for family in sorted(all_fonts):
         lower = family.lower()
         if lower in seen_lower:
@@ -158,8 +161,20 @@ def _build_font_injection(html: str, theme_data: Optional[dict] = None) -> str:
         tag = _build_font_tag(family)
         if tag:
             tags.append(tag)
+            if "fonts.googleapis.com" in tag:
+                needs_google = True
+            elif "fontshare.com" in tag:
+                needs_fontshare = True
 
-    return "\n".join(tags)
+    preconnects: list = []
+    if needs_google:
+        preconnects.append('<link rel="preconnect" href="https://fonts.googleapis.com">')
+        preconnects.append('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>')
+    if needs_fontshare:
+        preconnects.append('<link rel="preconnect" href="https://api.fontshare.com">')
+        preconnects.append('<link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>')
+
+    return "\n".join(preconnects + tags)
 
 
 def _extract_custom_component_html(slide_data: Optional[dict]) -> Optional[str]:
@@ -296,11 +311,26 @@ async def capture_slide_screenshot(
             # 4. Long settle for swap reflows + any late paints.
             try:
                 await page.evaluate("""async () => {
-                    // Force-load every registered font face
+                    // Force-load every registered font face.
+                    // display:swap means the browser shows fallback immediately;
+                    // we must explicitly trigger .load() on each face AND wait
+                    // for the woff2 files to arrive before screenshotting.
                     const loads = [];
                     document.fonts.forEach(f => loads.push(f.load().catch(() => null)));
                     await Promise.all(loads);
                     await document.fonts.ready;
+
+                    // Poll until all font faces report 'loaded' status.
+                    // This catches cases where fonts.ready resolves early due
+                    // to display:swap before the actual swap completes.
+                    for (let i = 0; i < 20; i++) {
+                        let allLoaded = true;
+                        document.fonts.forEach(f => {
+                            if (f.status !== 'loaded') allLoaded = false;
+                        });
+                        if (allLoaded) break;
+                        await new Promise(r => setTimeout(r, 150));
+                    }
 
                     // Force all CSS animations to their final frame.
                     // Elements often start at opacity:0 with animation forwards;
@@ -319,7 +349,8 @@ async def capture_slide_screenshot(
                 }""")
             except Exception:
                 pass
-            await page.wait_for_timeout(500)
+            # Wait for font swap reflows + any late paints to settle
+            await page.wait_for_timeout(1500)
             png_bytes = await page.screenshot(type="png")
             return png_bytes
         finally:

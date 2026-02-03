@@ -84,23 +84,41 @@ const AuthCallback: React.FC = () => {
             console.log('[AuthCallback] Session set successfully');
           }
         } else if (code && !isRecoveryFlow) {
-          // PKCE flow fallback - exchange code for session
-          console.log('[AuthCallback] Attempting PKCE code exchange...');
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-          session = data?.session;
-          sessionError = error;
+          // PKCE flow — detectSessionInUrl (enabled in our Supabase config) may have
+          // already exchanged the code during client initialisation, consuming the
+          // code_verifier.  getSession() waits for that init to complete, so check
+          // for an existing session first to avoid a redundant (failing) exchange.
+          console.log('[AuthCallback] PKCE code detected, checking if session was auto-established...');
+          const { data: existingData } = await supabase.auth.getSession();
 
-          if (error) {
-            console.error('[AuthCallback] Code exchange error:', error);
-            console.error('[AuthCallback] Full error details:', JSON.stringify(error, null, 2));
+          if (existingData?.session) {
+            console.log('[AuthCallback] Session already established via auto-detection');
+            session = existingData.session;
           } else {
-            console.log('[AuthCallback] Code exchange successful');
+            // No session yet — attempt manual exchange (handles cases where
+            // detectSessionInUrl didn't fire or is disabled).
+            console.log('[AuthCallback] No session yet, attempting manual PKCE code exchange...');
+            const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+            session = data?.session;
+            sessionError = error;
+
+            if (error) {
+              console.error('[AuthCallback] Code exchange error:', error);
+              // Final fallback: the auto-detection may have finished in the
+              // background between our first check and now.
+              const { data: retryData } = await supabase.auth.getSession();
+              if (retryData?.session) {
+                console.log('[AuthCallback] Session found on retry after exchange error');
+                session = retryData.session;
+                sessionError = null;
+              }
+            } else {
+              console.log('[AuthCallback] Code exchange successful');
+            }
           }
         } else {
           // No auth params - try to get existing session (detectSessionInUrl may have handled it)
           console.log('[AuthCallback] No auth params found, checking existing session...');
-          // Small delay to let detectSessionInUrl process the URL
-          await new Promise(resolve => setTimeout(resolve, 100));
           const { data, error } = await supabase.auth.getSession();
           session = data?.session;
           sessionError = error;

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { BROWSER } from '@/utils/browser';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { Button } from '@/components/ui/button';
 import { Plus, User as UserIcon, Search as SearchIcon, GripVertical, X, Grid, Trash2, ChevronDown, FilePlus, Upload, Link as LinkIcon, Image as ImageIcon, Check, Loader2, Sparkles, ArrowRight } from 'lucide-react';
@@ -69,6 +70,39 @@ import { useOnboarding } from '@/context/OnboardingContext';
 import { RotatingWords, VirtualizedDeckGrid, VirtualizedPopupDeckGrid } from './deck-list/DeckGridComponents';
 import DeckListBottomSheet from '@/components/deck/DeckListBottomSheet';
 import { developerApiService } from '@/services/developerApiService';
+
+// Isolated typewriter placeholder — prevents useTypewriter state updates (~20/sec)
+// from re-rendering the entire DeckList component, which caused the hero section to flash.
+const TYPEWRITER_PHRASES_MOBILE = ['\u00A0a pitch deck', '\u00A0a lecture', '\u00A0a growth plan', '\u00A0a marketing deck'];
+const TYPEWRITER_PHRASES_DESKTOP = [
+  '\u00A0a pitch deck for my startup',
+  '\u00A0a lecture on history',
+  '\u00A0a strategy for world domi...\b\b\b\b\b\b\b peace',
+  '\u00A0a marketing proposal'
+];
+
+const HeroTypewriterPlaceholder = React.memo(({ isMobileView, prefix }: { isMobileView: boolean; prefix: string }) => {
+  const phrases = isMobileView ? TYPEWRITER_PHRASES_MOBILE : TYPEWRITER_PHRASES_DESKTOP;
+  const typewriterText = useTypewriter({
+    phrases,
+    typingSpeed: 50,
+    deletingSpeed: 30,
+    pauseDuration: 2000,
+  });
+
+  return (
+    <div className={cn(
+      "absolute top-0 left-0 right-0 pointer-events-none flex items-center leading-tight text-slate-400 dark:text-zinc-500 min-w-0 overflow-hidden",
+      isMobileView
+        ? "px-1 h-[72px] text-lg"
+        : "px-4 h-[48px] text-base"
+    )}>
+      <span className="whitespace-nowrap">{prefix}</span>
+      <span className="min-w-0 truncate text-slate-300 dark:text-zinc-600">{typewriterText}</span>
+      <span className="ml-0.5 animate-pulse text-orange-500">|</span>
+    </div>
+  );
+});
 
 // Component instance counter for debugging
 let componentInstanceCount = 0;
@@ -434,22 +468,6 @@ const DeckList: React.FC = () => {
   // Hero input state
   const [detailLevel, setDetailLevel] = useState<'quick' | 'standard' | 'detailed'>('quick');
   const [slideCount, setSlideCount] = useState<number | undefined>(undefined);
-  const typewriterPhrases = useMemo(() => (
-    isMobileView
-      ? ['\u00A0a pitch deck', '\u00A0a lecture', '\u00A0a growth plan', '\u00A0a marketing deck']
-      : [
-        '\u00A0a pitch deck for my startup',
-        '\u00A0a lecture on history',
-        '\u00A0a strategy for world domi...\b\b\b\b\b\b\b peace',
-        '\u00A0a marketing proposal'
-      ]
-  ), [isMobileView]);
-  const typewriterText = useTypewriter({
-    phrases: typewriterPhrases,
-    typingSpeed: 50,
-    deletingSpeed: 30,
-    pauseDuration: 2000
-  });
   const heroPlaceholderPrefix = isMobileView ? 'Create' : 'I want to create';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const heroTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -473,10 +491,18 @@ const DeckList: React.FC = () => {
 
     const pendingPrompt = localStorage.getItem('landing_prompt');
     const pendingFileContext = localStorage.getItem('landing_file_context');
-    if (pendingPrompt) {
-      // Clear both immediately to prevent re-triggering
-      localStorage.removeItem('landing_prompt');
-      localStorage.removeItem('landing_file_context');
+    const promptTs = localStorage.getItem('landing_prompt_ts');
+
+    // Clear all immediately to prevent re-triggering
+    localStorage.removeItem('landing_prompt');
+    localStorage.removeItem('landing_file_context');
+    localStorage.removeItem('landing_prompt_ts');
+
+    // Ignore stale prompts older than 10 minutes
+    const MAX_AGE_MS = 10 * 60 * 1000;
+    const isStale = !promptTs || (Date.now() - Number(promptTs)) > MAX_AGE_MS;
+
+    if (pendingPrompt && !isStale) {
 
       // If there is file context from a tool landing page, append a summary to the prompt
       let enrichedPrompt = pendingPrompt;
@@ -1293,6 +1319,7 @@ const DeckList: React.FC = () => {
   const [isDeckListReady, setIsDeckListReady] = useState(false);
   const [showStar, setShowStar] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [pageReady, setPageReady] = useState(false);
 
   // Style preferences state lifted from OutlineEditor
   const [stylePreferences, setStylePreferences] = useState<{
@@ -1342,9 +1369,32 @@ const DeckList: React.FC = () => {
     }
   }, []);
 
-  // Prevent flash on mount
+  // Wait for fonts before revealing page to prevent text reflow / FOIT jitter
   useEffect(() => {
-    setIsMounted(true);
+    let cancelled = false;
+    const loadFonts = async () => {
+      try {
+        // Explicitly trigger font loading — this works even before the
+        // element using the font is in the DOM (unlike document.fonts.ready
+        // which resolves immediately if nothing has requested the font yet).
+        await document.fonts.load('900 1em "HK Grotesk Wide"');
+      } catch {}
+      // Double rAF to guarantee the browser has painted with the loaded font
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!cancelled) {
+            setIsMounted(true);
+            setPageReady(true);
+          }
+        });
+      });
+    };
+    loadFonts();
+    // Safety fallback in case fonts never resolve
+    const fallback = setTimeout(() => {
+      if (!cancelled) { setIsMounted(true); setPageReady(true); }
+    }, 1500);
+    return () => { cancelled = true; clearTimeout(fallback); };
   }, []);
 
   // Set deck list ready when decks are loaded
@@ -1898,6 +1948,15 @@ const DeckList: React.FC = () => {
 
   return (
     <div className="h-[100dvh] sm:h-screen bg-white dark:bg-black flex flex-col overflow-hidden relative font-sans">
+      {/* Loading overlay — covers content until fonts are ready. Content stays
+          mounted underneath so images (logo) preload and no remount flash occurs. */}
+      {!pageReady && (
+        <div className="absolute inset-0 z-[100] bg-white dark:bg-black flex items-center justify-center">
+          <div className="flex flex-col items-center gap-8">
+            <div className="w-10 h-10 border-4 border-zinc-200 dark:border-zinc-800 border-t-[#FF4301] rounded-full animate-spin" />
+          </div>
+        </div>
+      )}
       <ParticleAnimation
         isTyping={isUserTyping}
         isLoading={isOutlineChatGenerating || isDeckGenerating || isAgentThinking}
@@ -1908,7 +1967,7 @@ const DeckList: React.FC = () => {
 
       <header className="w-full bg-transparent flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 z-20 relative">
         <div className="w-12 sm:w-32"></div> {/* Spacer for centering */}
-        <div className="absolute left-1/2 -translate-x-1/2 cursor-pointer" onClick={() => navigate('/')}>
+        <div className="absolute left-1/2 -translate-x-1/2 cursor-pointer" onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}>
           {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
           {/* @ts-ignore allow custom tag */}
           <BrandWordmark
@@ -2494,13 +2553,13 @@ const DeckList: React.FC = () => {
                       >
                         <div className="max-w-md sm:max-w-3xl w-full text-center space-y-6 sm:space-y-8">
                           {/* Main Heading */}
-                          <div className="space-y-4 sm:space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                          <div className="space-y-4 sm:space-y-4">
                             <div className="flex flex-col items-center justify-center mb-4 sm:mb-10 space-y-3 sm:space-y-6 text-center z-10 relative">
                               <h1
-                                className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
+                                className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
                                 style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
                               >
-                                TURN<RotatingWords compact={isMobileView} />INTO<br />PERFECT PRESENTATIONS
+                                TURN<RotatingWords compact={isMobileView} />INTO<br /><span className="whitespace-nowrap">PERFECT PRESENTATIONS</span>
                               </h1>
                               <div className="space-y-2">
                                 <p className="text-sm sm:text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
@@ -2514,7 +2573,7 @@ const DeckList: React.FC = () => {
                           </div>
 
                           {/* Input Area */}
-                          <div className="relative max-w-full sm:max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-6 duration-700 delay-100">
+                          <div className="relative max-w-full sm:max-w-2xl mx-auto">
                             <div className="relative group">
                               <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                               <div
@@ -2579,16 +2638,7 @@ const DeckList: React.FC = () => {
                                     }}
                                   />
                                   {!heroInput && (
-                                    <div className={cn(
-                                      "absolute top-0 left-0 right-0 pointer-events-none flex items-center leading-tight text-slate-400 dark:text-zinc-500 min-w-0 overflow-hidden",
-                                      isMobileView
-                                        ? "px-1 h-[72px] text-lg"
-                                        : "px-4 h-[48px] text-base"
-                                    )}>
-                                      <span className="whitespace-nowrap">{heroPlaceholderPrefix}</span>
-                                      <span className="min-w-0 truncate text-slate-300 dark:text-zinc-600">{typewriterText}</span>
-                                      <span className="ml-0.5 animate-pulse text-orange-500">|</span>
-                                    </div>
+                                    <HeroTypewriterPlaceholder isMobileView={isMobileView} prefix={heroPlaceholderPrefix} />
                                   )}
                                 </div>
 
@@ -3161,21 +3211,7 @@ const DeckList: React.FC = () => {
         onProceed={creditWarningData.canUseOverage ? handleOverageConfirm : undefined}
       />
 
-      {/* Mobile Community Button - sits above the bottom sheet */}
-      {isMobileView && !showConversationalOnboarding && !currentOutline && (
-        <button
-          onClick={() => setShowCommunity(true)}
-          className="fixed bottom-[80px] left-4 z-40 px-4 py-2 rounded-full shadow-lg"
-          style={{
-            background: 'linear-gradient(135deg, #FF6B00 0%, #FF8533 100%)',
-            fontFamily: '"HK Grotesk", "Hanken Grotesk", sans-serif',
-            fontWeight: 800,
-            letterSpacing: '-0.02em',
-          }}
-        >
-          <span className="text-white text-sm">Explore Community</span>
-        </button>
-      )}
+      {/* Mobile Community Button removed — community is accessed via Community Slides button */}
 
       {/* Mobile Deck List Bottom Sheet */}
       {isMobileView && !showConversationalOnboarding && !currentOutline && (
@@ -3199,11 +3235,14 @@ const DeckList: React.FC = () => {
         />
       )}
 
-      {/* Community Button - Fixed at bottom, hidden during conversational onboarding, desktop only */}
-      {!showConversationalOnboarding && !isMobileView && (
+      {/* Community Button - Fixed at bottom, hidden during conversational onboarding */}
+      {!showConversationalOnboarding && (
         <button
           onClick={() => setShowCommunity(true)}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2 bg-white dark:bg-[#111] text-sm font-medium rounded-lg border border-[#FF4301]/20 shadow-[0_0_16px_rgba(255,67,1,0.15)] hover:shadow-[0_0_24px_rgba(255,67,1,0.25)] hover:border-[#FF4301]/30 hover:scale-[1.02] transition-all duration-200 flex items-center gap-2 text-[#333] dark:text-white"
+          className={cn(
+            "fixed left-1/2 -translate-x-1/2 z-40 px-4 py-2 bg-white dark:bg-[#111] text-sm font-medium rounded-lg border border-[#FF4301]/20 shadow-[0_0_16px_rgba(255,67,1,0.15)] hover:shadow-[0_0_24px_rgba(255,67,1,0.25)] hover:border-[#FF4301]/30 hover:scale-[1.02] transition-all duration-200 flex items-center gap-2 text-[#333] dark:text-white",
+            isMobileView ? "bottom-20" : "bottom-6"
+          )}
         >
           <Users2 className="h-4 w-4" />
           Community Slides

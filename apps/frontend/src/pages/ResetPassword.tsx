@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BROWSER } from '@/utils/browser';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { EyeIcon, EyeOffIcon, Lock, CheckCircle } from 'lucide-react';
@@ -81,7 +82,7 @@ const ResetPassword: React.FC = () => {
         <div className="text-center mb-8">
           <BrandWordmark
             className="text-[#383636] dark:text-gray-300 cursor-pointer"
-            onClick={() => navigate('/')}
+            onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}
             sizePx={18.95}
             xImageUrl="/brand/nextslide-x.png"
             gapLeftPx={-3}

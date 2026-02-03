@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { nativeBridge } from '@/utils/nativeBridge';
 import { Button } from '../ui/button';
 import {
   Share2,
@@ -1201,10 +1202,8 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                               onClick={() => {
                                 const fullUrl = mockShareService.getShareUrl(link.short_code, link.share_type);
                                 const shareLink = `${fullUrl}?utm_source=share&utm_medium=linkedin&utm_campaign=deck_share`;
-                                window.open(
-                                  `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareLink)}`,
-                                  'share_linkedin',
-                                  'width=600,height=500'
+                                nativeBridge.openExternal(
+                                  `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareLink)}`
                                 );
                               }}
                             >
@@ -1221,10 +1220,8 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                                 const fullUrl = mockShareService.getShareUrl(link.short_code, link.share_type);
                                 const shareLink = `${fullUrl}?utm_source=share&utm_medium=twitter&utm_campaign=deck_share`;
                                 const text = `Made "${deckName}" in seconds with AI`;
-                                window.open(
-                                  `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareLink)}&via=NextSlideAI`,
-                                  'share_twitter',
-                                  'width=600,height=500'
+                                nativeBridge.openExternal(
+                                  `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareLink)}&via=NextSlideAI`
                                 );
                               }}
                             >
@@ -1241,10 +1238,8 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                                 const fullUrl = mockShareService.getShareUrl(link.short_code, link.share_type);
                                 const shareLink = `${fullUrl}?utm_source=share&utm_medium=whatsapp&utm_campaign=deck_share`;
                                 const text = `Check out "${deckName}" - made with NextSlide AI\n${shareLink}`;
-                                window.open(
-                                  `https://wa.me/?text=${encodeURIComponent(text)}`,
-                                  'share_whatsapp',
-                                  'width=600,height=500'
+                                nativeBridge.openExternal(
+                                  `https://wa.me/?text=${encodeURIComponent(text)}`
                                 );
                               }}
                             >
@@ -1262,7 +1257,7 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                                 const shareLink = `${fullUrl}?utm_source=share&utm_medium=email&utm_campaign=deck_share`;
                                 const subject = `Check out "${deckName}" - made with NextSlide`;
                                 const body = `I wanted to share this presentation with you:\n\n${deckName}\n\n${shareLink}\n\nCreated with NextSlide - AI-Powered Presentations`;
-                                window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                                nativeBridge.openExternal(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
                               }}
                             >
                               <Mail size={12} />

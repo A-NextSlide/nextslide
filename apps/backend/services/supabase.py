@@ -239,31 +239,14 @@ class SupabaseClientManager:
                 self._close_client()
 
                 try:
-                    # Create new client with custom httpx client for proper connection pooling
-                    # This fixes BUG #1: previously the custom httpx client was never used
-                    from supabase.lib.client_options import ClientOptions
-
-                    # Create httpx client with proper connection limits
-                    custom_httpx_client = self._create_httpx_client()
-
-                    # Create supabase client with the custom httpx client
+                    # Create supabase client — no auth session options needed
+                    # for server-side service-key usage (auto_refresh_token /
+                    # persist_session were removed in supabase-py v2.x and
+                    # cause "'ClientOptions' has no attribute 'storage'").
                     self._client = create_client(
                         SUPABASE_URL,
                         SUPABASE_KEY,
-                        options=ClientOptions(
-                            auto_refresh_token=True,
-                            persist_session=False,  # Server-side, no session persistence needed
-                        )
                     )
-
-                    # NOTE: We no longer inject a custom httpx client because it causes
-                    # "Request URL is missing protocol" errors. The Supabase client
-                    # configures its own session with the correct base URL. Instead,
-                    # we rely on the connection recycling mechanism (CONNECTION_MAX_AGE)
-                    # to prevent connection pool exhaustion.
-                    # The custom_httpx_client is created but not used - keeping the
-                    # factory method for potential future use.
-                    custom_httpx_client.close()  # Close the unused client
 
                     self._client_created_at = datetime.now()
                     self._request_count = 0

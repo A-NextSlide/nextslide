@@ -10,6 +10,12 @@ export type BrowserInfo = {
   isMobile: boolean;
   isAndroid: boolean;
   majorVersion: number | null;
+  isWebView: boolean;
+  isElectron: boolean;
+  isNativeApp: boolean;
+  isDesktopApp: boolean;
+  isMobileApp: boolean;
+  appVersion: string | null;
 };
 
 function parseMajorVersion(ua: string): number | null {
@@ -37,7 +43,13 @@ export function getBrowserInfo(): BrowserInfo {
       isMac: false,
       isMobile: false,
       isAndroid: false,
-      majorVersion: null
+      majorVersion: null,
+      isWebView: false,
+      isElectron: false,
+      isNativeApp: false,
+      isDesktopApp: false,
+      isMobileApp: false,
+      appVersion: null,
     };
   }
   const ua = navigator.userAgent;
@@ -50,7 +62,14 @@ export function getBrowserInfo(): BrowserInfo {
   const isChrome = /chrome|chromium|crios/i.test(ua) && !/edg|edge/i.test(ua);
   const isMac = /Mac|Macintosh/.test(ua);
   const majorVersion = parseMajorVersion(ua);
-  return { isSafari, isFirefox, isChrome, isIOS, isMac, isMobile, isAndroid, majorVersion };
+  const isWebView = /NextSlideApp/i.test(ua) || (typeof window !== 'undefined' && !!(window as any).ReactNativeWebView);
+  const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI;
+  const isNativeApp = isWebView || isElectron;
+  const isDesktopApp = isElectron;
+  const isMobileApp = isWebView && !isElectron;
+  const appVersionMatch = ua.match(/NextSlide(?:Desktop|App)\/(\S+)/);
+  const appVersion = appVersionMatch ? appVersionMatch[1] : null;
+  return { isSafari, isFirefox, isChrome, isIOS, isMac, isMobile, isAndroid, majorVersion, isWebView, isElectron, isNativeApp, isDesktopApp, isMobileApp, appVersion };
 }
 
 export const BROWSER = getBrowserInfo();

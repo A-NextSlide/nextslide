@@ -95,25 +95,44 @@ export const extractTextFromComponent = (component: ComponentInstance): string =
  * Copy text content to system clipboard
  */
 export const copyTextToSystemClipboard = async (text: string): Promise<boolean> => {
+  // 1. WebView bridge (React Native)
+  try {
+    if ((window as any).ReactNativeWebView) {
+      (window as any).ReactNativeWebView.postMessage(
+        JSON.stringify({ type: 'clipboard-write', text })
+      );
+      return true;
+    }
+  } catch {}
+
+  // 2. Electron IPC bridge
+  try {
+    if ((window as any).electronAPI?.clipboard?.writeText) {
+      await (window as any).electronAPI.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+
+  // 3. Standard Clipboard API
   try {
     await navigator.clipboard.writeText(text);
     return true;
+  } catch {}
+
+  // 4. Legacy execCommand fallback
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.style.position = 'fixed';
+  textArea.style.left = '-9999px';
+  document.body.appendChild(textArea);
+  textArea.select();
+  try {
+    document.execCommand('copy');
+    return true;
   } catch {
-    // Fallback for older browsers
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    textArea.style.position = 'fixed';
-    textArea.style.left = '-9999px';
-    document.body.appendChild(textArea);
-    textArea.select();
-    try {
-      document.execCommand('copy');
-      return true;
-    } catch {
-      return false;
-    } finally {
-      document.body.removeChild(textArea);
-    }
+    return false;
+  } finally {
+    document.body.removeChild(textArea);
   }
 };
 

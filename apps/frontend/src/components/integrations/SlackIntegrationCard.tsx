@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { slackIntegrationApi, type SlackStatus } from '@/services/slackIntegrationApi';
+import { nativeBridge } from '@/utils/nativeBridge';
 
 const SlackIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none">
@@ -49,7 +50,7 @@ export const SlackIntegrationCard: React.FC = () => {
       const h = 700;
       const left = window.screenX + (window.innerWidth - w) / 2;
       const top = window.screenY + (window.innerHeight - h) / 2;
-      window.open(url, 'slack-oauth', `width=${w},height=${h},left=${left},top=${top}`);
+      nativeBridge.openExternal(url);
     } catch {
       // noop
     }

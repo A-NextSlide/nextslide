@@ -92,6 +92,7 @@ import Leaderboard from '@/components/gamification/Leaderboard';
 import { gamificationApi, type BadgesResponse, type StreakData } from '@/services/gamificationApi';
 import { useReward } from '@/context/RewardContext';
 import { API_CONFIG } from '@/config/environment';
+import { copyTextToSystemClipboard } from '@/utils/clipboardUtils';
 
 type SettingsTab = 'profile' | 'security' | 'notifications' | 'billing' | 'integrations' | 'api' | 'team' | 'referrals' | 'badges' | 'support';
 
@@ -211,8 +212,12 @@ const Profile: React.FC = () => {
   // Get active tab from URL or default to 'profile'
   const activeTab = (searchParams.get('tab') as SettingsTab) || 'profile';
 
+  // On mobile, toggle between nav list and content panel
+  const [mobileShowContent, setMobileShowContent] = useState(false);
+
   const setActiveTab = (tab: SettingsTab) => {
     setSearchParams({ tab });
+    setMobileShowContent(true);
   };
 
   // Form states
@@ -842,7 +847,7 @@ const Profile: React.FC = () => {
 
   const handleCopyApiKey = async (key: string, keyId?: string) => {
     try {
-      await navigator.clipboard.writeText(key);
+      await copyTextToSystemClipboard(key);
       if (keyId) {
         setCopiedKeyId(keyId);
         setTimeout(() => setCopiedKeyId(null), 2000);
@@ -1172,7 +1177,7 @@ const Profile: React.FC = () => {
   // Copy invite link
   const copyInviteLink = (token: string) => {
     const url = `${window.location.origin}/team/invite/${token}`;
-    navigator.clipboard.writeText(url);
+    copyTextToSystemClipboard(url);
     toast({
       title: 'Link copied',
       description: 'Invitation link has been copied to clipboard.',
@@ -1283,8 +1288,8 @@ const Profile: React.FC = () => {
 
       <div className="max-w-6xl mx-auto px-6 py-8">
         <div className="flex flex-col lg:flex-row gap-8">
-          {/* Sidebar */}
-          <aside className="lg:w-64 flex-shrink-0">
+          {/* Sidebar — hidden on mobile when viewing content */}
+          <aside className={cn("lg:w-64 flex-shrink-0", mobileShowContent && "hidden lg:block")}>
             {/* User Card */}
             <div className="rounded-2xl border-2 border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 p-5 mb-6">
               <div className="flex items-center gap-4">
@@ -1368,8 +1373,16 @@ const Profile: React.FC = () => {
             )}
           </aside>
 
-          {/* Main Content */}
-          <main className="flex-1 min-w-0">
+          {/* Main Content — hidden on mobile when nav is open */}
+          <main className={cn("flex-1 min-w-0", !mobileShowContent && "hidden lg:block")}>
+            {/* Mobile back button */}
+            <button
+              onClick={() => setMobileShowContent(false)}
+              className="lg:hidden flex items-center gap-2 mb-4 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Settings
+            </button>
             <div className="rounded-2xl border-2 border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 transition-opacity duration-200">
               {/* Profile Tab */}
               {activeTab === 'profile' && (

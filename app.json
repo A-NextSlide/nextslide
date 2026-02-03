@@ -1,0 +1,8 @@
+{
+  "android": {
+    "package": "com.anonymous.nextslide"
+  },
+  "ios": {
+    "bundleIdentifier": "com.anonymous.nextslide"
+  }
+}

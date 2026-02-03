@@ -15,6 +15,7 @@ import FontPreloader from "./components/FontPreloader";
 import DeckList from "./pages/DeckList";
 import NotFound from "./pages/NotFound";
 import Landing from "./pages/Landing";
+import NativeAppLanding from "./pages/NativeAppLanding";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ResetPassword from "./pages/ResetPassword";
@@ -23,6 +24,7 @@ import TeamInvite from "./pages/TeamInvite";
 import EmailVerification from "./pages/EmailVerification";
 import AuthCallback from "./pages/AuthCallback";
 // AgentOutlineView removed - using existing outline page
+import { BROWSER } from './utils/browser';
 import { ComponentStateProvider } from './context/CustomComponentStateContext';
 import SlideEditor from './components/SlideEditor';
 import { RegistryProvider, useRegistry } from './context/RegistryContext';
@@ -73,6 +75,7 @@ import LandingPageRouter from './pages/LandingPageRouter';
 import PresentationTemplateLanding from './pages/PresentationTemplateLanding';
 import CategoryBrowse from './pages/CategoryBrowse';
 const SlackBotLanding = lazy(() => import('./pages/SlackBotLanding'));
+const Download = lazy(() => import('./pages/Download'));
 
 // Component to initialize font optimization
 // Removed FontOptimizationInitializer
@@ -335,7 +338,7 @@ const AppContent = () => {
               <Route path="/settings/integrations" element={<Navigate to="/admin/services?tab=integrations" replace />} />
               {/* Redirect old /integrations to system integrations tab */}
               <Route path="/integrations" element={<Navigate to="/admin/services?tab=integrations" replace />} />
-              <Route path="/" element={<Landing />} />
+              <Route path="/" element={BROWSER.isNativeApp ? <NativeAppLanding /> : <Landing />} />
               <Route
                 path="/app"
                 element={
@@ -637,6 +640,16 @@ const AppContent = () => {
               {/* Public presentations browse */}
               <Route path="/presentations" element={<CategoryBrowse />} />
               <Route path="/presentations/:category" element={<CategoryBrowse />} />
+              {/* Desktop app download page */}
+              <Route path="/download" element={<React.Suspense fallback={<div />}><Download /></React.Suspense>} />
+              {/* Common paths that should redirect to the dashboard */}
+              <Route path="/file" element={<Navigate to="/app" replace />} />
+              <Route path="/new" element={<Navigate to="/app" replace />} />
+              <Route path="/create" element={<Navigate to="/app" replace />} />
+              <Route path="/new-deck" element={<Navigate to="/app" replace />} />
+              <Route path="/new-presentation" element={<Navigate to="/app" replace />} />
+              <Route path="/home" element={<Navigate to="/app" replace />} />
+              <Route path="/dashboard" element={<Navigate to="/app" replace />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/smart-gallery" element={<SmartGallery />} />

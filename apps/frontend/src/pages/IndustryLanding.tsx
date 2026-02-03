@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BROWSER } from '@/utils/browser';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import BrandWordmark from '@/components/common/BrandWordmark';
@@ -230,7 +231,7 @@ const IndustryLanding: React.FC<IndustryLandingProps> = ({ config }) => {
         )}
       >
         <div className="max-w-[1400px] mx-auto px-8 py-4 flex items-center justify-between">
-          <div className="cursor-pointer" onClick={() => navigate('/')}>
+          <div className="cursor-pointer" onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}>
             <BrandWordmark
               tag="h1"
               sizePx={18.95}
@@ -577,7 +578,7 @@ const IndustryLanding: React.FC<IndustryLandingProps> = ({ config }) => {
       {/* Footer */}
       <footer className="bg-black text-white/60 py-12 px-8">
         <div className="max-w-[1400px] mx-auto text-center">
-          <div className="cursor-pointer inline-block" onClick={() => navigate('/')}>
+          <div className="cursor-pointer inline-block" onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}>
             <BrandWordmark
               tag="h3"
               sizePx={16}

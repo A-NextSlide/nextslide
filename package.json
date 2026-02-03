@@ -14,7 +14,19 @@
     "kill": "cd apps/backend && make kill-all",
     "restart": "npm run kill && npm run dev",
     "nextslide": "npm-run-all --parallel dev:frontend dev:backend",
-    "nextslide:restart": "npm run kill && npm run nextslide"
+    "nextslide:restart": "npm run kill && npm run nextslide",
+    "dev:mobile": "npm run dev --workspace=apps/mobile",
+    "dev:mobile:ios": "npm run dev:ios --workspace=apps/mobile",
+    "dev:mobile:android": "npm run dev:android --workspace=apps/mobile",
+    "build:mobile:dev": "npm run build:dev --workspace=apps/mobile",
+    "build:mobile:preview": "npm run build:preview --workspace=apps/mobile",
+    "build:mobile:prod": "npm run build:prod --workspace=apps/mobile",
+    "dev:desktop": "cd apps/desktop && npm run dev",
+    "build:desktop:mac": "cd apps/desktop && npm run pack:mac",
+    "build:desktop:win": "cd apps/desktop && npm run pack:win",
+    "build:desktop:linux": "cd apps/desktop && npm run pack:linux",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "devDependencies": {},
   "description": "NextSlide monorepo - AI-powered slide generation platform",
@@ -29,5 +41,10 @@
     "monorepo"
   ],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "expo": "~54.0.33",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
+  }
 }

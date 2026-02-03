@@ -120,6 +120,12 @@ class SlidePromptBuilder:
         # Skip base64 data URLs - they're too large for prompts (can be 50K+ chars)
         if brand_logo_url and not brand_logo_url.startswith("data:"):
             sections.append(f"LOGO: {brand_logo_url}")
+            sections.append(
+                "LOGO PLACEMENT: bottom-left (x:60, y:1020), max 40px height. Same position on every slide."
+            )
+        sections.append(
+            "PAGE NUMBER: bottom-right (x:1820, y:1040), just the slide number (e.g. '3'), 13px, muted. Same position on every slide."
+        )
 
         sections.extend(
             [

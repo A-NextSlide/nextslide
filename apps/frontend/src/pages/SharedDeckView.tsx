@@ -237,7 +237,7 @@ const SharedDeckView: React.FC = () => {
 
       // User exited the presentation - redirect to landing with return banner
       setPendingPresentation(shareCode, deck.name || 'your presentation');
-      navigate('/');
+      navigate(BROWSER.isNativeApp ? '/app' : '/');
     }
   }, [isPresenting, deck, shareCode, navigate, setPendingPresentation]);
 
@@ -876,7 +876,7 @@ const SharedDeckView: React.FC = () => {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => navigate('/')}
+                  onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}
                   disabled={isVerifying}
                   className="flex-1"
                 >
@@ -917,7 +917,7 @@ const SharedDeckView: React.FC = () => {
           </CardHeader>
           <CardContent className="text-center">
             <p className="text-muted-foreground mb-6">{error}</p>
-            <Button onClick={() => navigate('/')} variant="outline">
+            <Button onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')} variant="outline">
               Go to Dashboard
             </Button>
           </CardContent>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { BROWSER } from '@/utils/browser';
 import { Button } from '@/components/ui/button';
 import { Loader2, Sparkles, ArrowRight } from 'lucide-react';
 import BrandWordmark from '@/components/common/BrandWordmark';
@@ -66,7 +67,7 @@ const ReferralLanding: React.FC = () => {
           <BrandWordmark
             tag="h1"
             className="text-[#383636] dark:text-gray-300 cursor-pointer inline-block"
-            onClick={() => navigate('/')}
+            onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}
             sizePx={18.95}
             xImageUrl="/brand/nextslide-x.png"
             gapLeftPx={-3}

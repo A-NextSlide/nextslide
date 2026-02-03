@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query, Header, Request
 from pydantic import BaseModel
 import httpx
 
-from services.supabase import get_supabase_client
+from services.supabase import get_supabase_client, SUPABASE_URL
 from utils.supabase import upload_deck, get_deck
 from models.requests import (
     SubmitToCommunityRequest,
@@ -27,6 +27,18 @@ from models.requests import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _thumbnail_url_for(deck_uuid: str | None) -> str | None:
+    """Construct public thumbnail URL from deck UUID.
+
+    The thumbnails bucket stores PNGs at path
+    ``thumbnails/{deck_uuid}_s0.png``.  The public URL is:
+    ``{SUPABASE_URL}/storage/v1/object/public/thumbnails/thumbnails/{uuid}_s0.png``
+    """
+    if not deck_uuid or not SUPABASE_URL:
+        return None
+    return f"{SUPABASE_URL}/storage/v1/object/public/thumbnails/thumbnails/{deck_uuid}_s0.png"
 
 router = APIRouter(prefix="/api/community", tags=["community"])
 
@@ -156,7 +168,7 @@ async def list_community_decks(
 
         # Build query - only approved decks
         _base_cols = (
-            'id, title, description, category, tags, slide_count, first_slide, '
+            'id, deck_uuid, title, description, category, tags, slide_count, first_slide, '
             'author_name, remix_count, view_count, approved_at, submitted_at'
         )
 
@@ -185,24 +197,43 @@ async def list_community_decks(
                 raise
 
         total = result.count if result.count else 0
+        raw_decks = result.data or []
+
+        # Backfill missing thumbnails from source decks table
+        missing_uuids = [
+            d['deck_uuid'] for d in raw_decks
+            if not d.get('thumbnail_url') and d.get('deck_uuid')
+        ]
+        source_thumbnails: dict = {}
+        if missing_uuids:
+            try:
+                src = supabase.table('decks').select(
+                    'uuid, thumbnail_url'
+                ).in_('uuid', missing_uuids).execute()
+                for row in (src.data or []):
+                    if row.get('thumbnail_url'):
+                        source_thumbnails[row['uuid']] = row['thumbnail_url']
+            except Exception as thumb_err:
+                logger.debug("Failed to backfill thumbnails from decks: %s", thumb_err)
 
         decks = [
             CommunityDeckResponse(
                 id=deck['id'],
+                deck_uuid=deck.get('deck_uuid'),
                 title=deck['title'],
                 description=deck.get('description'),
                 category=deck['category'],
                 tags=deck.get('tags', []),
                 slide_count=deck.get('slide_count', 0),
                 first_slide=deck.get('first_slide'),
-                thumbnail_url=deck.get('thumbnail_url'),
+                thumbnail_url=deck.get('thumbnail_url') or source_thumbnails.get(deck.get('deck_uuid', '')) or _thumbnail_url_for(deck.get('deck_uuid')),
                 author_name=deck.get('author_name'),
                 remix_count=deck.get('remix_count', 0),
                 view_count=deck.get('view_count', 0),
                 approved_at=deck.get('approved_at'),
                 submitted_at=deck.get('submitted_at'),
             )
-            for deck in (result.data or [])
+            for deck in raw_decks
         ]
 
         return CommunityDecksListResponse(
@@ -243,14 +274,29 @@ async def get_community_deck(deck_id: str):
         except Exception:
             pass  # Don't fail request if view count update fails
 
+        # Resolve thumbnail: prefer community_decks value, fall back to source deck,
+        # then construct from bucket path as last resort.
+        thumb_url = deck.get('thumbnail_url')
+        if not thumb_url and deck.get('deck_uuid'):
+            try:
+                src = supabase.table('decks').select('thumbnail_url').eq('uuid', deck['deck_uuid']).execute()
+                if src.data and src.data[0].get('thumbnail_url'):
+                    thumb_url = src.data[0]['thumbnail_url']
+            except Exception:
+                pass
+        if not thumb_url:
+            thumb_url = _thumbnail_url_for(deck.get('deck_uuid'))
+
         return CommunityDeckDetailResponse(
             id=deck['id'],
+            deck_uuid=deck.get('deck_uuid'),
             title=deck['title'],
             description=deck.get('description'),
             category=deck['category'],
             tags=deck.get('tags', []),
             slide_count=deck.get('slide_count', 0),
             first_slide=deck.get('first_slide'),
+            thumbnail_url=thumb_url,
             author_name=deck.get('author_name'),
             remix_count=deck.get('remix_count', 0),
             view_count=deck.get('view_count', 0) + 1,
@@ -586,13 +632,14 @@ def _build_showcase_deck(deck: Dict[str, Any], has_upvoted: bool = False) -> Sho
     """Build a ShowcaseDeckResponse from a raw deck dict."""
     return ShowcaseDeckResponse(
         id=deck['id'],
+        deck_uuid=deck.get('deck_uuid'),
         title=deck['title'],
         description=deck.get('description'),
         category=deck['category'],
         tags=deck.get('tags', []),
         slide_count=deck.get('slide_count', 0),
         first_slide=deck.get('first_slide'),
-        thumbnail_url=deck.get('thumbnail_url'),
+        thumbnail_url=deck.get('thumbnail_url') or _thumbnail_url_for(deck.get('deck_uuid')),
         author_name=deck.get('author_name'),
         remix_count=deck.get('remix_count', 0),
         view_count=deck.get('view_count', 0),
@@ -623,7 +670,7 @@ async def get_showcase(
 
         # Build query - only approved decks
         select_fields = (
-            'id, title, description, category, tags, slide_count, first_slide, '
+            'id, deck_uuid, title, description, category, tags, slide_count, first_slide, '
             'thumbnail_url, author_name, remix_count, view_count, upvote_count, '
             'is_featured, approved_at, submitted_at'
         )
@@ -1139,3 +1186,80 @@ async def get_community_stats(
     except Exception as e:
         logger.error(f"Error getting community stats: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch stats")
+
+
+@router.post("/admin/backfill-thumbnails")
+async def backfill_community_thumbnails(
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    """
+    Trigger thumbnail rendering for community decks missing thumbnails.
+
+    Finds approved community_decks with NULL thumbnail_url, looks up
+    their source deck_uuid, and triggers the thumbnail render pipeline.
+    Also backfills community_decks.thumbnail_url from decks that already
+    have a rendered thumbnail.
+    """
+    try:
+        from services.thumbnail_dispatch import trigger_thumbnail_render
+        import asyncio
+
+        supabase = get_supabase_client()
+
+        # 1. Find approved community decks with no thumbnail
+        missing = supabase.table('community_decks').select(
+            'id, deck_uuid, title, thumbnail_url'
+        ).eq('status', 'approved').is_('thumbnail_url', 'null').limit(limit).execute()
+
+        missing_decks = missing.data or []
+        if not missing_decks:
+            return {"success": True, "message": "All community decks have thumbnails", "backfilled": 0, "triggered": 0}
+
+        # 2. Check which source decks already have thumbnails (quick backfill)
+        deck_uuids = [d['deck_uuid'] for d in missing_decks if d.get('deck_uuid')]
+        backfilled = 0
+        to_render = []
+
+        if deck_uuids:
+            src = supabase.table('decks').select(
+                'uuid, thumbnail_url'
+            ).in_('uuid', deck_uuids).execute()
+
+            src_map = {r['uuid']: r.get('thumbnail_url') for r in (src.data or []) if r.get('thumbnail_url')}
+
+            for cd in missing_decks:
+                du = cd.get('deck_uuid')
+                if du and du in src_map:
+                    # Source deck already has thumbnail — copy it to community_decks
+                    supabase.table('community_decks').update(
+                        {'thumbnail_url': src_map[du]}
+                    ).eq('id', cd['id']).execute()
+                    backfilled += 1
+                elif du:
+                    to_render.append(du)
+
+        # 3. Trigger rendering for decks that don't have thumbnails at all
+        triggered = 0
+        for du in to_render:
+            try:
+                asyncio.create_task(trigger_thumbnail_render(du))
+                triggered += 1
+            except Exception as render_exc:
+                logger.warning(f"[backfill] Failed to trigger render for {du}: {render_exc}")
+
+        logger.info(
+            f"[backfill] Admin {admin.get('email')} triggered thumbnail backfill: "
+            f"{backfilled} backfilled from source, {triggered} renders triggered"
+        )
+
+        return {
+            "success": True,
+            "total_missing": len(missing_decks),
+            "backfilled": backfilled,
+            "triggered": triggered,
+        }
+
+    except Exception as e:
+        logger.error(f"Error backfilling thumbnails: {e}")
+        raise HTTPException(status_code=500, detail="Failed to backfill thumbnails")

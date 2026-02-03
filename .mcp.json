@@ -3,6 +3,10 @@
     "supabase": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp?project_ref=iureiriffqcxrldisuqp"
+    },
+    "render": {
+      "type": "http",
+      "url": "https://mcp.render.com/mcp"
     }
   }
 }

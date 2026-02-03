@@ -19,6 +19,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { referralApi, type ReferralStats, type ReferralListItem, type ReferralCode } from '@/services/referralApi';
 import { trackEvent } from '@/services/analytics';
+import { nativeBridge } from '@/utils/nativeBridge';
 
 const ReferralDashboard: React.FC = () => {
   // Code state — null means "no code yet"
@@ -145,7 +146,7 @@ const ReferralDashboard: React.FC = () => {
     const body = encodeURIComponent(
       `Hey! I've been using NextSlide to create AI-powered presentations in seconds. You should try it!\n\nSign up with my link and we both get free credits:\n${url}`,
     );
-    window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+    nativeBridge.openExternal(`mailto:?subject=${subject}&body=${body}`);
     trackEvent('referral_link_shared', { platform: 'email', code: codeInfo?.code || stats?.code });
   };
 
@@ -155,7 +156,7 @@ const ReferralDashboard: React.FC = () => {
     const text = encodeURIComponent(
       `I've been creating AI presentations in seconds with @NextSlideAI. Try it out and we both get free credits! ${url}`,
     );
-    window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
+    nativeBridge.openExternal(`https://twitter.com/intent/tweet?text=${text}`);
     trackEvent('referral_link_shared', { platform: 'twitter', code: codeInfo?.code || stats?.code });
   };
 

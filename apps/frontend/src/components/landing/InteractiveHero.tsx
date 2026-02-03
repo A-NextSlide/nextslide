@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Sparkles, Rocket, TrendingUp, Microscope, Coffee, Timer, FlaskConical, BookOpen, Handshake, Globe, Skull, Wifi, Megaphone, MousePointer2, X, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ShowcaseDeck } from '@/services/showcaseService';
@@ -227,7 +228,78 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
 
     const isOrange = activePrompt.theme === 'orange';
 
+    // Fullscreen overlay — portaled to document.body to escape stacking contexts
+    const fullscreenOverlay = isFullscreen && activeDeck?.slides ? createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center" onClick={closeFullscreen}>
+            {/* Top bar */}
+            <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-3 md:p-5">
+                <div className="bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5 text-white/90 text-sm font-medium border border-white/20">
+                    {fsSlideIndex + 1} / {activeDeck.slides.length}
+                </div>
+                <button
+                    onClick={closeFullscreen}
+                    className="bg-black/60 backdrop-blur-sm rounded-full w-9 h-9 flex items-center justify-center text-white/90 hover:bg-black/80 border border-white/20"
+                >
+                    <X size={18} />
+                </button>
+            </div>
+
+            {/* Slide */}
+            <div
+                className="relative w-full h-full flex items-center justify-center p-2 md:p-12"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="relative w-full max-w-[1400px] aspect-video bg-white rounded-lg overflow-hidden shadow-2xl">
+                    <MiniSlide
+                        key={`fs-${fsSlideIndex}`}
+                        slide={activeDeck.slides[fsSlideIndex]}
+                        width={1280}
+                        height={720}
+                        responsive
+                        className="w-full h-full"
+                        interactive={!BROWSER.isMobile}
+                        forceRender
+                    />
+                </div>
+
+                {/* Nav buttons */}
+                <button
+                    onClick={(e) => { e.stopPropagation(); fsPrev(); }}
+                    className={cn(
+                        "absolute left-1 md:left-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm border border-white/20",
+                        fsSlideIndex === 0 ? "opacity-30" : "hover:bg-black/70 active:scale-95"
+                    )}
+                    disabled={fsSlideIndex === 0}
+                >
+                    <ChevronLeft size={22} />
+                </button>
+                <button
+                    onClick={(e) => { e.stopPropagation(); fsNext(); }}
+                    className={cn(
+                        "absolute right-1 md:right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm border border-white/20",
+                        fsSlideIndex === activeDeck.slides.length - 1 ? "opacity-30" : "hover:bg-black/70 active:scale-95"
+                    )}
+                    disabled={fsSlideIndex === activeDeck.slides.length - 1}
+                >
+                    <ChevronRight size={22} />
+                </button>
+            </div>
+
+            {/* Progress bar */}
+            <div className="absolute bottom-3 md:bottom-5 left-6 right-6 z-10">
+                <div className="bg-white/20 rounded-full h-1 overflow-hidden">
+                    <div
+                        className="bg-white/80 h-full rounded-full transition-all duration-300"
+                        style={{ width: `${((fsSlideIndex + 1) / activeDeck.slides.length) * 100}%` }}
+                    />
+                </div>
+            </div>
+        </div>,
+        document.body
+    ) : null;
+
     return (
+        <>
         <section className={cn("relative w-full z-20", compact ? "py-8" : "min-h-0 md:min-h-screen py-2 md:py-0")}>
 
             {/* Main Content - The slides */}
@@ -436,76 +508,9 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
                 </div>
             </div>
 
-            {/* Fullscreen Presentation Overlay */}
-            {isFullscreen && activeDeck?.slides && (
-                <div className="fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center" onClick={closeFullscreen}>
-                    {/* Top bar */}
-                    <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-3 md:p-5">
-                        <div className="bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5 text-white/90 text-sm font-medium border border-white/20">
-                            {fsSlideIndex + 1} / {activeDeck.slides.length}
-                        </div>
-                        <button
-                            onClick={closeFullscreen}
-                            className="bg-black/60 backdrop-blur-sm rounded-full w-9 h-9 flex items-center justify-center text-white/90 hover:bg-black/80 border border-white/20"
-                        >
-                            <X size={18} />
-                        </button>
-                    </div>
-
-                    {/* Slide */}
-                    <div
-                        className="relative w-full h-full flex items-center justify-center p-2 md:p-12"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="relative w-full max-w-[1400px] aspect-video bg-white rounded-lg overflow-hidden shadow-2xl">
-                            <MiniSlide
-                                key={`fs-${fsSlideIndex}`}
-                                slide={activeDeck.slides[fsSlideIndex]}
-                                width={1280}
-                                height={720}
-                                responsive
-                                className="w-full h-full"
-                                interactive={!BROWSER.isMobile}
-                                forceRender
-                            />
-                        </div>
-
-                        {/* Nav buttons */}
-                        <button
-                            onClick={(e) => { e.stopPropagation(); fsPrev(); }}
-                            className={cn(
-                                "absolute left-1 md:left-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm border border-white/20",
-                                fsSlideIndex === 0 ? "opacity-30" : "hover:bg-black/70 active:scale-95"
-                            )}
-                            disabled={fsSlideIndex === 0}
-                        >
-                            <ChevronLeft size={22} />
-                        </button>
-                        <button
-                            onClick={(e) => { e.stopPropagation(); fsNext(); }}
-                            className={cn(
-                                "absolute right-1 md:right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm border border-white/20",
-                                fsSlideIndex === activeDeck.slides.length - 1 ? "opacity-30" : "hover:bg-black/70 active:scale-95"
-                            )}
-                            disabled={fsSlideIndex === activeDeck.slides.length - 1}
-                        >
-                            <ChevronRight size={22} />
-                        </button>
-                    </div>
-
-                    {/* Progress bar */}
-                    <div className="absolute bottom-3 md:bottom-5 left-6 right-6 z-10">
-                        <div className="bg-white/20 rounded-full h-1 overflow-hidden">
-                            <div
-                                className="bg-white/80 h-full rounded-full transition-all duration-300"
-                                style={{ width: `${((fsSlideIndex + 1) / activeDeck.slides.length) * 100}%` }}
-                            />
-                        </div>
-                    </div>
-                </div>
-            )}
-
         </section>
+        {fullscreenOverlay}
+        </>
     );
 };
 

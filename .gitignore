@@ -37,6 +37,22 @@ build/
 *.swo
 *~
 
+# Expo / React Native
+.expo/
+dist/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+ios/
+android/
+
+# Electron / Desktop
+apps/desktop/dist/
+apps/desktop/out/
+
 # OS
 Thumbs.db
 test_output/

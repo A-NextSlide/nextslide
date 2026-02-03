@@ -10,7 +10,7 @@ import {
   ChevronLeft, ChevronRight, Bot, Layers, Settings, Crown, Star,
   Search, FileText, Image, Users, Share2, Code, MessageSquare,
   Sparkles, MousePointer2, BookOpen, BarChart3, Wand2, PenTool,
-  Loader2
+  Loader2, Monitor, Download, Users2
 } from 'lucide-react';
 import { showcaseService, ShowcaseDeck } from '@/services/showcaseService';
 import InteractiveHero from '@/components/landing/InteractiveHero';
@@ -23,7 +23,8 @@ import CommunityBottomSheet from '@/components/community/CommunityBottomSheet';
 import { useTypewriter } from '@/hooks/useTypewriter';
 import LegalModal from '@/components/legal/LegalModal';
 import AuthDialog from '@/components/auth/AuthDialog';
-import { BROWSER } from '@/utils/browser';
+import { BROWSER, getBrowserInfo } from '@/utils/browser';
+import { detectDesktopPlatform, getPlatformLabel } from '@/utils/desktopDownload';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { StaticActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { StaticEditorStateProvider } from '@/context/EditorStateContext';
@@ -107,7 +108,10 @@ const Landing: React.FC = () => {
 
     // If user is signed in, use the original flow (redirect to /app)
     if (isSignedIn) {
-      if (prompt) localStorage.setItem('landing_prompt', prompt);
+      if (prompt) {
+        localStorage.setItem('landing_prompt', prompt);
+        localStorage.setItem('landing_prompt_ts', String(Date.now()));
+      }
       navigate('/app');
       return;
     }
@@ -398,8 +402,8 @@ const Landing: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#FCFBF8] dark:bg-[#0a0a0a] overflow-x-clip">
 
-      {/* Navigation */}
-      <nav
+      {/* Navigation - hidden in native mobile app */}
+      {BROWSER.isMobileApp ? null : <nav
         className={cn(
           "fixed top-0 w-full z-50 transition-all duration-300",
           isScrolled
@@ -425,6 +429,14 @@ const Landing: React.FC = () => {
             <a href="#" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-sm font-medium text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors">Create</a>
             <a href="#compare" className="text-sm font-medium text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors">Compare</a>
             <a href="#pricing" className="text-sm font-medium text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors">Pricing</a>
+            {/* Desktop download nav link — hidden until code signing is set up
+            {!BROWSER.isNativeApp && (
+              <button onClick={() => navigate('/download')} className="text-sm font-medium text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors flex items-center gap-1.5">
+                <Monitor className="w-3.5 h-3.5" />
+                Download
+              </button>
+            )}
+            */}
             {isSignedIn ? (
               <Button onClick={() => navigate('/app')} className="bg-[#FF4301] hover:bg-[#E63901] text-white text-sm font-semibold">
                 My Slides
@@ -455,6 +467,14 @@ const Landing: React.FC = () => {
               <a href="#" onClick={() => { setIsMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="py-2 touch-manipulation">Create</a>
               <a href="#compare" onClick={() => setIsMenuOpen(false)} className="py-2 touch-manipulation">Compare</a>
               <a href="#pricing" onClick={() => setIsMenuOpen(false)} className="py-2 touch-manipulation">Pricing</a>
+              {/* Desktop download mobile nav — hidden until code signing is set up
+              {!BROWSER.isNativeApp && (
+                <button onClick={() => { setIsMenuOpen(false); navigate('/download'); }} className="py-2 touch-manipulation text-left flex items-center gap-2">
+                  <Monitor className="w-4 h-4" />
+                  Download
+                </button>
+              )}
+              */}
               {isSignedIn ? (
                 <Button className="bg-[#FF4301] hover:bg-[#E63901] text-white min-h-[44px] touch-manipulation" onClick={() => navigate('/app')}>My Slides</Button>
               ) : (
@@ -466,7 +486,7 @@ const Landing: React.FC = () => {
             </div>
           </div>
         )}
-      </nav>
+      </nav>}
 
       {/* Sticky Background Wrapper for Hero + Showcase */}
       <div className="relative z-10">
@@ -480,7 +500,7 @@ const Landing: React.FC = () => {
         <section ref={heroRef} className="relative min-h-[90vh] flex flex-col justify-center overflow-visible -mt-[100vh]">
 
           {/* Hero Title Animation */}
-          <div className="relative z-30 pt-32 sm:pt-40 pb-8 text-center px-4">
+          <div className={cn("relative z-30 pb-8 text-center px-4", BROWSER.isMobileApp ? "pt-8" : "pt-32 sm:pt-40")}>
             <HeroTitle />
 
             <p className="mt-12 text-xl sm:text-2xl text-black/60 dark:text-white/60 max-w-2xl mx-auto px-4 hero-subtitle-animate font-light tracking-wide">
@@ -645,7 +665,9 @@ const Landing: React.FC = () => {
         </section>
 
         {/* New Interactive Hero Section (used as Showcase) */}
-        <InteractiveHero decks={showcaseDecks} isLoading={isLoadingShowcase} />
+        <div className="pt-24">
+          <InteractiveHero decks={showcaseDecks} isLoading={isLoadingShowcase} />
+        </div>
 
         {/* Why NextSlide - Feature Grid */}
         <section className="relative z-20 py-20 px-8 bg-white dark:bg-zinc-950">
@@ -1170,11 +1192,28 @@ const Landing: React.FC = () => {
           </div>
         </section>
 
+      {/* Community Button - Fixed at bottom, matches /app style */}
+      <button
+        onClick={() => setShowCommunity(true)}
+        className="fixed left-1/2 -translate-x-1/2 bottom-6 z-40 px-4 py-2 bg-white dark:bg-[#111] text-sm font-medium rounded-lg border border-[#FF4301]/20 shadow-[0_0_16px_rgba(255,67,1,0.15)] hover:shadow-[0_0_24px_rgba(255,67,1,0.25)] hover:border-[#FF4301]/30 hover:scale-[1.02] transition-all duration-200 flex items-center gap-2 text-[#333] dark:text-white"
+      >
+        <Users2 className="h-4 w-4" />
+        Community Slides
+      </button>
+
       {/* Community Bottom Sheet */}
       <CommunityBottomSheet
         isOpen={showCommunity}
         onClose={() => setShowCommunity(false)}
       />
+
+      {/* Desktop App Promotion — commented out until code signing is set up
+      {!BROWSER.isNativeApp && (
+        <section className="py-16 px-8 bg-[#FCFBF8] dark:bg-[#0a0a0a]">
+          ...
+        </section>
+      )}
+      */}
 
       {/* Final CTA */}
       <section className="py-24 px-8 bg-[#FF4301] text-white">
@@ -1234,6 +1273,19 @@ const Landing: React.FC = () => {
                 <li><a href="#pricing" className="hover:text-white transition-colors">Pricing</a></li>
               </ul>
             </div>
+            {/* Download footer column — hidden until code signing is set up
+            {!BROWSER.isNativeApp && (
+              <div>
+                <h4 className="text-white font-semibold mb-4 text-sm" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Download</h4>
+                <ul className="space-y-2 text-sm">
+                  <li><button onClick={() => navigate('/download')} className="hover:text-white transition-colors">Desktop App</button></li>
+                  <li><button onClick={() => navigate('/download')} className="hover:text-white transition-colors">macOS</button></li>
+                  <li><button onClick={() => navigate('/download')} className="hover:text-white transition-colors">Windows</button></li>
+                  <li><button onClick={() => navigate('/download')} className="hover:text-white transition-colors">Linux</button></li>
+                </ul>
+              </div>
+            )}
+            */}
             <div>
               <h4 className="text-white font-semibold mb-4 text-sm" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Legal</h4>
               <ul className="space-y-2 text-sm">
@@ -1265,6 +1317,7 @@ const Landing: React.FC = () => {
           const previewPrompt = sessionStorage.getItem('preview_prompt') || heroInput.trim();
           if (previewPrompt) {
             localStorage.setItem('landing_prompt', previewPrompt);
+            localStorage.setItem('landing_prompt_ts', String(Date.now()));
           }
           navigate('/app');
         }}

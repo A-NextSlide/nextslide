@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { BROWSER } from '@/utils/browser';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import {
@@ -41,7 +42,7 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate('/');
+    navigate(BROWSER.isNativeApp ? '/app' : '/');
   };
 
   // Reset scroll position and close mobile menu on route change

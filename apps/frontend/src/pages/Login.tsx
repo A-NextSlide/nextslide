@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { BROWSER } from '@/utils/browser';
+import { nativeBridge } from '@/utils/nativeBridge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -140,7 +142,7 @@ const Login: React.FC = () => {
         <Button
           variant="ghost"
           size="icon"
-        onClick={() => navigate('/')}
+        onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}
           className="fixed top-6 left-6 z-10 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm hover:bg-white dark:hover:bg-zinc-800"
       >
           <ArrowLeft className="h-4 w-4" />
@@ -152,7 +154,7 @@ const Login: React.FC = () => {
             <BrandWordmark
               tag="h1"
               className="text-[#383636] dark:text-gray-300 cursor-pointer"
-              onClick={() => navigate('/')}
+              onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}
               sizePx={18.95}
               xImageUrl="/brand/nextslide-x.png"
               gapLeftPx={-3}
@@ -255,7 +257,7 @@ const Login: React.FC = () => {
                     </p>
                     <div className="space-y-3">
                       <Button
-                        onClick={() => window.open('https://mail.google.com', '_blank')}
+                        onClick={() => nativeBridge.openExternal('https://mail.google.com')}
                         variant="outline"
                         className="w-full"
                       >

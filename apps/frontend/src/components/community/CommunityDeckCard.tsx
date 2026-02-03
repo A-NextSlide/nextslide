@@ -1,11 +1,9 @@
-import React, { useState, useCallback } from 'react';
-import { Badge } from '@/components/ui/badge';
+import React, { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Copy, FileStack, Loader2 } from 'lucide-react';
+import { Copy, Eye, Loader2, Layers } from 'lucide-react';
 import { CommunityDeck, COMMUNITY_CATEGORIES } from '@/services/communityService';
-import MiniSlide from '@/components/deck/MiniSlide';
 import { cn } from '@/lib/utils';
-import { BROWSER } from '@/utils/browser';
+const HK = '"HK Grotesk", "Hanken Grotesk", sans-serif';
 
 interface CommunityDeckCardProps {
   deck: CommunityDeck;
@@ -14,10 +12,50 @@ interface CommunityDeckCardProps {
   isRemixing?: boolean;
   showRemixButton?: boolean;
   className?: string;
-  /** Cached thumbnail URL - if provided, shows this instead of rendering live MiniSlide */
-  cachedThumbnailUrl?: string | null;
-  /** Callback when thumbnail element is ready for screenshot capture */
-  onThumbnailRef?: (element: HTMLDivElement | null) => void;
+}
+
+/**
+ * Extract background CSS from slide component data.
+ * Used as a lightweight fallback when no PNG thumbnail exists.
+ */
+function extractBgStyle(slide: any): React.CSSProperties {
+  if (!slide) return { background: '#27272a' };
+  const comps = slide.components || [];
+  const bg = comps.find(
+    (c: any) => c.type === 'Background' || c.id?.toLowerCase().includes('background'),
+  );
+  if (!bg) return { background: '#27272a' };
+  const props: any = bg.props || {};
+
+  if (props.gradient && typeof props.gradient === 'object') {
+    const g = props.gradient;
+    const rawStops = g.stops || g.colors || [];
+    if (rawStops.length > 0) {
+      const stops = rawStops
+        .filter((s: any) => s?.color)
+        .map((s: any, i: number, arr: any[]) => {
+          let pos = s.position ?? (i / Math.max(1, arr.length - 1)) * 100;
+          if (pos <= 1 && arr.every((st: any) => (st.position ?? 0) <= 1)) pos *= 100;
+          return `${s.color} ${pos}%`;
+        })
+        .join(', ');
+      if (stops) {
+        if (g.type === 'radial') return { background: `radial-gradient(circle, ${stops})` };
+        const angle = typeof g.angle === 'number' ? g.angle : 180;
+        return { background: `linear-gradient(${angle}deg, ${stops})` };
+      }
+    }
+  }
+  if (typeof props.gradient === 'string' && props.gradient) return { background: props.gradient };
+  const color = props.backgroundColor || props.color || props.style?.background;
+  if (color) return { background: color };
+  return { background: '#27272a' };
+}
+
+function formatCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
 }
 
 const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
@@ -27,105 +65,101 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
   isRemixing = false,
   showRemixButton = true,
   className,
-  cachedThumbnailUrl,
-  onThumbnailRef,
 }) => {
   const category = COMMUNITY_CATEGORIES[deck.category as keyof typeof COMMUNITY_CATEGORIES];
-
-  // On desktop: mount live MiniSlide on first hover (stays rendered after)
-  const [showLive, setShowLive] = useState(false);
-  const handleMouseEnter = useCallback(() => {
-    if (!showLive && !BROWSER.isMobile && deck.firstSlide) {
-      setShowLive(true);
-    }
-  }, [showLive, deck.firstSlide]);
+  const thumbnailUrl = deck.thumbnailUrl || null;
+  const bgStyle = useMemo(() => extractBgStyle(deck.firstSlide), [deck.firstSlide]);
 
   const handleCardClick = (e: React.MouseEvent) => {
-    // Don't trigger card click if clicking the remix button
     if ((e.target as HTMLElement).closest('button')) return;
     onView?.(deck);
   };
 
   return (
     <div
-      className={cn(
-        'group relative cursor-pointer',
-        className
-      )}
+      className={cn('group relative cursor-pointer', className)}
       onClick={handleCardClick}
-      onMouseEnter={handleMouseEnter}
     >
-      <div className="relative aspect-[16/9] w-full max-w-full overflow-hidden rounded-lg transition-all duration-300 ring-1 ring-zinc-200 dark:ring-zinc-700 hover:ring-zinc-300 dark:hover:ring-zinc-600 hover:shadow-lg">
-        {/* Thumbnail: PNG by default, live MiniSlide on hover (desktop only) */}
-        <div className="absolute inset-0 w-full h-full">
-          {/* Base layer: PNG thumbnail or placeholder */}
-          {cachedThumbnailUrl ? (
-            <img
-              src={cachedThumbnailUrl}
-              alt={deck.title}
-              className="w-full h-full object-cover"
-              draggable={false}
-              loading="lazy"
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full bg-gray-100 dark:bg-gray-800">
-              <FileStack className="h-8 w-8 text-gray-300" />
-            </div>
-          )}
+      {/* Card container */}
+      <div
+        className={cn(
+          'relative aspect-[16/9] w-full overflow-hidden rounded-xl',
+          'ring-1 ring-black/[0.06] dark:ring-white/[0.08]',
+        )}
+      >
+        {/* ── Layer 0: Background gradient fallback ────────────────────── */}
+        <div className="absolute inset-0" style={bgStyle} />
 
-          {/* Desktop hover layer: live MiniSlide mounts once on first hover, stays rendered.
-              overlayMode keeps background transparent + hides shimmer so the PNG shows
-              through until slide content fades in seamlessly. */}
-          {showLive && deck.firstSlide && (
-            <div ref={onThumbnailRef} className="absolute inset-0 w-full h-full z-[1]">
-              <MiniSlide
-                slide={deck.firstSlide}
-                className="w-full h-full"
-                overlayMode
-              />
-            </div>
-          )}
-        </div>
+        {/* ── Layer 1: Static PNG thumbnail ────────────────────────────── */}
+        {thumbnailUrl && (
+          <img
+            src={thumbnailUrl}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            draggable={false}
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        )}
 
-        {/* Category Badge - top left */}
-        <div className="absolute top-2 left-2 z-10">
-          <Badge
-            variant="secondary"
-            className="text-xs font-medium backdrop-blur-sm"
+        {/* ── Gradient scrim at bottom ─────────────────────────────────── */}
+        <div className="absolute inset-x-0 bottom-0 h-[60%] bg-gradient-to-t from-black/80 via-black/40 to-transparent z-[3] pointer-events-none" />
+
+        {/* ── Category pill (top-left) ─────────────────────────────────── */}
+        <div className="absolute top-2.5 left-2.5 z-[4]">
+          <span
+            className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide uppercase"
             style={{
-              backgroundColor: `${category?.color}cc`,
+              fontFamily: HK,
+              backgroundColor: `${category?.color}dd`,
               color: 'white',
+              letterSpacing: '0.06em',
             }}
           >
             {category?.name || deck.category}
-          </Badge>
+          </span>
         </div>
 
-        {/* Gradient overlay with text at bottom */}
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent pt-8 pb-2 px-3">
-          <h3 className="text-sm font-bold text-white truncate" title={deck.title}>
+        {/* ── Slide count (top-right) ──────────────────────────────────── */}
+        <div className="absolute top-2.5 right-2.5 z-[4]">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold text-white/80 bg-black/40">
+            <Layers className="h-2.5 w-2.5" />
+            {deck.slideCount}
+          </span>
+        </div>
+
+        {/* ── Bottom metadata ──────────────────────────────────────────── */}
+        <div className="absolute inset-x-0 bottom-0 px-3 pb-2.5 pt-6 z-[4]">
+          <h3
+            className="text-[13px] font-bold text-white truncate leading-tight"
+            title={deck.title}
+            style={{ fontFamily: HK }}
+          >
             {deck.title}
           </h3>
-          <div className="flex items-center gap-3 mt-0.5 text-xs text-white/70">
-            <span className="flex items-center gap-1">
-              <FileStack className="h-3 w-3" />
-              {deck.slideCount} slides
+          <div className="flex items-center gap-3 mt-1 text-[11px] text-white/60" style={{ fontFamily: HK }}>
+            {deck.authorName && (
+              <span className="truncate max-w-[45%]">{deck.authorName}</span>
+            )}
+            <span className="flex items-center gap-0.5">
+              <Eye className="h-2.5 w-2.5" />
+              {formatCount(deck.viewCount)}
             </span>
-            <span className="flex items-center gap-1">
-              <Copy className="h-3 w-3" />
-              {deck.remixCount} remixes
+            <span className="flex items-center gap-0.5">
+              <Copy className="h-2.5 w-2.5" />
+              {formatCount(deck.remixCount)}
             </span>
           </div>
         </div>
 
-        {/* Hover overlay */}
-        <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-        {/* Remix Button - Bottom Right */}
+        {/* ── Remix button (desktop hover) ─────────────────────────────── */}
         {showRemixButton && onRemix && (
           <Button
             size="sm"
-            className="absolute bottom-2 right-2 h-8 px-3 bg-white hover:bg-gray-100 text-black text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10"
+            className={cn(
+              'absolute bottom-2.5 right-2.5 z-[5] h-7 px-2.5',
+              'bg-white hover:bg-zinc-50 text-zinc-900 text-[11px] font-semibold shadow-lg',
+            )}
+            style={{ fontFamily: HK }}
             onClick={(e) => {
               e.stopPropagation();
               onRemix(deck);
@@ -134,12 +168,12 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
           >
             {isRemixing ? (
               <>
-                <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                Remixing...
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                Remixing
               </>
             ) : (
               <>
-                <Copy className="h-3 w-3 mr-1.5" />
+                <Copy className="h-3 w-3 mr-1" />
                 Remix
               </>
             )}
@@ -150,4 +184,4 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
   );
 };
 
-export default CommunityDeckCard;
+export default React.memo(CommunityDeckCard);

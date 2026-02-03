@@ -1,5 +1,6 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { BROWSER } from '@/utils/browser';
 import { Button } from '@/components/ui/button';
 import BrandWordmark from '@/components/common/BrandWordmark';
 import { shareService } from '@/services/shareService';
@@ -50,7 +51,7 @@ const BadgeLanding: React.FC = () => {
 
   const handleCtaClick = () => {
     trackBadgeLandingCtaClicked({ deckCode, method: 'create' });
-    navigate('/');
+    navigate(BROWSER.isNativeApp ? '/app' : '/');
   };
 
   const handleGoogleAuth = async () => {

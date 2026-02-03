@@ -6,9 +6,10 @@ import { BROWSER } from '@/utils/browser';
 
 // Component to render a deck thumbnail using the first slide
 const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'background'; forceRender?: boolean }> = React.memo(({ deck, renderMode = 'full', forceRender = false }) => {
-  // On mobile, always prefer server-rendered thumbnail to prevent crashes
+  // On mobile & desktop app, prefer server-rendered thumbnail to prevent
+  // GPU tile budget exhaustion from full Slide DOM rendering
   const serverThumbnail = (deck as any).thumbnail_url;
-  if (BROWSER.isMobile && serverThumbnail) {
+  if ((BROWSER.isMobile || BROWSER.isDesktopApp) && serverThumbnail) {
     return (
       <img
         src={serverThumbnail}
@@ -46,9 +47,9 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'b
     );
   }
 
-  // On mobile without a server thumbnail, use lightweight background-only mode
-  // to prevent crashes from full slide rendering in list views
-  const effectiveRenderMode = BROWSER.isMobile ? 'background' : renderMode;
+  // On mobile/desktop app without a server thumbnail, use lightweight background-only
+  // mode to prevent crashes and GPU tile budget exhaustion from full slide rendering
+  const effectiveRenderMode = (BROWSER.isMobile || BROWSER.isDesktopApp) ? 'background' : renderMode;
 
   // Use MiniSlide - it has IntersectionObserver for lazy loading
   return (

@@ -7,6 +7,7 @@ import { authService } from '@/services/authService';
 import { authRecoveryService } from '@/services/authRecoveryService';
 import { API_CONFIG } from '@/config/environment';
 import { identifyUser, resetUser, trackSignIn, trackSignUp, trackSignOut } from '@/services/analytics';
+import { BROWSER } from '@/utils/browser';
 
 interface AuthContextType {
   user: User | null;
@@ -240,6 +241,9 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const signUp = async (email: string, password: string, fullName: string) => {
     try {
+      const signUpRedirect = BROWSER.isNativeApp
+        ? 'nextslide://auth-callback'
+        : `${window.location.origin}/auth-callback`;
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -247,7 +251,7 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
           data: {
             full_name: fullName,
           },
-          emailRedirectTo: `${window.location.origin}/auth-callback`,
+          emailRedirectTo: signUpRedirect,
         }
       });
 
@@ -326,9 +330,15 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const signInWithGoogle = async () => {
     try {
       console.log('[Auth] Initiating Google OAuth sign-in...');
-      const redirectUrl = `${window.location.origin}/auth-callback`;
+
+      // Native apps (desktop & mobile): use deep link scheme so the system
+      // browser can hand control back to the app after OAuth completes.
+      const isNativeApp = BROWSER.isDesktopApp || BROWSER.isMobileApp;
+      const redirectUrl = isNativeApp
+        ? 'nextslide://auth-callback'
+        : `${window.location.origin}/auth-callback`;
       console.log('[Auth] Redirect URL:', redirectUrl);
-      
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -337,7 +347,9 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
             access_type: 'offline',
             prompt: 'consent',
           },
-          skipBrowserRedirect: false,
+          // Desktop: skip browser redirect so we can open in system browser manually.
+          // Mobile: let the redirect happen; WebView navigation interception handles it.
+          skipBrowserRedirect: BROWSER.isDesktopApp,
         }
       });
 
@@ -346,11 +358,15 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
         throw error;
       }
 
+      // Desktop: open the OAuth URL in the system browser
+      if (BROWSER.isDesktopApp && data?.url) {
+        (window as any).electronAPI?.external?.openUrl(data.url);
+      }
+
       // Track Google sign in attempt (actual sign in tracked on SIGNED_IN event)
       trackSignIn('google');
 
       console.log('[Auth] OAuth initiated successfully, redirecting to Google...');
-      // User will be redirected to Google
     } catch (error: any) {
       console.error('[Auth] Google sign-in failed:', error);
       toast({
@@ -364,10 +380,13 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const signInWithMagicLink = async (email: string) => {
     try {
+      const magicLinkRedirect = BROWSER.isNativeApp
+        ? 'nextslide://auth-callback'
+        : `${window.location.origin}/auth-callback`;
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth-callback`,
+          emailRedirectTo: magicLinkRedirect,
         }
       });
 
@@ -425,8 +444,11 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const resetPassword = async (email: string) => {
     try {
+      const resetRedirect = BROWSER.isNativeApp
+        ? 'nextslide://auth-callback?type=recovery'
+        : `${window.location.origin}/auth-callback?type=recovery`;
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth-callback?type=recovery`,
+        redirectTo: resetRedirect,
       });
 
       if (error) throw error;

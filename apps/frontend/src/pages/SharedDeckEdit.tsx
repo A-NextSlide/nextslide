@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { BROWSER } from '@/utils/browser';
 import { shareService } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
 import { useToast } from '@/hooks/use-toast';
@@ -196,7 +197,7 @@ const SharedDeckEdit: React.FC = () => {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => navigate('/')}
+                  onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}
                   disabled={isVerifying}
                   className="flex-1"
                 >
@@ -283,7 +284,7 @@ const SharedDeckEdit: React.FC = () => {
           </CardHeader>
           <CardContent className="text-center">
             <p className="text-muted-foreground mb-6">{error}</p>
-            <Button onClick={() => navigate('/')} variant="outline">
+            <Button onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')} variant="outline">
               Go to Dashboard
             </Button>
           </CardContent>

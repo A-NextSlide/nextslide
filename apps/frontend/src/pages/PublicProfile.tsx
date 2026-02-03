@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { BROWSER } from '@/utils/browser';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import { profileApi, type PublicProfile as PublicProfileType, type ProfilePresentation } from '@/services/profileApi';
@@ -148,7 +149,7 @@ export default function PublicProfile() {
         <p className="text-muted-foreground mb-6">
           This user does not exist or their profile is private.
         </p>
-        <Button variant="outline" onClick={() => navigate('/')}>
+        <Button variant="outline" onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to home
         </Button>

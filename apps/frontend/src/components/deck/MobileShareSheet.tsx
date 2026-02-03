@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { nativeBridge } from '@/utils/nativeBridge';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -194,7 +195,7 @@ const MobileShareSheet: React.FC<MobileShareSheetProps> = ({ deckUuid, deckName 
     }
 
     if (shareUrl) {
-      window.open(shareUrl, '_blank', 'noopener,noreferrer');
+      nativeBridge.openExternal(shareUrl);
       trackDeckShared({ deckId: deckUuid, shareType: platform });
     }
   };
