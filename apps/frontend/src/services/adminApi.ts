@@ -1347,6 +1347,67 @@ class AdminApi {
       method: 'DELETE',
     });
   }
+
+  async seedJobs(): Promise<{ jobs: SeedStatusResponse[] }> {
+    return this.request('/admin/seed/jobs');
+  }
+
+  // ==================== SEO Pages ====================
+
+  async seoPages(): Promise<{
+    pages: { slug: string; title: string; communityCategory: string; type: string; communityDeckCount: number }[];
+    featuredDecks: { uuid: string; name: string; displayOrder: number }[];
+    featuredDeckCount: number;
+    communityTotalCount: number;
+    categoryCounts: Record<string, number>;
+  }> {
+    return this.request('/admin/seo/pages');
+  }
+
+  async seoFeaturedDecks(): Promise<{ decks: SeoFeaturedDeck[] }> {
+    return this.request('/admin/seo/featured-decks');
+  }
+
+  async seoCommunityDecks(category?: string): Promise<{ decks: SeoCommunityDeck[] }> {
+    const params = category ? `?category=${encodeURIComponent(category)}` : '';
+    return this.request(`/admin/seo/community-decks${params}`);
+  }
+
+  async seoRemoveFeatured(deckUuid: string): Promise<{ success: boolean }> {
+    return this.request(`/admin/seo/featured-deck/${deckUuid}`, { method: 'DELETE' });
+  }
+
+  async seoRemoveCommunity(deckUuid: string): Promise<{ success: boolean }> {
+    return this.request(`/admin/seo/community-deck/${deckUuid}`, { method: 'DELETE' });
+  }
+
+  async seoReorderFeatured(deckUuid: string, newOrder: number): Promise<{ success: boolean }> {
+    return this.request('/admin/seo/featured-deck/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ deck_uuid: deckUuid, new_order: newOrder }),
+    });
+  }
+
+  async seoReorderFeaturedBatch(uuids: string[]): Promise<{ success: boolean }> {
+    return this.request('/admin/seo/featured-decks/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ uuids }),
+    });
+  }
+
+  async seedReseed(deckUuid: string, source: 'featured' | 'community', slides = 10, style = 'creative'): Promise<{ new_deck_id: string; old_deck_uuid: string; title: string }> {
+    return this.request('/admin/seed/reseed', {
+      method: 'POST',
+      body: JSON.stringify({ deck_uuid: deckUuid, source, slides, style }),
+    });
+  }
+
+  async seedReseedAll(slides = 10, style = 'creative'): Promise<{ count: number; decks: { new_deck_id: string; old_uuid: string; title: string; source: string }[]; message: string }> {
+    return this.request('/admin/seed/reseed-all', {
+      method: 'POST',
+      body: JSON.stringify({ slides, style }),
+    });
+  }
 }
 
 export interface Brand {
@@ -1596,6 +1657,32 @@ export interface SeedStatusResponse {
   slide_count: number;
   error?: string;
   created_at: string;
+}
+
+export interface SeoFeaturedDeck {
+  uuid: string;
+  name: string;
+  description: string;
+  slide_count: number;
+  display_order: number;
+  is_active: boolean;
+  first_slide?: any;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SeoCommunityDeck {
+  id: string;
+  deck_uuid: string;
+  title: string;
+  category: string;
+  tags: string[];
+  slide_count: number;
+  author_name: string;
+  view_count: number;
+  remix_count: number;
+  approved_at?: string;
+  first_slide?: any;
 }
 
 export const adminApi = new AdminApi();

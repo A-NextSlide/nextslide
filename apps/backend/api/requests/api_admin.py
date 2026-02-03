@@ -3644,11 +3644,48 @@ class SeedPushCommunityRequest(BaseModel):
     tags: List[str] = []
 
 
-async def _admin_generate_deck(deck_uuid: str, user_id: str, topic: str, num_slides: int, style: Optional[str]):
+def _get_fresh_supabase():
+    """Get a Supabase client, resetting if the current one is stale."""
+    try:
+        client = get_supabase_client()
+        # Quick health check — if the client is closed this will throw
+        return client
+    except Exception:
+        from services.supabase import reset_supabase_client
+        reset_supabase_client()
+        return get_supabase_client()
+
+
+def _safe_supabase_update(deck_uuid: str, update_data: dict):
+    """Update a deck row with a fresh Supabase client, tolerating connection errors."""
+    try:
+        client = _get_fresh_supabase()
+        client.table("decks").update(update_data).eq("uuid", deck_uuid).execute()
+    except Exception:
+        try:
+            from services.supabase import reset_supabase_client
+            reset_supabase_client()
+            client = get_supabase_client()
+            client.table("decks").update(update_data).eq("uuid", deck_uuid).execute()
+        except Exception as retry_err:
+            logger.warning(f"[admin_seed] Status update failed for {deck_uuid}: {retry_err}")
+
+
+async def _admin_generate_deck(
+    deck_uuid: str,
+    user_id: str,
+    topic: str,
+    num_slides: int,
+    style: Optional[str],
+    reseed_info: Optional[Dict[str, Any]] = None,
+):
     """Background task: full outline -> compose pipeline for admin seed decks.
 
     Routes through Modal when USE_MODAL=true and enables component fallback
     (Gemini → Claude Opus) for maximum reliability.
+
+    If reseed_info is provided, swaps UUIDs in featured/community tables on completion.
+    reseed_info: { old_uuid, source ("featured"|"community"), display_order?, category? }
     """
     try:
         import os
@@ -3675,10 +3712,9 @@ async def _admin_generate_deck(deck_uuid: str, user_id: str, topic: str, num_sli
 
         registry = get_global_registry()
 
-        client = get_supabase_client()
-        client.table("decks").update({
+        _safe_supabase_update(deck_uuid, {
             "status": {"state": "generating", "message": "Generating outline..."}
-        }).eq("uuid", deck_uuid).execute()
+        })
 
         # Phase 1: Generate outline — route through Modal when available
         deck_outline = None
@@ -3748,9 +3784,9 @@ async def _admin_generate_deck(deck_uuid: str, user_id: str, topic: str, num_sli
         deck_data["data"]["source"] = "admin_seed"
         upload_deck(deck_data, deck_uuid, user_id)
 
-        client.table("decks").update({
+        _safe_supabase_update(deck_uuid, {
             "status": {"state": "generating", "message": "Composing slides via Modal..." if USE_MODAL else "Composing slides..."}
-        }).eq("uuid", deck_uuid).execute()
+        })
 
         # Phase 2: Compose slides — compose_deck_stream auto-routes to Modal when USE_MODAL=true
         slides_generated = 0
@@ -3765,13 +3801,13 @@ async def _admin_generate_deck(deck_uuid: str, user_id: str, topic: str, num_sli
             if utype == "slide_generated":
                 slides_generated += 1
                 try:
-                    client.table("decks").update({
+                    _safe_supabase_update(deck_uuid, {
                         "status": {
                             "state": "generating",
                             "message": f"Generated slide {slides_generated}/{num_slides}",
                             "progress": round(slides_generated / num_slides * 100),
                         }
-                    }).eq("uuid", deck_uuid).execute()
+                    })
                 except Exception:
                     pass
             elif utype in ("deck_complete", "composition_complete", "complete"):
@@ -3779,7 +3815,8 @@ async def _admin_generate_deck(deck_uuid: str, user_id: str, topic: str, num_sli
 
         final_count = slides_generated
         try:
-            data_result = client.table("decks").select("slides").eq("uuid", deck_uuid).single().execute()
+            sb = _get_fresh_supabase()
+            data_result = sb.table("decks").select("slides").eq("uuid", deck_uuid).single().execute()
             if data_result.data:
                 final_count = len(data_result.data.get("slides") or [])
         except Exception:
@@ -3787,25 +3824,72 @@ async def _admin_generate_deck(deck_uuid: str, user_id: str, topic: str, num_sli
 
         # Auto-create public share link for all seed decks
         try:
-            await _ensure_public_share(client, deck_uuid, user_id)
+            await _ensure_public_share(_get_fresh_supabase(), deck_uuid, user_id)
         except Exception:
             pass
 
-        client.table("decks").update({
+        _safe_supabase_update(deck_uuid, {
             "status": {"state": "completed"},
             "slide_count": final_count,
-        }).eq("uuid", deck_uuid).execute()
+        })
+
+        # Render thumbnail PNG for the new deck
+        try:
+            from services.thumbnail_dispatch import trigger_thumbnail_render
+            await trigger_thumbnail_render(deck_uuid)
+            logger.info(f"[admin_seed] Thumbnail rendered for {deck_uuid}")
+        except Exception as thumb_err:
+            logger.warning(f"[admin_seed] Thumbnail render failed for {deck_uuid}: {thumb_err}")
+
+        # If this is a reseed, swap UUID in featured/community tables
+        if reseed_info:
+            try:
+                sb = _get_fresh_supabase()
+                old_uuid = reseed_info["old_uuid"]
+                source = reseed_info.get("source", "")
+                deck_name = topic[:100]
+
+                if source in ("featured", "both"):
+                    display_order = reseed_info.get("display_order", 0)
+                    sb.table("featured_decks").delete().eq("uuid", old_uuid).execute()
+                    sb.table("featured_decks").upsert({
+                        "uuid": deck_uuid,
+                        "name": deck_name,
+                        "display_order": display_order,
+                        "slide_count": final_count,
+                        "is_active": True,
+                    }).execute()
+                    logger.info(f"[admin_seed] Reseed swap: featured {old_uuid} -> {deck_uuid} (slot {display_order})")
+
+                if source in ("community", "both"):
+                    category = reseed_info.get("category", "business")
+                    sb.table("community_decks").delete().eq("deck_uuid", old_uuid).execute()
+                    import uuid as uuid_module
+                    thumbnail = f"{os.environ.get('SUPABASE_URL', '')}/storage/v1/object/public/thumbnails/thumbnails/{deck_uuid}_s0.png"
+                    sb.table("community_decks").insert({
+                        "id": str(uuid_module.uuid4()),
+                        "deck_uuid": deck_uuid,
+                        "title": deck_name,
+                        "category": category,
+                        "tags": [category],
+                        "status": "approved",
+                        "slide_count": final_count,
+                        "author_name": "NextSlide",
+                        "view_count": 0,
+                        "remix_count": 0,
+                        "thumbnail_url": thumbnail,
+                    }).execute()
+                    logger.info(f"[admin_seed] Reseed swap: community {old_uuid} -> {deck_uuid} (cat={category})")
+            except Exception as swap_err:
+                logger.error(f"[admin_seed] Reseed swap failed: {swap_err}", exc_info=True)
 
         logger.info(f"Admin seed deck {deck_uuid} completed with {final_count} slides (modal={USE_MODAL})")
 
     except Exception as e:
         logger.error(f"Admin seed deck generation failed for {deck_uuid}: {e}", exc_info=True)
-        try:
-            get_supabase_client().table("decks").update({
-                "status": {"state": "failed", "error": str(e)[:500]}
-            }).eq("uuid", deck_uuid).execute()
-        except Exception:
-            pass
+        _safe_supabase_update(deck_uuid, {
+            "status": {"state": "failed", "error": str(e)[:500]}
+        })
 
 
 async def _ensure_public_share(supabase, deck_uuid: str, user_id: str) -> Optional[str]:
@@ -3923,13 +4007,28 @@ async def admin_seed_status(
     supabase = get_supabase_client()
     result = supabase.table("decks").select(
         "uuid, name, status, slide_count, slides, created_at"
-    ).eq("uuid", deck_uuid).single().execute()
+    ).eq("uuid", deck_uuid).maybe_single().execute()
 
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Deck not found")
+    if result is None or not getattr(result, 'data', None):
+        # Deck row doesn't exist yet (queued but not started)
+        return {
+            "deck_id": deck_uuid,
+            "name": "",
+            "status": "queued",
+            "message": "Waiting in queue...",
+            "progress": 0,
+            "slide_count": 0,
+            "error": None,
+            "created_at": "",
+        }
 
     deck = result.data
-    status = deck.get("status") or {}
+    raw_status = deck.get("status") or {}
+    # status can be a plain string (e.g. "approved") or a dict
+    if isinstance(raw_status, str):
+        status = {"state": raw_status}
+    else:
+        status = raw_status
     slides = deck.get("slides") or []
 
     return {
@@ -4090,3 +4189,418 @@ async def admin_seed_cleanup(
         "skipped_count": len(skipped),
         "deleted_uuids": deleted_uuids[:50],
     }
+
+
+@router.get("/seed/jobs")
+async def admin_seed_jobs(
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """List recent admin seed jobs (still generating or completed in last 48h)."""
+    supabase = get_supabase_client()
+
+    result = supabase.table("decks").select(
+        "uuid, name, status, slide_count, slides, created_at"
+    ).eq(
+        "data->>source", "admin_seed"
+    ).order(
+        "created_at", desc=True
+    ).limit(50).execute()
+
+    jobs = []
+    for deck in (result.data or []):
+        raw_status = deck.get("status") or {}
+        if isinstance(raw_status, str):
+            status = {"state": raw_status}
+        else:
+            status = raw_status
+        slides = deck.get("slides") or []
+        jobs.append({
+            "deck_id": deck["uuid"],
+            "name": deck.get("name", ""),
+            "status": status.get("state", "unknown"),
+            "message": status.get("message", ""),
+            "progress": status.get("progress", 0),
+            "slide_count": len(slides),
+            "error": status.get("error"),
+            "created_at": deck.get("created_at", ""),
+        })
+
+    return {"jobs": jobs}
+
+
+class SeedReseedRequest(BaseModel):
+    deck_uuid: str
+    source: str  # "featured" or "community"
+    slides: Optional[int] = 10
+    style: Optional[str] = "creative"
+
+
+class SeedReseedAllRequest(BaseModel):
+    slides: Optional[int] = 10
+    style: Optional[str] = "creative"
+
+
+@router.post("/seed/reseed")
+async def admin_seed_reseed(
+    body: SeedReseedRequest,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Reseed a single featured or community deck — generates a new deck and swaps it in."""
+    import asyncio
+    import uuid as uuid_module
+
+    supabase = get_supabase_client()
+    user_id = admin["id"]
+
+    # Get existing deck info for the prompt
+    title = None
+    reseed_info: Dict[str, Any] = {"old_uuid": body.deck_uuid, "source": body.source}
+
+    if body.source == "featured":
+        row = supabase.table("featured_decks").select("uuid, name, display_order").eq("uuid", body.deck_uuid).single().execute()
+        if not row.data:
+            raise HTTPException(status_code=404, detail="Featured deck not found")
+        title = row.data.get("name", "presentation")
+        reseed_info["display_order"] = row.data.get("display_order", 0)
+    elif body.source == "community":
+        row = supabase.table("community_decks").select("deck_uuid, title, category").eq("deck_uuid", body.deck_uuid).limit(1).execute()
+        if not row.data:
+            raise HTTPException(status_code=404, detail="Community deck not found")
+        title = row.data[0].get("title", "presentation")
+        reseed_info["category"] = row.data[0].get("category", "business")
+    else:
+        raise HTTPException(status_code=400, detail="source must be 'featured' or 'community'")
+
+    new_uuid = str(uuid_module.uuid4())
+    supabase.table("decks").insert({
+        "uuid": new_uuid,
+        "user_id": user_id,
+        "name": title[:100],
+        "slides": [],
+        "size": {"width": 1920, "height": 1080},
+        "status": {"state": "generating", "message": "Reseeding..."},
+        "data": {"source": "admin_seed", "reseed_of": body.deck_uuid},
+        "slide_count": 0,
+    }).execute()
+
+    asyncio.create_task(_admin_generate_deck(
+        new_uuid, user_id, title, body.slides or 10, body.style,
+        reseed_info=reseed_info,
+    ))
+
+    return {"new_deck_id": new_uuid, "old_deck_uuid": body.deck_uuid, "title": title, "status": "generating"}
+
+
+@router.post("/seed/reseed-all")
+async def admin_seed_reseed_all(
+    body: SeedReseedAllRequest,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Reseed ALL featured and community decks with throttled concurrency."""
+    import asyncio
+    import uuid as uuid_module
+    from services.supabase import reset_supabase_client
+
+    # Force a fresh client to avoid stale connection from previous runs
+    reset_supabase_client()
+    supabase = get_supabase_client()
+    user_id = admin["id"]
+
+    # Gather all featured decks
+    featured = supabase.table("featured_decks").select(
+        "uuid, name, display_order"
+    ).eq("is_active", True).order("display_order").execute()
+
+    # Gather all community decks
+    community = supabase.table("community_decks").select(
+        "deck_uuid, title, category"
+    ).eq("status", "approved").execute()
+
+    # Build work items (deck rows are created just-in-time inside each task)
+    work_items = []
+
+    for d in (featured.data or []):
+        new_uuid = str(uuid_module.uuid4())
+        title = d.get("name", "presentation")
+        reseed_info = {
+            "old_uuid": d["uuid"],
+            "source": "featured",
+            "display_order": d.get("display_order", 0),
+        }
+        work_items.append({
+            "new_uuid": new_uuid,
+            "title": title,
+            "reseed_info": reseed_info,
+            "old_uuid": d["uuid"],
+            "source": "featured",
+        })
+
+    for d in (community.data or []):
+        new_uuid = str(uuid_module.uuid4())
+        title = d.get("title", "presentation")
+        reseed_info = {
+            "old_uuid": d["deck_uuid"],
+            "source": "community",
+            "category": d.get("category", "business"),
+        }
+        work_items.append({
+            "new_uuid": new_uuid,
+            "title": title,
+            "reseed_info": reseed_info,
+            "old_uuid": d["deck_uuid"],
+            "source": "community",
+        })
+
+    # Throttled launcher: max 5 concurrent generation tasks
+    _RESEED_CONCURRENCY = 5
+
+    # Launch the batch runner as a background task
+    asyncio.create_task(_run_reseed_batch(
+        work_items, user_id, body.slides or 10, body.style, _RESEED_CONCURRENCY,
+    ))
+
+    results = [
+        {
+            "new_deck_id": item["new_uuid"],
+            "old_uuid": item["old_uuid"],
+            "title": item["title"],
+            "source": item["source"],
+        }
+        for item in work_items
+    ]
+
+    return {
+        "count": len(results),
+        "decks": results,
+        "message": f"Reseeding {len(results)} decks ({len(featured.data or [])} featured, {len(community.data or [])} community) — max {_RESEED_CONCURRENCY} concurrent",
+    }
+
+
+async def _run_reseed_batch(work_items, user_id, num_slides, style, concurrency):
+    """Process reseed items sequentially in batches, creating deck rows just-in-time."""
+    import asyncio
+
+    semaphore = asyncio.Semaphore(concurrency)
+    completed = 0
+    failed = 0
+    total = len(work_items)
+
+    async def _process_one(item):
+        nonlocal completed, failed
+        async with semaphore:
+            deck_uuid = item["new_uuid"]
+            try:
+                # Create deck row just-in-time (fresh client per insert)
+                sb = get_supabase_client()
+                sb.table("decks").insert({
+                    "uuid": deck_uuid,
+                    "user_id": user_id,
+                    "name": item["title"][:100],
+                    "slides": [],
+                    "size": {"width": 1920, "height": 1080},
+                    "status": {"state": "generating", "message": "Starting generation..."},
+                    "data": {"source": "admin_seed", "reseed_of": item["old_uuid"]},
+                    "slide_count": 0,
+                }).execute()
+            except Exception:
+                # Retry with reset
+                try:
+                    from services.supabase import reset_supabase_client
+                    reset_supabase_client()
+                    sb = get_supabase_client()
+                    sb.table("decks").insert({
+                        "uuid": deck_uuid,
+                        "user_id": user_id,
+                        "name": item["title"][:100],
+                        "slides": [],
+                        "size": {"width": 1920, "height": 1080},
+                        "status": {"state": "generating", "message": "Starting generation..."},
+                        "data": {"source": "admin_seed", "reseed_of": item["old_uuid"]},
+                        "slide_count": 0,
+                    }).execute()
+                except Exception as e2:
+                    logger.error(f"[admin_seed] Cannot create deck row {deck_uuid}: {e2}")
+                    failed += 1
+                    return
+
+            try:
+                await _admin_generate_deck(
+                    deck_uuid, user_id, item["title"],
+                    num_slides, style,
+                    reseed_info=item["reseed_info"],
+                )
+                completed += 1
+            except Exception as gen_err:
+                failed += 1
+                logger.error(f"[admin_seed] Reseed {deck_uuid} failed: {gen_err}")
+
+            if (completed + failed) % 10 == 0:
+                logger.info(f"[admin_seed] Reseed progress: {completed} done, {failed} failed, {total - completed - failed} remaining")
+
+    tasks = [asyncio.create_task(_process_one(item)) for item in work_items]
+    await asyncio.gather(*tasks, return_exceptions=True)
+    logger.info(f"[admin_seed] Reseed batch COMPLETE: {completed} succeeded, {failed} failed out of {total}")
+
+
+# ==================== SEO Landing Page Management ====================
+
+@router.get("/seo/pages")
+async def admin_seo_pages(
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Get all landing pages with their current featured and community deck counts."""
+    supabase = get_supabase_client()
+
+    # Get featured deck count
+    featured = supabase.table("featured_decks").select("uuid, name, display_order, is_active").eq("is_active", True).order("display_order").execute()
+    featured_decks = featured.data or []
+
+    # Get community deck counts by category
+    community = supabase.table("community_decks").select("category, id").eq("status", "approved").execute()
+    category_counts: Dict[str, int] = {}
+    for c in (community.data or []):
+        cat = c.get("category", "other")
+        category_counts[cat] = category_counts.get(cat, 0) + 1
+
+    # Landing page configs (hardcoded but we augment with live data)
+    pages = [
+        {"slug": "pitch-deck", "title": "AI Pitch Deck Maker", "communityCategory": "business", "type": "use-case"},
+        {"slug": "sales-deck", "title": "AI Sales Deck Maker", "communityCategory": "business", "type": "use-case"},
+        {"slug": "education", "title": "AI Presentations for Education", "communityCategory": "education", "type": "use-case"},
+        {"slug": "marketing", "title": "AI Marketing Presentations", "communityCategory": "marketing", "type": "use-case"},
+        {"slug": "startups", "title": "NextSlide for Startups", "communityCategory": "business", "type": "industry"},
+        {"slug": "educators", "title": "NextSlide for Educators", "communityCategory": "education", "type": "industry"},
+        {"slug": "marketers", "title": "NextSlide for Marketers", "communityCategory": "marketing", "type": "industry"},
+        {"slug": "consultants", "title": "NextSlide for Consultants", "communityCategory": "business", "type": "industry"},
+    ]
+
+    for page in pages:
+        cat = page["communityCategory"]
+        page["communityDeckCount"] = category_counts.get(cat, 0)
+
+    return {
+        "pages": pages,
+        "featuredDecks": [
+            {
+                "uuid": d["uuid"],
+                "name": d["name"],
+                "displayOrder": d["display_order"],
+            }
+            for d in featured_decks
+        ],
+        "featuredDeckCount": len(featured_decks),
+        "communityTotalCount": sum(category_counts.values()),
+        "categoryCounts": category_counts,
+    }
+
+
+@router.get("/seo/featured-decks")
+async def admin_seo_featured_decks(
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """List all featured decks with full details + first slide for thumbnails."""
+    supabase = get_supabase_client()
+    result = supabase.table("featured_decks").select(
+        "uuid, name, description, slide_count, display_order, is_active, created_at, updated_at"
+    ).order("display_order").execute()
+
+    featured = result.data or []
+    if not featured:
+        return {"decks": []}
+
+    # Batch-fetch first_slide from decks table for thumbnails
+    uuids = [d["uuid"] for d in featured]
+    decks_result = supabase.table("decks").select("uuid, first_slide").in_("uuid", uuids).execute()
+    slide_map = {d["uuid"]: d.get("first_slide") for d in (decks_result.data or [])}
+
+    for deck in featured:
+        deck["first_slide"] = slide_map.get(deck["uuid"])
+
+    return {"decks": featured}
+
+
+@router.get("/seo/community-decks")
+async def admin_seo_community_decks(
+    category: Optional[str] = None,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """List community decks, optionally filtered by category, with first slide for thumbnails."""
+    supabase = get_supabase_client()
+    query = supabase.table("community_decks").select(
+        "id, deck_uuid, title, category, tags, status, slide_count, author_name, view_count, remix_count, approved_at"
+    ).eq("status", "approved")
+
+    if category:
+        query = query.eq("category", category)
+
+    result = query.order("approved_at", desc=True).limit(50).execute()
+    community = result.data or []
+
+    if community:
+        # Batch-fetch first_slide from decks table for thumbnails
+        deck_uuids = [d["deck_uuid"] for d in community if d.get("deck_uuid")]
+        if deck_uuids:
+            decks_result = supabase.table("decks").select("uuid, first_slide").in_("uuid", deck_uuids).execute()
+            slide_map = {d["uuid"]: d.get("first_slide") for d in (decks_result.data or [])}
+            for deck in community:
+                deck["first_slide"] = slide_map.get(deck.get("deck_uuid"))
+
+    return {"decks": community}
+
+
+@router.delete("/seo/featured-deck/{deck_uuid}")
+async def admin_seo_remove_featured(
+    deck_uuid: str,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Remove a deck from featured."""
+    supabase = get_supabase_client()
+    supabase.table("featured_decks").delete().eq("uuid", deck_uuid).execute()
+    return {"success": True, "message": "Removed from featured"}
+
+
+@router.delete("/seo/community-deck/{deck_uuid}")
+async def admin_seo_remove_community(
+    deck_uuid: str,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Remove a deck from community."""
+    supabase = get_supabase_client()
+    supabase.table("community_decks").delete().eq("deck_uuid", deck_uuid).execute()
+    return {"success": True, "message": "Removed from community"}
+
+
+class SeoReorderRequest(BaseModel):
+    deck_uuid: str
+    new_order: int
+
+
+class SeoBatchReorderRequest(BaseModel):
+    uuids: List[str]
+
+
+@router.put("/seo/featured-deck/reorder")
+async def admin_seo_reorder_featured(
+    body: SeoReorderRequest,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Change the display_order of a featured deck (controls which hero slot it fills)."""
+    supabase = get_supabase_client()
+    supabase.table("featured_decks").update({
+        "display_order": body.new_order,
+    }).eq("uuid", body.deck_uuid).execute()
+    return {"success": True, "message": f"Display order set to {body.new_order}"}
+
+
+@router.put("/seo/featured-decks/reorder")
+async def admin_seo_batch_reorder_featured(
+    body: SeoBatchReorderRequest,
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Batch reorder featured decks. Accepts ordered list of UUIDs, assigns display_order 0..N."""
+    supabase = get_supabase_client()
+    for idx, uuid in enumerate(body.uuids):
+        supabase.table("featured_decks").update({
+            "display_order": idx,
+        }).eq("uuid", uuid).execute()
+    return {"success": True, "message": f"Reordered {len(body.uuids)} featured decks"}
