@@ -2,7 +2,8 @@
 *__pycache__
 *.pyc
 *.env
-schemas/
+schemas/*
+!schemas/typebox_schemas_latest.json
 .DS_Store
 test_output/
 services/debug_json_parse.txt
