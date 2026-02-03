@@ -57,6 +57,9 @@ class AuthService {
     }
   }
   
+  // Track last refresh attempt to avoid hammering the endpoint on repeated failures
+  private _lastRefreshAttempt = 0;
+
   /**
    * Get auth token asynchronously from Supabase (more reliable)
    */
@@ -64,15 +67,35 @@ class AuthService {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
-
         return session.access_token;
       }
     } catch (e) {
       console.error('[AuthService] Failed to get async session:', e);
     }
-    
-    // Fall back to sync method
-    return this.getAuthToken();
+
+    // Fall back to sync method (reads localStorage directly)
+    const syncToken = this.getAuthToken();
+    if (syncToken) return syncToken;
+
+    // Both methods failed — attempt a session refresh as a last resort.
+    // This is common on mobile after the app is backgrounded: the in-memory
+    // Supabase session is lost and localStorage may be inaccessible, but the
+    // refresh_token can still be valid.
+    const now = Date.now();
+    if (now - this._lastRefreshAttempt > 5000) {
+      this._lastRefreshAttempt = now;
+      try {
+        const refreshed = await this.refreshToken();
+        if (refreshed) {
+          console.log('[AuthService] Recovered session via token refresh');
+          return refreshed;
+        }
+      } catch (e) {
+        console.warn('[AuthService] Token refresh recovery failed:', e);
+      }
+    }
+
+    return null;
   }
 
   /**
