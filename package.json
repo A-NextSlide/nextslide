@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/frontend"
   ],
   "scripts": {
     "dev": "npm-run-all --parallel dev:frontend dev:backend",
@@ -15,12 +15,12 @@
     "restart": "npm run kill && npm run dev",
     "nextslide": "npm-run-all --parallel dev:frontend dev:backend",
     "nextslide:restart": "npm run kill && npm run nextslide",
-    "dev:mobile": "npm run dev --workspace=apps/mobile",
-    "dev:mobile:ios": "npm run dev:ios --workspace=apps/mobile",
-    "dev:mobile:android": "npm run dev:android --workspace=apps/mobile",
-    "build:mobile:dev": "npm run build:dev --workspace=apps/mobile",
-    "build:mobile:preview": "npm run build:preview --workspace=apps/mobile",
-    "build:mobile:prod": "npm run build:prod --workspace=apps/mobile",
+    "dev:mobile": "cd apps/mobile && npm run dev",
+    "dev:mobile:ios": "cd apps/mobile && npm run dev:ios",
+    "dev:mobile:android": "cd apps/mobile && npm run dev:android",
+    "build:mobile:dev": "cd apps/mobile && npm run build:dev",
+    "build:mobile:preview": "cd apps/mobile && npm run build:preview",
+    "build:mobile:prod": "cd apps/mobile && npm run build:prod",
     "dev:desktop": "cd apps/desktop && npm run dev",
     "build:desktop:mac": "cd apps/desktop && npm run pack:mac",
     "build:desktop:win": "cd apps/desktop && npm run pack:win",
