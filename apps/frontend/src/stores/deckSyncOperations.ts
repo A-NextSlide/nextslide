@@ -993,20 +993,23 @@ export const createSyncOperations = (set: Function, get: Function) => {
       (async () => {
         try {
           set({ isSyncing: true, error: null });
-          
-          // Retry logic for newly generated decks (they might not be immediately available)
+
+          // Retry logic: new decks may not be immediately available so we retry more aggressively.
+          // Existing decks should load on the first try; use minimal retries to avoid long waits
+          // when the real problem is auth expiry or a missing deck.
           let deck = null;
           let retryCount = 0;
-          const maxRetries = 30; // Increased from 20 to 30
-          const baseRetryDelay = 3000; // Increased from 2000ms to 3000ms
-          
+          const maxRetries = isNewDeck ? 30 : 3;
+          const baseRetryDelay = isNewDeck ? 3000 : 1500;
+
           while (!deck && retryCount < maxRetries) {
             try {
               // Use the full deck endpoint for initialization
               deck = await deckSyncService.getFullDeck(deckId);
               if (!deck && retryCount < maxRetries - 1) {
-                // Exponential backoff with max delay of 15 seconds (increased from 10)
-                const delay = Math.min(baseRetryDelay * Math.pow(1.5, retryCount), 15000);
+                const delay = isNewDeck
+                  ? Math.min(baseRetryDelay * Math.pow(1.5, retryCount), 15000)
+                  : baseRetryDelay;
                 console.log(`[initialize] Deck ${deckId} not found, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
                 await new Promise(resolve => setTimeout(resolve, delay));
                 retryCount++;
@@ -1018,8 +1021,9 @@ export const createSyncOperations = (set: Function, get: Function) => {
                 throw error;
               }
               retryCount++;
-              // Exponential backoff
-              const delay = Math.min(baseRetryDelay * Math.pow(1.5, retryCount), 15000);
+              const delay = isNewDeck
+                ? Math.min(baseRetryDelay * Math.pow(1.5, retryCount), 15000)
+                : baseRetryDelay;
               console.log(`[initialize] Error loading deck, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries}):`, error);
               await new Promise(resolve => setTimeout(resolve, delay));
             }
