@@ -3879,6 +3879,7 @@ async def _admin_generate_deck(
                     sb.table("community_decks").insert({
                         "id": str(uuid_module.uuid4()),
                         "deck_uuid": deck_uuid,
+                        "user_id": user_id,
                         "title": deck_name,
                         "category": category,
                         "tags": [category],
@@ -4034,16 +4035,30 @@ async def admin_seed_status(
         }
 
     deck = result.data
+    if not isinstance(deck, dict):
+        return {
+            "deck_id": deck_uuid,
+            "name": "",
+            "status": "unknown",
+            "message": "Unexpected data format",
+            "progress": 0,
+            "slide_count": 0,
+            "error": None,
+            "created_at": "",
+        }
+
     raw_status = deck.get("status") or {}
     # status can be a plain string (e.g. "approved") or a dict
     if isinstance(raw_status, str):
         status = {"state": raw_status}
-    else:
+    elif isinstance(raw_status, dict):
         status = raw_status
+    else:
+        status = {"state": "unknown"}
     slides = deck.get("slides") or []
 
     return {
-        "deck_id": deck["uuid"],
+        "deck_id": deck.get("uuid", deck_uuid),
         "name": deck.get("name", ""),
         "status": status.get("state", "unknown"),
         "message": status.get("message", ""),

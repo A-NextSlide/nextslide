@@ -43,6 +43,12 @@ class PropsDiffModelBase(BaseModel, PartialLiteralMixin):
         filtered_dict = {k: v for k, v in model_dict.items() if v is not None}
         return self.model_validate(filtered_dict)
 
+_PYDANTIC_RESERVED = frozenset({
+    'model_config', 'model_fields', 'model_fields_set',
+    'model_validate', 'model_json_schema', 'model_dump',
+    'model_construct', 'model_validate_json', 'model_post_init',
+})
+
 def _flatten_allof(schema: Dict[str, Any]) -> Dict[str, Any]:
     """Flatten allOf constructs into a single object schema.
 
@@ -51,6 +57,12 @@ def _flatten_allof(schema: Dict[str, Any]) -> Dict[str, Any]:
     rejects as a reserved field name.
     """
     if "allOf" not in schema:
+        # Still strip reserved keywords from top-level properties
+        if "properties" in schema:
+            schema["properties"] = {
+                k: v for k, v in schema["properties"].items()
+                if k not in _PYDANTIC_RESERVED
+            }
         return schema
     merged = {"type": "object", "properties": {}, "required": []}
     for sub in schema["allOf"]:
@@ -60,6 +72,12 @@ def _flatten_allof(schema: Dict[str, Any]) -> Dict[str, Any]:
     for key in schema:
         if key not in ("allOf", "properties", "required"):
             merged.setdefault(key, schema[key])
+    # Filter out Pydantic reserved keywords from merged properties
+    merged["properties"] = {
+        k: v for k, v in merged["properties"].items()
+        if k not in _PYDANTIC_RESERVED
+    }
+    merged["required"] = [r for r in merged["required"] if r not in _PYDANTIC_RESERVED]
     if not merged["required"]:
         del merged["required"]
     return merged

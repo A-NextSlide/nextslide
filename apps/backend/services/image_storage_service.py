@@ -231,6 +231,18 @@ class ImageStorageService:
                 logger.warning(f"Downloaded content too small to be a real image ({len(content)} bytes): {self._truncate_data_url(image_url)}")
                 raise Exception(f"Downloaded content too small ({len(content)} bytes)")
 
+            # Reject non-image content types (CSS, JS, plain text, etc.)
+            non_image_types = ['text/css', 'text/javascript', 'application/javascript',
+                               'text/plain', 'application/octet-stream']
+            if any(t in content_type.lower() for t in non_image_types):
+                logger.warning(f"Non-image content type ({content_type}), skipping: {self._truncate_data_url(image_url)}")
+                raise Exception(f"Server returned {content_type} instead of image")
+
+            # Normalize non-standard MIME types
+            # image/jpg is non-standard (RFC 2045 says image/jpeg)
+            if content_type.lower().strip() in ('image/jpg', 'image/jpg;charset=utf-8'):
+                content_type = 'image/jpeg'
+
             # Guard against AVIF content type - Supabase rejects image/avif uploads
             if 'avif' in content_type.lower():
                 logger.warning(f"Remapping AVIF content type to image/jpeg for Supabase compatibility: {self._truncate_data_url(image_url)}")
@@ -270,11 +282,11 @@ class ImageStorageService:
             except Exception as list_err:
                 logger.debug(f"Error checking existing file: {list_err}")
             
-            # Upload to Supabase
+            # Upload to Supabase (upsert to handle re-uploads gracefully)
             response = self.supabase.storage.from_(self.bucket_name).upload(
                 path=file_path,
                 file=content,
-                file_options={"content-type": content_type}
+                file_options={"content-type": content_type, "upsert": "true"}
             )
 
             # Validate upload response - Supabase returns different structures
@@ -300,6 +312,14 @@ class ImageStorageService:
                     error_message = response.get('error') or response.get('message', 'Unknown error')
 
             if upload_failed:
+                error_str = str(error_message or '')
+                # Handle 409 Conflict / Duplicate - file already exists, just return URL
+                if '409' in error_str or 'Duplicate' in error_str or 'already exists' in error_str.lower():
+                    logger.info(f"Image already exists in storage: {file_path}, using existing")
+                    public_url = self._get_clean_public_url(file_path)
+                    result = {'url': public_url, 'path': file_path, 'cached': True}
+                    self._cache[image_url] = result
+                    return result
                 logger.error(f"Supabase upload failed for {self._truncate_data_url(image_url)}: {error_message}")
                 return {'url': image_url, 'error': f"Upload failed: {error_message}"}
 
@@ -463,7 +483,12 @@ class ImageStorageService:
                 # Skip if already a Supabase URL or placeholder
                 if 'supabase' in src or src == 'placeholder' or not src.startswith('http'):
                     continue
-                    
+
+                # Skip known non-image URLs (fonts, CDN stylesheets)
+                skip_domains = ['fonts.googleapis.com', 'fonts.gstatic.com']
+                if any(d in src.lower() for d in skip_domains):
+                    continue
+
                 # Upload the image
                 result = await self.upload_image_from_url(src)
                 if 'error' not in result:
