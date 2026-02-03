@@ -138,7 +138,7 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
         # Build data field for JSONB 'data' column
         # 1) Start from provided deck_data['data'] if present (caller may have merged slide_themes, etc.)
         # 2) Overlay root-level theme/style_spec so callers can pass either shape
-        # 3) If existing record has data, shallow-merge to preserve keys we didn't send
+        # 3) Preserve critical API metadata (source, api_key_id, api_key_name) from existing record
         provided_data = deck_data.get("data") if isinstance(deck_data.get("data"), dict) else {}
         data_field = dict(provided_data)
         if "theme" in deck_data:
@@ -150,6 +150,22 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
         if "locked_slide_info" in deck_data:
             data_field["locked_slide_info"] = deck_data["locked_slide_info"]
             logger.info(f"Saving locked_slide_info to data field: {deck_data['locked_slide_info']}")
+
+        # Preserve API metadata: if the new data doesn't include 'source', read it from
+        # the existing record so composition/skeleton saves don't overwrite API origin info.
+        _API_METADATA_KEYS = ("source", "api_key_id", "api_key_name")
+        if data_field and not data_field.get("source"):
+            try:
+                existing = supabase.table("decks").select("data").eq("uuid", deck_uuid).maybe_single().execute()
+                if existing and existing.data:
+                    existing_data = existing.data.get("data") or {}
+                    if isinstance(existing_data, dict) and existing_data.get("source"):
+                        for key in _API_METADATA_KEYS:
+                            if key not in data_field and key in existing_data:
+                                data_field[key] = existing_data[key]
+                        logger.debug(f"Preserved API metadata for deck {deck_uuid}: source={existing_data.get('source')}")
+            except Exception as e:
+                logger.debug(f"Could not check existing API metadata for {deck_uuid}: {e}")
 
         # Prepare the deck data for upload (partial fields only)
         deck_record = {"uuid": deck_uuid}
