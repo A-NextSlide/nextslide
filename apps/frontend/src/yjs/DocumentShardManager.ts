@@ -11,7 +11,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { YjsDocumentManager } from './YjsDocumentManager';
 import { SlideData } from '../types/SlideTypes';
-import { EventEmitter } from 'events';
+import { EventEmitter } from '../utils/EventEmitter';
 import { ComponentInstance } from '../types/components';
 import { ComponentLock, LockResponse, UserPresence, YjsDocOptions } from './YjsTypes';
 import { DocumentConnectionPool } from './DocumentConnectionPool';

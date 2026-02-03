@@ -3,7 +3,7 @@
  * Implements efficient connection management and reuse
  */
 
-import EventEmitter from 'events';
+import { EventEmitter } from '../utils/EventEmitter';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 

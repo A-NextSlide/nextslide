@@ -1,5 +1,5 @@
 // GenerationProgressTracker.ts - Unified progress tracking for deck generation
-import { EventEmitter } from 'events';
+import { EventEmitter } from '../../utils/EventEmitter';
 
 export interface GenerationPhase {
   id: string;
