@@ -1,11 +1,11 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { useDeckStore } from '../stores/deckStore';
 import { createLogger, LogCategory, LogLevel, configureLogging } from '../utils/logging';
 import { FontLoadingService } from '../services/FontLoadingService';
 import { extractFontFamiliesFromDeck } from '../utils/fontLoaderUtils';
 import { useUpgradeSuccess } from '../hooks/useUpgradeSuccess';
-import { useAuth } from '../context/SupabaseAuthContext';
+import { supabase } from '../integrations/supabase/client';
 
 interface DeckStoreInitializerProps {
   syncEnabled?: boolean;
@@ -52,7 +52,11 @@ export function DeckStoreInitializer({
   // Wait for Supabase auth to finish loading before initializing deck data.
   // Without this, initialize() fires before the session is available,
   // causing getAuthTokenAsync() to return null and deck loading to fail.
-  const { isLoading: isAuthLoading } = useAuth();
+  // Uses direct supabase client instead of useAuth() to avoid circular imports.
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  useEffect(() => {
+    supabase.auth.getSession().then(() => setIsAuthLoading(false));
+  }, []);
 
   // Get Yjs status if available (using optional chaining to handle potential undefined)
   const getYjsConnectionStatus = useDeckStore(state => (state as any).getYjsConnectionStatus);
