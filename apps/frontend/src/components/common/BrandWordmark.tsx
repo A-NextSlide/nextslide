@@ -62,6 +62,7 @@ export function BrandWordmark({
   onClick,
 }: BrandWordmarkProps) {
   const Tag = tag as any;
+  const [imgFailed, setImgFailed] = React.useState(false);
 
   // The font is used widely across the app in inline styles
   const baseTextStyle: React.CSSProperties = {
@@ -106,17 +107,18 @@ export function BrandWordmark({
           zIndex: 2,
         }}
       >
-        {xImageUrl ? (
+        {xImageUrl && !imgFailed ? (
           <img
             src={xImageUrl}
-            alt="Brand X"
+            alt=""
             width={xWidth}
             height={xHeight}
             style={{ objectFit: 'contain', display: 'block', opacity: 1 }}
+            onError={() => setImgFailed(true)}
           />
         ) : (
           <svg
-            viewBox={xViewBox}
+            viewBox={xSvgPath ? xViewBox : '0 0 244 375'}
             width={xWidth}
             height={xHeight}
             role="img"
@@ -127,11 +129,10 @@ export function BrandWordmark({
             {xSvgPath ? (
               <path d={xSvgPath} fill={accentColor} />
             ) : (
-              <>
-                {/* Two long strokes with round caps to emulate a filled vector X look */}
-                <path d="M8 8 L56 56" stroke={accentColor} strokeWidth={xStroke} strokeLinecap="round" />
-                <path d="M56 8 L8 56" stroke={accentColor} strokeWidth={xStroke} strokeLinecap="round" />
-              </>
+              <path
+                d="M122 190 L50 30 C40 10 60 0 75 15 L122 140 L169 15 C184 0 204 10 194 30 L122 190 Z M122 190 L60 340 C50 360 30 355 40 335 L122 220 L204 335 C214 355 194 360 184 340 L122 190 Z"
+                fill={accentColor}
+              />
             )}
           </svg>
         )}
