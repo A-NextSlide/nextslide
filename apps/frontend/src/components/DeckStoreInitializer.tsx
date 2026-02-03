@@ -52,8 +52,9 @@ export function DeckStoreInitializer({
   const getYjsConnectionStatus = useDeckStore(state => (state as any).getYjsConnectionStatus);
   const yjsStatus = getYjsConnectionStatus && getYjsConnectionStatus();
 
-  // Track if we've already initialized to prevent duplicate runs in StrictMode
-  const hasInitializedRef = useRef(false);
+  // Track the last initialized deckId to prevent duplicate runs in StrictMode
+  // while still allowing re-initialization when navigating to a different deck
+  const lastInitializedDeckIdRef = useRef<string | null>(null);
 
   // Refetch deck data after upgrade to unlock slides
   const refetchDeck = useCallback(() => {
@@ -92,37 +93,39 @@ export function DeckStoreInitializer({
 
     // Initialize the store when the component mounts
   useEffect(() => {
-    // Skip if already initialized (StrictMode protection)
-    if (hasInitializedRef.current) return;
-
     // Extract deckId from URL if present
     const extractDeckIdFromUrl = () => {
       const pathParts = location.pathname.split('/');
       const deckIndex = pathParts.findIndex(part => part === 'deck');
-      
+
       if (deckIndex !== -1 && deckIndex + 1 < pathParts.length) {
         return pathParts[deckIndex + 1];
       }
-      
+
       // Fallback to editor for backwards compatibility
       const editorIndex = pathParts.findIndex(part => part === 'editor');
       if (editorIndex !== -1 && editorIndex + 1 < pathParts.length) {
         return pathParts[editorIndex + 1];
       }
-      
+
       return null; // Return null instead of undefined
     };
 
     const deckId = extractDeckIdFromUrl();
-    
+
     // Check if this is a new deck from search params
     const isNewDeck = searchParams.get('new') === 'true';
-    
+
+    // Skip if we already initialized for this exact deckId (StrictMode protection)
+    if (deckId && lastInitializedDeckIdRef.current === deckId) return;
+    // Skip if we're on a non-deck page and already cleared
+    if (!deckId && lastInitializedDeckIdRef.current === '__no_deck__') return;
+
     // Reset store when switching decks
     const currentDeckId = useDeckStore.getState().deckData?.uuid;
     if (currentDeckId && deckId && currentDeckId !== deckId) {
-      console.log('🔄 Switching decks - resetting store');
-      
+      console.log('[DeckStoreInitializer] Switching decks - resetting store');
+
       // Clear editor store first
       try {
         const editorStore = (window as any).__editorStore;
@@ -135,7 +138,7 @@ export function DeckStoreInitializer({
       } catch (e) {
         console.warn('Failed to clear editor store:', e);
       }
-      
+
       // Clear WebSocket position sync state
       if (typeof window !== 'undefined') {
         // Clear remote component layouts
@@ -143,42 +146,42 @@ export function DeckStoreInitializer({
           (window as any).__remoteComponentLayouts.clear();
         }
       }
-      
-      const resetStore = useDeckStore.getState().resetStore;
-      if (resetStore) {
-        resetStore();
-      }
-    }
-    
-    // Initialize sync if we have a deckId
-          if (deckId) {
-        hasInitializedRef.current = true;
-      
-      const initializeStore = useDeckStore.getState().initialize;
-    if (initializeStore) {
-        initializeStore({
-          deckId,
-          isNewDeck,
-          syncEnabled: true,
-          useRealtimeSubscription: true  // ✅ CRITICAL: Enable real-time subscription for live updates
-        });
-      }
-    } else if (location.pathname === '/' || location.pathname === '') {
-      hasInitializedRef.current = true;
-      // On deck list page - reset store
 
       const resetStore = useDeckStore.getState().resetStore;
       if (resetStore) {
         resetStore();
       }
-      
+    }
+
+    // Initialize sync if we have a deckId
+    if (deckId) {
+      lastInitializedDeckIdRef.current = deckId;
+
+      const initializeStore = useDeckStore.getState().initialize;
+      if (initializeStore) {
+        initializeStore({
+          deckId,
+          isNewDeck,
+          syncEnabled: true,
+          useRealtimeSubscription: true
+        });
+      }
+    } else if (location.pathname === '/' || location.pathname === '' || location.pathname === '/app') {
+      lastInitializedDeckIdRef.current = '__no_deck__';
+      // On deck list / landing page - reset store
+
+      const resetStore = useDeckStore.getState().resetStore;
+      if (resetStore) {
+        resetStore();
+      }
+
       // Initialize with no deck
       const initializeStore = useDeckStore.getState().initialize;
       if (initializeStore) {
-        initializeStore({ 
+        initializeStore({
           deckId: null,
           isNewDeck: false,
-          syncEnabled: false 
+          syncEnabled: false
         });
       }
     }
