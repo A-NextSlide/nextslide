@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { Presentation } from 'lucide-react';
 import MiniSlide from './MiniSlide';
@@ -6,10 +6,11 @@ import { BROWSER } from '@/utils/browser';
 
 // Component to render a deck thumbnail using the first slide
 const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'background'; forceRender?: boolean }> = React.memo(({ deck, renderMode = 'full', forceRender = false }) => {
-  // On mobile & desktop app, prefer server-rendered thumbnail to prevent
-  // GPU tile budget exhaustion from full Slide DOM rendering
+  const [thumbnailError, setThumbnailError] = useState(false);
+
+  // Prefer server-rendered thumbnail on all platforms for instant loading
   const serverThumbnail = (deck as any).thumbnail_url;
-  if ((BROWSER.isMobile || BROWSER.isDesktopApp) && serverThumbnail) {
+  if (serverThumbnail && !thumbnailError) {
     return (
       <img
         src={serverThumbnail}
@@ -17,6 +18,7 @@ const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'b
         className="w-full h-full object-cover"
         draggable={false}
         loading="lazy"
+        onError={() => setThumbnailError(true)}
       />
     );
   }

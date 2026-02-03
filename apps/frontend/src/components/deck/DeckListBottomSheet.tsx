@@ -337,10 +337,10 @@ const DeckListBottomSheet: React.FC<DeckListBottomSheetProps> = ({
             ) : (
               <div className="grid grid-cols-1 gap-3">
                 {decks.map((deck, index) => {
-                  // On mobile, prefer server thumbnail or client cache
-                  const cachedUrl = BROWSER.isMobile && deck.uuid
-                    ? ((deck as any).thumbnail_url || getCachedThumbnail(deck.uuid))
-                    : null;
+                  // Prefer server thumbnail on all platforms; fall back to client cache on mobile
+                  const cachedUrl = (deck as any).thumbnail_url
+                    || (BROWSER.isMobile && deck.uuid ? getCachedThumbnail(deck.uuid) : null)
+                    || null;
 
                   return (
                     <DeckCard

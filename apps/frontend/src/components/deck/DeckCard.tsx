@@ -37,6 +37,7 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
   const navigate = useNavigate();
   const touchHandledRef = React.useRef(false);
   const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
+  const [thumbnailError, setThumbnailError] = React.useState(false);
 
   const formatDate = (dateString: string) => {
     try {
@@ -126,13 +127,14 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
                 </>
               )}
             </div>
-          ) : cachedThumbnailUrl ? (
+          ) : cachedThumbnailUrl && !thumbnailError ? (
             /* Show cached screenshot if available */
             <img
               src={cachedThumbnailUrl}
               alt={deck.name || 'Deck thumbnail'}
               className="w-full h-full object-cover"
               draggable={false}
+              onError={() => setThumbnailError(true)}
             />
           ) : (
             /* Render live thumbnail */
