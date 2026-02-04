@@ -1,3 +1,11 @@
+# Prevent caching of index.html so deploys take effect immediately
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Prevent caching of SPA fallback routes (rewritten to index.html)
+/
+  Cache-Control: no-cache, no-store, must-revalidate
+
 # Set correct MIME types for assets
 /assets/*.css
   Content-Type: text/css
