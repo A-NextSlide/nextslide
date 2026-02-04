@@ -13,7 +13,6 @@ export class DeckSyncService {
   
   constructor(apiBaseUrl: string = API_CONFIG.BASE_URL) {
     this.baseUrl = apiBaseUrl;
-
   }
 
   /**
@@ -62,16 +61,12 @@ export class DeckSyncService {
         url += `&search=${encodeURIComponent(search.trim())}`;
       }
 
-      
-      // Try to get token asynchronously first for better reliability
       const token = await authService.getAuthTokenAsync();
       if (!token) {
         console.warn('[deckSyncService] No auth token available');
         return { decks: [], count: 0, has_more: false };
       }
-      
 
-      
       const doFetch = (bearer: string) => fetch(url, {
         headers: {
           'Authorization': `Bearer ${bearer}`,
@@ -128,11 +123,7 @@ export class DeckSyncService {
       }
 
       const endpoint = full ? `/auth/decks/${deckId}/full` : `/auth/decks/${deckId}`;
-      // Add cache-busting parameter to prevent browser caching
-      const cacheBuster = `_t=${Date.now()}`;
-      const baseUrl = this.getApiUrl(endpoint);
-      const url = baseUrl.includes('?') ? `${baseUrl}&${cacheBuster}` : `${baseUrl}?${cacheBuster}`;
-
+      const url = this.getApiUrl(endpoint);
 
       const token = await authService.getAuthTokenAsync();
       if (!token) {
@@ -158,7 +149,6 @@ export class DeckSyncService {
       
       if (!response.ok) {
         if (response.status === 404) {
-  
           return null;
         }
         if (response.status === 401) {
@@ -170,11 +160,7 @@ export class DeckSyncService {
       }
       
       const data = await response.json();
-
-      // Handle response structure - backend returns { deck: ..., access_type: ... }
       const deckData = data.deck || data;
-
-
       return this.formatBackendDeck(deckData);
     } catch (err) {
       console.error(`[deckSyncService] Failed to fetch deck ${deckId}:`, err);
@@ -225,16 +211,11 @@ export class DeckSyncService {
       // Ensure we have a valid UUID
       if (!formattedDeck.uuid || !this.isValidUUID(formattedDeck.uuid)) {
         formattedDeck.uuid = uuidv4();
-  
       }
-      
+
       const endpoint = this.getApiUrl('/auth/decks');
-  
-  
-      
       const token = await authService.getAuthTokenAsync();
 
-      
       const doFetch = (bearer?: string) => fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -259,25 +240,17 @@ export class DeckSyncService {
         } catch {
           errorDetail = errorText;
         }
-        console.error(`[deckSyncService] Error creating deck via API: ${response.status}`);
-        console.error('[deckSyncService] Error details:', errorDetail);
+        console.error(`[deckSyncService] Error creating deck via API: ${response.status}`, errorDetail);
         if (response.status === 401) {
-          console.warn('[deckSyncService] Unauthorized after refresh – forcing auth reset');
           await authService.hardResetAuth();
         }
-        console.error('[deckSyncService] Request endpoint:', endpoint);
-        console.error('[deckSyncService] Request body that failed:', JSON.stringify(formattedDeck, null, 2));
         return null;
       }
       
-      // Parse the response to get the created deck
       const responseData = await response.json();
 
-      
-      // The response might just be {uuid: "..."} or might include the full deck
-      // If it's just the UUID, we need to fetch the full deck
+      // If response is just {uuid: "..."}, fetch the full deck
       if (responseData && responseData.uuid && !responseData.slides) {
-
         // Wait a moment for the backend to fully process the creation
         await new Promise(resolve => setTimeout(resolve, 100));
         const fullDeck = await this.getDeck(responseData.uuid);
@@ -695,7 +668,6 @@ export class DeckSyncService {
       const lockedInfo = deck.locked_slide_info || deck.data?.locked_slide_info;
       if (lockedInfo) {
         (formattedDeck as any).locked_slide_info = lockedInfo;
-        console.log('[deckSyncService] Preserved locked_slide_info:', lockedInfo);
       }
 
       return formattedDeck;
@@ -914,28 +886,6 @@ export class DeckSyncService {
     };
     
     return formattedDeck;
-
-    /* OPTION FOR FUTURE REFERENCE:
-       If you need to store the additional fields, consider:
-       1. Adding a 'metadata' jsonb column to your database
-       2. Then use a structure like:
-       
-       return {
-         uuid: deck.uuid || null,
-         name: deck.name,
-         slides: deck.slides,
-         version: deck.version,
-         lastModified: deck.lastModified,
-         metadata: {
-           components: deck.components,
-           styles: deck.styles,
-           dependencies: deck.dependencies,
-           backgroundStyles: deck.backgroundStyles,
-           elementStyles: deck.elementStyles,
-           themeOverrides: deck.themeOverrides
-         }
-       };
-    */
   }
 }
 

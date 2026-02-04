@@ -101,7 +101,7 @@ export function DeckStoreInitializer({
     };
   }, [refetchDeck]);
 
-    // Initialize the store when the component mounts
+  // Initialize the store when the component mounts
   useEffect(() => {
     // Don't initialize until auth has finished loading.
     // On mobile especially, Supabase needs time to restore the session from

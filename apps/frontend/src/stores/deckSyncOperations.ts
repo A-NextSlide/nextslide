@@ -449,7 +449,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
     // Get the current deck ID
     const currentDeckId = get().deckData?.uuid;
     if (!currentDeckId) {
-      console.log('[setupRealtimeSubscription] No current deck ID, skipping subscription');
       return;
     }
     
@@ -464,13 +463,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
           table: 'decks',
           filter: `uuid=eq.${currentDeckId}` // Only listen to changes for this specific deck
         }, async (payload) => {
-          console.log('🔴 [Realtime] RECEIVED EVENT:', {
-            eventType: payload.eventType,
-            deckId: (payload.new as any)?.uuid,
-            hasNew: !!payload.new,
-            hasOld: !!payload.old,
-            timestamp: new Date().toISOString()
-          });
           // Handle DELETE events differently
           if (payload.eventType === 'DELETE') {
             // For DELETE events, we check if the deleted deck is the current one
@@ -478,13 +470,10 @@ export const createSyncOperations = (set: Function, get: Function) => {
             const deletedDeckId = (payload.old as any)?.uuid;
             
             if (deletedDeckId && deletedDeckId === deckData.uuid) {
-            // Don't create empty decks when current deck is deleted remotely
-            // Just clear the current deck data but don't create a persistent empty deck
-            console.log('[setupRealtimeSubscription] Current deck deleted remotely, clearing local state');
-            // Navigate back to deck list instead of creating empty deck
-            if (typeof window !== 'undefined' && window.location.pathname.includes('/editor/')) {
-              window.location.href = '/';
-            }
+              // Navigate back to deck list instead of creating empty deck
+              if (typeof window !== 'undefined' && window.location.pathname.includes('/editor/')) {
+                window.location.href = '/';
+              }
             }
             
             return; // Skip the rest of the processing for DELETE events
@@ -497,8 +486,7 @@ export const createSyncOperations = (set: Function, get: Function) => {
           const updatedDeckId = (payload.new as any)?.uuid || '';
           // Accept updates that match either the currentDeckId or the store deck uuid
           if (updatedDeckId !== currentDeckId && updatedDeckId !== deckData.uuid) {
-            console.warn('[setupRealtimeSubscription] Received update for different deck, ignoring');
-            return; // Skip updates for other decks
+            return;
           }
 
           // Check timestamps to see if this is a newer update from backend
@@ -638,7 +626,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
       
       // Store the channel reference for cleanup
       set({ supabaseSubscription: decksChannel });
-      console.log(`[setupRealtimeSubscription] Subscribed to changes for deck ${currentDeckId}`);
     } catch (error) {
       // Silent error handling
     }
@@ -663,7 +650,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
     // Prevent multiple simultaneous deck creation - use both state flag and isSyncing
     const { isSyncing } = get();
     if (isSyncing || isCreatingDeck) {
-      console.log('[createDefaultDeck] Already creating deck or syncing, skipping duplicate creation');
       return get().deckData;
     }
     
@@ -751,33 +737,17 @@ export const createSyncOperations = (set: Function, get: Function) => {
           ...versionInfo
         };
         
-        console.log('[createDefaultDeck] Attempting to save deck to backend:', {
-          uuid: updatedDeck.uuid,
-          name: updatedDeck.name,
-          slideCount: updatedDeck.slides?.length
-        });
-        
         const savedDeck = await deckSyncService.createDeck(updatedDeck);
-        
+
         if (savedDeck) {
-          console.log('[createDefaultDeck] Deck created successfully:', savedDeck.uuid);
-          // Update the store with the saved deck data
-          set({ 
+          set({
             deckData: savedDeck,
             lastSyncTime: new Date(),
-            hasUnsavedChanges: false // Mark as saved
+            hasUnsavedChanges: false
           });
-          
-          // Deck association is now handled automatically by the backend during creation
-          if (authService.isAuthenticated()) {
-            console.log('[createDefaultDeck] Deck created and associated with user');
-          }
-          
-          // Return the saved deck from backend
           return savedDeck;
         } else {
           console.error('[createDefaultDeck] createDeck returned null');
-          // Return the local deck as fallback
           return defaultDeck;
         }
       } catch (saveError) {
@@ -836,7 +806,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
     
     // If no deckId provided, don't try to load or create anything
     if (!deckId) {
-      console.log('📋 No deck ID provided, skipping load');
       return;
     }
     
@@ -845,40 +814,15 @@ export const createSyncOperations = (set: Function, get: Function) => {
       const deck = await deckSyncService.getFullDeck(deckId);
       
       if (!deck) {
-        console.warn('⚠️ No deck found with ID:', deckId);
+        console.warn('[loadDeck] No deck found with ID:', deckId);
         return null;
       }
-      
-      console.log('✅ Deck loaded successfully:', {
-        id: deck.uuid,
-        name: deck.name,
-        slideCount: Array.isArray(deck.slides) ? deck.slides.length : 0,
-        hasStatus: !!deck.status,
-        status: deck.status,
-        // Debug locked slides
-        locked_slide_info: deck.locked_slide_info,
-        lockedSlideInfo: deck.lockedSlideInfo,
-      });
 
-      // Debug: Log CustomComponent render lengths from API response
-      if (Array.isArray(deck.slides)) {
-        deck.slides.forEach((slide: any, i: number) => {
-          slide.components?.forEach((comp: any) => {
-            if (comp.type === 'CustomComponent') {
-              const renderLen = comp.props?.render?.length || 0;
-              console.log(`📖 [FRONTEND loadDeck] Slide ${i} CustomComponent ${comp.id}: ${renderLen} chars from API`);
-            }
-          });
-        });
-      }
-      
-      // The deck from the API should already be formatted correctly
       const transformedDeck = normalizeDeckData(deck);
 
       // CRITICAL: Sort slides by their order field when loading from backend
       if (transformedDeck.slides && Array.isArray(transformedDeck.slides)) {
         transformedDeck.slides = transformedDeck.slides.sort((a, b) => (a.order || 0) - (b.order || 0));
-        console.log(`[loadDeck] Sorted ${transformedDeck.slides.length} slides by order field`);
       }
 
       // Fix CustomComponent HTML rendering issues (ensure blank line after <html> tag)
@@ -901,27 +845,13 @@ export const createSyncOperations = (set: Function, get: Function) => {
             // AUTO-CLEANUP: Remove duplicate CustomComponents
             const customComponents = slide.components.filter(c => c.type === 'CustomComponent');
             if (customComponents.length > 1) {
-              console.log('[loadDeck] 🧹 AUTO-CLEANUP: Found', customComponents.length, 'CustomComponents on slide', slide.id);
               const { slide: cleanedSlide, removedIds } = cleanupDuplicateCustomComponents(slide);
               if (removedIds.length > 0) {
-                console.log('[loadDeck] 🧹 AUTO-CLEANUP: Removed duplicate CustomComponents:', removedIds);
                 transformedDeck.slides[i] = cleanedSlide;
               }
             }
           }
         }
-      }
-
-      // Debug: Log CustomComponent render lengths AFTER normalization and cleanup
-      if (Array.isArray(transformedDeck.slides)) {
-        transformedDeck.slides.forEach((slide: any, i: number) => {
-          slide.components?.forEach((comp: any) => {
-            if (comp.type === 'CustomComponent') {
-              const renderLen = comp.props?.render?.length || 0;
-              console.log(`🔄 [FRONTEND AFTER CLEANUP] Slide ${i} CustomComponent ${comp.id}: ${renderLen} chars going to store`);
-            }
-          });
-        });
       }
 
       // Set current deck ID globally for position sync filtering
@@ -940,9 +870,9 @@ export const createSyncOperations = (set: Function, get: Function) => {
         error: null,
         version: transformedDeck.version || uuidv4(),
         lastModified: transformedDeck.lastModified || new Date().toISOString(),
-        lastSyncTime: new Date() // Add this line to set sync time when deck is loaded
+        lastSyncTime: new Date()
       });
-      
+
       // Preload all fonts used in the deck
       import('../utils/fontUtils').then(({ extractDeckFonts }) => {
         const usedFonts = extractDeckFonts(transformedDeck);
@@ -968,7 +898,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
       // Only create default deck on error if we're truly starting fresh AND no specific deck was requested
       const { deckData } = get();
       if ((!deckData || !deckData.uuid) && !deckId) {
-        console.log('[loadDeck] Creating fallback deck due to error (no specific deck requested)');
         await createDefaultDeck();
       }
     }
@@ -1036,7 +965,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
         // CRITICAL: Sort slides by their order field when loading from backend
         if (deck.slides && Array.isArray(deck.slides)) {
           deck.slides = deck.slides.sort((a, b) => (a.order || 0) - (b.order || 0));
-          console.log(`[initialize] Sorted ${deck.slides.length} slides by order field`);
         }
 
         // Set current deck ID globally for position sync filtering
@@ -1050,11 +978,9 @@ export const createSyncOperations = (set: Function, get: Function) => {
           error: null,
           version: deck.version || uuidv4(),
           lastModified: deck.lastModified || new Date().toISOString(),
-          lastSyncTime: new Date() // Add this line to set sync time when deck is loaded
+          lastSyncTime: new Date()
         });
-        
-        console.log(`[initialize] Successfully loaded deck ${deckId} after ${retryCount + 1} attempts`);
-            
+
             // Immediately preload all fonts used in the deck
             import('../utils/fontUtils').then(({ extractDeckFonts }) => {
               const usedFonts = extractDeckFonts(deck);
@@ -1085,20 +1011,8 @@ export const createSyncOperations = (set: Function, get: Function) => {
       loadDeck(deckId);
     }
     
-    // Set up subscription if enabled
-    console.log('[initialize] Subscription setup check:', {
-      syncEnabled,
-      useRealtimeSubscription,
-      willSetup: syncEnabled && useRealtimeSubscription,
-      deckId
-    });
-
     if (syncEnabled && useRealtimeSubscription) {
-      // Re-enabled with guards in the subscription handler
-      console.log('[initialize] Calling setupRealtimeSubscription()');
       setupRealtimeSubscription();
-    } else {
-      console.log('[initialize] Skipping subscription setup');
     }
     
     // Set up interval sync if needed and return cleanup function

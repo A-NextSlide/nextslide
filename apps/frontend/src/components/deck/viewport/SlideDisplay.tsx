@@ -262,11 +262,6 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   
   // Get editor store methods
   const { isComponentSelected } = useEditorStore();
-  
-  // Log the entire slides array received as a prop
-  if (slides) {
-
-  }
 
   // Stable fallback background to prevent white flashes during updates
   const fallbackBackground = React.useMemo(() => {
@@ -394,24 +389,16 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   
   // Handle double-click
   const handleDoubleClick = (e: React.MouseEvent) => {
-    console.log('[SlideDisplay] Double-click detected, isEditing:', isEditing);
-    
-    // Only proceed if not in editing mode
     if (!isEditing) {
-      // Check if current slide exists and has content
       const currentSlide = slides[currentSlideIndex];
       const hasContent = currentSlide && currentSlide.components && currentSlide.components.length > 0;
-      
-      console.log('[SlideDisplay] Current slide:', currentSlide?.id, 'hasContent:', hasContent);
-      
-      // Allow double-click if there's a slide with any components (including background)
+
       if (hasContent) {
         e.preventDefault();
         e.stopPropagation();
-        
+
         if (typeof window !== 'undefined') {
-          console.log('[SlideDisplay] Dispatching slide:doubleclick event');
-          const event = new CustomEvent('slide:doubleclick', { 
+          const event = new CustomEvent('slide:doubleclick', {
             detail: { slideId: currentSlide.id }
           });
           window.dispatchEvent(event);
