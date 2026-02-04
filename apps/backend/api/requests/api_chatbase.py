@@ -29,7 +29,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     auth_service = get_auth_service()
 
     try:
-        user = await auth_service.get_user_from_token(token)
+        user = auth_service.get_user_with_token(token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
         return user

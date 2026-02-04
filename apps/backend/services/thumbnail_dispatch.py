@@ -62,7 +62,8 @@ async def render_thumbnail_via_modal(
             logger.info("[thumbnail_dispatch] Local thumbnail OK for deck %s", deck_uuid)
             return result
         except Exception as local_exc:
-            logger.error("[thumbnail_dispatch] Local fallback also failed for deck %s: %s", deck_uuid, local_exc)
+            # Playwright may not be installed on the server — this is expected
+            logger.warning("[thumbnail_dispatch] Local fallback also failed for deck %s: %s", deck_uuid, local_exc)
             return None
 
 

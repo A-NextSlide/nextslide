@@ -358,7 +358,7 @@ async def serve_pixelbuddha_font(font_id: str, path: str):
     
     if not font_path.exists():
         try:
-            logger.error(f"[PB] 404 missing: {font_path}")
+            logger.info(f"[PB] 404 missing: {font_path}")
         except Exception:
             pass
         raise HTTPException(status_code=404, detail=f"Font file not found")
