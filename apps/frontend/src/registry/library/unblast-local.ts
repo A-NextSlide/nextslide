@@ -603,6 +603,14 @@ export const UNBLAST_LOCAL_FONTS: FontDefinition[] = [
     "url": "/fonts/HKGroteskWide-Regular.otf"
   },
   {
+    "name": "HKGroteskWide",
+    "family": "HKGroteskWide",
+    "source": "local",
+    "weight": "600",
+    "style": "normal",
+    "url": "/fonts/HKGroteskWide-SemiBold.otf"
+  },
+  {
     "name": "Hiluna — Clean Sans Serif",
     "family": "Hiluna — Clean Sans Serif",
     "source": "local",

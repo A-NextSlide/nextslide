@@ -12,50 +12,43 @@ interface SliderProps extends React.ComponentPropsWithoutRef<typeof SliderPrimit
 const Slider = React.forwardRef<
   React.ElementRef<typeof SliderPrimitive.Root>,
   SliderProps
->(({ className, trackClassName, thumbClassName, ...props }, ref) => {
-  // Store local value to maintain UI consistency 
-  const [localValue, setLocalValue] = React.useState<number[]>(props.value || [0]);
+>(({ className, trackClassName, thumbClassName, value, onValueChange, onValueCommit, onPointerDown, onPointerUp, ...rest }, ref) => {
+  // Store local value to maintain UI consistency
+  const [localValue, setLocalValue] = React.useState<number[]>(value || [0]);
   const [isDragging, setIsDragging] = React.useState(false);
 
   // Update local value when props change and we're not dragging
   React.useEffect(() => {
-    if (!isDragging && props.value) {
-      setLocalValue(props.value);
+    if (!isDragging && value) {
+      setLocalValue(value);
     }
-  }, [props.value, isDragging]);
+  }, [value, isDragging]);
 
   return (
     <SliderPrimitive.Root
       ref={ref}
+      {...rest}
       className={cn(
         "relative flex w-full touch-none select-none items-center",
         className
       )}
       value={localValue}
       onValueChange={(newValue) => {
-        // Update local value for immediate UI feedback
         setLocalValue(newValue);
-        
-        // Call the parent's onValueChange handler
-        if (props.onValueChange) {
-          props.onValueChange(newValue);
-        }
+        onValueChange?.(newValue);
       }}
       onValueCommit={(newValue) => {
-        if (props.onValueCommit) {
-          props.onValueCommit(newValue);
-        }
+        onValueCommit?.(newValue);
       }}
-      onPointerDown={() => {
+      onPointerDown={(e) => {
         setIsDragging(true);
+        onPointerDown?.(e);
       }}
-      onPointerUp={() => {
-        setTimeout(() => {
-          setIsDragging(false);
-        }, 0);
+      onPointerUp={(e) => {
+        setTimeout(() => setIsDragging(false), 0);
+        onPointerUp?.(e);
       }}
       onClick={(e) => e.stopPropagation()}
-      {...props}
     >
       <SliderPrimitive.Track
         className={cn(

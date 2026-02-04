@@ -303,7 +303,6 @@ export const useCustomComponentEditStore = create<CustomComponentEditState>((set
 
   updateElementStyle: (selector, property, value) => {
     const { iframeRef } = get();
-    console.log('[Store] updateElementStyle:', { selector, property, value });
     if (iframeRef?.current?.contentWindow) {
       iframeRef.current.contentWindow.postMessage({
         target: 'ns-custom-component-edit',
@@ -357,7 +356,6 @@ export const useCustomComponentEditStore = create<CustomComponentEditState>((set
 
   injectFont: (fontName, fontDef?: { source: string; url?: string; family?: string; id?: string }) => {
     const { iframeRef } = get();
-    console.log('[Store] injectFont:', { fontName, fontDef, hasIframe: !!iframeRef?.current?.contentWindow });
     if (iframeRef?.current?.contentWindow && fontName) {
       iframeRef.current.contentWindow.postMessage({
         target: 'ns-custom-component-edit',

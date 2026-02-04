@@ -10,10 +10,10 @@ import {
   Wand2,
   Link2,
   Layers,
-  Maximize,
   Upload,
   Plus,
-  ChevronDown
+  ChevronDown,
+  Search
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
@@ -38,16 +38,14 @@ interface ImageSlotEditorProps {
   onObjectFitChange?: (fit: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down') => void;
 }
 
-type TabType = 'source' | 'edit' | 'fuse';
-
 /**
  * ImageSlotEditor - Redesigned image editor for CustomComponent props
  *
  * Features:
- * - Tabbed interface: Source | AI Edit | Fuse
- * - Object-fit selector
- * - Image fuse with drag-drop
- * - Clean, minimal UI
+ * - Hover overlay action buttons (AI Edit, Fuse, URL)
+ * - Object-fit selector overlaid on image
+ * - Category-based AI edit suggestions
+ * - Clean, minimal UI matching ImageCardGrid design
  */
 const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
   propName,
@@ -63,8 +61,10 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
   const [localUrl, setLocalUrl] = useState(value || '');
   const [isLoading, setIsLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('edit');
+  const [expandedAction, setExpandedAction] = useState<'edit' | 'fuse' | 'url' | null>(null);
   const [aiPrompt, setAiPrompt] = useState('');
+  const [isHovered, setIsHovered] = useState(false);
+  const [isMediaHubOpen, setIsMediaHubOpen] = useState(false);
   const [isProcessingAi, setIsProcessingAi] = useState(false);
   const [localFit, setLocalFit] = useState(objectFit);
 
@@ -307,314 +307,345 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
     }
   };
 
-  const tabs = [
-    { id: 'edit' as TabType, label: 'AI Edit', icon: Wand2 },
-    { id: 'fuse' as TabType, label: 'Fuse', icon: Layers },
-    { id: 'source' as TabType, label: 'URL', icon: Link2 },
-  ];
-
   const fitOptions = [
     { label: 'Cover', value: 'cover' },
     { label: 'Contain', value: 'contain' },
     { label: 'Fill', value: 'fill' },
-    { label: 'None', value: 'none' },
     { label: 'Scale Down', value: 'scale-down' },
   ];
 
-  const quickEdits = [
-    { label: 'Enhance', prompt: 'Enhance lighting, contrast, and clarity' },
-    { label: 'BG Remove', prompt: 'Remove the background and keep the subject clean' },
-    { label: 'Cinematic', prompt: 'Add cinematic lighting and shallow depth of field' },
-    { label: 'B&W', prompt: 'Convert to a clean black and white look' },
-    { label: 'Warm', prompt: 'Warm the tones and add a soft glow' },
-    { label: 'Minimal', prompt: 'Simplify the image with a clean, minimal style' },
+  const editCategories = [
+    {
+      label: 'Adjust',
+      suggestions: [
+        { label: 'Enhance quality', prompt: 'Enhance lighting, contrast, and clarity' },
+        { label: 'Brighten', prompt: 'Make the image brighter and more vibrant' },
+        { label: 'Sharpen', prompt: 'Sharpen the image and increase detail' },
+        { label: 'Fix colors', prompt: 'Fix color balance and saturation' },
+      ],
+    },
+    {
+      label: 'Style',
+      suggestions: [
+        { label: 'Cinematic', prompt: 'Add cinematic lighting and depth of field' },
+        { label: 'Vintage', prompt: 'Apply a vintage film look with warm tones' },
+        { label: 'Watercolor', prompt: 'Transform into a watercolor painting style' },
+        { label: 'Minimalist', prompt: 'Simplify to a clean minimalist look' },
+      ],
+    },
+    {
+      label: 'Remove',
+      suggestions: [
+        { label: 'Background', prompt: 'Remove the background completely' },
+        { label: 'People', prompt: 'Remove all people from the image' },
+        { label: 'Text / watermarks', prompt: 'Remove all text and watermarks' },
+        { label: 'Distractions', prompt: 'Remove distracting objects from the background' },
+      ],
+    },
+    {
+      label: 'Transform',
+      suggestions: [
+        { label: 'Cartoon', prompt: 'Turn into a cartoon illustration style' },
+        { label: 'Blur background', prompt: 'Blur the background, keep subject sharp' },
+        { label: 'Black & white', prompt: 'Convert to dramatic black and white' },
+        { label: 'Oil painting', prompt: 'Transform into an oil painting style' },
+      ],
+    },
   ];
 
   return (
     <div
-      className="rounded-md border border-border/60 bg-card/80 overflow-hidden"
+      className="space-y-1"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       style={{ position: 'relative', zIndex: 20000 }}
     >
-      {/* Image Preview */}
-      <MediaHub
-        trigger={
-          <div
-            className={cn(
-              "relative w-full h-20 cursor-pointer group",
-              "bg-[repeating-conic-gradient(#f0f0f0_0_90deg,#fafafa_90deg_180deg)_0_0/10px_10px]",
-              isProcessingAi && "pointer-events-none"
-            )}
-          >
-            {isProcessingAi ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 z-10">
-                <Loader2 className="w-4 h-4 animate-spin text-white" />
-                <span className="text-white text-[9px] mt-0.5 font-medium">Processing...</span>
-              </div>
-            ) : null}
-            {isLoading ? (
-              <div className="flex items-center justify-center h-full">
-                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-              </div>
-            ) : isPlaceholder || imageError ? (
-              <div className="flex flex-col items-center justify-center h-full gap-1 text-muted-foreground hover:text-foreground transition-colors">
-                <ImageIcon className="w-4 h-4" />
-                <span className="text-[9px]">
-                  {searchQuery && searchQuery !== 'image' ? `"${searchQuery}"` : 'Click to select'}
-                </span>
-              </div>
-            ) : (
-              <>
-                <img
-                  key={localUrl}
-                  src={localUrl}
-                  alt={label}
-                  className={cn(
-                    "w-full h-full transition-transform group-hover:scale-[1.01]",
-                    isProcessingAi && "opacity-50"
-                  )}
-                  style={{ objectFit: localFit }}
-                  onError={() => setImageError(true)}
-                  onLoad={() => setIsLoading(false)}
-                />
-                {/* Top bar with label and fit */}
-                <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-1 py-0.5 z-[1]">
-                  <div className="px-1 py-px rounded bg-black/50 backdrop-blur-sm">
-                    <span className="text-[8px] text-white font-medium truncate max-w-[100px] block leading-tight">
-                      {label}
-                    </span>
-                  </div>
-                  {onObjectFitChange && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex items-center gap-px px-1 py-px rounded bg-black/50 backdrop-blur-sm text-white text-[8px] font-medium hover:bg-black/60 transition-colors"
-                        >
-                          {fitOptions.find(f => f.value === localFit)?.label || 'Cover'}
-                          <ChevronDown className="w-2 h-2" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="min-w-[72px]">
-                        {fitOptions.map((option) => (
-                          <DropdownMenuItem
-                            key={option.value}
-                            onClick={() => handleFitChange(option.value as any)}
-                            className={cn(
-                              "text-[11px] py-1",
-                              localFit === option.value && "bg-orange-50 text-orange-600 dark:bg-orange-500/10"
-                            )}
-                          >
-                            {option.label}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </div>
-                {!isProcessingAi && (
-                  <>
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-                      <span className="text-white text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                        Change
-                      </span>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); clearImage(); }}
-                      className="absolute bottom-1 right-1 p-0.5 rounded-full bg-black/60 hover:bg-black/80 text-white transition-all opacity-0 group-hover:opacity-100"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </>
+      {/* Image Card */}
+      <div
+        className="relative rounded-md overflow-hidden border border-border/50 bg-card"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Image or Placeholder */}
+        <div
+          onClick={() => !isProcessingAi && setIsMediaHubOpen(true)}
+          className={cn(
+            "relative w-full h-24 cursor-pointer group",
+            "bg-[repeating-conic-gradient(#f0f0f0_0_90deg,#fafafa_90deg_180deg)_0_0/10px_10px]",
+            isProcessingAi && "pointer-events-none"
+          )}
+        >
+          {isProcessingAi && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 z-10">
+              <Loader2 className="w-4 h-4 animate-spin text-white" />
+              <span className="text-white text-[9px] mt-0.5 font-medium">Processing...</span>
+            </div>
+          )}
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : isPlaceholder || imageError ? (
+            <div className="flex flex-col items-center justify-center h-full gap-0.5 text-muted-foreground hover:text-foreground transition-colors">
+              <ImageIcon className="w-4 h-4" />
+              <span className="text-[9px]">
+                {searchQuery && searchQuery !== 'image' ? `"${searchQuery}"` : 'Click to select'}
+              </span>
+            </div>
+          ) : (
+            <>
+              <img
+                key={localUrl}
+                src={localUrl}
+                alt={label}
+                className={cn(
+                  "w-full h-full",
+                  isProcessingAi && "opacity-50"
                 )}
-              </>
-            )}
-          </div>
-        }
-        onSelect={handleMediaSelect}
-        defaultSearchTerm={searchQuery && searchQuery !== 'image' ? searchQuery : undefined}
-        autoSearch={!!(searchQuery && searchQuery !== 'image')}
-      />
+                style={{ objectFit: localFit }}
+                onError={() => setImageError(true)}
+                onLoad={() => setIsLoading(false)}
+              />
+              {/* Top bar with label and fit */}
+              <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-1 py-0.5 z-[1]">
+                <div className="px-1 py-px rounded bg-black/50 backdrop-blur-sm">
+                  <span className="text-[8px] text-white font-medium truncate max-w-[100px] block leading-tight">
+                    {label}
+                  </span>
+                </div>
+                {onObjectFitChange && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        onClick={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="flex items-center gap-px px-1 py-px rounded bg-black/50 backdrop-blur-sm text-white text-[8px] font-medium hover:bg-black/60 transition-colors"
+                      >
+                        {fitOptions.find(f => f.value === localFit)?.label || 'Cover'}
+                        <ChevronDown className="w-2 h-2" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="min-w-[72px]" onPointerDownOutside={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+                      {fitOptions.map((option) => (
+                        <DropdownMenuItem
+                          key={option.value}
+                          onClick={(e) => { e.stopPropagation(); handleFitChange(option.value as any); }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className={cn(
+                            "text-[11px] py-1",
+                            localFit === option.value && "bg-orange-50 text-orange-600 dark:bg-orange-500/10"
+                          )}
+                        >
+                          {option.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+              {!isProcessingAi && (
+                <div className={cn(
+                  "absolute inset-0 bg-black/0 transition-all duration-150 flex items-center justify-center",
+                  isHovered && !expandedAction && "bg-black/35"
+                )}>
+                  <span className={cn(
+                    "text-white text-[9px] font-medium opacity-0 transition-opacity flex items-center gap-1",
+                    isHovered && !expandedAction && "opacity-100"
+                  )}>
+                    <Search className="w-2.5 h-2.5" />
+                    Browse
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-border/40">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1 py-1 text-[9px] font-medium transition-colors",
-              activeTab === tab.id
-                ? "text-orange-600 border-b-[1.5px] border-orange-500 bg-orange-50/40 dark:bg-orange-500/10"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
-            )}
-          >
-            <tab.icon className="w-2.5 h-2.5" />
-            {tab.label}
-          </button>
-        ))}
+        {/* Action overlay buttons */}
+        {(isHovered || expandedAction) && !isProcessingAi && (
+          <div className="absolute bottom-1 left-1 right-1 flex gap-0.5 z-[2]">
+            {([
+              { action: 'edit' as const, icon: Wand2, actionLabel: 'AI' },
+              { action: 'fuse' as const, icon: Layers, actionLabel: 'Fuse' },
+              { action: 'url' as const, icon: Link2, actionLabel: 'URL' },
+            ]).map(({ action, icon: Icon, actionLabel }) => (
+              <button
+                key={action}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpandedAction(expandedAction === action ? null : action);
+                }}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-0.5 py-1 rounded text-[9px] font-medium transition-all",
+                  expandedAction === action
+                    ? "bg-orange-500 text-white"
+                    : "bg-white/90 text-zinc-700 hover:bg-white backdrop-blur-sm"
+                )}
+              >
+                <Icon className="w-2.5 h-2.5" />
+                {actionLabel}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Tab Content */}
-      <div className="p-1.5">
-        {/* Source Tab */}
-        {activeTab === 'source' && (
-          <div className="space-y-1">
-            <Input
-              value={localUrl}
-              onChange={handleUrlChange}
-              onBlur={handleUrlBlur}
-              onKeyDown={handleUrlKeyDown}
-              placeholder="https://..."
-              className="h-6 text-[10px] flex-1"
-            />
-            <p className="text-[8px] text-muted-foreground">
-              Paste URL or click image above to browse
-            </p>
-          </div>
-        )}
-
-        {/* AI Edit Tab */}
-        {activeTab === 'edit' && (
-          <div className="space-y-1.5">
-            {isPlaceholder ? (
-              <p className="text-[10px] text-muted-foreground text-center py-2">
-                Select an image first
-              </p>
-            ) : (
-              <>
-                <Textarea
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  placeholder="Make any change to this image..."
-                  className="min-h-[40px] text-[10px] resize-none"
-                  disabled={isProcessingAi}
-                />
-                <div className="flex flex-wrap gap-0.5">
-                  {quickEdits.map((edit) => (
-                    <button
-                      key={edit.label}
-                      type="button"
-                      className={cn(
-                        "px-1.5 py-0.5 rounded border text-[8px] font-medium transition-colors",
-                        "bg-muted/20 border-border/60 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-600 dark:hover:bg-orange-500/10",
-                        isProcessingAi && "opacity-50 pointer-events-none"
-                      )}
-                      onClick={() => {
-                        setAiPrompt(edit.prompt);
-                        if (!isProcessingAi) {
-                          callEditApi(edit.prompt);
-                        }
-                      }}
-                    >
-                      {edit.label}
-                    </button>
-                  ))}
-                </div>
-                <Button
-                  size="sm"
-                  className="w-full h-5 text-[10px] bg-[#FF4301] hover:bg-[#E63901]"
-                  disabled={isProcessingAi || !aiPrompt.trim()}
-                  onClick={() => callEditApi(aiPrompt)}
-                >
-                  {isProcessingAi ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <>
-                      <Wand2 className="w-2.5 h-2.5 mr-1" />
-                      Apply
-                    </>
-                  )}
-                </Button>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Fuse Tab */}
-        {activeTab === 'fuse' && (
-          <div className="space-y-1.5">
-            <div className="flex gap-1 flex-wrap">
-              {!isPlaceholder && (
-                <div className="relative w-9 h-9 rounded border overflow-hidden bg-muted/30">
-                  <img src={localUrl} alt="Current" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                    <span className="text-[7px] text-white font-medium">Base</span>
-                  </div>
-                </div>
-              )}
-              {fuseImages.map((img, idx) => (
-                <div key={idx} className="relative w-9 h-9 rounded border overflow-hidden bg-muted/30 group">
-                  <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
-                  <button
-                    onClick={() => removeFuseImage(idx)}
-                    className="absolute top-0 right-0 p-0.5 rounded-bl bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="w-2 h-2" />
-                  </button>
-                </div>
-              ))}
-              {fuseImages.length < 3 && (
-                <button
-                  onClick={() => fuseInputRef.current?.click()}
-                  className="w-9 h-9 rounded border-[1.5px] border-dashed flex items-center justify-center hover:border-orange-300 hover:bg-orange-50/30 dark:hover:bg-orange-500/10 text-muted-foreground hover:text-orange-500"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            <div
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handleDrop}
-              className={cn(
-                "border-[1.5px] border-dashed rounded p-1.5 text-center transition-colors",
-                isDragging ? "border-orange-400 bg-orange-50/50 dark:bg-orange-500/10" : "border-border/50"
-              )}
-            >
-              <Upload className="w-3 h-3 mx-auto mb-0.5 text-muted-foreground" />
-              <p className="text-[8px] text-muted-foreground">
-                Drop or <button onClick={() => fuseInputRef.current?.click()} className="text-orange-500 hover:underline">browse</button>
-              </p>
-            </div>
-
-            <Textarea
-              value={aiPrompt}
-              onChange={(e) => setAiPrompt(e.target.value)}
-              placeholder="How to combine? (optional)"
-              className="min-h-[36px] text-[10px] resize-none"
-              disabled={isProcessingAi}
-            />
-
-            <Button
-              size="sm"
-              className="w-full h-5 text-[10px] bg-[#FF4301] hover:bg-[#E63901]"
-              disabled={isProcessingAi || (isPlaceholder && fuseImages.length < 2) || (!isPlaceholder && fuseImages.length < 1)}
-              onClick={callFuseApi}
-            >
-              {isProcessingAi ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
+      {/* Expanded Action Panel */}
+      {expandedAction && (
+        <div className="p-1.5 rounded-md border bg-muted/20 space-y-1.5">
+          {/* AI Edit Panel */}
+          {expandedAction === 'edit' && (
+            <>
+              {isPlaceholder ? (
+                <p className="text-[9px] text-muted-foreground text-center py-2">
+                  Select an image first
+                </p>
               ) : (
                 <>
-                  <Layers className="w-2.5 h-2.5 mr-1" />
-                  Fuse {(isPlaceholder ? 0 : 1) + fuseImages.length}
+                  <div className="flex flex-wrap gap-0.5">
+                    {editCategories.map((category) => (
+                      <div key={category.label} className="relative group/edit" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+                        <button
+                          disabled={isProcessingAi}
+                          className={cn(
+                            "px-1.5 py-0.5 rounded text-[9px] font-medium transition-colors flex items-center gap-px",
+                            "bg-background border border-border/60 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-600 dark:hover:bg-orange-500/10",
+                            isProcessingAi && "opacity-50"
+                          )}
+                        >
+                          {category.label}
+                          <ChevronDown className="w-2 h-2 opacity-40" />
+                        </button>
+                        <div className="absolute top-full left-0 pt-0.5 hidden group-hover/edit:block z-50">
+                          <div className="bg-popover rounded-md border shadow-lg py-0.5 min-w-[120px]">
+                            {category.suggestions.map((s) => (
+                              <button
+                                key={s.label}
+                                onClick={(e) => { e.stopPropagation(); callEditApi(s.prompt); }}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                disabled={isProcessingAi}
+                                className="w-full text-left px-2 py-1 text-[10px] hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-500/10 transition-colors disabled:opacity-50"
+                              >
+                                {s.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <Textarea
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    placeholder="Custom edit instruction..."
+                    className="min-h-[36px] text-[10px] resize-none"
+                    disabled={isProcessingAi}
+                  />
+                  <Button
+                    size="sm"
+                    className="w-full h-6 text-[10px] bg-[#FF4301] hover:bg-[#E63901]"
+                    disabled={isProcessingAi || !aiPrompt.trim()}
+                    onClick={() => callEditApi(aiPrompt)}
+                  >
+                    {isProcessingAi ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Apply'}
+                  </Button>
                 </>
               )}
-            </Button>
+            </>
+          )}
 
-            <input
-              ref={fuseInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={handleFuseInputChange}
-            />
-          </div>
-        )}
-      </div>
+          {/* Fuse Panel */}
+          {expandedAction === 'fuse' && (
+            <>
+              <div className="flex gap-1 flex-wrap">
+                {!isPlaceholder && (
+                  <div className="relative w-9 h-9 rounded border overflow-hidden bg-muted/30">
+                    <img src={localUrl} alt="Current" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                      <span className="text-[7px] text-white font-medium">Base</span>
+                    </div>
+                  </div>
+                )}
+                {fuseImages.map((img, idx) => (
+                  <div key={idx} className="relative w-9 h-9 rounded border overflow-hidden bg-muted/30 group">
+                    <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => removeFuseImage(idx)}
+                      className="absolute top-0 right-0 p-0.5 rounded-bl bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-2 h-2" />
+                    </button>
+                  </div>
+                ))}
+                {fuseImages.length < 3 && (
+                  <button
+                    onClick={() => fuseInputRef.current?.click()}
+                    className="w-9 h-9 rounded border-[1.5px] border-dashed flex items-center justify-center hover:border-orange-300 hover:bg-orange-50/30 dark:hover:bg-orange-500/10 text-muted-foreground hover:text-orange-500"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <Input
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                placeholder="How to combine? (optional)"
+                className="h-6 text-[10px]"
+                disabled={isProcessingAi}
+              />
+              <Button
+                size="sm"
+                className="w-full h-6 text-[10px] bg-[#FF4301] hover:bg-[#E63901]"
+                disabled={isProcessingAi || (isPlaceholder && fuseImages.length < 2) || (!isPlaceholder && fuseImages.length < 1)}
+                onClick={callFuseApi}
+              >
+                {isProcessingAi ? <Loader2 className="w-3 h-3 animate-spin" /> : `Fuse ${(isPlaceholder ? 0 : 1) + fuseImages.length}`}
+              </Button>
+              <input
+                ref={fuseInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleFuseInputChange}
+              />
+            </>
+          )}
+
+          {/* URL Panel */}
+          {expandedAction === 'url' && (
+            <>
+              <div className="flex gap-1">
+                <Input
+                  value={localUrl}
+                  onChange={handleUrlChange}
+                  onBlur={handleUrlBlur}
+                  onKeyDown={handleUrlKeyDown}
+                  placeholder="Paste image URL..."
+                  className="h-6 text-[10px] flex-1"
+                />
+              </div>
+              <p className="text-[8px] text-muted-foreground">
+                Or click the image above to browse
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* MediaHub controlled mode for browse */}
+      {isMediaHubOpen && (
+        <MediaHub
+          open={true}
+          onClose={() => setIsMediaHubOpen(false)}
+          onSelect={(url) => {
+            handleMediaSelect(url);
+            setIsMediaHubOpen(false);
+          }}
+          defaultSearchTerm={searchQuery && searchQuery !== 'image' ? searchQuery : undefined}
+          autoSearch={!!(searchQuery && searchQuery !== 'image')}
+        />
+      )}
     </div>
   );
 };

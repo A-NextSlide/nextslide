@@ -27,8 +27,8 @@ const FONT_STYLESHEET_MAP: Record<string, string> = {
   // More design fonts
   'design-secondary': 'https://fonts.googleapis.com/css2?family=Quicksand:wght@300,400,500,600,700&family=Urbanist:wght@300,400,500,600,700,800,900&family=Epilogue:wght@300,400,500,600,700,800,900&family=Red+Hat+Display:wght@300,400,500,600,700,800,900&family=Commissioner:wght@300,400,500,600,700,800,900&family=Barlow+Condensed:wght@300,400,500,600,700,800,900&family=Archivo:wght@300,400,500,600,700,800,900&display=swap',
   
-  // Script fonts
-  'script': 'https://fonts.googleapis.com/css2?family=Great+Vibes&family=Satisfy&family=Dancing+Script:wght@400,500,600,700&family=Pacifico&family=Lobster&display=swap',
+  // Designer / Script fonts
+  'designer': 'https://fonts.googleapis.com/css2?family=Great+Vibes&family=Satisfy&family=Dancing+Script:wght@400,500,600,700&family=Pacifico&family=Lobster&display=swap',
   
   // Fontshare fonts - loaded individually via API
   'fontshare': 'https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,700,900&f[]=clash-display@400,500,600,700&f[]=cabinet-grotesk@400,500,700,800,900&f[]=general-sans@300,400,500,600,700&f[]=chillax@300,400,500,600,700&f[]=switzer@300,400,500,600,700,800,900&f[]=ranade@300,400,500,700&display=swap',
@@ -182,7 +182,7 @@ export const getFontCategory = (fontName: string): string | null => {
   const sansSerif = ['Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins', 'Inter', 'Source Sans Pro', 'Nunito', 'Raleway', 'Work Sans', 'Outfit', 'Manrope', 'Sora', 'Plus Jakarta Sans', 'DM Sans', 'Figtree', 'Geist', 'Space Grotesk', 'Instrument Sans', 'Bricolage Grotesque', 'Familjen Grotesk', 'Schibsted Grotesk', 'Onest', 'Noto Sans'];
   const serif = ['Playfair Display', 'Merriweather', 'Lora', 'PT Serif', 'Source Serif Pro', 'Libre Baskerville', 'Crimson Text', 'Noto Serif', 'Cormorant Garamond', 'Bitter', 'Crimson Pro', 'EB Garamond', 'Literata', 'Newsreader', 'Instrument Serif', 'DM Serif Text', 'DM Serif Display', 'Roboto Serif', 'Young Serif', 'Fraunces'];
   const display = ['Bebas Neue', 'Comfortaa', 'Pacifico', 'Caveat', 'Abril Fatface', 'Archivo Black', 'Fredoka One', 'Permanent Marker', 'Lobster', 'Anton', 'Dancing Script', 'Satisfy', 'Righteous', 'Alfa Slab One', 'Russo One', 'Passion One', 'Bungee', 'Monoton', 'Shrikhand', 'Ultra', 'Creepster', 'Bowlby One', 'Fugaz One'];
-  const monospace = ['Roboto Mono', 'Source Code Pro', 'JetBrains Mono', 'Fira Code', 'Space Mono', 'PT Mono', 'IBM Plex Mono', 'Ubuntu Mono', 'Inconsolata', 'Courier Prime', 'Red Hat Mono', 'Overpass Mono', 'Azeret Mono', 'Martian Mono', 'Commit Mono'];
+  const monospace = ['Roboto Mono', 'Source Code Pro', 'JetBrains Mono', 'Fira Code', 'Space Mono', 'PT Mono', 'IBM Plex Mono', 'Ubuntu Mono', 'Inconsolata', 'Courier Prime', 'Red Hat Mono', 'Overpass Mono', 'Azeret Mono', 'Martian Mono'];
   const fontshare = ['Cabinet Grotesk', 'Satoshi', 'General Sans', 'Clash Display', 'Chillax', 'Boska', 'Gambarino', 'Switzer', 'Ranade', 'Panchang', 'Melodrama', 'Erode', 'Sentient', 'Synonym', 'Supreme', 'Author', 'Bespoke Serif', 'Stardom', 'Nippo', 'Zodiak', 'Khand', 'Telma'];
   const design = ['Montserrat Alternates', 'Comfortaa', 'Quicksand', 'Josefin Sans', 'Cabin', 'Barlow', 'Varela Round', 'Calistoga', 'Rubik', 'Chivo', 'Karla', 'Mulish', 'Exo 2', 'Lexend', 'Urbanist', 'Epilogue', 'Red Hat Display', 'Commissioner', 'Barlow Condensed', 'Archivo', 'Nunito Sans', 'Spartan', 'Jost'];
   const contemporary = ['Instrument Sans', 'Bricolage Grotesque', 'Familjen Grotesk', 'Schibsted Grotesk', 'Onest', 'Young Serif', 'Instrument Serif', 'Martian Mono', 'Science Gothic', 'Commissioner', 'Recursive', 'Anybody'];

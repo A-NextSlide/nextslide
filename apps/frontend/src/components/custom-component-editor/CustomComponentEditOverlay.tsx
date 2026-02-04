@@ -486,10 +486,27 @@ export function generateEditModeScript(componentId: string): string {
 
     // Apply style mutation
     if (e.data.type === 'apply-style-mutation') {
-      const el = document.querySelector(e.data.selector);
+      var el = document.querySelector(e.data.selector);
       if (el && e.data.styles) {
-        Object.keys(e.data.styles).forEach(key => {
-          el.style[key] = e.data.styles[key];
+        Object.keys(e.data.styles).forEach(function(key) {
+          // Convert camelCase to kebab-case for setProperty
+          var cssKey = key.replace(/([A-Z])/g, '-$1').toLowerCase();
+          var val = e.data.styles[key];
+          // Use !important to override component CSS rules
+          el.style.setProperty(cssKey, val, 'important');
+
+          // For font-family: also override the --ns-body-font / --ns-hero-font
+          // CSS custom properties that iframeFonts.ts injects. Those stylesheet
+          // rules use !important on element selectors; overriding the variable
+          // on the element itself ensures the rule resolves to the new font.
+          if (cssKey === 'font-family') {
+            var quoted = '"' + val.replace(/"/g, '') + '", sans-serif';
+            var tag = (el.tagName || '').toLowerCase();
+            if (/^h[1-6]$/.test(tag)) {
+              el.style.setProperty('--ns-hero-font', quoted);
+            }
+            el.style.setProperty('--ns-body-font', quoted);
+          }
         });
       }
     }
@@ -1427,13 +1444,29 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           if (autoSelectElement) {
             const centerX = autoSelectElement.bounds.x + autoSelectElement.bounds.width / 2;
             const centerY = autoSelectElement.bounds.y + autoSelectElement.bounds.height / 2;
-            const path = getSelectionPathForElement(autoSelectElement.id);
-            applySelectionPath(path, { x: centerX, y: centerY }, 0);
-            const selected = path.length > 0 ? elements.find(el => el.id === path[0]) : autoSelectElement;
-            if (selected) {
-              skipNextSelectionNotifyRef.current = true;
-              onElementSelect(toDetectedElement(selected), centerX, centerY);
+
+            // Build selection path from the fresh elements array directly.
+            // Can't use getSelectionPathForElement because elementMap (derived from
+            // virtualElements state) hasn't updated yet due to React batching.
+            const elMap = new Map(elements.map(e => [e.id, e]));
+            const path: string[] = [];
+            let curId: string | null = autoSelectElement.id;
+            while (curId) {
+              const cur = elMap.get(curId);
+              if (!cur) break;
+              path.push(curId);
+              curId = cur.parentId || null;
             }
+            path.reverse();
+
+            const deepestIndex = Math.max(0, path.length - 1);
+            setSelectionPath(path);
+            setSelectionPathIndex(deepestIndex);
+            selectionAnchorRef.current = { x: centerX, y: centerY };
+            setSelectedElementId(autoSelectElement.id);
+
+            skipNextSelectionNotifyRef.current = true;
+            onElementSelect(toDetectedElement(autoSelectElement), centerX, centerY);
           }
         }
       }

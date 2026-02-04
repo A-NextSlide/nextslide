@@ -1,12 +1,12 @@
-import React, { useState, forwardRef } from 'react';
+import React, { useState, useRef, useEffect, forwardRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Image as ImageIcon, Video as VideoIcon, Clock, Search, Wand2, RefreshCw } from 'lucide-react'; // Updated icons
-import { ImageTab } from './ImageTab'; // Will replace UploadTab
-import { VideoTab } from './VideoTab'; // New tab for Videos
-import { SearchTab } from './SearchTab'; // <-- Import SearchTab
-import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Image as ImageIcon, Video as VideoIcon, Clock, Search, Wand2, RefreshCw, Loader2, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ImageTab } from './ImageTab';
+import { VideoTab } from './VideoTab';
+import { SearchTab } from './SearchTab';
 import { Textarea } from '@/components/ui/textarea';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { useToast } from '@/hooks/use-toast';
@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDeckStore } from '@/stores/deckStore';
 import { trackMediaSelected } from '@/services/analytics';
+import { COLORS } from '@/utils/colors';
 
 // Updated MediaSource type
 export type MediaSource = 'image' | 'video' | 'recent' | 'search' | 'generate';
@@ -25,6 +26,9 @@ interface MediaHubProps {
     onSelect: OnMediaSelect;
     defaultSearchTerm?: string; // Pre-fill search when opening
     autoSearch?: boolean; // Auto-trigger search when opening with defaultSearchTerm
+    /** Controlled mode — when provided, MediaHub renders as a floating panel instead of a popover. */
+    open?: boolean;
+    onClose?: () => void;
 }
 
 interface RecentMedia {
@@ -32,23 +36,68 @@ interface RecentMedia {
     url: string;
     type: 'image' | 'video';
     timestamp: number;
+    thumbnail?: string;
+    alt?: string;
+}
+
+/** Read and merge recent media from both localStorage keys (MediaHub + ImagePicker). */
+function loadRecentMedia(): RecentMedia[] {
+    const items: RecentMedia[] = [];
+    try {
+        const raw = localStorage.getItem('recentMedia');
+        if (raw) items.push(...JSON.parse(raw));
+    } catch {}
+    try {
+        const raw = localStorage.getItem('recentlySelectedImages');
+        if (raw) {
+            const parsed: any[] = JSON.parse(raw);
+            for (const img of parsed) {
+                if (img.url && !items.some(i => i.url === img.url)) {
+                    items.push({
+                        id: img.id || `recent-${Date.now()}-${Math.random()}`,
+                        url: img.url,
+                        type: 'image',
+                        timestamp: img.timestamp || Date.now(),
+                        thumbnail: img.thumbnail || img.src?.thumbnail,
+                        alt: img.alt,
+                    });
+                }
+            }
+        }
+    } catch {}
+    // Sort newest first, cap at 12
+    items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return items.slice(0, 12);
 }
 
 // Wrap with forwardRef, using the correct element type (HTMLButtonElement)
-export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger, onSelect, defaultSearchTerm, autoSearch }, ref) => {
-    const [isOpen, setIsOpen] = useState(false);
-    // Start on search tab by default (AI suggestions shown below in search results anyway)
+export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger, onSelect, defaultSearchTerm, autoSearch, open: controlledOpen, onClose }, ref) => {
+    const isControlled = controlledOpen !== undefined;
+    const [internalOpen, setInternalOpen] = useState(false);
+    const isOpen = isControlled ? controlledOpen : internalOpen;
+    const setIsOpen = (v: boolean) => {
+        if (isControlled) { if (!v && onClose) onClose(); }
+        else setInternalOpen(v);
+    };
+
     const [activeTab, setActiveTab] = useState<MediaSource>('search');
-    // Token to trigger auto-search once per popover open
     const [searchToken, setSearchToken] = useState<number>(0);
-    const [hasInteracted, setHasInteracted] = useState(false); // Track if user has clicked
-    const [preventClose, setPreventClose] = useState(false); // Prevent closing during generation
-    
-    // Recent media state
-    const [recentMedia, setRecentMedia] = useState<RecentMedia[]>(() => {
-        const saved = localStorage.getItem('recentMedia');
-        return saved ? JSON.parse(saved).slice(0, 12) : [];
-    });
+    const [hasInteracted, setHasInteracted] = useState(false);
+    const [preventClose, setPreventClose] = useState(false);
+    const [hubSearchTerm, setHubSearchTerm] = useState(defaultSearchTerm || '');
+    const searchInputRef = useRef<HTMLInputElement>(null);
+
+    // Recent media state — merged from both storage keys
+    const [recentMedia, setRecentMedia] = useState<RecentMedia[]>(loadRecentMedia);
+
+    // Sync search term + recents when controlled open changes or search term prop updates
+    useEffect(() => {
+        if (isControlled && controlledOpen) {
+            setRecentMedia(loadRecentMedia());
+            setHubSearchTerm(defaultSearchTerm || '');
+            setTimeout(() => searchInputRef.current?.focus(), 50);
+        }
+    }, [controlledOpen, defaultSearchTerm]);
     
     // AI Generation state
     const [generatePrompt, setGeneratePrompt] = useState('');
@@ -59,25 +108,10 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
 
     const buildGuidedPrompt = (base: string) => {
         const stylePrefs = (deckData?.data?.outline?.stylePreferences) || (deckData?.outline?.stylePreferences) || {};
-        const text = ((deckData?.title || '') + ' ' + (stylePrefs?.initialIdea || '')).toLowerCase();
-        const purpose: 'artistic' | 'educational' | 'business' = /art|portfolio|creative|illustration|design showcase/.test(text)
-          ? 'artistic'
-          : /school|class|lesson|course|education|tutorial|training|workshop/.test(text)
-          ? 'educational'
-          : 'business';
-        const styleTone = purpose === 'artistic'
-          ? 'Artistically expressive with tasteful lighting and composition.'
-          : purpose === 'educational'
-          ? 'Clear, didactic, and easy to understand.'
-          : 'Polished, professional, and presentation-ready.';
-        const accuracy = (purpose === 'educational' || purpose === 'business')
-          ? 'Ensure visuals are factually accurate and appropriate; avoid invented labels or misleading depictions.'
-          : '';
-        const font = stylePrefs?.font ? `Primary font context: ${stylePrefs.font}.` : '';
-        const colors = stylePrefs?.colors ? `Use deck colors where relevant: background ${stylePrefs.colors.background || ''}, text ${stylePrefs.colors.text || ''}, accent ${stylePrefs.colors.accent1 || ''}.` : '';
+        const colors = stylePrefs?.colors ? `Color palette hint: ${stylePrefs.colors.accent1 || ''}.` : '';
         const vibe = stylePrefs?.vibeContext ? `Visual vibe: ${stylePrefs.vibeContext}.` : '';
-        const template = 'Match the deck template’s visual feel for brand consistency. Do not add textual labels within the image.';
-        return [base, styleTone, accuracy, vibe, colors, font, template].filter(Boolean).join(' ');
+        // User's prompt is the primary instruction — style hints are secondary and must not override it.
+        return [base, 'Do not add textual labels within the image.', vibe, colors].filter(Boolean).join(' ');
     };
 
     const handleSelect = (url: string, type: 'image' | 'video' | 'icon' | 'other', source: MediaSource) => {
@@ -89,18 +123,28 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
 
         onSelect(url, type, source);
 
-        // Add to recent media
+        // Add to recent media (write to both storage keys for cross-component sync)
         if (type === 'image' || type === 'video') {
             const newRecent: RecentMedia = {
                 id: `recent-${Date.now()}`,
                 url,
                 type: type as 'image' | 'video',
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                thumbnail: url,
+                alt: 'Recent media',
             };
-            
+
             const updated = [newRecent, ...recentMedia.filter(m => m.url !== url)].slice(0, 12);
             setRecentMedia(updated);
             localStorage.setItem('recentMedia', JSON.stringify(updated));
+
+            // Also write to ImagePicker's key so it stays in sync
+            try {
+                const pickerRecent = JSON.parse(localStorage.getItem('recentlySelectedImages') || '[]');
+                const pickerEntry = { id: newRecent.id, url, thumbnail: url, alt: 'Recent image' };
+                const pickerUpdated = [pickerEntry, ...pickerRecent.filter((i: any) => i.url !== url)].slice(0, 12);
+                localStorage.setItem('recentlySelectedImages', JSON.stringify(pickerUpdated));
+            } catch {}
         }
         
         setIsOpen(false); // Close popover on selection
@@ -110,7 +154,7 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
     const handleGenerate = async (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        
+
         if (!generatePrompt.trim()) {
             toast({
                 title: "Please enter a prompt",
@@ -120,39 +164,17 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
             return;
         }
 
-        // Create a temporary image component with generating state
-        const tempImageUrl = 'generating://ai-image';
-        
-        // Close the popup immediately and let user continue
-        setIsOpen(false);
-        
-        // Clear the prompt for next time
+        // Keep popup open to show processing state
         const promptToUse = generatePrompt;
-        setGeneratePrompt('');
-        
-        // Notify parent to create component with temporary URL
-        onSelect(tempImageUrl, 'image', 'generate');
-        
-        // Start generating in the background
         setIsGenerating(true);
-        
+
+        // Notify parent to set placeholder on the component
+        onSelect('generating://ai-image', 'image', 'generate');
+
         try {
-            // Gather slide context
+            // Minimal slide context — don't let slide text override the user's prompt
             const slideContext = {
                 title: activeSlide?.title || '',
-                content: activeSlide?.components
-                    ?.filter(c => c.type === 'TiptapTextBlock')
-                    ?.map(c => {
-                        // Extract text from TipTap content
-                        const texts = c.props?.texts?.content || [];
-                        return texts.map((block: any) => 
-                            block.content?.map((item: any) => item.text || '').join(' ')
-                        ).join(' ');
-                    })
-                    .join(' ') || '',
-                theme: activeSlide?.components
-                    ?.find(c => c.type === 'Background')
-                    ?.props || {}
             };
 
             // Determine target aspect ratio using editor selection box if available
@@ -203,16 +225,19 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
             if (!url || typeof url !== 'string') {
                 throw new Error('Invalid response: missing url');
             }
-            
+
             // Update the component with the actual generated image
-            // The parent should handle updating components with tempImageUrl to url
             onSelect(url, 'image', 'generate');
-            
+
+            // Clear prompt and close on success
+            setGeneratePrompt('');
+            setIsOpen(false);
+
             toast({
                 title: "Image generated!",
-                description: revised_prompt ? `Your AI image has been created` : "Your AI image has been created",
+                description: "Your AI image has been created",
             });
-            
+
         } catch (error) {
             console.error('Generation error:', error);
             toast({
@@ -220,7 +245,7 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                 description: error instanceof Error ? error.message : "Unable to generate image. Please try again.",
                 variant: "destructive"
             });
-            
+
             // Notify parent to remove the temporary component
             onSelect('failed://ai-image', 'image', 'generate');
         } finally {
@@ -228,19 +253,226 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
         }
     };
 
+    // ── Shared inner panel content ──
+    const panelContent = (
+        <>
+            {/* Search bar */}
+            <div className="flex items-center gap-1 px-2 pt-2 pb-1.5">
+                <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-[1px] h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <input
+                        ref={searchInputRef}
+                        type="text"
+                        placeholder="Search images..."
+                        value={hubSearchTerm}
+                        onChange={(e) => setHubSearchTerm(e.target.value)}
+                        onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter' && hubSearchTerm.trim()) {
+                                setActiveTab('search');
+                                setSearchToken(prev => prev + 1);
+                            }
+                        }}
+                        className={cn(
+                            "flex h-7 w-full rounded-md border border-input bg-background pl-8 pr-3 py-1 text-[11px]",
+                            "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        )}
+                    />
+                </div>
+                <button
+                    onClick={() => {
+                        if (hubSearchTerm.trim()) {
+                            setActiveTab('search');
+                            setSearchToken(prev => prev + 1);
+                        }
+                    }}
+                    className="flex items-center justify-center h-7 w-7 rounded-md border border-input bg-background hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0"
+                >
+                    <Search className="h-3.5 w-3.5" />
+                </button>
+                {isControlled && (
+                    <button
+                        onClick={() => setIsOpen(false)}
+                        className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0"
+                    >
+                        <X className="h-3.5 w-3.5" />
+                    </button>
+                )}
+            </div>
+
+            {/* Tab bar */}
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as MediaSource)} className="w-full">
+                <div className="flex items-center px-2 py-1 border-b border-border/40">
+                    <div className="flex gap-0.5">
+                        {([
+                            { value: 'generate' as MediaSource, icon: Wand2, label: 'AI' },
+                            { value: 'search' as MediaSource, icon: Search, label: 'Search' },
+                            { value: 'image' as MediaSource, icon: ImageIcon, label: 'Images' },
+                            { value: 'video' as MediaSource, icon: VideoIcon, label: 'Videos' },
+                            { value: 'recent' as MediaSource, icon: Clock, label: 'Recent' },
+                        ]).map(({ value, icon: Icon, label }) => (
+                            <button
+                                key={value}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveTab(value);
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className={cn(
+                                    "flex items-center gap-1 px-2 py-1 rounded-md transition-all text-[11px] font-medium",
+                                    activeTab === value
+                                        ? "bg-orange-50 dark:bg-orange-500/10"
+                                        : "hover:bg-muted/60 text-muted-foreground"
+                                )}
+                                style={{
+                                    color: activeTab === value ? COLORS.SUGGESTION_PINK : undefined
+                                }}
+                            >
+                                <Icon size={13} strokeWidth={activeTab === value ? 2.2 : 1.8} />
+                                <span>{label}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="p-2 min-h-[180px] max-h-[400px] flex flex-col">
+                    <TabsContent value="image" className="flex-1 flex flex-col min-h-0">
+                       <ImageTab onSelect={(url, type) => handleSelect(url, type, 'image')} />
+                    </TabsContent>
+                     <TabsContent value="video" className="flex-1 flex flex-col min-h-0">
+                        <VideoTab onSelect={(url, type) => handleSelect(url, type, 'video')} />
+                    </TabsContent>
+                     <TabsContent value="search" className="flex-1 flex flex-col min-h-0">
+                         <SearchTab
+                             onSelect={(url, type) => handleSelect(url, type, 'search')}
+                             defaultSearchTerm={hubSearchTerm}
+                             autoSearchToken={searchToken}
+                         />
+                     </TabsContent>
+                    <TabsContent value="generate" className="flex-1 flex flex-col min-h-0 generate-content">
+                        {isGenerating ? (
+                            <div className="flex flex-col items-center justify-center py-8 gap-3">
+                                <Loader2 className="h-6 w-6 animate-spin" style={{ color: COLORS.SUGGESTION_PINK }} />
+                                <div className="text-center space-y-1">
+                                    <p className="text-[11px] font-medium text-foreground">Creating your image...</p>
+                                    <p className="text-[10px] text-muted-foreground">This may take a moment</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-1.5">
+                                <label className="text-[11px] text-muted-foreground">Describe the image</label>
+                                <Textarea
+                                    value={generatePrompt}
+                                    onChange={(e) => setGeneratePrompt(e.target.value)}
+                                    placeholder="A professional headshot with soft lighting..."
+                                    className="min-h-[56px] resize-none text-[11px]"
+                                    onKeyDown={(e) => {
+                                        e.stopPropagation();
+                                        if (e.key === 'Enter' && !e.shiftKey && generatePrompt.trim()) {
+                                            e.preventDefault();
+                                            handleGenerate(e as any);
+                                        }
+                                    }}
+                                />
+                                <Button
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        handleGenerate(e);
+                                    }}
+                                    onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                    }}
+                                    disabled={!generatePrompt.trim()}
+                                    className="w-full h-7 text-[11px]"
+                                    size="sm"
+                                    type="button"
+                                    style={{
+                                        backgroundColor: generatePrompt.trim() ? COLORS.SUGGESTION_PINK : undefined,
+                                        color: generatePrompt.trim() ? 'white' : undefined,
+                                    }}
+                                >
+                                    <Wand2 className="w-3 h-3 mr-1.5" />
+                                    Generate
+                                </Button>
+                            </div>
+                        )}
+                    </TabsContent>
+                    <TabsContent value="recent" className="flex-1 flex flex-col min-h-0">
+                        {recentMedia.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                                <Clock className="w-5 h-5 mb-1.5 opacity-40" />
+                                <p className="text-[11px]">No recent media</p>
+                                <p className="text-[10px] mt-0.5 opacity-60">Selected images will appear here</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-4 gap-1.5 max-h-[280px] overflow-y-auto image-picker-scroll">
+                                {recentMedia.map((media) => (
+                                    <div
+                                        key={media.id}
+                                        onClick={() => handleSelect(media.url, media.type, 'recent')}
+                                        className="relative cursor-pointer rounded overflow-hidden border border-transparent hover:border-primary/40 transition-colors"
+                                        style={{ height: '80px' }}
+                                    >
+                                        {media.type === 'image' ? (
+                                            <img
+                                                src={media.thumbnail || media.url}
+                                                alt={media.alt || 'Recent media'}
+                                                className="w-full h-full object-cover"
+                                                loading="lazy"
+                                            />
+                                        ) : (
+                                            <video
+                                                src={media.url}
+                                                className="w-full h-full object-cover"
+                                                muted
+                                            />
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </TabsContent>
+                </div>
+            </Tabs>
+        </>
+    );
+
+    // ── Controlled mode: floating centered card via portal ──
+    if (isControlled) {
+        if (!isOpen) return null;
+        return createPortal(
+            <div
+                className="fixed inset-0 flex items-center justify-center"
+                style={{ zIndex: 9999999 }}
+                onClick={(e) => { if (e.target === e.currentTarget) setIsOpen(false); }}
+                onMouseDown={(e) => { if (e.target === e.currentTarget) e.stopPropagation(); }}
+            >
+                <div
+                    className="w-96 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-95"
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    {panelContent}
+                </div>
+            </div>,
+            document.body
+        );
+    }
+
+    // ── Default mode: popover with trigger ──
     return (
         <Popover
             open={isOpen}
             onOpenChange={(open) => {
-                // Don't close if we're preventing it
-                if (!open && preventClose) {
-                    return;
-                }
+                if (!open && preventClose) return;
                 setIsOpen(open);
-                // When opening with a search term, switch to search tab and trigger auto-search
-                if (open && defaultSearchTerm && autoSearch) {
-                    setActiveTab('search');
-                    setSearchToken(prev => prev + 1);
+                if (open) {
+                    setRecentMedia(loadRecentMedia());
+                    if (defaultSearchTerm) {
+                        setHubSearchTerm(defaultSearchTerm);
+                    }
                 }
             }}
         >
@@ -248,9 +480,9 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                 <TooltipTrigger asChild>
             <PopoverTrigger asChild ref={ref}>
                 {trigger || (
-                            <Button 
-                                variant="ghost" 
-                                size="icon" 
+                            <Button
+                                variant="ghost"
+                                size="icon"
                                 className="h-8 w-8 rounded-md"
                                 onClick={() => setHasInteracted(true)}
                             >
@@ -268,9 +500,11 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                 side="top"
                 align="start"
                 style={{ zIndex: 99999 }}
-                onOpenAutoFocus={(e) => e.preventDefault()}
+                onOpenAutoFocus={(e) => {
+                    e.preventDefault();
+                    setTimeout(() => searchInputRef.current?.focus(), 0);
+                }}
                 onInteractOutside={(e) => {
-                    // Prevent closing when interacting with tabs or generate content
                     const target = e.target as HTMLElement;
                     if (target.closest('[role="tabpanel"]') ||
                         target.closest('.generate-content') ||
@@ -280,137 +514,7 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                     }
                 }}
             >
-                <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as MediaSource)} className="w-full">
-                    {/* Updated Tabs List */}
-                    <TabsList className="grid w-full grid-cols-5 h-auto rounded-t-md rounded-b-none p-1">
-                        <TabsTrigger 
-                            value="generate" 
-                            className={cn(
-                                "text-xs flex-col h-auto py-1.5 px-1 gap-1",
-                                activeTab === 'generate' && "bg-primary/10"
-                            )}
-                            onClick={(e) => {
-                                // Prevent any bubbling that might close the popover
-                                e.stopPropagation();
-                            }}
-                            onMouseDown={(e) => {
-                                // Also prevent mousedown events
-                                e.stopPropagation();
-                            }}
-                        >
-                            <Wand2 className="h-3.5 w-3.5" /> 
-                            <span className="font-medium">AI</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="search" className="text-xs flex-col h-auto py-1.5 px-1 gap-1">
-                           <Search className="h-3.5 w-3.5" /> Search
-                        </TabsTrigger>
-                        <TabsTrigger value="image" className="text-xs flex-col h-auto py-1.5 px-1 gap-1">
-                            <ImageIcon className="h-3.5 w-3.5" /> Images
-                        </TabsTrigger>
-                        <TabsTrigger value="video" className="text-xs flex-col h-auto py-1.5 px-1 gap-1">
-                            <VideoIcon className="h-3.5 w-3.5" /> Videos
-                        </TabsTrigger>
-                        <TabsTrigger value="recent" className="text-xs flex-col h-auto py-1.5 px-1 gap-1">
-                            <Clock className="h-3.5 w-3.5" /> Recent
-                        </TabsTrigger>
-                    </TabsList>
-
-                    {/* --- Tab Content Panes --- */}
-                    <div className="p-3 min-h-[180px] max-h-[400px] flex flex-col"> 
-                        <TabsContent value="image" className="flex-1 flex flex-col min-h-0">
-                           <ImageTab onSelect={(url, type) => handleSelect(url, type, 'image')} />
-                        </TabsContent>
-                         <TabsContent value="video" className="flex-1 flex flex-col min-h-0">
-                            <VideoTab onSelect={(url, type) => handleSelect(url, type, 'video')} />
-                        </TabsContent>
-                         <TabsContent value="search" className="flex-1 flex flex-col min-h-0">
-                             <SearchTab
-                                 onSelect={(url, type) => handleSelect(url, type, 'search')}
-                                 defaultSearchTerm={defaultSearchTerm}
-                                 autoSearchToken={autoSearch ? searchToken : undefined}
-                             />
-                         </TabsContent>
-                        <TabsContent value="generate" className="flex-1 flex flex-col min-h-0 space-y-3 generate-content">
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium">Describe what you want to generate</label>
-                                <Textarea
-                                    value={generatePrompt}
-                                    onChange={(e) => setGeneratePrompt(e.target.value)}
-                                    placeholder="A professional headshot with soft lighting..."
-                                    className="min-h-[70px] resize-none text-sm"
-                                    disabled={isGenerating}
-                                    onKeyDown={(e) => {
-                                        // Prevent any key events from bubbling up
-                                        e.stopPropagation();
-                                    }}
-                                />
-                            </div>
-                            
-                            <Button
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    handleGenerate(e);
-                                }}
-                                onMouseDown={(e) => {
-                                    // Prevent mousedown from closing popover
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                }}
-                                disabled={isGenerating || !generatePrompt.trim()}
-                                className="w-full"
-                                size="sm"
-                                type="button"
-                            >
-                                {isGenerating ? (
-                                    <>
-                                        <RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" />
-                                        Generating...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Wand2 className="w-3.5 h-3.5 mr-2" />
-                                        Generate Image
-                                    </>
-                                )}
-                            </Button>
-                        </TabsContent>
-                        <TabsContent value="recent" className="flex-1 flex flex-col min-h-0">
-                            {recentMedia.length === 0 ? (
-                                <div className="text-center text-sm text-muted-foreground py-6">
-                                    <Clock className="w-6 h-6 mx-auto mb-2 opacity-50" />
-                                    <p>No recent media</p>
-                                    <p className="text-xs mt-1">Your recently used media will appear here</p>
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-3 gap-2 max-h-[180px] overflow-y-auto">
-                                    {recentMedia.map((media) => (
-                                        <div
-                                            key={media.id}
-                                            onClick={() => handleSelect(media.url, media.type, 'recent')}
-                                            className="relative cursor-pointer rounded border border-border hover:border-primary transition-colors overflow-hidden aspect-video"
-                                        >
-                                            {media.type === 'image' ? (
-                                                <img
-                                                    src={media.url}
-                                                    alt="Recent media"
-                                                    className="w-full h-full object-cover"
-                                                />
-                                            ) : (
-                                                <video
-                                                    src={media.url}
-                                                    className="w-full h-full object-cover"
-                                                    muted
-                                                />
-                                            )}
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 hover:opacity-100 transition-opacity" />
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </TabsContent>
-                    </div>
-                </Tabs>
+                {panelContent}
             </PopoverContent>
         </Popover>
     );

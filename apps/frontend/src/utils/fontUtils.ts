@@ -81,7 +81,7 @@ export function getFontFamilyWithFallback(fontName: string): string {
         case 'Monospace':
           fallback = 'monospace';
           break;
-        case 'Script':
+        case 'Designer':
           fallback = 'cursive';
           break;
         case 'Pixel & Retro Display':

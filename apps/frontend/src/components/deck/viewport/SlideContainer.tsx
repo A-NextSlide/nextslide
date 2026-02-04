@@ -4,7 +4,7 @@ import { SlideData } from '@/types/SlideTypes';
 import { ComponentInstance } from '@/types/components';
 import SlideDisplay from './SlideDisplay';
 import SlideControlBar from './SlideControlBar';
-import ImagePicker from './ImagePicker';
+import { MediaHub } from '@/components/media/MediaHub';
 import { useImageOptions } from '@/hooks/useImageOptions';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
@@ -750,96 +750,41 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
          }}
          onDoubleClick={!isEditing ? handleDoubleClick : undefined}
     >
-      {/* Image picker overlay - rendered via portal to be above edit overlay */}
-      {typeof document !== 'undefined' && document.body && createPortal(
-        <AnimatePresence>
-          {isPickerOpen && currentSlide && (() => {
-            // Get component info if picking for specific component
-            let componentInfo = null;
-            const suggestedPrompt = deckData?.outline?.slides?.[currentSlideIndex]?.suggestedImagePrompt;
+      {/* Image picker — uses MediaHub in controlled (floating) mode */}
+      {isPickerOpen && currentSlide && (() => {
+        // Derive a search term from the component being edited
+        let searchTerm: string | undefined;
+        const suggestedPrompt = deckData?.outline?.slides?.[currentSlideIndex]?.suggestedImagePrompt;
 
-            if (currentComponentId) {
-              const component = currentSlide.components?.find((c: any) => c.id === currentComponentId);
+        if (currentComponentId) {
+          const component = currentSlide.components?.find((c: any) => c.id === currentComponentId);
+          if (customComponentPropInfo && customComponentPropInfo.componentId === currentComponentId) {
+            searchTerm = customComponentPropInfo.searchQuery || customComponentPropInfo.propName;
+          } else if (component) {
+            searchTerm =
+              component.props?.metadata?.searchQuery ||
+              component.props?.metadata?.topic ||
+              (component.props?.alt && component.props.alt !== 'Image' ? component.props.alt : null) ||
+              suggestedPrompt ||
+              currentSlide.title;
+          }
+        }
 
-              // Check if this is for a CustomComponent prop
-              if (customComponentPropInfo && customComponentPropInfo.componentId === currentComponentId) {
-                // Use the converted searchQuery (e.g., "elon musk" instead of "elonMuskImage")
-                const searchTerm = customComponentPropInfo.searchQuery || customComponentPropInfo.propName;
-                componentInfo = {
-                  componentId: currentComponentId,
-                  topic: searchTerm,
-                  searchQuery: searchTerm,
-                  isCustomComponentProp: true,
-                };
-              } else if (component && component.type === 'Image') {
-                // Try to get a search term from various sources (priority order):
-                // 1. metadata.searchQuery (explicit search term)
-                // 2. metadata.topic (topic from generation)
-                // 3. alt text (often describes what the image should be)
-                // 4. suggestedImagePrompt from outline
-                // 5. slide title as last resort
-                const searchTerm =
-                  component.props.metadata?.searchQuery ||
-                  component.props.metadata?.topic ||
-                  (component.props.alt && component.props.alt !== 'Image' ? component.props.alt : null) ||
-                  suggestedPrompt ||
-                  currentSlide.title;
+        return (
+          <MediaHub
+            open={true}
+            onClose={() => {
+              setCustomComponentPropInfo(null);
+              closeImagePicker();
+            }}
+            onSelect={(url, _type, _source) => handleImageSelect(url)}
+            defaultSearchTerm={searchTerm}
+            autoSearch={false}
+          />
+        );
+      })()}
 
-                componentInfo = {
-                  componentId: currentComponentId,
-                  topic: searchTerm,
-                  searchQuery: searchTerm,
-                  alt: component.props.alt
-                };
-              }
-            }
-
-            return (
-              <ImagePicker
-                images={getCurrentSlideImages(currentSlide.id)}
-                onImageSelect={handleImageSelect}
-                onClose={() => {
-                  setCustomComponentPropInfo(null);
-                  closeImagePicker();
-                }}
-                onLoadMore={(topic) => {
-                  // If picking for specific component, search for its topic
-                  const searchTopic = componentInfo?.topic || componentInfo?.searchQuery || topic;
-                  return searchAdditionalImages(searchTopic);
-                }}
-                selectedImages={selectedImages[currentSlide.id] || []}
-                placeholderCount={placeholders.length}
-                slideTitle={currentSlide.title || ''}
-                topics={currentTopics}
-                isLoading={isLoadingImages}
-                targetAspectRatio={computeTargetAspectRatio()}
-                suggestedImagePrompt={deckData?.outline?.slides?.[currentSlideIndex]?.suggestedImagePrompt}
-                componentInfo={componentInfo} // NEW: Pass component-specific info
-              />
-            );
-          })()}
-        </AnimatePresence>,
-        document.body
-      )}
-
-      {/* Click-blocking overlay when image picker is open - rendered via portal to block edit overlay */}
-      {isPickerOpen && typeof document !== 'undefined' && document.body && createPortal(
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 50000, // Above edit overlay (40000) but below ImagePicker (9999999)
-            background: 'transparent',
-            pointerEvents: 'auto',
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            // Don't close picker on backdrop click - let user click X to close
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-        />,
-        document.body
-      )}
+      {/* (click-blocking overlay removed — MediaHub controlled mode handles its own backdrop) */}
 
       {/* Slide display container */}
       <div className="flex flex-col items-center w-full" style={{

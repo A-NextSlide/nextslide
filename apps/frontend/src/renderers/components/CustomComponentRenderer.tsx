@@ -19,6 +19,7 @@ import { useCustomComponentImageProxy } from './custom/useCustomComponentImagePr
 import { extractFontFamiliesFromHtml, injectIframeFonts } from './custom/iframeFonts';
 import { FontLoadingService } from '@/services/FontLoadingService';
 import { useThumbnailRenderMode } from '@/context/ThumbnailRenderContext';
+import { MediaHub } from '@/components/media/MediaHub';
 
 // Browser detection for iOS-specific safety checks
 import { BROWSER } from '@/utils/browser';
@@ -452,6 +453,15 @@ export const CustomComponentRenderer: React.FC<{
   const [containerUploadedFile, setContainerUploadedFile] = useState<{name: string, url: string} | null>(null);
   const containerFileInputRef = useRef<HTMLInputElement>(null);
 
+  // State for image AI edit bubble (calls /api/images/edit directly instead of chat dispatch)
+  const [imageAiPrompt, setImageAiPrompt] = useState('');
+  const [imageAiProcessing, setImageAiProcessing] = useState(false);
+  const [imageFuseAttachments, setImageFuseAttachments] = useState<Array<{ name: string; url?: string; mimeType?: string; size?: number; pending?: boolean }>>([]);
+  const [imageDragOver, setImageDragOver] = useState(false);
+  const [imageTransparentBg, setImageTransparentBg] = useState(false);
+  const [imageObjectFit, setImageObjectFit] = useState('cover');
+  const imageAiFuseFileInputRef = useRef<HTMLInputElement>(null);
+
   // Update container bounds when resizing
   // NOTE: ResizeObserver can crash on iOS Safari, so we skip it there
   useEffect(() => {
@@ -516,11 +526,14 @@ export const CustomComponentRenderer: React.FC<{
     };
   }, [component.id]);
 
-  // Container dimensions for non-iframe rendering
+  // Container dimensions - use component's SLIDE dimensions (component.props.width/height),
+  // NOT componentProps which merges nested props.props that may contain design-level overrides.
+  // During resize, component.props.width/height are updated but props.props.width/height stay stale,
+  // causing a mismatch between the content wrapper size and the actual component bounds.
   // CRITICAL: Component dimensions may be stored as percentages (0-100) representing % of slide size
   // If the value is small (<=100) and slide is large (>500px), convert from percentage to pixels
-  const rawWidth = typeof componentProps.width === 'number' ? componentProps.width : 400;
-  const rawHeight = typeof componentProps.height === 'number' ? componentProps.height : 200;
+  const rawWidth = typeof component.props.width === 'number' ? component.props.width : 400;
+  const rawHeight = typeof component.props.height === 'number' ? component.props.height : 200;
 
   // Helper to detect if a value looks like a percentage vs absolute pixels
   const convertToAbsolute = (value: number, slideAxis: number): number => {
@@ -538,6 +551,54 @@ export const CustomComponentRenderer: React.FC<{
   // Check if this is an iframe-based component (detected during compilation)
   const isIframeComponent = compiledRender && typeof compiledRender === 'object' && (compiledRender as any).__isIframe;
   const iframeSrcDoc = isIframeComponent ? (compiledRender as any).srcDoc : null;
+
+  // For iframe components: freeze content wrapper dimensions during resize to prevent
+  // iframe viewport changes that cause content reflow/shifting. The backend injects
+  // body CSS at 1920x1080, and if the iframe viewport changes during resize, CSS that
+  // depends on viewport dimensions (vh, vw, percentage layouts) causes content to shift.
+  // By freezing the content wrapper at pre-resize dimensions, the iframe viewport stays
+  // constant and only the CSS scale transform changes.
+  const frozenContentDimsRef = useRef<{ width: number; height: number } | null>(null);
+  const containerWidthRef = useRef(containerWidth);
+  const containerHeightRef = useRef(containerHeight);
+  containerWidthRef.current = containerWidth;
+  containerHeightRef.current = containerHeight;
+
+  useEffect(() => {
+    if (!isIframeComponent) return;
+
+    const handleResizeStart = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.componentId === component.id) {
+        frozenContentDimsRef.current = {
+          width: containerWidthRef.current,
+          height: containerHeightRef.current
+        };
+      }
+    };
+
+    const handleResizeEnd = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.componentId === component.id) {
+        frozenContentDimsRef.current = null;
+      }
+    };
+
+    document.addEventListener('component:resizestart', handleResizeStart as EventListener);
+    document.addEventListener('component:resizeend', handleResizeEnd as EventListener);
+    return () => {
+      document.removeEventListener('component:resizestart', handleResizeStart as EventListener);
+      document.removeEventListener('component:resizeend', handleResizeEnd as EventListener);
+    };
+  }, [isIframeComponent, component.id]);
+
+  // During resize, use frozen dimensions to prevent iframe viewport changes
+  const effectiveContentWidth = (isIframeComponent && frozenContentDimsRef.current)
+    ? frozenContentDimsRef.current.width
+    : containerWidth;
+  const effectiveContentHeight = (isIframeComponent && frozenContentDimsRef.current)
+    ? frozenContentDimsRef.current.height
+    : containerHeight;
 
   // Inject click handlers for placeholder images in edit mode
   const injectImageClickHandlers = (html: string, componentId: string): string => {
@@ -1783,8 +1844,8 @@ img.ns-img-ready {
         // which causes double-scaling when PresentationMode already applies transform: scale()
         // offsetWidth returns the layout size BEFORE transforms
         const width = element.offsetWidth;
-        if (containerWidth > 0 && width > 0) {
-          const newScale = width / containerWidth;
+        if (effectiveContentWidth > 0 && width > 0) {
+          const newScale = width / effectiveContentWidth;
           // Avoid tiny scales that could result from measurement issues
           setScale(newScale < 0.1 ? 1 : newScale);
         }
@@ -1799,10 +1860,11 @@ img.ns-img-ready {
       observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
           const { width } = entry.contentRect;
-          // Calculate scale based on the ratio of current container width to the design width
-          // If containerWidth (design width) is 0 or invalid, default to 1 to avoid division by zero
-          if (containerWidth > 0) {
-            const newScale = width / containerWidth;
+          // Calculate scale based on the ratio of displayed width to effective content width
+          // During resize of iframe components, effectiveContentWidth is frozen to prevent
+          // iframe viewport changes, so only the scale changes.
+          if (effectiveContentWidth > 0) {
+            const newScale = width / effectiveContentWidth;
             setScale(newScale);
           }
         }
@@ -1812,8 +1874,8 @@ img.ns-img-ready {
       // ResizeObserver may crash, fallback to single calculation
       try {
         const width = element.getBoundingClientRect().width;
-        if (containerWidth > 0 && width > 0) {
-          setScale(width / containerWidth);
+        if (effectiveContentWidth > 0 && width > 0) {
+          setScale(width / effectiveContentWidth);
         }
       } catch (e) {
         // Ignore
@@ -1827,7 +1889,7 @@ img.ns-img-ready {
         // Ignore disconnect errors
       }
     };
-  }, [containerWidth, isThumbnail]);
+  }, [effectiveContentWidth, isThumbnail]);
 
   // Handler for HTML updates from CustomComponentEditOverlay
   const handleHtmlUpdate = useCallback((newHtml: string) => {
@@ -1957,6 +2019,286 @@ img.ns-img-ready {
     setShowImageToolbar(false);
   }, [stableIframeSrcDoc, updateComponent, component.id, iframeRef]);
 
+  // ---- Image AI Edit / Fuse helpers (call API directly, no chat dispatch) ----
+  const imageStylePrefs = (deckData?.data?.outline?.stylePreferences) || (deckData?.outline?.stylePreferences) || {};
+  const inferImageDeckPurpose = (): 'artistic' | 'educational' | 'business' => {
+    try {
+      const text = ((deckData?.title || '') + ' ' + (imageStylePrefs?.initialIdea || '')).toLowerCase();
+      if (/art|portfolio|creative|illustration|design showcase/.test(text)) return 'artistic';
+      if (/school|class|lesson|course|education|tutorial|training|workshop/.test(text)) return 'educational';
+      if (/business|sales|report|strategy|marketing|finance|pitch|q[1-4]|quarterly/.test(text)) return 'business';
+    } catch {}
+    return 'business';
+  };
+
+  const buildImageGuidedInstructions = (userInstructions: string) => {
+    const purpose = inferImageDeckPurpose();
+    const font = imageStylePrefs?.font ? `Primary font: ${imageStylePrefs.font}.` : '';
+    const colors = imageStylePrefs?.colors ? `Use deck colors: background ${imageStylePrefs.colors.background || ''}, text ${imageStylePrefs.colors.text || ''}, accent ${imageStylePrefs.colors.accent1 || ''}.` : '';
+    const vibe = imageStylePrefs?.vibeContext ? `Visual vibe: ${imageStylePrefs.vibeContext}.` : '';
+    const accuracy = (purpose === 'educational' || purpose === 'business')
+      ? 'Ensure visuals are factually accurate and appropriate. Avoid invented labels, fake logos, or misleading depictions.'
+      : 'Focus on strong composition and clarity.';
+    const styleTone = purpose === 'artistic'
+      ? 'Make it artistically expressive with tasteful lighting and composition.'
+      : purpose === 'educational'
+      ? 'Make it clear, didactic, and easy to understand.'
+      : 'Make it polished, professional, and presentation-ready.';
+    const template = 'Adhere to the slide template feel so the result matches the deck\u2019s look-and-feel.';
+    const transparency = imageTransparentBg ? 'If possible, produce a PNG with a transparent background.' : '';
+    return [
+      userInstructions?.trim() || '',
+      styleTone, accuracy, vibe, colors, font, template, transparency,
+      'Maintain subject identity consistency across this deck.'
+    ].filter(Boolean).join(' ');
+  };
+
+  const computeImageSizeHint = () => {
+    const w = Number(component.props.width) || 1024;
+    const h = Number(component.props.height) || 576;
+    const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+    return `${clamp(Math.round(w), 512, 1536)}x${clamp(Math.round(h), 512, 1536)}`;
+  };
+
+  const computeImageAspectRatio = (): string => {
+    try {
+      const w = Math.max(1, Math.round(Number(component.props.width) || 1024));
+      const h = Math.max(1, Math.round(Number(component.props.height) || 576));
+      const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+      const g = gcd(w, h) || 1;
+      return `${Math.round(w / g)}:${Math.round(h / g)}`;
+    } catch {
+      return '16:9';
+    }
+  };
+
+  const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+  const resolveImageParam = async (src: string): Promise<{ imageUrl?: string; imageBase64?: string }> => {
+    const s = (src || '').trim();
+    if (!s) return {};
+    if (s.startsWith('data:')) return { imageBase64: s };
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(s) && !(s.startsWith('http://') || s.startsWith('https://') || s.startsWith('blob:') || s.startsWith('data:'))) return {};
+    if (s.startsWith('blob:')) {
+      try { const resp = await fetch(s); const blob = await resp.blob(); return { imageBase64: await blobToDataUrl(blob) }; } catch { return {}; }
+    }
+    if (s.startsWith('/')) {
+      try { const abs = `${window.location.origin}${s}`; const resp = await fetch(abs, { credentials: 'include' }); const blob = await resp.blob(); return { imageBase64: await blobToDataUrl(blob) }; } catch { return {}; }
+    }
+    if (s.startsWith('http://') || s.startsWith('https://')) {
+      try {
+        const u = new URL(s);
+        const host = (u.hostname || '').toLowerCase();
+        if (host.includes('localhost') || host === '127.0.0.1' || host.endsWith('.local')) {
+          const resp = await fetch(s, { credentials: 'include' }); const blob = await resp.blob(); return { imageBase64: await blobToDataUrl(blob) };
+        }
+        return { imageUrl: s };
+      } catch { return { imageUrl: s }; }
+    }
+    return { imageUrl: s };
+  };
+
+  const handleImageAiEdit = useCallback(async (element: DetectedElement, instruction: string) => {
+    const src = (element.src || '').trim();
+    if (!src) return;
+    const instructions = buildImageGuidedInstructions(instruction);
+    const aspectRatio = computeImageAspectRatio();
+    // Dismiss popup immediately, show processing overlay on the image
+    setShowAiChatBubble(false);
+    setImageAiProcessing(true);
+    try {
+      const { imageUrl, imageBase64 } = await resolveImageParam(src);
+      const payload: any = { instructions, transparentBackground: imageTransparentBg, aspectRatio };
+      if (imageBase64) payload.imageBase64 = imageBase64;
+      else if (imageUrl) payload.imageUrl = imageUrl;
+      const resp = await fetch('/api/images/edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const text = await resp.text();
+      if (!resp.ok) {
+        let detail = text;
+        try { const parsed = JSON.parse(text); detail = parsed?.error || parsed?.message || text; } catch {}
+        throw new Error(detail || 'Edit failed');
+      }
+      if (!text.trim()) throw new Error('Image edit service returned an empty response.');
+      let data: any;
+      try { data = JSON.parse(text); } catch { throw new Error('Image edit service returned invalid JSON.'); }
+      const url = data.editedUrl || data.url || data.image_url || data.imageUrl || data.image || '';
+      if (!url) throw new Error('No URL in response');
+      handleImageSwap(element, url);
+      setImageAiPrompt('');
+    } catch (e: any) {
+      console.error('[CustomComponent] Image AI edit failed:', e);
+      // Re-open popup on error so user can retry
+      setShowAiChatBubble(true);
+    } finally {
+      setImageAiProcessing(false);
+    }
+  }, [imageTransparentBg, handleImageSwap]);
+
+  const handleImageAiFuse = useCallback(async (element: DetectedElement) => {
+    const imgs: string[] = [];
+    const src = (element.src || '').trim();
+    if (src) imgs.push(src);
+    imageFuseAttachments.forEach(a => { if (a.url) imgs.push(a.url); });
+    if (imgs.length < 2) return;
+    const prompt = buildImageGuidedInstructions(imageAiPrompt || 'Compose a single cohesive image that blends the inputs naturally.');
+    const size = computeImageSizeHint();
+    // Dismiss popup immediately, show processing overlay on the image
+    setShowAiChatBubble(false);
+    setImageAiProcessing(true);
+    try {
+      const resp = await fetch('/api/images/fuse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, images: imgs, size }) });
+      const text = await resp.text();
+      if (!resp.ok) {
+        let detail = text;
+        try { const parsed = JSON.parse(text); detail = parsed?.error || parsed?.message || text; } catch {}
+        throw new Error(detail || 'Fusion failed');
+      }
+      if (!text.trim()) throw new Error('Image fuse service returned an empty response.');
+      let data: any;
+      try { data = JSON.parse(text); } catch { throw new Error('Image fuse service returned invalid JSON.'); }
+      const url = data.url || data.image_url || '';
+      if (!url) throw new Error('No URL in response');
+      handleImageSwap(element, url);
+      setImageAiPrompt('');
+      setImageFuseAttachments([]);
+    } catch (e: any) {
+      console.error('[CustomComponent] Image AI fuse failed:', e);
+      setShowAiChatBubble(true);
+    } finally {
+      setImageAiProcessing(false);
+    }
+  }, [imageAiPrompt, imageFuseAttachments, imageTransparentBg, handleImageSwap]);
+
+  // Update object-fit CSS on an image element — immediate DOM + persist to HTML
+  const handleImageObjectFit = useCallback((element: DetectedElement, fit: string) => {
+    if (!element.src) return;
+    setImageObjectFit(fit);
+
+    // 1. Immediate visual feedback: update the iframe DOM directly
+    try {
+      const iframeDoc = iframeRef.current?.contentDocument;
+      if (iframeDoc) {
+        const imgs = iframeDoc.querySelectorAll('img');
+        imgs.forEach(img => {
+          if (img.src === element.src || img.getAttribute('src') === element.src) {
+            img.style.objectFit = fit;
+          }
+        });
+      }
+    } catch {}
+
+    // 2. Persist: update the stored HTML so it survives re-renders
+    if (!stableIframeSrcDoc) return;
+    let updatedHtml = stableIframeSrcDoc;
+    const escapedSrc = element.src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Match src in both attribute orders (src may appear before or after style)
+    const imgRegex = new RegExp(`(<img\\b[^>]*?src=["']${escapedSrc}["'][^>]*?)(\\/?>)`, 'gi');
+    let matched = false;
+    updatedHtml = updatedHtml.replace(imgRegex, (_match, before, close) => {
+      matched = true;
+      if (/style\s*=\s*["']/.test(before)) {
+        if (/object-fit\s*:/.test(before)) {
+          return before.replace(/object-fit\s*:\s*[^;"']+/g, `object-fit: ${fit}`) + close;
+        }
+        return before.replace(/style\s*=\s*["']/, (m: string) => m + `object-fit: ${fit}; `) + close;
+      }
+      return `${before} style="object-fit: ${fit}"${close}`;
+    });
+    // Fallback: try matching with src as getAttribute value (relative URLs)
+    if (!matched) {
+      try {
+        const iframeDoc = iframeRef.current?.contentDocument;
+        if (iframeDoc) {
+          const imgs = iframeDoc.querySelectorAll('img');
+          for (const img of Array.from(imgs)) {
+            if (img.src === element.src) {
+              const attrSrc = img.getAttribute('src') || '';
+              if (attrSrc && attrSrc !== element.src) {
+                const escapedAttrSrc = attrSrc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const fallbackRegex = new RegExp(`(<img\\b[^>]*?src=["']${escapedAttrSrc}["'][^>]*?)(\\/?>)`, 'gi');
+                updatedHtml = updatedHtml.replace(fallbackRegex, (_m, before, close) => {
+                  matched = true;
+                  if (/style\s*=\s*["']/.test(before)) {
+                    if (/object-fit\s*:/.test(before)) {
+                      return before.replace(/object-fit\s*:\s*[^;"']+/g, `object-fit: ${fit}`) + close;
+                    }
+                    return before.replace(/style\s*=\s*["']/, (m: string) => m + `object-fit: ${fit}; `) + close;
+                  }
+                  return `${before} style="object-fit: ${fit}"${close}`;
+                });
+              }
+              break;
+            }
+          }
+        }
+      } catch {}
+    }
+    if (matched) {
+      const cleanHtml = stripInjectedScripts(updatedHtml);
+      updateComponent(component.id, { props: { render: cleanHtml } });
+      setTimeout(() => {
+        try { useEditorStore.getState().applyDraftChanges(); } catch {}
+      }, 300);
+    }
+  }, [stableIframeSrcDoc, updateComponent, component.id]);
+
+  const handleImageDropOnPrompt = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setImageDragOver(false);
+    const files = Array.from(e.dataTransfer.files || []).filter(f => f.type.startsWith('image/')).slice(0, 3);
+    if (files.length === 0) return;
+    const pending = files.map(f => ({ name: f.name, size: f.size, mimeType: f.type, pending: true }));
+    setImageFuseAttachments(prev => [...prev, ...pending]);
+    try {
+      const { uploadFile } = await import('@/utils/fileUploadUtils');
+      const uploaded = await Promise.all(files.map(async (file) => {
+        const url = await uploadFile(file);
+        return { name: file.name, size: file.size, mimeType: file.type, url };
+      }));
+      setImageFuseAttachments(prev => {
+        const next = [...prev];
+        let replaced = 0;
+        for (let i = 0; i < next.length && replaced < uploaded.length; i++) {
+          if (next[i].pending) next[i] = uploaded[replaced++];
+        }
+        return next;
+      });
+    } catch {
+      setImageFuseAttachments(prev => prev.filter(a => !a.pending));
+    }
+  };
+
+  const handleImagePickFuseFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/')).slice(0, 3);
+    if (files.length === 0) return;
+    e.target.value = '';
+    const pending = files.map(f => ({ name: f.name, size: f.size, mimeType: f.type, pending: true }));
+    setImageFuseAttachments(prev => [...prev, ...pending]);
+    try {
+      const { uploadFile } = await import('@/utils/fileUploadUtils');
+      const uploaded = await Promise.all(files.map(async (file) => {
+        const url = await uploadFile(file);
+        return { name: file.name, size: file.size, mimeType: file.type, url };
+      }));
+      setImageFuseAttachments(prev => {
+        const next = [...prev];
+        let replaced = 0;
+        for (let i = 0; i < next.length && replaced < uploaded.length; i++) {
+          if (next[i].pending) next[i] = uploaded[replaced++];
+        }
+        return next;
+      });
+    } catch {
+      setImageFuseAttachments(prev => prev.filter(a => !a.pending));
+    }
+  };
+
   // Handler for AI-based element editing - dispatches to main chat panel
   const handleElementAiEdit = useCallback((element: DetectedElement, instruction: string) => {
     DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] AI Edit request:', { type: element.type, id: element.id, instruction });
@@ -2028,9 +2370,13 @@ img.ns-img-ready {
   // Handle element selection from overlay
   const handleElementSelect = useCallback((element: DetectedElement | null, cursorX?: number, cursorY?: number) => {
     setSelectedElement(element);
-    // Reset chat state when selecting a new element (start with sparkle button, not expanded)
-    setShowAiChatBubble(false);
+    // Reset shared chat state
     setAiChatMessage('');
+    // Reset image AI state
+    setImageAiPrompt('');
+    setImageAiProcessing(false);
+    setImageFuseAttachments([]);
+    setImageDragOver(false);
 
     // Set cursor position for toolbar/panel positioning (used by all element types)
     if (element) {
@@ -2050,12 +2396,28 @@ img.ns-img-ready {
 
     if (element?.type === 'image') {
       setShowImageToolbar(true);
+      // Auto-expand the AI panel for image elements
+      setShowAiChatBubble(true);
+      // Detect current object-fit from iframe DOM
+      try {
+        const iframeDoc = iframeRef.current?.contentDocument;
+        if (iframeDoc) {
+          const imgs = iframeDoc.querySelectorAll('img');
+          for (const img of Array.from(imgs)) {
+            if (img.src === element.src || img.getAttribute('src') === element.src) {
+              const cs = iframeRef.current?.contentWindow?.getComputedStyle(img);
+              setImageObjectFit(cs?.objectFit || 'cover');
+              break;
+            }
+          }
+        }
+      } catch {
+        setImageObjectFit('cover');
+      }
     } else {
       setShowImageToolbar(false);
+      setShowAiChatBubble(false);
     }
-    // Reset AI chat state on selection change
-    setShowAiChatBubble(false);
-    setAiChatMessage('');
   }, []);
 
   return (
@@ -2086,8 +2448,8 @@ img.ns-img-ready {
             position: 'absolute',
             top: 0,
             left: 0,
-            width: isThumbnail ? '100%' : `${containerWidth}px`,
-            height: isThumbnail ? '100%' : `${containerHeight}px`,
+            width: isThumbnail ? '100%' : `${effectiveContentWidth}px`,
+            height: isThumbnail ? '100%' : `${effectiveContentHeight}px`,
             transform: isThumbnail ? 'none' : `scale(${scale})`,
             transformOrigin: 'top left',
             boxSizing: 'border-box',
@@ -2138,8 +2500,8 @@ img.ns-img-ready {
               isSelected={isSelected}
               srcDoc={iframeSrcDocToUse}
               scale={scale}
-              containerWidth={containerWidth}
-              containerHeight={containerHeight}
+              containerWidth={effectiveContentWidth}
+              containerHeight={effectiveContentHeight}
               onHtmlUpdate={handleHtmlUpdate}
               onElementSelect={handleElementSelect}
               iframeRef={iframeRef}
@@ -2178,16 +2540,16 @@ img.ns-img-ready {
           // bounds are already in viewport coordinates (used for fixed positioning)
           const panelWidth = showAiChatBubble ? 300 : 30;
 
-          // Position at top-right corner of the element's bounding box
-          let posLeft = selectedElement.bounds.x + selectedElement.bounds.width + 8;
+          // Position to the left of the element's bounding box
+          let posLeft = selectedElement.bounds.x - panelWidth - 8;
           let posTop = selectedElement.bounds.y;
 
           // Keep within viewport
           const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
           const windowHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
 
-          if (posLeft + panelWidth > windowWidth - 20) {
-            posLeft = selectedElement.bounds.x - panelWidth - 8; // Position to the left instead
+          if (posLeft < 20) {
+            posLeft = selectedElement.bounds.x + selectedElement.bounds.width + 8; // Position to the right instead
           }
           posTop = Math.max(60, Math.min(posTop, windowHeight - 200));
 
@@ -2379,22 +2741,410 @@ img.ns-img-ready {
         );
         })()}
 
+        {/* IMAGE ELEMENT - Processing overlay on the image while AI edit runs */}
+        {selectedElement && selectedElement.type === 'image' && imageAiProcessing && !showAiChatBubble && typeof document !== 'undefined' && document.body && !BROWSER.isIOS && (() => {
+          return createPortal(
+            <div
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: selectedElement.bounds.y,
+                left: selectedElement.bounds.x,
+                width: selectedElement.bounds.width,
+                height: selectedElement.bounds.height,
+                zIndex: 9998,
+                background: 'rgba(0,0,0,0.55)',
+                backdropFilter: 'blur(2px)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                borderRadius: '4px',
+                pointerEvents: 'none',
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
+                <path d="M21 12a9 9 0 11-6.219-8.56" />
+              </svg>
+              <span style={{ color: 'white', fontSize: '11px', fontWeight: 600, letterSpacing: '0.02em' }}>Processing...</span>
+            </div>,
+            document.body
+          );
+        })()}
+
+        {/* IMAGE ELEMENT - AI edit panel (no collapsed sparkle - always expanded or hidden) */}
+        {selectedElement && selectedElement.type === 'image' && showAiChatBubble && !imageAiProcessing && typeof document !== 'undefined' && document.body && !BROWSER.isIOS && (() => {
+          const panelWidth = 300;
+          let posLeft = selectedElement.bounds.x - panelWidth - 8;
+          let posTop = selectedElement.bounds.y;
+          const windowHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+          if (posLeft < 20) {
+            posLeft = selectedElement.bounds.x + selectedElement.bounds.width + 8;
+          }
+          posTop = Math.max(60, Math.min(posTop, windowHeight - 200));
+
+          return createPortal(
+          <AnimatePresence>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.15 }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: posTop,
+                left: posLeft,
+                width: panelWidth,
+                zIndex: 9999,
+                background: 'white',
+                borderRadius: '10px',
+                border: '1px solid #e5e5e5',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Close button — deselects the element entirely */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowAiChatBubble(false);
+                  setImageAiPrompt('');
+                  setImageFuseAttachments([]);
+                  setSelectedElement(null);
+                  setShowImageToolbar(false);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  top: '10px',
+                  right: '10px',
+                  padding: '4px',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#999',
+                  zIndex: 10,
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+
+              {/* Image preview with hover-to-swap overlay + fit dropdown */}
+              <div style={{ padding: '12px 12px 0 12px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
+                  {/* Image preview */}
+                  <MediaHub
+                    trigger={
+                      <div
+                        className="group"
+                        style={{
+                          position: 'relative',
+                          flex: 1,
+                          height: '64px',
+                          borderRadius: '6px',
+                          overflow: 'hidden',
+                          background: '#f5f5f5',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {selectedElement.src && (
+                          <img
+                            src={selectedElement.src}
+                            alt=""
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
+                        )}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: 'rgba(0,0,0,0)',
+                            transition: 'background 0.15s ease',
+                          }}
+                          className="group-hover:!bg-black/40"
+                        >
+                          <span
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              color: 'white',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              opacity: 0,
+                              transition: 'opacity 0.15s ease',
+                            }}
+                            className="group-hover:!opacity-100"
+                          >
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                            Browse
+                          </span>
+                        </div>
+                      </div>
+                    }
+                    defaultSearchTerm={selectedElement.alt || ''}
+                    autoSearch={!!selectedElement.alt}
+                    onSelect={(url) => {
+                      if (url && typeof url === 'string' && selectedElement) {
+                        handleImageSwap(selectedElement, url);
+                      }
+                    }}
+                  />
+                  {/* Object-fit dropdown */}
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '9px', color: '#999', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Fit</span>
+                    <select
+                      value={imageObjectFit}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        if (selectedElement) handleImageObjectFit(selectedElement, e.target.value);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        padding: '3px 4px',
+                        border: '1px solid #e0e0e0',
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        color: '#555',
+                        background: 'white',
+                        cursor: 'pointer',
+                        outline: 'none',
+                        fontFamily: 'system-ui, -apple-system, sans-serif',
+                        width: '70px',
+                      }}
+                    >
+                      <option value="cover">Cover</option>
+                      <option value="contain">Contain</option>
+                      <option value="fill">Fill</option>
+                      <option value="none">None</option>
+                      <option value="scale-down">Scale down</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Input area with drag-drop support */}
+              <div
+                style={{
+                  padding: '10px',
+                  border: imageDragOver ? '2px dashed #FF4301' : '2px dashed transparent',
+                  borderRadius: '8px',
+                  background: imageDragOver ? 'rgba(255, 67, 1, 0.05)' : 'transparent',
+                  margin: '8px',
+                  transition: 'all 0.15s ease',
+                }}
+                onDragOver={(e) => { e.preventDefault(); setImageDragOver(true); }}
+                onDragLeave={() => setImageDragOver(false)}
+                onDrop={handleImageDropOnPrompt}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <div style={{ width: '2px', height: '16px', backgroundColor: '#FF4301', borderRadius: '1px', marginTop: '3px', flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <input
+                      type="text"
+                      value={imageAiPrompt}
+                      onChange={(e) => setImageAiPrompt(e.target.value)}
+                      placeholder={imageDragOver ? 'Drop image to fuse...' : 'Describe your edit...'}
+                      disabled={imageAiProcessing}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      autoFocus
+                      style={{
+                        width: '100%',
+                        border: 'none',
+                        outline: 'none',
+                        fontSize: '13px',
+                        color: '#333',
+                        background: 'transparent',
+                        padding: 0,
+                        fontFamily: 'system-ui, -apple-system, sans-serif',
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter' && !e.shiftKey && imageAiPrompt.trim() && !imageAiProcessing && selectedElement) {
+                          e.preventDefault();
+                          handleImageAiEdit(selectedElement, imageAiPrompt.trim());
+                        }
+                      }}
+                    />
+                    {/* Fusion attachment chips */}
+                    {imageFuseAttachments.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
+                        {imageFuseAttachments.map((att, i) => (
+                          <div key={i} style={{
+                            display: 'flex', alignItems: 'center', gap: '4px',
+                            padding: '2px 6px', background: '#f0f0f0', borderRadius: '4px', fontSize: '10px', color: '#555',
+                          }}>
+                            {att.pending ? (
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
+                                <path d="M21 12a9 9 0 11-6.219-8.56" />
+                              </svg>
+                            ) : null}
+                            <span style={{ maxWidth: '70px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.name}</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setImageFuseAttachments(prev => prev.filter((_, idx) => idx !== i)); }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0', lineHeight: 1 }}
+                            >
+                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Suggestion chips */}
+              <div style={{ padding: '0 12px 6px', display: 'flex', gap: '5px', overflowX: 'auto' }}>
+                {[
+                  { label: 'Blur background', prompt: 'Blur the background while keeping the main subject sharp and in focus.' },
+                  { label: 'Cinematic look', prompt: 'Apply cinematic color grading with dramatic contrast, rich shadows, and film-like tones.' },
+                  { label: 'Clean edges', prompt: 'Clean up and refine the edges of the subject for a polished look.' },
+                ].map(({ label, prompt }) => (
+                  <button
+                    key={label}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!imageAiProcessing && selectedElement) {
+                        handleImageAiEdit(selectedElement, prompt);
+                      }
+                    }}
+                    disabled={imageAiProcessing}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    style={{
+                      padding: '4px 10px',
+                      background: 'transparent',
+                      border: '1px solid #e0e0e0',
+                      borderRadius: '100px',
+                      fontSize: '10.5px',
+                      cursor: imageAiProcessing ? 'default' : 'pointer',
+                      color: '#555',
+                      fontWeight: 500,
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
+                      transition: 'all 0.12s ease',
+                    }}
+                    onMouseOver={(e) => { if (!imageAiProcessing) { (e.target as HTMLElement).style.background = '#f5f5f5'; (e.target as HTMLElement).style.borderColor = '#ccc'; }}}
+                    onMouseOut={(e) => { (e.target as HTMLElement).style.background = 'transparent'; (e.target as HTMLElement).style.borderColor = '#e0e0e0'; }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Action row */}
+              <div style={{ padding: '4px 12px 10px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {/* Hidden file input for fusion */}
+                <input ref={imageAiFuseFileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleImagePickFuseFiles} />
+
+                {/* Apply edit button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (imageAiPrompt.trim() && selectedElement) {
+                      handleImageAiEdit(selectedElement, imageAiPrompt.trim());
+                    }
+                  }}
+                  disabled={!imageAiPrompt.trim()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  style={{
+                    padding: '5px 14px',
+                    background: imageAiPrompt.trim() ? '#FF4301' : '#e5e5e5',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: imageAiPrompt.trim() ? 'pointer' : 'default',
+                  }}
+                >
+                  Apply edit
+                </button>
+
+                {/* Fuse button (only when attachments exist) */}
+                {imageFuseAttachments.filter(a => a.url).length > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (selectedElement) handleImageAiFuse(selectedElement);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    style={{
+                      padding: '5px 14px',
+                      background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Fuse
+                  </button>
+                )}
+
+                <div style={{ flex: 1 }} />
+
+                {/* Add image button */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); imageAiFuseFileInputRef.current?.click(); }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title="Attach image for fusion"
+                  style={{
+                    padding: '4px 8px',
+                    background: 'transparent',
+                    border: '1px solid #e0e0e0',
+                    borderRadius: '6px',
+                    fontSize: '10.5px',
+                    color: '#777',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14" /></svg>
+                  Fuse
+                </button>
+              </div>
+            </motion.div>
+          </AnimatePresence>,
+          document.body
+        );
+        })()}
+
         {/* CONTAINER ELEMENT AI EDIT - Sparkle button that expands to chat */}
         {/* Safety check: only render portal if document.body exists and not iOS (prevents mobile crash) */}
         {selectedElement && selectedElement.type === 'container' && typeof document !== 'undefined' && document.body && !BROWSER.isIOS && (() => {
           // bounds are already in viewport coordinates (used for fixed positioning)
           const panelWidth = showAiChatBubble ? 300 : 30;
 
-          // Position at top-right corner of the element's bounding box
-          let posLeft = selectedElement.bounds.x + selectedElement.bounds.width + 8;
+          // Position to the left of the element's bounding box
+          let posLeft = selectedElement.bounds.x - panelWidth - 8;
           let posTop = selectedElement.bounds.y;
 
           // Keep within viewport
           const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
           const windowHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
 
-          if (posLeft + panelWidth > windowWidth - 20) {
-            posLeft = selectedElement.bounds.x - panelWidth - 8; // Position to the left instead
+          if (posLeft < 20) {
+            posLeft = selectedElement.bounds.x + selectedElement.bounds.width + 8; // Position to the right instead
           }
           posTop = Math.max(60, Math.min(posTop, windowHeight - 200));
 

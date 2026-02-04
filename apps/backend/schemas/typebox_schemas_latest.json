@@ -1994,6 +1994,82 @@
               "type": "string"
             },
             {
+              "const": "Caveat",
+              "type": "string"
+            },
+            {
+              "const": "Dancing Script",
+              "type": "string"
+            },
+            {
+              "const": "Kaushan Script",
+              "type": "string"
+            },
+            {
+              "const": "Great Vibes",
+              "type": "string"
+            },
+            {
+              "const": "Allura",
+              "type": "string"
+            },
+            {
+              "const": "Pacifico",
+              "type": "string"
+            },
+            {
+              "const": "Satisfy",
+              "type": "string"
+            },
+            {
+              "const": "Courgette",
+              "type": "string"
+            },
+            {
+              "const": "Amatic SC",
+              "type": "string"
+            },
+            {
+              "const": "Indie Flower",
+              "type": "string"
+            },
+            {
+              "const": "Shadows Into Light",
+              "type": "string"
+            },
+            {
+              "const": "Patrick Hand",
+              "type": "string"
+            },
+            {
+              "const": "Lobster",
+              "type": "string"
+            },
+            {
+              "const": "Permanent Marker",
+              "type": "string"
+            },
+            {
+              "const": "Handlee",
+              "type": "string"
+            },
+            {
+              "const": "Sacramento",
+              "type": "string"
+            },
+            {
+              "const": "Tangerine",
+              "type": "string"
+            },
+            {
+              "const": "Yellowtail",
+              "type": "string"
+            },
+            {
+              "const": "Kalam",
+              "type": "string"
+            },
+            {
               "const": "thoth legacy egyptian typeface",
               "type": "string"
             },
@@ -2610,10 +2686,6 @@
               "type": "string"
             },
             {
-              "const": "Commit Mono",
-              "type": "string"
-            },
-            {
               "const": "Bebas Neue",
               "type": "string"
             },
@@ -2883,82 +2955,6 @@
             },
             {
               "const": "Athiti",
-              "type": "string"
-            },
-            {
-              "const": "Caveat",
-              "type": "string"
-            },
-            {
-              "const": "Dancing Script",
-              "type": "string"
-            },
-            {
-              "const": "Kaushan Script",
-              "type": "string"
-            },
-            {
-              "const": "Great Vibes",
-              "type": "string"
-            },
-            {
-              "const": "Allura",
-              "type": "string"
-            },
-            {
-              "const": "Pacifico",
-              "type": "string"
-            },
-            {
-              "const": "Satisfy",
-              "type": "string"
-            },
-            {
-              "const": "Courgette",
-              "type": "string"
-            },
-            {
-              "const": "Amatic SC",
-              "type": "string"
-            },
-            {
-              "const": "Indie Flower",
-              "type": "string"
-            },
-            {
-              "const": "Shadows Into Light",
-              "type": "string"
-            },
-            {
-              "const": "Patrick Hand",
-              "type": "string"
-            },
-            {
-              "const": "Lobster",
-              "type": "string"
-            },
-            {
-              "const": "Permanent Marker",
-              "type": "string"
-            },
-            {
-              "const": "Handlee",
-              "type": "string"
-            },
-            {
-              "const": "Sacramento",
-              "type": "string"
-            },
-            {
-              "const": "Tangerine",
-              "type": "string"
-            },
-            {
-              "const": "Yellowtail",
-              "type": "string"
-            },
-            {
-              "const": "Kalam",
               "type": "string"
             },
             {
@@ -3562,7 +3558,26 @@
                   "Gloock",
                   "Prata",
                   "Staatliches",
-                  "Baloo 2"
+                  "Baloo 2",
+                  "Caveat",
+                  "Dancing Script",
+                  "Kaushan Script",
+                  "Great Vibes",
+                  "Allura",
+                  "Pacifico",
+                  "Satisfy",
+                  "Courgette",
+                  "Amatic SC",
+                  "Indie Flower",
+                  "Shadows Into Light",
+                  "Patrick Hand",
+                  "Lobster",
+                  "Permanent Marker",
+                  "Handlee",
+                  "Sacramento",
+                  "Tangerine",
+                  "Yellowtail",
+                  "Kalam"
                 ],
                 "Designer Local": [
                   "thoth legacy egyptian typeface",
@@ -3800,8 +3815,7 @@
                   "Courier Prime",
                   "Red Hat Mono",
                   "Overpass Mono",
-                  "Azeret Mono",
-                  "Commit Mono"
+                  "Azeret Mono"
                 ],
                 "Elegant": [
                   "Cormorant Garamond",
@@ -3995,6 +4009,25 @@
                 "Prata",
                 "Staatliches",
                 "Baloo 2",
+                "Caveat",
+                "Dancing Script",
+                "Kaushan Script",
+                "Great Vibes",
+                "Allura",
+                "Pacifico",
+                "Satisfy",
+                "Courgette",
+                "Amatic SC",
+                "Indie Flower",
+                "Shadows Into Light",
+                "Patrick Hand",
+                "Lobster",
+                "Permanent Marker",
+                "Handlee",
+                "Sacramento",
+                "Tangerine",
+                "Yellowtail",
+                "Kalam",
                 "thoth legacy egyptian typeface",
                 "earthbound organic typeface",
                 "hyperion sleek modern sans",
@@ -4149,7 +4182,6 @@
                 "Overpass Mono",
                 "Azeret Mono",
                 "Martian Mono",
-                "Commit Mono",
                 "Bebas Neue",
                 "Anton",
                 "Archivo Black",
@@ -4218,25 +4250,6 @@
                 "Sarabun",
                 "Tajawal",
                 "Athiti",
-                "Caveat",
-                "Dancing Script",
-                "Kaushan Script",
-                "Great Vibes",
-                "Allura",
-                "Pacifico",
-                "Satisfy",
-                "Courgette",
-                "Amatic SC",
-                "Indie Flower",
-                "Shadows Into Light",
-                "Patrick Hand",
-                "Lobster",
-                "Permanent Marker",
-                "Handlee",
-                "Sacramento",
-                "Tangerine",
-                "Yellowtail",
-                "Kalam",
                 "Playfair Display",
                 "Cormorant Garamond",
                 "Cinzel",
@@ -4983,6 +4996,82 @@
                   "type": "string"
                 },
                 {
+                  "const": "Caveat",
+                  "type": "string"
+                },
+                {
+                  "const": "Dancing Script",
+                  "type": "string"
+                },
+                {
+                  "const": "Kaushan Script",
+                  "type": "string"
+                },
+                {
+                  "const": "Great Vibes",
+                  "type": "string"
+                },
+                {
+                  "const": "Allura",
+                  "type": "string"
+                },
+                {
+                  "const": "Pacifico",
+                  "type": "string"
+                },
+                {
+                  "const": "Satisfy",
+                  "type": "string"
+                },
+                {
+                  "const": "Courgette",
+                  "type": "string"
+                },
+                {
+                  "const": "Amatic SC",
+                  "type": "string"
+                },
+                {
+                  "const": "Indie Flower",
+                  "type": "string"
+                },
+                {
+                  "const": "Shadows Into Light",
+                  "type": "string"
+                },
+                {
+                  "const": "Patrick Hand",
+                  "type": "string"
+                },
+                {
+                  "const": "Lobster",
+                  "type": "string"
+                },
+                {
+                  "const": "Permanent Marker",
+                  "type": "string"
+                },
+                {
+                  "const": "Handlee",
+                  "type": "string"
+                },
+                {
+                  "const": "Sacramento",
+                  "type": "string"
+                },
+                {
+                  "const": "Tangerine",
+                  "type": "string"
+                },
+                {
+                  "const": "Yellowtail",
+                  "type": "string"
+                },
+                {
+                  "const": "Kalam",
+                  "type": "string"
+                },
+                {
                   "const": "thoth legacy egyptian typeface",
                   "type": "string"
                 },
@@ -5599,10 +5688,6 @@
                   "type": "string"
                 },
                 {
-                  "const": "Commit Mono",
-                  "type": "string"
-                },
-                {
                   "const": "Bebas Neue",
                   "type": "string"
                 },
@@ -5872,82 +5957,6 @@
                 },
                 {
                   "const": "Athiti",
-                  "type": "string"
-                },
-                {
-                  "const": "Caveat",
-                  "type": "string"
-                },
-                {
-                  "const": "Dancing Script",
-                  "type": "string"
-                },
-                {
-                  "const": "Kaushan Script",
-                  "type": "string"
-                },
-                {
-                  "const": "Great Vibes",
-                  "type": "string"
-                },
-                {
-                  "const": "Allura",
-                  "type": "string"
-                },
-                {
-                  "const": "Pacifico",
-                  "type": "string"
-                },
-                {
-                  "const": "Satisfy",
-                  "type": "string"
-                },
-                {
-                  "const": "Courgette",
-                  "type": "string"
-                },
-                {
-                  "const": "Amatic SC",
-                  "type": "string"
-                },
-                {
-                  "const": "Indie Flower",
-                  "type": "string"
-                },
-                {
-                  "const": "Shadows Into Light",
-                  "type": "string"
-                },
-                {
-                  "const": "Patrick Hand",
-                  "type": "string"
-                },
-                {
-                  "const": "Lobster",
-                  "type": "string"
-                },
-                {
-                  "const": "Permanent Marker",
-                  "type": "string"
-                },
-                {
-                  "const": "Handlee",
-                  "type": "string"
-                },
-                {
-                  "const": "Sacramento",
-                  "type": "string"
-                },
-                {
-                  "const": "Tangerine",
-                  "type": "string"
-                },
-                {
-                  "const": "Yellowtail",
-                  "type": "string"
-                },
-                {
-                  "const": "Kalam",
                   "type": "string"
                 },
                 {
@@ -6551,7 +6560,26 @@
                       "Gloock",
                       "Prata",
                       "Staatliches",
-                      "Baloo 2"
+                      "Baloo 2",
+                      "Caveat",
+                      "Dancing Script",
+                      "Kaushan Script",
+                      "Great Vibes",
+                      "Allura",
+                      "Pacifico",
+                      "Satisfy",
+                      "Courgette",
+                      "Amatic SC",
+                      "Indie Flower",
+                      "Shadows Into Light",
+                      "Patrick Hand",
+                      "Lobster",
+                      "Permanent Marker",
+                      "Handlee",
+                      "Sacramento",
+                      "Tangerine",
+                      "Yellowtail",
+                      "Kalam"
                     ],
                     "Designer Local": [
                       "thoth legacy egyptian typeface",
@@ -6789,8 +6817,7 @@
                       "Courier Prime",
                       "Red Hat Mono",
                       "Overpass Mono",
-                      "Azeret Mono",
-                      "Commit Mono"
+                      "Azeret Mono"
                     ],
                     "Elegant": [
                       "Cormorant Garamond",
@@ -6984,6 +7011,25 @@
                     "Prata",
                     "Staatliches",
                     "Baloo 2",
+                    "Caveat",
+                    "Dancing Script",
+                    "Kaushan Script",
+                    "Great Vibes",
+                    "Allura",
+                    "Pacifico",
+                    "Satisfy",
+                    "Courgette",
+                    "Amatic SC",
+                    "Indie Flower",
+                    "Shadows Into Light",
+                    "Patrick Hand",
+                    "Lobster",
+                    "Permanent Marker",
+                    "Handlee",
+                    "Sacramento",
+                    "Tangerine",
+                    "Yellowtail",
+                    "Kalam",
                     "thoth legacy egyptian typeface",
                     "earthbound organic typeface",
                     "hyperion sleek modern sans",
@@ -7138,7 +7184,6 @@
                     "Overpass Mono",
                     "Azeret Mono",
                     "Martian Mono",
-                    "Commit Mono",
                     "Bebas Neue",
                     "Anton",
                     "Archivo Black",
@@ -7207,25 +7252,6 @@
                     "Sarabun",
                     "Tajawal",
                     "Athiti",
-                    "Caveat",
-                    "Dancing Script",
-                    "Kaushan Script",
-                    "Great Vibes",
-                    "Allura",
-                    "Pacifico",
-                    "Satisfy",
-                    "Courgette",
-                    "Amatic SC",
-                    "Indie Flower",
-                    "Shadows Into Light",
-                    "Patrick Hand",
-                    "Lobster",
-                    "Permanent Marker",
-                    "Handlee",
-                    "Sacramento",
-                    "Tangerine",
-                    "Yellowtail",
-                    "Kalam",
                     "Playfair Display",
                     "Cormorant Garamond",
                     "Cinzel",
@@ -10326,6 +10352,82 @@
               "type": "string"
             },
             {
+              "const": "Caveat",
+              "type": "string"
+            },
+            {
+              "const": "Dancing Script",
+              "type": "string"
+            },
+            {
+              "const": "Kaushan Script",
+              "type": "string"
+            },
+            {
+              "const": "Great Vibes",
+              "type": "string"
+            },
+            {
+              "const": "Allura",
+              "type": "string"
+            },
+            {
+              "const": "Pacifico",
+              "type": "string"
+            },
+            {
+              "const": "Satisfy",
+              "type": "string"
+            },
+            {
+              "const": "Courgette",
+              "type": "string"
+            },
+            {
+              "const": "Amatic SC",
+              "type": "string"
+            },
+            {
+              "const": "Indie Flower",
+              "type": "string"
+            },
+            {
+              "const": "Shadows Into Light",
+              "type": "string"
+            },
+            {
+              "const": "Patrick Hand",
+              "type": "string"
+            },
+            {
+              "const": "Lobster",
+              "type": "string"
+            },
+            {
+              "const": "Permanent Marker",
+              "type": "string"
+            },
+            {
+              "const": "Handlee",
+              "type": "string"
+            },
+            {
+              "const": "Sacramento",
+              "type": "string"
+            },
+            {
+              "const": "Tangerine",
+              "type": "string"
+            },
+            {
+              "const": "Yellowtail",
+              "type": "string"
+            },
+            {
+              "const": "Kalam",
+              "type": "string"
+            },
+            {
               "const": "thoth legacy egyptian typeface",
               "type": "string"
             },
@@ -10942,10 +11044,6 @@
               "type": "string"
             },
             {
-              "const": "Commit Mono",
-              "type": "string"
-            },
-            {
               "const": "Bebas Neue",
               "type": "string"
             },
@@ -11215,82 +11313,6 @@
             },
             {
               "const": "Athiti",
-              "type": "string"
-            },
-            {
-              "const": "Caveat",
-              "type": "string"
-            },
-            {
-              "const": "Dancing Script",
-              "type": "string"
-            },
-            {
-              "const": "Kaushan Script",
-              "type": "string"
-            },
-            {
-              "const": "Great Vibes",
-              "type": "string"
-            },
-            {
-              "const": "Allura",
-              "type": "string"
-            },
-            {
-              "const": "Pacifico",
-              "type": "string"
-            },
-            {
-              "const": "Satisfy",
-              "type": "string"
-            },
-            {
-              "const": "Courgette",
-              "type": "string"
-            },
-            {
-              "const": "Amatic SC",
-              "type": "string"
-            },
-            {
-              "const": "Indie Flower",
-              "type": "string"
-            },
-            {
-              "const": "Shadows Into Light",
-              "type": "string"
-            },
-            {
-              "const": "Patrick Hand",
-              "type": "string"
-            },
-            {
-              "const": "Lobster",
-              "type": "string"
-            },
-            {
-              "const": "Permanent Marker",
-              "type": "string"
-            },
-            {
-              "const": "Handlee",
-              "type": "string"
-            },
-            {
-              "const": "Sacramento",
-              "type": "string"
-            },
-            {
-              "const": "Tangerine",
-              "type": "string"
-            },
-            {
-              "const": "Yellowtail",
-              "type": "string"
-            },
-            {
-              "const": "Kalam",
               "type": "string"
             },
             {
@@ -11894,7 +11916,26 @@
                   "Gloock",
                   "Prata",
                   "Staatliches",
-                  "Baloo 2"
+                  "Baloo 2",
+                  "Caveat",
+                  "Dancing Script",
+                  "Kaushan Script",
+                  "Great Vibes",
+                  "Allura",
+                  "Pacifico",
+                  "Satisfy",
+                  "Courgette",
+                  "Amatic SC",
+                  "Indie Flower",
+                  "Shadows Into Light",
+                  "Patrick Hand",
+                  "Lobster",
+                  "Permanent Marker",
+                  "Handlee",
+                  "Sacramento",
+                  "Tangerine",
+                  "Yellowtail",
+                  "Kalam"
                 ],
                 "Designer Local": [
                   "thoth legacy egyptian typeface",
@@ -12132,8 +12173,7 @@
                   "Courier Prime",
                   "Red Hat Mono",
                   "Overpass Mono",
-                  "Azeret Mono",
-                  "Commit Mono"
+                  "Azeret Mono"
                 ],
                 "Elegant": [
                   "Cormorant Garamond",
@@ -12327,6 +12367,25 @@
                 "Prata",
                 "Staatliches",
                 "Baloo 2",
+                "Caveat",
+                "Dancing Script",
+                "Kaushan Script",
+                "Great Vibes",
+                "Allura",
+                "Pacifico",
+                "Satisfy",
+                "Courgette",
+                "Amatic SC",
+                "Indie Flower",
+                "Shadows Into Light",
+                "Patrick Hand",
+                "Lobster",
+                "Permanent Marker",
+                "Handlee",
+                "Sacramento",
+                "Tangerine",
+                "Yellowtail",
+                "Kalam",
                 "thoth legacy egyptian typeface",
                 "earthbound organic typeface",
                 "hyperion sleek modern sans",
@@ -12481,7 +12540,6 @@
                 "Overpass Mono",
                 "Azeret Mono",
                 "Martian Mono",
-                "Commit Mono",
                 "Bebas Neue",
                 "Anton",
                 "Archivo Black",
@@ -12550,25 +12608,6 @@
                 "Sarabun",
                 "Tajawal",
                 "Athiti",
-                "Caveat",
-                "Dancing Script",
-                "Kaushan Script",
-                "Great Vibes",
-                "Allura",
-                "Pacifico",
-                "Satisfy",
-                "Courgette",
-                "Amatic SC",
-                "Indie Flower",
-                "Shadows Into Light",
-                "Patrick Hand",
-                "Lobster",
-                "Permanent Marker",
-                "Handlee",
-                "Sacramento",
-                "Tangerine",
-                "Yellowtail",
-                "Kalam",
                 "Playfair Display",
                 "Cormorant Garamond",
                 "Cinzel",
@@ -15098,6 +15137,82 @@
               "type": "string"
             },
             {
+              "const": "Caveat",
+              "type": "string"
+            },
+            {
+              "const": "Dancing Script",
+              "type": "string"
+            },
+            {
+              "const": "Kaushan Script",
+              "type": "string"
+            },
+            {
+              "const": "Great Vibes",
+              "type": "string"
+            },
+            {
+              "const": "Allura",
+              "type": "string"
+            },
+            {
+              "const": "Pacifico",
+              "type": "string"
+            },
+            {
+              "const": "Satisfy",
+              "type": "string"
+            },
+            {
+              "const": "Courgette",
+              "type": "string"
+            },
+            {
+              "const": "Amatic SC",
+              "type": "string"
+            },
+            {
+              "const": "Indie Flower",
+              "type": "string"
+            },
+            {
+              "const": "Shadows Into Light",
+              "type": "string"
+            },
+            {
+              "const": "Patrick Hand",
+              "type": "string"
+            },
+            {
+              "const": "Lobster",
+              "type": "string"
+            },
+            {
+              "const": "Permanent Marker",
+              "type": "string"
+            },
+            {
+              "const": "Handlee",
+              "type": "string"
+            },
+            {
+              "const": "Sacramento",
+              "type": "string"
+            },
+            {
+              "const": "Tangerine",
+              "type": "string"
+            },
+            {
+              "const": "Yellowtail",
+              "type": "string"
+            },
+            {
+              "const": "Kalam",
+              "type": "string"
+            },
+            {
               "const": "thoth legacy egyptian typeface",
               "type": "string"
             },
@@ -15714,10 +15829,6 @@
               "type": "string"
             },
             {
-              "const": "Commit Mono",
-              "type": "string"
-            },
-            {
               "const": "Bebas Neue",
               "type": "string"
             },
@@ -15987,82 +16098,6 @@
             },
             {
               "const": "Athiti",
-              "type": "string"
-            },
-            {
-              "const": "Caveat",
-              "type": "string"
-            },
-            {
-              "const": "Dancing Script",
-              "type": "string"
-            },
-            {
-              "const": "Kaushan Script",
-              "type": "string"
-            },
-            {
-              "const": "Great Vibes",
-              "type": "string"
-            },
-            {
-              "const": "Allura",
-              "type": "string"
-            },
-            {
-              "const": "Pacifico",
-              "type": "string"
-            },
-            {
-              "const": "Satisfy",
-              "type": "string"
-            },
-            {
-              "const": "Courgette",
-              "type": "string"
-            },
-            {
-              "const": "Amatic SC",
-              "type": "string"
-            },
-            {
-              "const": "Indie Flower",
-              "type": "string"
-            },
-            {
-              "const": "Shadows Into Light",
-              "type": "string"
-            },
-            {
-              "const": "Patrick Hand",
-              "type": "string"
-            },
-            {
-              "const": "Lobster",
-              "type": "string"
-            },
-            {
-              "const": "Permanent Marker",
-              "type": "string"
-            },
-            {
-              "const": "Handlee",
-              "type": "string"
-            },
-            {
-              "const": "Sacramento",
-              "type": "string"
-            },
-            {
-              "const": "Tangerine",
-              "type": "string"
-            },
-            {
-              "const": "Yellowtail",
-              "type": "string"
-            },
-            {
-              "const": "Kalam",
               "type": "string"
             },
             {
@@ -16666,7 +16701,26 @@
                   "Gloock",
                   "Prata",
                   "Staatliches",
-                  "Baloo 2"
+                  "Baloo 2",
+                  "Caveat",
+                  "Dancing Script",
+                  "Kaushan Script",
+                  "Great Vibes",
+                  "Allura",
+                  "Pacifico",
+                  "Satisfy",
+                  "Courgette",
+                  "Amatic SC",
+                  "Indie Flower",
+                  "Shadows Into Light",
+                  "Patrick Hand",
+                  "Lobster",
+                  "Permanent Marker",
+                  "Handlee",
+                  "Sacramento",
+                  "Tangerine",
+                  "Yellowtail",
+                  "Kalam"
                 ],
                 "Designer Local": [
                   "thoth legacy egyptian typeface",
@@ -16904,8 +16958,7 @@
                   "Courier Prime",
                   "Red Hat Mono",
                   "Overpass Mono",
-                  "Azeret Mono",
-                  "Commit Mono"
+                  "Azeret Mono"
                 ],
                 "Elegant": [
                   "Cormorant Garamond",
@@ -17099,6 +17152,25 @@
                 "Prata",
                 "Staatliches",
                 "Baloo 2",
+                "Caveat",
+                "Dancing Script",
+                "Kaushan Script",
+                "Great Vibes",
+                "Allura",
+                "Pacifico",
+                "Satisfy",
+                "Courgette",
+                "Amatic SC",
+                "Indie Flower",
+                "Shadows Into Light",
+                "Patrick Hand",
+                "Lobster",
+                "Permanent Marker",
+                "Handlee",
+                "Sacramento",
+                "Tangerine",
+                "Yellowtail",
+                "Kalam",
                 "thoth legacy egyptian typeface",
                 "earthbound organic typeface",
                 "hyperion sleek modern sans",
@@ -17253,7 +17325,6 @@
                 "Overpass Mono",
                 "Azeret Mono",
                 "Martian Mono",
-                "Commit Mono",
                 "Bebas Neue",
                 "Anton",
                 "Archivo Black",
@@ -17322,25 +17393,6 @@
                 "Sarabun",
                 "Tajawal",
                 "Athiti",
-                "Caveat",
-                "Dancing Script",
-                "Kaushan Script",
-                "Great Vibes",
-                "Allura",
-                "Pacifico",
-                "Satisfy",
-                "Courgette",
-                "Amatic SC",
-                "Indie Flower",
-                "Shadows Into Light",
-                "Patrick Hand",
-                "Lobster",
-                "Permanent Marker",
-                "Handlee",
-                "Sacramento",
-                "Tangerine",
-                "Yellowtail",
-                "Kalam",
                 "Playfair Display",
                 "Cormorant Garamond",
                 "Cinzel",

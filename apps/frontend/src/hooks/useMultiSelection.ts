@@ -133,6 +133,7 @@ export function useMultiSelection({
   // Handle mouse down
   const handleMouseDown = useCallback((e: MouseEvent) => {
     if (!isEditing || !containerRef.current) return;
+    if ((window as any).__commentsPlacingPin) return;
 
     // Check if we're clicking on a component or multi-selection box
     const target = e.target as HTMLElement;

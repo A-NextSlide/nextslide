@@ -88,14 +88,16 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
     // Get slide dimensions for pixel calculation
     const slideRect = slideElement.getBoundingClientRect();
     
-    // Try to extract the actual slide size from data attributes
+    // Use the native (design) slide dimensions for coordinate conversion.
+    // Component coordinates are stored in native-space (e.g., 1920x1080),
+    // NOT the responsive display size (data-slide-width).
     let slideWidth = DEFAULT_SLIDE_WIDTH;
     let slideHeight = DEFAULT_SLIDE_HEIGHT;
     try {
-      const slideWidthAttr = slideElement.getAttribute('data-slide-width');
-      const slideHeightAttr = slideElement.getAttribute('data-slide-height');
-      if (slideWidthAttr) slideWidth = parseInt(slideWidthAttr);
-      if (slideHeightAttr) slideHeight = parseInt(slideHeightAttr);
+      const nativeWidthAttr = slideElement.getAttribute('data-native-width');
+      const nativeHeightAttr = slideElement.getAttribute('data-native-height');
+      if (nativeWidthAttr) slideWidth = parseInt(nativeWidthAttr);
+      if (nativeHeightAttr) slideHeight = parseInt(nativeHeightAttr);
     } catch (err) {
       // Fall back to defaults if attributes aren't available
     }

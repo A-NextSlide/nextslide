@@ -45,6 +45,12 @@ export const useComponentResize = ({
   const lastUpdateTimeRef = useRef<number>(0);
   const pendingUpdateRef = useRef<any>(null);
   const latestValuesRef = useRef<{ width: number; height: number; position: { x: number; y: number } } | null>(null);
+
+  // Track the position at resize start to determine which coordinates the resize direction changes.
+  // For 's', 'e', 'se' resize, position stays fixed (only size changes).
+  // For 'n', 'w', 'nw', 'ne', 'sw' resize, position changes as the top/left edge moves.
+  // This prevents snap from adjusting position coordinates that shouldn't change.
+  const resizeStartPositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   
   // Get settings from store
   const isSnapEnabled = useEditorSettingsStore(state => state.isSnapEnabled);
@@ -150,6 +156,7 @@ export const useComponentResize = ({
     // Handle resize start
     if (!resizeStartedRef.current && slideId) {
       resizeStartedRef.current = true;
+      resizeStartPositionRef.current = { ...(currentComponent.props.position || { x: 0, y: 0 }) };
       
       // For charts, set global resize flag immediately to disable animations (synchronous, fast)
       if (currentComponent.type === 'Chart' && typeof window !== 'undefined') {
@@ -200,13 +207,20 @@ export const useComponentResize = ({
       };
       
       const snapResult = calculateSnap(tempComponent, allComponentsRef.current, newPosition, slideSize);
-      
+
       if (snapResult.guides.length > 0) {
         setLocalSnapGuides(snapResult.guides);
         setSnapGuides(snapResult.guides);
+        // Only apply snap position adjustments for coordinates that the resize direction
+        // actually changes. For 's', 'e', 'se' resize, position stays fixed — the snap
+        // function shouldn't move the component's top-left corner when only the bottom/right
+        // edges are being dragged.
+        const startPos = resizeStartPositionRef.current;
+        const resizeChangesX = Math.abs(newPosition.x - startPos.x) > 0.5;
+        const resizeChangesY = Math.abs(newPosition.y - startPos.y) > 0.5;
         newPosition = {
-          x: Math.round(snapResult.snappedPosition.x),
-          y: Math.round(snapResult.snappedPosition.y)
+          x: resizeChangesX ? Math.round(snapResult.snappedPosition.x) : newPosition.x,
+          y: resizeChangesY ? Math.round(snapResult.snappedPosition.y) : newPosition.y
         };
       } else {
         setLocalSnapGuides([]);

@@ -84,6 +84,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 
   // Add ref for the scrollable container
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const slideAreaRef = useRef<HTMLDivElement>(null);
 
   // Yjs context for collaboration is initialized below
 
@@ -985,6 +986,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 
             {/* On mobile: tappable slide area that enters fullscreen presentation */}
             <div
+              ref={slideAreaRef}
               className="relative"
               onClick={isMobileView && !isEditing ? handleMobileSlideTap : undefined}
               style={isMobileView && !isEditing ? { cursor: 'pointer' } : undefined}
@@ -1014,25 +1016,26 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
                   </div>
                 </div>
               )}
+              {/* Comment pins overlay - inside slide area for correct positioning */}
+              {currentSlide && (
+                <CommentPinsOverlay
+                  deckId={deckUuid}
+                  slideId={currentSlide.id}
+                  containerRef={slideAreaRef}
+                  zoomLevel={zoomLevel}
+                  getCollaborators={getCollaborators}
+                />
+              )}
             </div>
 
             {/* Cursor overlays */}
             {currentSlide && (
-              <>
-                <SimpleCursors
-                  slideId={currentSlide.id}
-                  containerRef={scrollContainerRef}
-                  offsetY={24}
-                  zoomLevel={zoomLevel}
-                />
-                <CommentPinsOverlay
-                  deckId={deckUuid}
-                  slideId={currentSlide.id}
-                  containerRef={scrollContainerRef}
-                  zoomLevel={zoomLevel}
-                  getCollaborators={getCollaborators}
-                />
-              </>
+              <SimpleCursors
+                slideId={currentSlide.id}
+                containerRef={scrollContainerRef}
+                offsetY={24}
+                zoomLevel={zoomLevel}
+              />
             )}
           </motion.div>
         </div>

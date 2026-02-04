@@ -38,7 +38,6 @@ const FONT_PRIORITY_MAP: Record<string, number> = {
   'Monospace': FONT_PRIORITY.STANDARD,
   'Design': FONT_PRIORITY.STANDARD,
   'Bold': FONT_PRIORITY.STANDARD,
-  'Script': FONT_PRIORITY.DECORATIVE,
   'Elegant': FONT_PRIORITY.STANDARD,
   'Modern': FONT_PRIORITY.STANDARD,
   'Unique': FONT_PRIORITY.DECORATIVE,
@@ -92,7 +91,7 @@ function getFontPriority(fontDef: FontDefinition): number {
 function normalizeBackendCategory(category?: string): string {
   const cat = (category || '').toLowerCase();
   if (cat.includes('mono')) return 'Monospace';
-  if (cat.includes('script') || cat.includes('hand')) return 'Script';
+  if (cat.includes('script') || cat.includes('hand')) return 'Designer';
   if (cat.includes('slab')) return 'Slab';
   if (cat.includes('serif') && !cat.includes('sans')) return 'Serif';
   if (cat.includes('sans')) return 'Sans-Serif';
@@ -203,7 +202,7 @@ export const FontLoadingService = {
     if (designerFontsSyncing) return designerFontsSyncing;
     designerFontsSyncing = (async () => {
       try {
-        const allBackendFonts = await FontApiService.listFonts(undefined, undefined, 5000, 0, false);
+        const allBackendFonts = await FontApiService.listFonts(undefined, undefined, 5000, 0, true);
 
         backendFontByName.clear();
         for (const item of allBackendFonts) {
@@ -643,8 +642,8 @@ export const FontLoadingService = {
       const boldNames = (FONT_CATEGORIES['Bold'] || []).slice(0, 8).map(f => f.name);
       // Load ALL Design fonts since they're commonly used
       const designNames = (FONT_CATEGORIES['Design'] || []).slice(0, 15).map(f => f.name);
-      // Load popular script fonts
-      const scriptNames = (FONT_CATEGORIES['Script'] || []).slice(0, 8).map(f => f.name);
+      // Load popular designer/script fonts
+      const scriptNames = (FONT_CATEGORIES['Designer'] || []).slice(0, 8).map(f => f.name);
       // Load elegant fonts
       const elegantNames = (FONT_CATEGORIES['Elegant'] || []).slice(0, 8).map(f => f.name);
       // De-emphasize Modern fonts; load fewer

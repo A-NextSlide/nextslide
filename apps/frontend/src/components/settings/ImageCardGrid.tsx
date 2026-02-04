@@ -304,15 +304,6 @@ const ImageCard: React.FC<ImageCardProps> = ({
       ],
     },
     {
-      label: 'Add',
-      suggestions: [
-        { label: 'Mustache', prompt: 'Draw a fun mustache on the face in the image' },
-        { label: 'Sunglasses', prompt: 'Add cool sunglasses to the face' },
-        { label: 'Border / frame', prompt: 'Add a decorative border or frame around the image' },
-        { label: 'Hat', prompt: 'Add a fun hat to the person in the image' },
-      ],
-    },
-    {
       label: 'Transform',
       suggestions: [
         { label: 'Cartoon', prompt: 'Turn into a cartoon illustration style' },
@@ -401,11 +392,12 @@ const ImageCard: React.FC<ImageCardProps> = ({
                 <ChevronDown className="w-2 h-2" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[72px]">
+            <DropdownMenuContent align="end" className="min-w-[72px]" onPointerDownOutside={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
               {fitOptions.map((option) => (
                 <DropdownMenuItem
                   key={option.value}
-                  onClick={() => handleObjectFitChange(option.value)}
+                  onClick={(e) => { e.stopPropagation(); handleObjectFitChange(option.value); }}
+                  onPointerDown={(e) => e.stopPropagation()}
                   className={cn(
                     "text-[11px] py-1",
                     objectFit === option.value && "bg-orange-50 text-orange-600 dark:bg-orange-500/10"
@@ -477,7 +469,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
                     <>
                       <div className="flex flex-wrap gap-0.5">
                         {editCategories.map((category) => (
-                          <div key={category.label} className="relative group/edit">
+                          <div key={category.label} className="relative group/edit" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                             <button
                               disabled={isProcessing}
                               className={cn(
@@ -494,7 +486,8 @@ const ImageCard: React.FC<ImageCardProps> = ({
                                 {category.suggestions.map((s) => (
                                   <button
                                     key={s.label}
-                                    onClick={() => callEditApi(s.prompt)}
+                                    onClick={(e) => { e.stopPropagation(); callEditApi(s.prompt); }}
+                                    onPointerDown={(e) => e.stopPropagation()}
                                     disabled={isProcessing}
                                     className="w-full text-left px-2 py-1 text-[10px] hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-500/10 transition-colors disabled:opacity-50"
                                   >

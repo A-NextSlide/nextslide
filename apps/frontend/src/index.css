@@ -401,6 +401,14 @@ html {
     text-wrap: balance;
   }
 
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
   .scroll-fade {
     /* Disabled due to Safari black gradient artifact in chat views */
     -webkit-mask-image: none;

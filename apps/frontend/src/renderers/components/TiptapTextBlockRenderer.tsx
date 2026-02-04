@@ -160,6 +160,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = m
   // Port of CustomComponentRenderer's fit-to-box logic
   const contentWrapperRef = useRef<HTMLDivElement>(null);
   const [fitScale, setFitScale] = React.useState(1);
+  const [contentOffset, setContentOffset] = React.useState({ x: 0, y: 0 });
   const [isFitReady, setIsFitReady] = React.useState(false);
 
   const computeFit = React.useCallback(() => {
@@ -167,6 +168,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = m
     const contentEl = contentWrapperRef.current as HTMLDivElement | null;
     if (!containerEl || !contentEl || isCurrentlyTextEditing) {
       setFitScale(1);
+      setContentOffset({ x: 0, y: 0 });
       setIsFitReady(true);
       return;
     }
@@ -181,6 +183,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = m
 
     if (naturalW === 0 || naturalH === 0 || containerW === 0 || containerH === 0) {
       setFitScale(1);
+      setContentOffset({ x: 0, y: 0 });
       setIsFitReady(true);
       return;
     }
@@ -188,6 +191,27 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = m
     // Calculate scale needed to fit content in container
     // IMPORTANT: Only scale DOWN (never up) to prevent content loss
     const scale = Math.min(containerW / naturalW, containerH / naturalH, 1);
+
+    // Calculate alignment offsets for scaled content
+    let x = 0;
+    let y = 0;
+
+    if (scale < 1) {
+      const scaledW = naturalW * scale;
+      const scaledH = naturalH * scale;
+
+      // Horizontal alignment offset
+      if (containerW > scaledW) {
+        if (alignment === 'center') x = (containerW - scaledW) / 2;
+        else if (alignment === 'right') x = containerW - scaledW;
+      }
+
+      // Vertical alignment offset
+      if (containerH > scaledH) {
+        if (verticalAlignment === 'middle') y = (containerH - scaledH) / 2;
+        else if (verticalAlignment === 'bottom') y = containerH - scaledH;
+      }
+    }
 
     // Debug logging
     if (scale < 0.99) {
@@ -197,6 +221,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = m
         containerH: containerH.toFixed(0),
         naturalW: naturalW.toFixed(0),
         naturalH: naturalH.toFixed(0),
+        offset: { x, y },
         overflow: {
           width: naturalW > containerW,
           height: naturalH > containerH
@@ -205,8 +230,9 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = m
     }
 
     setFitScale(scale);
+    setContentOffset({ x, y });
     setIsFitReady(true);
-  }, [containerRef, isCurrentlyTextEditing]);
+  }, [containerRef, isCurrentlyTextEditing, alignment, verticalAlignment]);
 
   // Compute fit on mount and when content/container changes
   useEffect(() => {
@@ -627,7 +653,9 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = m
     height: '100%',
     padding: typeof padding === 'number' ? `${padding}px` : String(padding),
     boxSizing: 'border-box',
-    transform: fitScale !== 1 ? `scale(${fitScale})` : undefined,
+    transform: fitScale !== 1 || contentOffset.x !== 0 || contentOffset.y !== 0
+      ? `translate(${contentOffset.x}px, ${contentOffset.y}px) scale(${fitScale})`
+      : undefined,
     transformOrigin: 'top left',
     visibility: isFitReady ? 'visible' : 'hidden',
   };

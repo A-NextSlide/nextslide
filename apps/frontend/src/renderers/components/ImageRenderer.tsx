@@ -1065,6 +1065,41 @@ export const renderImage = (
               }}
             />
           )}
+
+          {/* Processing overlay — shown during AI edit/fuse */}
+          {props.isProcessing && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                background: 'rgba(0, 0, 0, 0.55)',
+                backdropFilter: 'blur(2px)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                zIndex: 10,
+                pointerEvents: 'none',
+              }}
+            >
+              <div
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  border: '3px solid rgba(255, 255, 255, 0.3)',
+                  borderTopColor: '#FF4301',
+                  borderRadius: '50%',
+                  animation: 'ns-img-spin 1s linear infinite',
+                }}
+              />
+              <span style={{ color: 'white', fontSize: '11px', fontWeight: 500, textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}>Processing...</span>
+              <style>{`@keyframes ns-img-spin { to { transform: rotate(360deg); } }`}</style>
+            </div>
+          )}
         </div>
         </div>
         

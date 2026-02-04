@@ -112,39 +112,117 @@ const CATEGORY_OPTIONS = [
   { value: 'personal', label: 'Personal' },
 ];
 
-// Prompt text mapped to each hero deckIndex (from InteractiveHero PROMPTS)
+// Prompt text mapped to each hero display_order — aligned with InteractiveHero PROMPTS
 const HERO_PROMPTS: Record<number, { badge: string; text: string }> = {
-  0: { badge: 'Startup', text: 'Pitch deck for VCs who\'ve already seen 500 this month' },
-  1: { badge: 'Investment', text: 'Short-term stock analysis that reads like a Goldman memo' },
-  2: { badge: 'Education', text: 'Algebra for kids who ask "when will I use this"' },
-  3: { badge: 'Learn', text: 'How coffee conquered the world' },
-  4: { badge: 'Pitch', text: 'Demo day pitch that actually fits in 3 minutes' },
-  5: { badge: 'Education', text: 'Cellular Respiration: From Glucose to ATP' },
-  6: { badge: 'Learn', text: 'The French Revolution: From Monarchy to Republic' },
-  7: { badge: 'Sales', text: 'Client proposal that closes itself' },
-  8: { badge: 'Learn', text: 'Interactive Presentation About 2000s Internet Culture' },
-  9: { badge: 'Science', text: 'How to Survive a Zombie Apocalypse Using Science' },
-  10: { badge: 'Culture', text: 'Why the 90s Internet Was the Wild West of Creativity' },
-  11: { badge: 'Marketing', text: 'Social media strategy that actually converts' },
+  0: { badge: 'Science', text: 'A tour of our solar system from Mercury to the Kuiper Belt' },
+  1: { badge: 'Startup', text: 'Series B fundraising playbook for a company scaling past $10M ARR' },
+  2: { badge: 'AI / ML', text: 'Machine learning crash course that makes AI feel simple' },
+  3: { badge: 'History', text: 'World War II: a visual timeline of the global conflict' },
+  4: { badge: 'Marketing', text: 'Brand positioning strategy for a crowded market' },
+  5: { badge: 'Sales', text: 'Enterprise sales playbook for closing six-figure deals' },
+  6: { badge: 'Finance', text: 'Cryptocurrency market analysis covering DeFi and Layer 2' },
+  7: { badge: 'Creative', text: 'Photography masterclass on composition and visual storytelling' },
+  8: { badge: 'History', text: 'Ancient Egypt: pyramids, pharaohs, and the Nile civilization' },
+  9: { badge: 'Education', text: 'Music theory crash course from scales to chord progressions' },
+  10: { badge: 'Business', text: 'Digital transformation roadmap from legacy to cloud-native' },
+  11: { badge: 'Health', text: 'The science of nutrition: macros, micros, and metabolic health' },
 };
 
 const RANDOM_PROMPTS = [
-  'Pitch deck for an AI-powered healthcare startup raising $5M Series A',
-  'How coffee conquered the world — from Ethiopia to your morning latte',
-  'Algebra for kids who ask "when will I ever use this?"',
-  'Social media strategy that actually converts — not just likes',
-  'The French Revolution: From Monarchy to Republic',
-  'Client proposal for a $200K digital transformation consulting engagement',
-  'How to survive a zombie apocalypse using science',
-  'Quarterly business review showing 40% efficiency improvement',
-  'Introduction to machine learning for business leaders',
-  'Climate change solutions that are already working',
-  '2000s internet culture — a nostalgic trip through the golden age',
-  'The psychology of persuasion in marketing and sales',
-  'Cellular Respiration: From Glucose to ATP',
-  'Product demo deck for a project management tool',
-  'Annual marketing strategy for a DTC skincare brand',
-  'Why the 90s Internet was the Wild West of Creativity',
+  // ── The Universe & Space ──
+  'The scale of the universe — from quarks to the observable cosmos. Start with subatomic particles, zoom out through cells, humans, Earth, the solar system, galaxies, and galaxy clusters. Each slide should represent a different order of magnitude. Use a deep black background with rich astronomical photography. The design should feel like peering through the Hubble telescope — awe-inspiring, cinematic, with minimal text and massive full-bleed imagery. Let the emptiness of space itself be a design element.',
+
+  'What would happen if the Moon disappeared tomorrow. Walk through the chain reaction — tides collapse, Earth\'s axial tilt destabilizes, days shorten, seasons go haywire, and life on Earth slowly transforms. Each slide presents one consequence with a dramatic visual. Design style: dark cinematic sci-fi, deep navy and silver, planetary-scale imagery, single bold statements per slide. Think NASA meets IMAX documentary.',
+
+  // ── Human Body & Mind ──
+  'Inside your brain right now — what\'s firing while you read this. Cover the visual cortex processing these words, the prefrontal cortex making sense of them, memory encoding, attention filtering, and the 86 billion neurons coordinating it all. Use a clean, modern medical-illustration style with soft dark backgrounds and glowing neural-pathway accents in warm amber and electric blue. Each slide zooms into a different brain region with one fascinating fact.',
+
+  'The 24 hours inside your body — a timeline of what your organs do while you live your day. Start at 6am with cortisol waking you up, follow digestion, immune cell patrols, liver detox cycles, melatonin release, and overnight tissue repair. Warm, editorial design like a premium health magazine — cream and white with anatomical illustration accents in muted coral and teal. One body system per slide, beautifully simple.',
+
+  // ── History & Civilization ──
+  'The Silk Road — how spices, religions, diseases, and ideas traveled 4,000 miles and shaped every civilization they touched. Cover the trade routes, key cities like Samarkand and Constantinople, what was traded (silk, gunpowder, plague), and how it connected China to Rome. Rich textured design — aged parchment tones, deep saffron and indigo, hand-drawn map route illustrations, ornate calligraphic headings. Each slide should feel like opening an ancient merchant\'s journal.',
+
+  'Cold War espionage — the real spy stories behind the Iron Curtain. Cover the Cambridge Five, CIA tunnel under Berlin, U-2 incident, Oleg Penkovsky, and how espionage actually shaped nuclear policy. Noir thriller aesthetic — stark black and white photography with single red accent elements. Dossier-style layouts, typewriter fonts, redacted-text effects, classified-stamp overlays. Every slide should feel like a declassified document.',
+
+  'Ancient Egypt in 10 slides — not just pyramids, but what daily life actually looked like. Cover the Nile flood cycle that made civilization possible, how workers (not slaves) built the pyramids, Egyptian medicine and dentistry, beer as currency, and the incredible bureaucracy that kept it running. Warm sandstone and gold palette with hieroglyphic accent patterns, clean modern typography over archaeological photography.',
+
+  // ── Science & Nature ──
+  'The ocean\'s midnight zone — life that exists in permanent darkness 3,000 feet below the surface. Cover bioluminescent creatures, the anglerfish\'s hunting strategy, giant squid, hydrothermal vent ecosystems that don\'t need sunlight, and pressure that would crush a submarine. Deep ocean palette — black backgrounds with electric cyan, magenta, and green bioluminescent glows. Ethereal and alien, like discovering another planet. Dramatic creature photography with almost no text.',
+
+  'How a single volcanic eruption changed the course of human history — Mount Tambora, 1816, and the Year Without a Summer. Cover the eruption itself, the ash cloud circling the globe, crop failures across Europe and Asia, the famine and migration it triggered, and how Mary Shelley wrote Frankenstein because she was stuck indoors. Cinematic documentary style — smoky greys and volcanic orange, dramatic landscape photography, timeline-driven narrative. Dark and atmospheric.',
+
+  'What actually happens during a lightning strike — from the initial charge separation in a cloud to the return stroke hitting ground in 0.0002 seconds. Break down stepped leaders, channel formation, the 30,000°C plasma, thunder as a shockwave, and ball lightning mysteries. Electric, high-energy design — deep storm-cloud darks with brilliant white and electric violet accents. Each slide captures one microsecond of the process.',
+
+  // ── Technology & The Future ──
+  'How GPS actually works — the insane engineering of knowing where you are within 3 feet. Cover the constellation of 31 satellites, atomic clocks accurate to nanoseconds, Einstein\'s relativity corrections (yes, GPS needs relativity), trilateration math, and how your phone does all this in milliseconds. Clean technical blueprint style — dark navy background with precise white and amber technical drawings, satellite orbit diagrams, signal-path illustrations. Engineering elegance.',
+
+  'The invisible infrastructure of the internet — what physically happens when you load a webpage. Trace the journey from your keypress through WiFi radio waves, fiber optic cables under the ocean, DNS resolution, CDN edge servers, TCP handshakes, and pixels rendering on your screen. Minimal tech-documentation style — matte white with precise technical diagrams in cool grey and signal-blue. Each slide is one hop in the journey, clean and mesmerizing.',
+
+  'Artificial intelligence explained through the lens of how a child learns vs how a machine learns. Compare pattern recognition, trial and error, language acquisition, abstraction, and creativity between human development and neural network training. Side-by-side visual comparisons on each slide. Warm and approachable design — soft white backgrounds with playful geometric illustrations in sunset orange, sky blue, and charcoal.',
+
+  // ── Psychology & Human Behavior ──
+  'The psychology of first impressions — what your brain decides about someone in 100 milliseconds. Cover the amygdala\'s snap judgments, facial symmetry detection, voice pitch processing, the halo effect, confirmation bias that locks it in, and how to hack first impressions. Magazine-editorial style — black and white portrait photography with a single warm accent color (amber). Clean Helvetica-style type, lots of white space, one psychological principle per slide.',
+
+  'Why you can\'t stop scrolling — the neuroscience of addictive design. Cover variable reward schedules, dopamine prediction errors, infinite scroll mechanics, notification red dots, social validation loops, and the slot-machine psychology behind pull-to-refresh. Bold, attention-grabbing design that ironically mimics what it\'s critiquing — vibrant app-UI colors (notification red, like-heart pink, story-ring gradient) on dark backgrounds. Data callouts with shocking screen-time statistics.',
+
+  'How cults recruit smart people — the step-by-step psychological playbook. Cover love bombing, us-vs-them framing, incremental commitment, sleep deprivation, thought-terminating cliches, and why intelligence doesn\'t protect you. Stark, unsettling editorial design — high contrast black and white, tight cropped photography, bold red pull-quotes. Each slide reveals one manipulation technique with clinical precision.',
+
+  // ── Business & Strategy ──
+  'Pitch deck for VCs who\'ve already seen 500 this month — a consumer fintech app that turns spare change into micro-investments. Open with the $3.7T problem (uninvested savings), show the product in action, unit economics, growth curve, competitive moat, and the team. Premium startup aesthetic — clean white with confident black typography and a single electric-green accent. Big numbers, product mockups, zero fluff. Every slide earns the next.',
+
+  'How IKEA quietly became one of the most brilliant companies ever built. Cover the flat-pack revolution, the IKEA effect (why you value what you build), store layout psychology, the $1 hot dog strategy, democratic design philosophy, and global supply chain mastery. Scandinavian minimal — warm birch-wood textures, clean white, and Swedish blue-yellow accents. Simple, functional design that mirrors the brand itself.',
+
+  'The business model behind free-to-play games — how Fortnite makes $5B giving away its product. Cover the psychology of cosmetic purchases, battle pass mechanics, FOMO-driven limited drops, social spending pressure, whale economics, and why the model works without being pay-to-win. Gaming-native design — dark mode with vibrant neon gradients (purple, cyan, hot pink), card-based layouts, stat callouts styled like in-game UI elements.',
+
+  // ── Art, Design & Architecture ──
+  'Wabi-sabi — the Japanese philosophy of finding beauty in imperfection. Cover the origins in Zen Buddhism, how it applies to ceramics (kintsugi), architecture (tea houses), daily life, and why the Western obsession with perfection misses something. Deeply minimal Japanese aesthetic — abundant negative space, warm stone grey and moss green, asymmetrical compositions, natural textures. Each slide should itself embody wabi-sabi — imperfect, incomplete, beautiful.',
+
+  'How color literally changes what you taste — the science of crossmodal perception. Cover red plates making food taste sweeter, blue lighting suppressing appetite, wine experts fooled by food coloring, airline meal design, and restaurant color psychology. Each slide uses the color it\'s discussing as its dominant full-bleed background. Bold, immersive, sensory — white text floating on vivid color fields. Let the viewer feel the science.',
+
+  'The architecture of solitude — the world\'s most beautiful buildings designed for one person. Cover Japanese tea houses, Scandinavian writing cabins, desert meditation cells, Le Corbusier\'s Cabanon, lighthouse keeper quarters, and modern micro-homes. Contemplative, architectural photography style — muted earth tones, generous whitespace, clean serif typography. One building per slide, full-bleed imagery with minimal overlay text.',
+
+  // ── Money & Economics ──
+  'How the diamond industry manufactured desire — the greatest marketing con of the 20th century. Cover De Beers\' supply manipulation, the invention of the engagement ring tradition, the "diamonds are forever" campaign, artificial scarcity, and how lab-grown diamonds are disrupting the racket. Luxurious but subversive design — elegant serif type and sparkling imagery that slowly reveals the manipulation. Black and crystalline white with ironic gold accents.',
+
+  'What would happen to the economy if nobody worked on Fridays. Walk through the productivity research (shorter weeks = same output), GDP implications, industry-by-industry breakdown, healthcare savings, environmental impact, and which countries are already trying it. Clean, optimistic editorial design — bright white with warm coral and sage green accents. Infographic-driven, data-rich slides with a hopeful, forward-looking tone.',
+
+  // ── Food & Culture ──
+  'Street food atlas — the world\'s best food you can only get from a cart. Cover Bangkok\'s pad thai alleys, Mexico City\'s taco stands, Istanbul\'s simit vendors, Mumbai\'s vada pav stalls, Osaka\'s takoyaki corners, and Marrakech\'s Jemaa el-Fnaa night market. Vibrant, warm, photography-forward — rich saturated colors, tight food close-ups, hand-painted sign textures. Each slide is a different city with its signature street dish. Makes you hungry just looking at it.',
+
+  'The science of sourdough — what\'s actually happening in that jar on your counter. Cover wild yeast capture, lactobacillus fermentation, gluten network formation, the Maillard reaction in the crust, and why San Francisco sourdough tastes different from everywhere else. Warm artisanal aesthetic — kraft paper tones, close-up bread photography with visible crumb structure, hand-drawn fermentation diagrams. Rustic but precise, cozy but scientific.',
+
+  // ── Society & Big Questions ──
+  'The attention economy — you are the product, and your focus is being strip-mined. Cover how the average person sees 10,000 ads daily, attention as a finite resource, the race to the brainstem, notification design, and what we lose when deep focus disappears. Stark, confrontational design — mostly black with harsh white text and a single red accent. Each slide hits with one uncomfortable statistic or insight. Sparse, punchy, impossible to ignore.',
+
+  'What different cultures believe happens when you die — a respectful visual comparison. Cover ancient Egyptian afterlife judgment, Hindu reincarnation cycles, Buddhist bardo states, Christian heaven/hell, Norse Valhalla, and secular perspectives on consciousness ending. Contemplative and reverent — deep indigo and midnight blue gradients with soft celestial gold accents. Symmetrical compositions, sparse poetic text, glowing orb and light motifs. Beautiful and thoughtful.',
+
+  'How propaganda works — visual manipulation techniques used by every government in history. Cover color psychology in political posters, framing and cropping bias, repetition effects, us-vs-them imagery, and how social media is the new propaganda machine. Documentary-expose style — high contrast, desaturated photography with overlaid analytical annotations in red. Educational, not partisan — examining the mechanics, not pushing a side.',
+
+  // ── Planet Earth ──
+  'The water cycle is way wilder than your 5th grade teacher told you. Cover atmospheric rivers carrying more water than the Amazon, underground aquifers older than the ice ages, how trees create rain (transpiration), the global ocean conveyor belt, and how a single water molecule might be 4.5 billion years old. Fluid, dynamic design — deep ocean blues flowing into cloud whites into rain greys. Organic flowing shapes, watercolor-wash backgrounds, clean infographic overlays.',
+
+  'The secret life of soil — there are more organisms in a teaspoon of dirt than people on Earth. Cover mycorrhizal fungal networks, nematode predators, nitrogen-fixing bacteria, decomposition chemistry, and how soil is literally alive. Rich earthy design — deep brown and forest green palette with microscopic photography accents. Cross-section diagrams showing underground worlds. Textured, organic, like holding actual earth.',
+
+  // ── Music & Sound ──
+  'The physics of why some music gives you chills — frisson, dissonance resolution, and your brainstem. Cover the unexpected chord change effect, Adele\'s "Someone Like You" analyzed bar by bar, how minor keys trigger sadness across cultures, ASMR\'s neural pathway, and the evolutionary purpose of musical emotion. Dark, moody concert-hall aesthetic — near-black backgrounds with warm spotlight amber and soft sound-wave visualizations. Intimate, like being alone in a concert hall.',
+
+  'How Auto-Tune went from vocal correction tool to defining the sound of an entire generation. Cover Cher\'s "Believe" as the accidental breakthrough, T-Pain\'s artistic reinvention, the backlash and authenticity debate, how literally every modern pop vocal is tuned, and the vocoder lineage going back to WWII speech encryption. Retro-meets-digital design — CRT scan-line textures, audio-waveform visuals, neon synth colors (hot pink, electric blue) on black. Music-production-software-inspired layouts.',
+
+  // ── Unexpected & Fascinating ──
+  'The most expensive things humans have ever built — adjusted for inflation. Cover the International Space Station, the US Interstate Highway System, GPS satellite constellation, the Manhattan Project, the Great Wall of China, and the Apollo program. Each slide: one megaproject, one staggering number, one full-bleed hero image. Clean infographic style — dark charcoal background with bold white numbers and warm amber accent. Scale-comparison graphics that make the costs visceral.',
+
+  'How your supermarket is designed to make you spend more — every aisle is a psychological trap. Cover decompression zones at the entrance, bakery smells pumped through vents, end-cap premium placement, eye-level product pricing, cart size inflation, and checkout impulse corridors. Retail-bright design that mimics the supermarket itself — clean white with product-photography-style lighting, aisle-number wayfinding accents in bold red and yellow. Revealing the machine you walk through every week.',
+
+  'The mathematics of dating — how game theory, the secretary problem, and probability explain your love life. Cover optimal stopping theory (date exactly 37% then commit), the stable matching algorithm, Dunbar\'s number limiting your dating pool, and the paradox of choice on dating apps. Playful but smart design — soft blush pink and charcoal with elegant data visualizations. Mathematical notation as design elements, probability curves as visual motifs. Romantic and nerdy simultaneously.',
+
+  'Why the Concorde failed and why supersonic flight is coming back. Cover the engineering marvel of Mach 2 travel, the sonic boom problem, the economics that killed it, and the new startups (Boom Supersonic) solving what the Concorde couldn\'t. Aviation-engineering aesthetic — blueprint navy with precise white technical cross-sections of aircraft. Vintage Concorde photography transitioning to sleek renders of new designs. Speed lines, trajectory arcs, engineering beauty.',
+
+  'The world\'s deadliest animals ranked — and why the mosquito dwarfs everything else combined. Cover annual death counts: mosquitoes (700K+), humans (400K+), snakes (50K), dogs (25K), then compare to sharks (10), and why our fear is inversely proportional to actual danger. Each slide: one animal, one death count, one dramatic wildlife photograph. Dark, National Geographic documentary style — rich blacks with warm golden-hour wildlife photography tones. The contrast between beauty and danger.',
+
+  // ── Philosophy & Ideas ──
+  'Thought experiments that broke philosophy — the trolley problem, the Chinese room, Theseus\'s ship, the experience machine, and the veil of ignorance. Each slide presents one thought experiment with a vivid scenario illustration, the core dilemma, and why it still has no good answer. Clean, intellectual design — warm off-white with deep charcoal text and a single thoughtful accent color (muted teal). Illustration-driven, each scenario visually staged like a theater set.',
+
+  'The overview effect — what astronauts experience when they see Earth from space, and why it changes them forever. Cover the cognitive shift, astronaut quotes about borders disappearing, the thin blue line of atmosphere, Carl Sagan\'s pale blue dot, and the philosophical implications for how we treat our planet. Cinematic space photography — Earth against the void of space, thin atmosphere glow, orbital sunrise. Deep blacks with the blue-white jewel of Earth as the only color. Profound, quiet, perspective-shifting.',
 ];
 
 // ---------------------------------------------------------------------------

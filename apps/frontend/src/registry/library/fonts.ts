@@ -53,7 +53,27 @@ export const FONT_CATEGORIES: Record<string, FontDefinition[]> = {
     { name: 'Gloock', family: 'Gloock', source: 'google', weight: '400' },
     { name: 'Prata', family: 'Prata', source: 'google', weight: '400' },
     { name: 'Staatliches', family: 'Staatliches', source: 'google', weight: '400' },
-    { name: 'Baloo 2', family: 'Baloo 2', source: 'google', weight: '400 500 600 700 800' }
+    { name: 'Baloo 2', family: 'Baloo 2', source: 'google', weight: '400 500 600 700 800' },
+    // Script & Handwritten fonts
+    { name: 'Caveat', family: 'Caveat', source: 'google', weight: '400 500 600 700' },
+    { name: 'Dancing Script', family: 'Dancing Script', source: 'google', weight: '400 500 600 700' },
+    { name: 'Kaushan Script', family: 'Kaushan Script', source: 'google', weight: '400' },
+    { name: 'Great Vibes', family: 'Great Vibes', source: 'google', weight: '400' },
+    { name: 'Allura', family: 'Allura', source: 'google', weight: '400' },
+    { name: 'Pacifico', family: 'Pacifico', source: 'google', weight: '400' },
+    { name: 'Satisfy', family: 'Satisfy', source: 'google', weight: '400' },
+    { name: 'Courgette', family: 'Courgette', source: 'google', weight: '400' },
+    { name: 'Amatic SC', family: 'Amatic SC', source: 'google', weight: '400 700' },
+    { name: 'Indie Flower', family: 'Indie Flower', source: 'google', weight: '400' },
+    { name: 'Shadows Into Light', family: 'Shadows Into Light', source: 'google', weight: '400' },
+    { name: 'Patrick Hand', family: 'Patrick Hand', source: 'google', weight: '400' },
+    { name: 'Lobster', family: 'Lobster', source: 'google', weight: '400' },
+    { name: 'Permanent Marker', family: 'Permanent Marker', source: 'google', weight: '400' },
+    { name: 'Handlee', family: 'Handlee', source: 'google', weight: '400' },
+    { name: 'Sacramento', family: 'Sacramento', source: 'google', weight: '400' },
+    { name: 'Tangerine', family: 'Tangerine', source: 'google', weight: '400 700' },
+    { name: 'Yellowtail', family: 'Yellowtail', source: 'google', weight: '400' },
+    { name: 'Kalam', family: 'Kalam', source: 'google', weight: '300 400 700' }
   ],
   
   // Local designer fonts added from public/fonts via generator
@@ -185,8 +205,7 @@ export const FONT_CATEGORIES: Record<string, FontDefinition[]> = {
     { name: 'Overpass Mono', family: 'Overpass Mono', source: 'google', weight: '300 400 600 700' },
     // New monospace additions
     { name: 'Azeret Mono', family: 'Azeret Mono', source: 'google', weight: '300 400 500 600 700 800 900' },
-    { name: 'Martian Mono', family: 'Martian Mono', source: 'google', weight: '300 400 500 600 700 800' },
-    { name: 'Commit Mono', family: 'Commit Mono', source: 'google', weight: '400 500 600 700' }
+    { name: 'Martian Mono', family: 'Martian Mono', source: 'google', weight: '300 400 500 600 700 800' }
   ],
   
   // Bold & Impact fonts (high quality)
@@ -273,29 +292,6 @@ export const FONT_CATEGORIES: Record<string, FontDefinition[]> = {
     { name: 'Baloo 2', family: 'Baloo 2', source: 'google', weight: '400 500 600 700 800' }
   ],
   
-  // Script & Handwritten fonts (high quality)
-  'Script': [
-    { name: 'Caveat', family: 'Caveat', source: 'google', weight: '400 500 600 700' },
-    { name: 'Dancing Script', family: 'Dancing Script', source: 'google', weight: '400 500 600 700' },
-    { name: 'Kaushan Script', family: 'Kaushan Script', source: 'google', weight: '400' },
-    { name: 'Great Vibes', family: 'Great Vibes', source: 'google', weight: '400' },
-    { name: 'Allura', family: 'Allura', source: 'google', weight: '400' },
-    { name: 'Pacifico', family: 'Pacifico', source: 'google', weight: '400' },
-    { name: 'Satisfy', family: 'Satisfy', source: 'google', weight: '400' },
-    { name: 'Courgette', family: 'Courgette', source: 'google', weight: '400' },
-    { name: 'Amatic SC', family: 'Amatic SC', source: 'google', weight: '400 700' },
-    { name: 'Indie Flower', family: 'Indie Flower', source: 'google', weight: '400' },
-    { name: 'Shadows Into Light', family: 'Shadows Into Light', source: 'google', weight: '400' },
-    { name: 'Patrick Hand', family: 'Patrick Hand', source: 'google', weight: '400' },
-    { name: 'Lobster', family: 'Lobster', source: 'google', weight: '400' },
-    { name: 'Permanent Marker', family: 'Permanent Marker', source: 'google', weight: '400' },
-    { name: 'Handlee', family: 'Handlee', source: 'google', weight: '400' },
-    // New script additions
-    { name: 'Sacramento', family: 'Sacramento', source: 'google', weight: '400' },
-    { name: 'Tangerine', family: 'Tangerine', source: 'google', weight: '400 700' },
-    { name: 'Yellowtail', family: 'Yellowtail', source: 'google', weight: '400' },
-    { name: 'Kalam', family: 'Kalam', source: 'google', weight: '300 400 700' }
-  ],
   
   // Elegant & Decorative fonts (high quality)
   'Elegant': [

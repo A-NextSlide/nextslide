@@ -148,8 +148,7 @@ export function fontSupportsItalic(fontName: string): boolean {
     'Overpass Mono',
     'Azeret Mono',
     'Martian Mono',
-    'Commit Mono',
-    
+
     // Fontshare fonts that don't support italic
     'Gambarino',
     'Boska',

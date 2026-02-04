@@ -499,7 +499,7 @@ def build_user_prompt(
         sections.append(
             "⚠️ TITLE SLIDE: This is the OPENING slide. Design a visually striking title page that sets the tone for the deck.\n"
             "  - Keep it SIMPLE: title + optional subtitle/tagline. No bullet points, no paragraphs, no content blocks\n"
-            "  - No tabs, no cards, no lists, no interactive elements. Just the title page.\n"
+            "  - No tabs, no cards, no lists, no interactive elements, no explore/CTA buttons. Just the title page.\n"
             "  - Optional: metadata row (presenter, date, org) if relevant"
         )
 

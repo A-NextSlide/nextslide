@@ -9,7 +9,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Inter:wght@400;700&family=Poppins:wght@400;500;700&display=swap');
 
 /* Monospace Fonts */
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Source+Code+Pro:wght@400;700&family=Ubuntu+Mono:wght@400;700&family=Inconsolata:wght@400;700&family=Fira+Code:wght@400;700&family=Courier+Prime:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Source+Code+Pro:wght@400;700&family=Ubuntu+Mono:wght@400;700&family=Inconsolata:wght@400;700&family=Fira+Code:wght@400;700&family=Courier+Prime:wght@400;700&family=Space+Mono:wght@400;700&family=PT+Mono&family=Red+Hat+Mono:wght@400;700&family=Overpass+Mono:wght@400;700&family=Azeret+Mono:wght@400;700&family=Martian+Mono:wght@400;700&display=swap');
 
 /* System Replacements - Use distinct fonts for each system font */
 @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;700&family=Source+Sans+Pro:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito+Sans:wght@400;700&display=swap');
@@ -143,7 +143,12 @@
   --font-inconsolata: 'Inconsolata', monospace;
   --font-ibm-plex-mono: 'IBM Plex Mono', monospace;
   --font-courier-prime: 'Courier Prime', monospace;
-  
+  --font-pt-mono: 'PT Mono', monospace;
+  --font-red-hat-mono: 'Red Hat Mono', monospace;
+  --font-overpass-mono: 'Overpass Mono', monospace;
+  --font-azeret-mono: 'Azeret Mono', monospace;
+  --font-martian-mono: 'Martian Mono', monospace;
+
   /* System Font Stacks - Using distinct Google Fonts for each */
   --font-system-ui: 'Nunito Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-sf-pro: 'Work Sans', 'SF Pro Text', 'SF Pro Icons', 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -276,6 +281,11 @@
 .font-inconsolata { font-family: var(--font-inconsolata); }
 .font-ibm-plex-mono { font-family: var(--font-ibm-plex-mono); }
 .font-courier-prime { font-family: var(--font-courier-prime); }
+.font-pt-mono { font-family: var(--font-pt-mono); }
+.font-red-hat-mono { font-family: var(--font-red-hat-mono); }
+.font-overpass-mono { font-family: var(--font-overpass-mono); }
+.font-azeret-mono { font-family: var(--font-azeret-mono); }
+.font-martian-mono { font-family: var(--font-martian-mono); }
 
 .font-system-ui { font-family: var(--font-system-ui); }
 .font-sf-pro { font-family: var(--font-sf-pro); }

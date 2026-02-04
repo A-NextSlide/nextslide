@@ -66,7 +66,6 @@ CURATED_PIXELBUDDHA_FONTS = [
     "4999-benito-timeless-typeface",
     "3708-lacotte-modern-display-font",
     "3355-luxury-charm-modern-ligature-font",
-    "2883-fecktor-modern-art-deco-font",
     "4646-bright-retro-font",
     "4650-bon-foyage-vintage-serif-font",
     "4677-transcity-a-playful-serif",

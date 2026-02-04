@@ -3774,9 +3774,10 @@ async def _admin_generate_deck(
                 ],
             )
 
+        # Pass the full enhanced topic so slide composition retains design direction
         deck_outline.stylePreferences = StylePreferencesItem(
-            initialIdea=topic,
-            vibeContext=style or topic,
+            initialIdea=enhanced_topic,
+            vibeContext=f"{style} — {topic}" if style else topic,
         )
 
         deck_data = build_initial_deck_payload(deck_outline, deck_uuid)

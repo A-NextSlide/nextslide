@@ -9,11 +9,18 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import GradientPicker from '@/components/GradientPicker';
 import { ComponentInstance } from '@/types/components';
-import { 
-  Image as ImageIcon, Upload, Palette, Settings, ChevronRight, Wand2, 
-  Square, Circle, Triangle, Hexagon, Star, Heart, 
-  Zap, Move3D, Sparkles, Eye, EyeOff, Layers, Frame, Crop
+import {
+  Image as ImageIcon, Upload, Palette, Settings, ChevronRight, ChevronDown, Wand2,
+  Square, Circle, Triangle, Hexagon, Star, Heart,
+  Zap, Move3D, Sparkles, Eye, EyeOff, Layers, Frame, Crop, Loader2,
+  Search, Link2
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from "@/lib/utils";
 import { createUploadHandler } from '@/utils/fileUploadUtils';
 import { useToast } from '@/hooks/use-toast';
@@ -61,7 +68,9 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
   const [isDraggingOverPrompt, setIsDraggingOverPrompt] = useState(false);
   const fuseFileInputRef = useRef<HTMLInputElement>(null);
   const [transparentBg, setTransparentBg] = useState(false);
-  
+  const [isPreviewHovered, setIsPreviewHovered] = useState(false);
+  const [isMediaHubOpen, setIsMediaHubOpen] = useState(false);
+
   // Collapsible section states
   const [sectionsOpen, setSectionsOpen] = useState({
     appearance: false,
@@ -342,6 +351,7 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
     const size = computeSizeHint();
     const aspectRatio = computeAspectRatio();
     setIsProcessingAi(true);
+    handlePropChange('isProcessing', true, true);
     try {
       const { imageUrl, imageBase64 } = await resolveImageParam(effectiveSrc);
       const payload: any = {
@@ -387,6 +397,7 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
       toast({ title: 'Edit failed', description: e?.message || 'Unable to edit image.', variant: 'destructive' });
     } finally {
       setIsProcessingAi(false);
+      handlePropChange('isProcessing', false, true);
     }
   };
 
@@ -402,6 +413,7 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
     const prompt = buildGuidedInstructions(aiPrompt || 'Compose a single cohesive image that blends the inputs naturally.');
     const size = computeSizeHint();
     setIsProcessingAi(true);
+    handlePropChange('isProcessing', true, true);
     try {
       const resp = await fetch('/api/images/fuse', {
         method: 'POST',
@@ -439,26 +451,151 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
       toast({ title: 'Fusion failed', description: e?.message || 'Unable to fuse images.', variant: 'destructive' });
     } finally {
       setIsProcessingAi(false);
+      handlePropChange('isProcessing', false, true);
     }
   };
 
+  const currentSrc = component.props.src || '';
+  const hasImage = !!currentSrc && currentSrc !== 'placeholder' && !currentSrc.includes('/api/placeholder/');
+  const currentFit = component.props.objectFit || 'cover';
+  const fitOptions: { value: string; label: string }[] = [
+    { value: 'cover', label: 'Cover' },
+    { value: 'contain', label: 'Contain' },
+    { value: 'fill', label: 'Fill' },
+    { value: 'scale-down', label: 'Scale Down' },
+  ];
+
   return (
     <div className="space-y-3">
-      {/* Media switcher and AI edit/fuse */}
-      <div className="space-y-2">
-        <Label className="text-xs font-medium">Media</Label>
-        <div className="flex items-center gap-2 overflow-x-hidden">
-          <MediaHub trigger={<Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">Swap media</Button>} onSelect={(url) => {
-            if (url && typeof url === 'string') {
-              setImageUrl(url);
-              handlePropChange('src', url);
-              saveComponentToHistory('Changed image source');
-            }
-          }} />
+      {/* Image preview card */}
+      <div className="space-y-1">
+        <div
+          className="relative rounded-md overflow-hidden border border-border/50 bg-card"
+          onMouseEnter={() => setIsPreviewHovered(true)}
+          onMouseLeave={() => setIsPreviewHovered(false)}
+        >
+          <div
+            onClick={() => setIsMediaHubOpen(true)}
+            className={cn(
+              "relative w-full h-24 cursor-pointer group",
+              "bg-[repeating-conic-gradient(#f5f5f5_0_90deg,#fafafa_90deg_180deg)_0_0/10px_10px]"
+            )}
+          >
+            {hasImage ? (
+              <>
+                <img
+                  src={currentSrc}
+                  alt={component.props.alt || ''}
+                  className="w-full h-full"
+                  style={{ objectFit: currentFit as any }}
+                />
+                <div className={cn(
+                  "absolute inset-0 bg-black/0 transition-all duration-150 flex items-center justify-center",
+                  isPreviewHovered && "bg-black/35"
+                )}>
+                  <span className={cn(
+                    "text-white text-[9px] font-medium opacity-0 transition-opacity flex items-center gap-1",
+                    isPreviewHovered && "opacity-100"
+                  )}>
+                    <Search className="w-2.5 h-2.5" />
+                    Browse
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-0.5 text-muted-foreground group-hover:text-foreground transition-colors">
+                <ImageIcon className="w-4 h-4" />
+                <span className="text-[9px]">Click to select</span>
+              </div>
+            )}
+          </div>
+
+          {/* Top bar: label + fit dropdown */}
+          <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-1 py-0.5 pointer-events-none">
+            <div className="px-1 py-px rounded bg-black/50 backdrop-blur-sm pointer-events-auto">
+              <span className="text-[8px] text-white font-medium truncate max-w-[120px] block leading-tight">
+                {component.props.alt || 'Image'}
+              </span>
+            </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="pointer-events-auto flex items-center gap-px px-1 py-px rounded bg-black/50 backdrop-blur-sm text-white text-[8px] font-medium hover:bg-black/60 transition-colors"
+                >
+                  {fitOptions.find(f => f.value === currentFit)?.label || 'Cover'}
+                  <ChevronDown className="w-2 h-2" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[72px]" onPointerDownOutside={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+                {fitOptions.map((option) => (
+                  <DropdownMenuItem
+                    key={option.value}
+                    onClick={(e) => { e.stopPropagation(); handlePropChange('objectFit', option.value); }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className={cn(
+                      "text-[11px] py-1",
+                      currentFit === option.value && "bg-orange-50 text-orange-600 dark:bg-orange-500/10"
+                    )}
+                  >
+                    {option.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          {/* Bottom action buttons */}
+          {(isPreviewHovered || isMediaHubOpen) && (
+            <div className="absolute bottom-1 left-1 right-1 flex gap-0.5">
+              {[
+                { icon: Wand2, label: 'AI', action: () => { /* scroll to AI section handled below */ document.getElementById('img-ai-edit-section')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } },
+                { icon: Layers, label: 'Fuse', action: () => { document.getElementById('img-ai-edit-section')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } },
+                { icon: Link2, label: 'URL', action: () => { document.getElementById('img-source-section')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } },
+              ].map(({ icon: Icon, label, action }) => (
+                <button
+                  key={label}
+                  onClick={(e) => { e.stopPropagation(); action(); }}
+                  className="flex-1 flex items-center justify-center gap-0.5 py-1 rounded text-[9px] font-medium bg-white/90 text-zinc-700 hover:bg-white backdrop-blur-sm transition-all"
+                >
+                  <Icon className="w-2.5 h-2.5" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="space-y-2">
+      {/* MediaHub dialog for browse */}
+      {isMediaHubOpen && (() => {
+        const searchTerm =
+          component.props?.metadata?.searchQuery ||
+          component.props?.metadata?.topic ||
+          (component.props?.alt && component.props.alt !== 'Image' ? component.props.alt : '') ||
+          '';
+        return (
+          <MediaHub
+            key={`img-editor-${component.id}`}
+            open={true}
+            onClose={() => setIsMediaHubOpen(false)}
+            onSelect={(url) => {
+              if (url && typeof url === 'string') {
+                setImageUrl(url);
+                handlePropChange('src', url);
+                saveComponentToHistory('Changed image source');
+              }
+              setIsMediaHubOpen(false);
+            }}
+            defaultSearchTerm={searchTerm}
+            autoSearch={false}
+          />
+        );
+      })()}
+
+      <div id="img-ai-edit-section" className="space-y-2">
         <Label className="text-xs font-medium">AI Edit & Fuse</Label>
         <div
           className={cn(
@@ -473,7 +610,7 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
             value={aiPrompt}
             onChange={(e) => setAiPrompt(e.target.value)}
             placeholder="Describe how to edit this image… (You can also drop images here to fuse)"
-            className="min-h-[60px] text-xs resize-none border-none p-0 shadow-none focus-visible:ring-0"
+            className="min-h-[44px] text-xs resize-none border-none p-0 shadow-none focus-visible:ring-0"
             disabled={isProcessingAi}
           />
           
@@ -495,7 +632,7 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
           <div 
             className={cn(
               "flex flex-wrap gap-1 transition-all duration-300 ease-out overflow-hidden",
-              aiPrompt ? "opacity-0 max-h-0 mt-0" : "opacity-100 max-h-10 mt-2"
+              aiPrompt ? "opacity-0 max-h-0 mt-0" : "opacity-100 max-h-10 mt-1.5"
             )}
           >
             {[
@@ -514,7 +651,7 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
               <button 
                 key={label} 
                 type="button" 
-                className="px-2 py-0.5 rounded-full border text-[10px] hover:bg-accent hover:border-orange-400/50 transition-colors" 
+                className="px-1.5 py-0.5 rounded border text-[9px] font-medium hover:bg-orange-50 hover:border-orange-200 hover:text-orange-600 dark:hover:bg-orange-500/10 transition-colors" 
                 onClick={action}
               >
                 {label}
@@ -523,25 +660,32 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
           </div>
           
           {/* Actions row */}
-          <div className="flex items-center justify-between mt-3">
-            <div className="flex items-center gap-2">
-              <Button size="sm" className="h-6 px-3 text-[11px]" disabled={isProcessingAi} onClick={callEditApi}>
-                Apply edit
-              </Button>
-              {fuseAttachments.filter(a => !a.pending).length > 0 && (
-                <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" disabled={isProcessingAi} onClick={callFuseApi}>
-                  Fuse
+          <div className="flex items-center justify-between mt-2">
+            {isProcessingAi ? (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#FF4301' }} />
+                <span className="text-[11px]">Processing...</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button size="sm" className="h-6 px-3 text-[11px]" onClick={callEditApi}>
+                  Apply edit
                 </Button>
-              )}
-              <input ref={fuseFileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePickFuseFiles} />
-              <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => fuseFileInputRef.current?.click()}>
-                + Add image
-              </Button>
-            </div>
+                {fuseAttachments.filter(a => !a.pending).length > 0 && (
+                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={callFuseApi}>
+                    Fuse
+                  </Button>
+                )}
+                <input ref={fuseFileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePickFuseFiles} />
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => fuseFileInputRef.current?.click()}>
+                  + Add image
+                </Button>
+              </div>
+            )}
           </div>
           
           {/* Transparent BG toggle on its own line */}
-          <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+          <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t">
             <Switch 
               id="transparent-bg" 
               checked={transparentBg} 
@@ -556,27 +700,27 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
       </div>
 
       {/* Image Source Section */}
-      <div className="space-y-2">
+      <div id="img-source-section" className="space-y-2">
         <Label className="text-xs font-medium">Image Source</Label>
         <div className="flex items-center space-x-2">
-          <Input 
-            type="text" 
-            value={imageUrl} 
+          <Input
+            type="text"
+            value={imageUrl}
             onChange={(e) => handleUrlChange(e.target.value)}
-            className="h-8 text-xs flex-1" 
-            placeholder="https://..." 
+            className="h-8 text-xs flex-1"
+            placeholder="https://..."
           />
         </div>
-        <input 
-          type="file" 
+        <input
+          type="file"
           ref={fileInputRef}
           onChange={handleFileChange}
           accept="image/*"
           style={{ display: 'none' }}
         />
-        <Button 
-          variant="outline" 
-          size="sm" 
+        <Button
+          variant="outline"
+          size="sm"
           className="h-8 text-xs w-full"
           onClick={handleUploadButtonClick}
           disabled={isUploading}
@@ -596,37 +740,17 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
             </span>
           )}
         </Button>
-        
+
         {/* Alt Text */}
         <div className="space-y-1 mt-2">
           <Label className="text-xs">Alt Text</Label>
-          <Input 
-            type="text" 
-            value={component.props.alt || ''} 
+          <Input
+            type="text"
+            value={component.props.alt || ''}
             onChange={(e) => handlePropChange('alt', e.target.value)}
-            className="h-8 text-xs" 
+            className="h-8 text-xs"
             placeholder="Describe this image..."
           />
-        </div>
-        
-        {/* Object Fit */}
-        <div className="space-y-1">
-          <Label className="text-xs">Fit Mode</Label>
-          <Select 
-            value={component.props.objectFit || 'cover'} 
-            onValueChange={(value) => handlePropChange('objectFit', value)}
-          >
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="cover">Cover</SelectItem>
-              <SelectItem value="contain">Contain</SelectItem>
-              <SelectItem value="fill">Fill</SelectItem>
-              <SelectItem value="none">None</SelectItem>
-              <SelectItem value="scale-down">Scale Down</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </div>
 

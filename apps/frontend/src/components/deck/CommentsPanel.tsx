@@ -7,10 +7,10 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { CommentsService } from '@/services/CommentsService';
 import { useEditorStore } from '@/stores/editorStore';
-import { AtSign, X, MessageSquare, MoreHorizontal, ChevronDown, Check, RotateCcw, Send } from 'lucide-react';
+import { AtSign, X, MessageSquare, MoreHorizontal, ChevronDown, Check, RotateCcw, Send, Eye, EyeOff, Loader2, MapPin } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { CommentAnchor, CommentEntity, CommentFilterTab, EnrichedCommentThread } from '@/types/Comments';
 import {
@@ -85,6 +85,7 @@ const CommentBubble: React.FC<{
 }> = ({ comment, currentUserId, deckId, onEdited }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editBody, setEditBody] = useState(comment.body);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const isOwn = currentUserId === comment.authorId;
 
   const handleSave = async () => {
@@ -128,23 +129,9 @@ const CommentBubble: React.FC<{
                 <DropdownMenuItem onClick={() => { setEditBody(comment.body); setIsEditing(true); }}>
                   Edit
                 </DropdownMenuItem>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <DropdownMenuItem onSelect={e => e.preventDefault()} className="text-destructive">
-                      Delete
-                    </DropdownMenuItem>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete comment?</AlertDialogTitle>
-                      <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                <DropdownMenuItem className="text-destructive" onClick={() => setShowDeleteDialog(true)}>
+                  Delete
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -166,6 +153,18 @@ const CommentBubble: React.FC<{
           <p className="text-xs text-muted-foreground whitespace-pre-wrap mt-0.5 break-words">{comment.body}</p>
         )}
       </div>
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete comment?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
@@ -179,10 +178,12 @@ const ReplyComposer: React.FC<{
   onReplied: () => void;
 }> = ({ deckId, threadId, slideId, getCollaborators, onReplied }) => {
   const [body, setBody] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const mentionHook = useMentions(getCollaborators);
 
   const handleSubmit = async () => {
-    if (!body.trim()) return;
+    if (!body.trim() || submitting) return;
+    setSubmitting(true);
     try {
       await CommentsService.create(deckId, {
         slideId,
@@ -195,6 +196,8 @@ const ReplyComposer: React.FC<{
       onReplied();
     } catch (err) {
       console.error('Failed to reply:', err);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -205,7 +208,7 @@ const ReplyComposer: React.FC<{
           value={body}
           onChange={e => mentionHook.handleTextChange(e.target.value, setBody)}
           placeholder="Reply..."
-          className="h-10 text-xs flex-1 min-h-[40px] resize-none"
+          className="h-10 text-xs flex-1 min-h-[40px] resize-none rounded-md border border-border/70 bg-background/80 shadow-sm focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:border-primary/50"
           onKeyDown={e => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
@@ -213,7 +216,7 @@ const ReplyComposer: React.FC<{
             }
           }}
         />
-        <Button size="xs" className="h-10 w-10 p-0 shrink-0" onClick={handleSubmit} disabled={!body.trim()}>
+        <Button size="xs" className="h-10 w-10 p-0 shrink-0 rounded-md shadow-sm" onClick={handleSubmit} disabled={!body.trim() || submitting}>
           <Send size={14} />
         </Button>
       </div>
@@ -241,6 +244,7 @@ const CommentThreadCard: React.FC<{
   const isOwnRoot = currentUserId === root.authorId;
   const [isEditing, setIsEditing] = useState(false);
   const [editBody, setEditBody] = useState(root.body);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const handleSaveRoot = async () => {
     if (!editBody.trim() || editBody === root.body) {
@@ -316,23 +320,9 @@ const CommentThreadCard: React.FC<{
                     <DropdownMenuItem onClick={() => { setEditBody(root.body); setIsEditing(true); }}>
                       Edit
                     </DropdownMenuItem>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <DropdownMenuItem onSelect={e => e.preventDefault()} className="text-destructive">
-                          Delete
-                        </DropdownMenuItem>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete comment?</AlertDialogTitle>
-                          <AlertDialogDescription>This will delete the entire thread and all replies. This action cannot be undone.</AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={handleDeleteRoot}>Delete</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                    <DropdownMenuItem className="text-destructive" onClick={() => setShowDeleteDialog(true)}>
+                      Delete
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
@@ -359,7 +349,7 @@ const CommentThreadCard: React.FC<{
         </div>
       </div>
 
-      {/* Action row: resolve + reply count */}
+      {/* Action row: resolve + reply toggle */}
       <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-border/50" onClick={e => e.stopPropagation()}>
         <Button
           size="xs"
@@ -374,22 +364,22 @@ const CommentThreadCard: React.FC<{
           )}
         </Button>
 
-        {replies.length > 0 && (
-          <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-            <CollapsibleTrigger asChild>
-              <button className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-                {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
-                <ChevronDown size={10} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-              </button>
-            </CollapsibleTrigger>
-          </Collapsible>
-        )}
+        <button
+          className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+          onClick={() => setIsOpen(v => !v)}
+        >
+          {replies.length > 0
+            ? <>{replies.length} {replies.length === 1 ? 'reply' : 'replies'}</>
+            : <>Reply</>
+          }
+          <ChevronDown size={10} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
       </div>
 
-      {/* Replies (collapsible) */}
-      {replies.length > 0 && (
-        <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-          <CollapsibleContent onClick={e => e.stopPropagation()}>
+      {/* Replies + composer (collapsible) */}
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleContent onClick={e => e.stopPropagation()}>
+          {replies.length > 0 && (
             <div className="ml-4 mt-1 border-l-2 border-border/50 pl-3 space-y-0">
               {replies.map(reply => (
                 <div key={reply.id} className="group/bubble">
@@ -402,13 +392,7 @@ const CommentThreadCard: React.FC<{
                 </div>
               ))}
             </div>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
-
-      {/* Inline reply composer (always visible when thread expanded or no replies) */}
-      <div onClick={e => e.stopPropagation()}>
-        {(isOpen || replies.length === 0) && (
+          )}
           <div className="mt-2">
             <ReplyComposer
               deckId={deckId}
@@ -418,8 +402,22 @@ const CommentThreadCard: React.FC<{
               onReplied={onRefresh}
             />
           </div>
-        )}
-      </div>
+        </CollapsibleContent>
+      </Collapsible>
+
+      {/* Delete confirmation - hoisted to top level */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete comment?</AlertDialogTitle>
+            <AlertDialogDescription>This will delete the entire thread and all replies. This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteRoot}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   );
 };
@@ -428,6 +426,8 @@ const CommentThreadCard: React.FC<{
 export const CommentsPanel: React.FC<CommentsPanelProps> = ({ deckId, slideId, getCollaborators, onClose }) => {
   const [newBody, setNewBody] = useState('');
   const [filterTab, setFilterTab] = useState<CommentFilterTab>('all');
+  const [submitting, setSubmitting] = useState(false);
+  const [pinsVisible, setPinsVisible] = useState(true);
 
   const selectedComponentIds = useEditorStore(state => state.selectedComponentIds);
   const allSelectedIds = selectedComponentIds || new Set();
@@ -460,7 +460,8 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ deckId, slideId, g
   }, [deckId, refresh, setRawThreads]);
 
   const handleNewComment = async () => {
-    if (!newBody.trim()) return;
+    if (!newBody.trim() || submitting) return;
+    setSubmitting(true);
 
     let anchor: CommentAnchor | undefined;
     const selectedArray = Array.from(allSelectedIds);
@@ -477,8 +478,18 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ deckId, slideId, g
       refresh();
     } catch (err) {
       console.error('Failed to create comment:', err);
+    } finally {
+      setSubmitting(false);
     }
   };
+
+  const togglePins = useCallback(() => {
+    const next = !pinsVisible;
+    setPinsVisible(next);
+    try {
+      window.dispatchEvent(new CustomEvent(next ? 'comments:show' : 'comments:hide'));
+    } catch {}
+  }, [pinsVisible]);
 
   return (
     <div className="flex flex-col h-full">
@@ -486,16 +497,36 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ deckId, slideId, g
       <div className="sticky top-0 border-b bg-background z-10">
         <div className="flex items-center justify-between px-3 py-2">
           <h3 className="text-sm font-semibold">Comments</h3>
-          <button
-            className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-accent"
-            aria-label="Close comments"
-            onClick={() => {
-              if (onClose) onClose();
-              else try { window.dispatchEvent(new CustomEvent('comments:close-panel')); } catch {}
-            }}
-          >
-            <X size={14} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-accent"
+              aria-label="Pin comment to slide"
+              title="Pin comment to slide"
+              onClick={() => {
+                try { window.dispatchEvent(new CustomEvent('comments:start-placing')); } catch {}
+              }}
+            >
+              <MapPin size={13} />
+            </button>
+            <button
+              className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-accent"
+              aria-label={pinsVisible ? 'Hide pins on slide' : 'Show pins on slide'}
+              title={pinsVisible ? 'Hide pins on slide' : 'Show pins on slide'}
+              onClick={togglePins}
+            >
+              {pinsVisible ? <Eye size={13} /> : <EyeOff size={13} />}
+            </button>
+            <button
+              className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-accent"
+              aria-label="Close comments"
+              onClick={() => {
+                if (onClose) onClose();
+                else try { window.dispatchEvent(new CustomEvent('comments:close-panel')); } catch {}
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
 
         {/* Filter Tabs */}
@@ -574,9 +605,11 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ deckId, slideId, g
           size="xs"
           className="h-7 text-[11px] w-full"
           onClick={handleNewComment}
-          disabled={!newBody.trim()}
+          disabled={!newBody.trim() || submitting}
         >
-          {allSelectedIds.size > 0
+          {submitting ? (
+            <><Loader2 size={12} className="animate-spin mr-1" /> Sending...</>
+          ) : allSelectedIds.size > 0
             ? `Comment on ${allSelectedIds.size} selected`
             : 'Add comment'}
         </Button>

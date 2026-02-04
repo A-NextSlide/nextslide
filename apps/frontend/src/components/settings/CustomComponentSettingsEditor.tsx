@@ -26,6 +26,13 @@ import EditableDropdown from '@/components/settings/EditableDropdown';
 import GroupedDropdown from '@/components/settings/GroupedDropdown';
 import ImageSlotEditor from '@/components/settings/ImageSlotEditor';
 import ImageCardGrid from '@/components/settings/ImageCardGrid';
+import { MediaHub } from '@/components/media/MediaHub';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCustomComponentEditStore } from '@/stores/customComponentEditStore';
 import { VirtualElement } from '@/components/custom-component-editor/types';
@@ -204,7 +211,11 @@ const DynamicTextEditor: React.FC<{
       className="space-y-1.5"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        if (!document.querySelector('[data-radix-popper-content-wrapper]')) {
+          e.stopPropagation();
+        }
+      }}
     >
       {/* Text input - hidden when editing directly in the slide */}
       {!hideTextInput && (
@@ -266,7 +277,7 @@ const DynamicTextEditor: React.FC<{
             <span className="text-[10px] w-8 text-right tabular-nums">{fontSize}px</span>
           </div>
         </div>
-        <div className="space-y-0.5">
+        <div className="flex flex-col items-end gap-0.5">
           <Label className="text-[10px] text-muted-foreground">Color</Label>
           <Popover open={colorPickerOpen} onOpenChange={(open) => {
             setColorPickerOpen(open);
@@ -277,8 +288,11 @@ const DynamicTextEditor: React.FC<{
           }}>
             <PopoverTrigger asChild>
               <button
-                className="w-6 h-6 rounded border border-border cursor-pointer focus:outline-none focus:ring-1 focus:ring-orange-500 flex-shrink-0"
-                style={{ backgroundColor: textColor }}
+                className="w-7 h-7 rounded-full cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1 focus:ring-offset-background flex-shrink-0"
+                style={{
+                  backgroundColor: textColor,
+                  boxShadow: 'inset 0 0 0 1.5px rgba(255,255,255,0.2), 0 0 0 1px rgba(255,255,255,0.08)',
+                }}
               />
             </PopoverTrigger>
             <PopoverContent className="w-[200px] p-2" align="end" sideOffset={5}>
@@ -490,7 +504,11 @@ const DynamicContainerEditor: React.FC<{
       className="space-y-1.5"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        if (!document.querySelector('[data-radix-popper-content-wrapper]')) {
+          e.stopPropagation();
+        }
+      }}
     >
       {/* Background Color */}
       <div className="space-y-0.5">
@@ -1240,7 +1258,13 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
       // CRITICAL: Stop all event propagation to prevent selecting components underneath
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        // Allow propagation when a Radix floating element is open so its
+        // DismissableLayer document listener can detect the outside click.
+        if (!document.querySelector('[data-radix-popper-content-wrapper]')) {
+          e.stopPropagation();
+        }
+      }}
     >
       {/* Component Settings Header - minimal brand accent */}
       <div className="flex items-center gap-1.5 pb-1.5 mb-0.5">
@@ -1289,13 +1313,71 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                   )}
 
                   {activeSelectedElement.type === 'image' && activeSelectedElement.src && (
-                    <div className="rounded-md overflow-hidden border border-border/40 bg-[repeating-conic-gradient(#f5f5f5_0_90deg,#fafafa_90deg_180deg)_0_0/10px_10px]">
-                      <img
-                        src={activeSelectedElement.src}
-                        alt={getElementDisplayName(activeSelectedElement)}
-                        className="w-full h-24 object-contain"
-                      />
-                    </div>
+                    <MediaHub
+                      trigger={
+                        <div className="relative rounded-md overflow-hidden border border-border/40 bg-[repeating-conic-gradient(#f5f5f5_0_90deg,#fafafa_90deg_180deg)_0_0/10px_10px] cursor-pointer group">
+                          <img
+                            src={activeSelectedElement.src}
+                            alt={getElementDisplayName(activeSelectedElement)}
+                            className="w-full h-24"
+                            style={{ objectFit: ((activeSelectedElement.computedStyle as any)?.objectFit || 'cover') as any }}
+                          />
+                          {/* Top bar with label and fit */}
+                          <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-1 py-0.5 z-[1]">
+                            <div className="px-1 py-px rounded bg-black/50 backdrop-blur-sm">
+                              <span className="text-[8px] text-white font-medium truncate max-w-[100px] block leading-tight">
+                                {getElementDisplayName(activeSelectedElement)}
+                              </span>
+                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="flex items-center gap-px px-1 py-px rounded bg-black/50 backdrop-blur-sm text-white text-[8px] font-medium hover:bg-black/60 transition-colors"
+                                >
+                                  {(() => {
+                                    const fit = (activeSelectedElement.computedStyle as any)?.objectFit || 'cover';
+                                    const labels: Record<string, string> = { cover: 'Cover', contain: 'Contain', fill: 'Fill', none: 'None', 'scale-down': 'Scale Down' };
+                                    return labels[fit] || 'Cover';
+                                  })()}
+                                  <ChevronDown className="w-2 h-2" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="min-w-[72px]">
+                                {[
+                                  { label: 'Cover', value: 'cover' },
+                                  { label: 'Contain', value: 'contain' },
+                                  { label: 'Fill', value: 'fill' },
+                                  { label: 'None', value: 'none' },
+                                  { label: 'Scale Down', value: 'scale-down' },
+                                ].map((option) => (
+                                  <DropdownMenuItem
+                                    key={option.value}
+                                    onClick={() => {
+                                      handleElementStyle(activeSelectedElement.selector, 'objectFit', option.value);
+                                      saveComponentToHistory('Image fit updated');
+                                    }}
+                                    className={`text-[11px] py-1 ${((activeSelectedElement.computedStyle as any)?.objectFit || 'cover') === option.value ? 'bg-orange-50 text-orange-600 dark:bg-orange-500/10' : ''}`}
+                                  >
+                                    {option.label}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                          {/* Hover overlay */}
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                            <span className="text-white text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                              Browse
+                            </span>
+                          </div>
+                        </div>
+                      }
+                      onSelect={(url: string) => {
+                        handleElementImage(activeSelectedElement.id, url);
+                        saveComponentToHistory('Image updated');
+                      }}
+                    />
                   )}
 
                   {activeSelectedElement.type === 'container' && (
