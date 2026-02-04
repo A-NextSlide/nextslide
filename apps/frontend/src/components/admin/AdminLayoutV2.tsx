@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Bot,
   TrendingUp,
+  Type,
 } from 'lucide-react';
 
 interface AdminLayoutV2Props {
@@ -29,6 +30,7 @@ const navItems = [
   { title: 'Decks', href: '/admin/decks', icon: FileStack },
   { title: 'Growth', href: '/admin/growth', icon: TrendingUp },
   { title: 'Brands', href: '/admin/brands', icon: Palette },
+  { title: 'Fonts', href: '/admin/fonts', icon: Type },
   { title: 'System', href: '/admin/services', icon: Server },
   { title: 'Costs', href: '/admin/costs', icon: DollarSign },
 ];

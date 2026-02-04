@@ -49,6 +49,7 @@ const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
 const AdminUserDetail = lazy(() => import('./pages/admin/AdminUserDetail'));
 const AdminDecks = lazy(() => import('./pages/admin/AdminDecks'));
 const AdminBrands = lazy(() => import('./pages/admin/AdminBrands'));
+const AdminFonts = lazy(() => import('./pages/admin/AdminFonts'));
 const AdminServices = lazy(() => import('./pages/admin/AdminServices'));
 const AdminCosts = lazy(() => import('./pages/admin/AdminCosts'));
 const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics'));
@@ -535,6 +536,16 @@ const AppContent = () => {
                   <AdminProtectedRoute>
                     <React.Suspense fallback={<AdminLoadingShell />}>
                       <AdminBrands />
+                    </React.Suspense>
+                  </AdminProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/fonts"
+                element={
+                  <AdminProtectedRoute>
+                    <React.Suspense fallback={<AdminLoadingShell />}>
+                      <AdminFonts />
                     </React.Suspense>
                   </AdminProtectedRoute>
                 }

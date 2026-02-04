@@ -3,6 +3,8 @@ import { adminApi, Brand } from '@/services/adminApi';
 import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import GroupedDropdown from '@/components/settings/GroupedDropdown';
+import { FontLoadingService } from '@/services/FontLoadingService';
 // Card imports removed - using admin-styled divs
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -65,6 +67,13 @@ const AdminBrands: React.FC = () => {
   const [fontFamilyName, setFontFamilyName] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [fontGroups, setFontGroups] = useState<Record<string, string[]>>({});
+
+  // Load font groups for dropdowns
+  useEffect(() => {
+    const groups = FontLoadingService.getDedupedFontGroups();
+    setFontGroups(groups);
+  }, []);
 
   // New brand fetch states
   const [showAddBrand, setShowAddBrand] = useState(false);
@@ -1061,13 +1070,15 @@ const AdminBrands: React.FC = () => {
                       <div className="space-y-2">
                         {editedBrandData.fonts.map((font, index) => (
                           <div key={index} className="flex items-center gap-2 bg-white dark:bg-gray-900 rounded-lg p-2 border">
-                            <Type className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                            <Input
-                              value={font}
-                              onChange={(e) => handleFontChange(index, e.target.value)}
-                              placeholder="Font name"
-                              className="flex-1 h-8"
-                            />
+                            <div className="flex-1">
+                              <GroupedDropdown
+                                value={font}
+                                options={[]}
+                                groups={fontGroups}
+                                onChange={(val) => handleFontChange(index, val)}
+                                placeholder="Select a font"
+                              />
+                            </div>
                             <Button
                               size="icon"
                               variant="ghost"

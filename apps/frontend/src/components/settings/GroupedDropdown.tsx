@@ -128,10 +128,10 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
     if (!effectiveGroups) return [];
     const preferred = [
       'Featured',
+      'Essentials',
       'Awwwards Picks',
       'Designer',
       'Designer Local',
-      'System & Web Safe',
       'Premium',
       'Sans-Serif',
       'Serif',

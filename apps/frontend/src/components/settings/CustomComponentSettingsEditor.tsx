@@ -822,17 +822,23 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
     const imageElement = activeDetectedElements.find(el => el.id === elementId && el.type === 'image');
     const oldSrc = imageElement?.src;
 
+    let replacedDirectly = false;
     if (oldSrc && oldSrc !== newSrc && currentHtml.includes(oldSrc)) {
       // Direct HTML replacement (more reliable than async iframe flow)
       const updatedHtml = currentHtml.replace(oldSrc, newSrc);
       if (updatedHtml !== currentHtml) {
         handlePropChangeRef.current('render', updatedHtml, false);
+        replacedDirectly = true;
       }
     }
 
     // Also update iframe visually
     updateElementImage(elementId, newSrc);
-    scheduleHtmlSync();
+    // Only sync HTML from iframe if direct replacement didn't work.
+    // scheduleHtmlSync triggers get-html which can reset JS-rendered containers.
+    if (!replacedDirectly) {
+      scheduleHtmlSync();
+    }
   }, [updateElementImage, scheduleHtmlSync, component.props.render, activeDetectedElements]);
 
   // Stabilize function props for use inside effects without re-triggering deps

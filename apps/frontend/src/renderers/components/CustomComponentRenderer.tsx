@@ -1970,54 +1970,51 @@ img.ns-img-ready {
 
   // Handler for image swap inside custom component
   const handleImageSwap = useCallback((element: DetectedElement, newImageUrl: string) => {
-    if (!stableIframeSrcDoc || !element.src) return;
+    // Use the stored render prop directly, NOT stableIframeSrcDoc (which is the full
+    // iframe HTML with injected scripts/styles). Using the iframe HTML would corrupt
+    // the component because stripInjectedScripts can't perfectly undo the injections.
+    const currentHtml = (component.props.render as string) || '';
+    if (!currentHtml || !element.src) return;
 
-    // Replace the old image src with the new one
-    let updatedHtml = stableIframeSrcDoc;
     const oldSrc = element.src;
 
-    // Escape special regex characters in the URL
-    const escapedOldSrc = oldSrc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = new RegExp(`src=["']${escapedOldSrc}["']`, 'g');
-
-    updatedHtml = updatedHtml.replace(pattern, `src="${newImageUrl}"`);
-
-    if (updatedHtml !== stableIframeSrcDoc) {
-      // FIRST: Update the iframe directly so user sees immediate feedback
-      if (iframeRef.current?.contentWindow) {
-        iframeRef.current.contentWindow.postMessage({
-          target: 'ns-custom-component-edit',
-          type: 'update-image',
-          elementId: element.id,
-          newSrc: newImageUrl
-        }, '*');
-      }
-
-      // CRITICAL: Strip injected scripts before saving to prevent accumulation
-      const cleanHtml = stripInjectedScripts(updatedHtml);
-
-      // THEN: Update only the render prop (delta update to avoid overwriting concurrent changes)
-      updateComponent(component.id, {
-        props: {
-          render: cleanHtml
-        }
-      });
-
-      // CRITICAL: Immediately persist changes to backend
-      setTimeout(() => {
-        try {
-          useEditorStore.getState().applyDraftChanges();
-        } catch (e) {
-          console.error('[CustomComponent] Failed to persist image changes:', e);
-        }
-      }, 300);
-    } else {
-      console.warn('[CustomComponent] HTML replacement failed - old URL not found in HTML');
+    if (!currentHtml.includes(oldSrc)) {
+      console.warn('[CustomComponent] HTML replacement failed - old URL not found in render HTML');
+      return;
     }
+
+    const updatedHtml = currentHtml.replace(oldSrc, newImageUrl);
+    if (updatedHtml === currentHtml) return;
+
+    // Update the iframe directly so user sees immediate feedback
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'update-image',
+        elementId: element.id,
+        newSrc: newImageUrl
+      }, '*');
+    }
+
+    // Update only the render prop (clean source, no injected scripts to strip)
+    updateComponent(component.id, {
+      props: {
+        render: updatedHtml
+      }
+    });
+
+    // Persist changes to backend
+    setTimeout(() => {
+      try {
+        useEditorStore.getState().applyDraftChanges();
+      } catch (e) {
+        console.error('[CustomComponent] Failed to persist image changes:', e);
+      }
+    }, 300);
 
     setSelectedElement(null);
     setShowImageToolbar(false);
-  }, [stableIframeSrcDoc, updateComponent, component.id, iframeRef]);
+  }, [component.props.render, updateComponent, component.id, iframeRef]);
 
   // ---- Image AI Edit / Fuse helpers (call API directly, no chat dispatch) ----
   const imageStylePrefs = (deckData?.data?.outline?.stylePreferences) || (deckData?.outline?.stylePreferences) || {};
@@ -2820,130 +2817,148 @@ img.ns-img-ready {
                 onMouseDown={(e) => e.stopPropagation()}
                 style={{
                   position: 'absolute',
-                  top: '10px',
-                  right: '10px',
-                  padding: '4px',
-                  background: 'transparent',
+                  top: '6px',
+                  right: '6px',
+                  padding: '3px',
+                  background: 'rgba(0,0,0,0.5)',
+                  backdropFilter: 'blur(4px)',
+                  borderRadius: '4px',
                   border: 'none',
                   cursor: 'pointer',
-                  color: '#999',
+                  color: 'white',
                   zIndex: 10,
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M18 6L6 18M6 6l12 12" />
                 </svg>
               </button>
 
-              {/* Image preview with hover-to-swap overlay + fit dropdown */}
-              <div style={{ padding: '12px 12px 0 12px' }}>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
-                  {/* Image preview */}
-                  <MediaHub
-                    trigger={
-                      <div
-                        className="group"
-                        style={{
-                          position: 'relative',
-                          flex: 1,
-                          height: '64px',
-                          borderRadius: '6px',
-                          overflow: 'hidden',
-                          background: '#f5f5f5',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {selectedElement.src && (
-                          <img
-                            src={selectedElement.src}
-                            alt=""
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                          />
-                        )}
-                        <div
-                          style={{
-                            position: 'absolute',
-                            inset: 0,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            background: 'rgba(0,0,0,0)',
-                            transition: 'background 0.15s ease',
-                          }}
-                          className="group-hover:!bg-black/40"
-                        >
-                          <span
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              color: 'white',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              opacity: 0,
-                              transition: 'opacity 0.15s ease',
-                            }}
-                            className="group-hover:!opacity-100"
-                          >
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                            Browse
-                          </span>
-                        </div>
-                      </div>
-                    }
-                    defaultSearchTerm={selectedElement.alt || ''}
-                    autoSearch={!!selectedElement.alt}
-                    onSelect={(url) => {
-                      if (url && typeof url === 'string' && selectedElement) {
-                        handleImageSwap(selectedElement, url);
-                      }
+              {/* Image preview with Cover overlay on top-right */}
+              <MediaHub
+                trigger={
+                  <div
+                    className="group"
+                    style={{
+                      position: 'relative',
+                      width: '100%',
+                      height: '96px',
+                      overflow: 'hidden',
+                      background: '#f5f5f5',
+                      cursor: 'pointer',
+                      borderTopLeftRadius: '10px',
+                      borderTopRightRadius: '10px',
                     }}
-                  />
-                  {/* Object-fit dropdown */}
-                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '4px' }}>
-                    <span style={{ fontSize: '9px', color: '#999', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Fit</span>
-                    <select
-                      value={imageObjectFit}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        if (selectedElement) handleImageObjectFit(selectedElement, e.target.value);
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => e.stopPropagation()}
+                  >
+                    {selectedElement.src && (
+                      <img
+                        src={selectedElement.src}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: (imageObjectFit as any) || 'cover' }}
+                      />
+                    )}
+                    {/* Top bar: label (left) + fit dropdown (right) */}
+                    <div
                       style={{
-                        padding: '3px 4px',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '4px',
-                        fontSize: '10px',
-                        color: '#555',
-                        background: 'white',
-                        cursor: 'pointer',
-                        outline: 'none',
-                        fontFamily: 'system-ui, -apple-system, sans-serif',
-                        width: '70px',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '6px 30px 0 6px',
+                        zIndex: 2,
                       }}
                     >
-                      <option value="cover">Cover</option>
-                      <option value="contain">Contain</option>
-                      <option value="fill">Fill</option>
-                      <option value="none">None</option>
-                      <option value="scale-down">Scale down</option>
-                    </select>
+                      <div style={{
+                        padding: '1px 5px',
+                        borderRadius: '3px',
+                        background: 'rgba(0,0,0,0.5)',
+                        backdropFilter: 'blur(4px)',
+                      }}>
+                        <span style={{ fontSize: '8px', color: 'white', fontWeight: 500, display: 'block', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {selectedElement.alt || 'Image'}
+                        </span>
+                      </div>
+                      <select
+                        value={imageObjectFit}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          if (selectedElement) handleImageObjectFit(selectedElement, e.target.value);
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          padding: '1px 4px',
+                          border: 'none',
+                          borderRadius: '3px',
+                          fontSize: '8px',
+                          color: 'white',
+                          fontWeight: 500,
+                          background: 'rgba(0,0,0,0.5)',
+                          backdropFilter: 'blur(4px)',
+                          cursor: 'pointer',
+                          outline: 'none',
+                        }}
+                      >
+                        <option value="cover">Cover</option>
+                        <option value="contain">Contain</option>
+                        <option value="fill">Fill</option>
+                        <option value="scale-down">Scale Down</option>
+                      </select>
+                    </div>
+                    {/* Browse hover overlay */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(0,0,0,0)',
+                        transition: 'background 0.15s ease',
+                      }}
+                      className="group-hover:!bg-black/35"
+                    >
+                      <span
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          color: 'white',
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          opacity: 0,
+                          transition: 'opacity 0.15s ease',
+                        }}
+                        className="group-hover:!opacity-100"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                        Browse
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </div>
+                }
+                defaultSearchTerm={selectedElement.alt || ''}
+                autoSearch={!!selectedElement.alt}
+                onSelect={(url) => {
+                  if (url && typeof url === 'string' && selectedElement) {
+                    // Dismiss popup and swap the image URL in the render HTML
+                    setShowAiChatBubble(false);
+                    handleImageSwap(selectedElement, url);
+                  }
+                }}
+              />
 
               {/* Input area with drag-drop support */}
               <div
                 style={{
-                  padding: '10px',
+                  padding: '8px',
                   border: imageDragOver ? '2px dashed #FF4301' : '2px dashed transparent',
-                  borderRadius: '8px',
+                  borderRadius: '6px',
                   background: imageDragOver ? 'rgba(255, 67, 1, 0.05)' : 'transparent',
-                  margin: '8px',
+                  margin: '6px 8px',
                   transition: 'all 0.15s ease',
                 }}
                 onDragOver={(e) => { e.preventDefault(); setImageDragOver(true); }}
@@ -2966,7 +2981,7 @@ img.ns-img-ready {
                         width: '100%',
                         border: 'none',
                         outline: 'none',
-                        fontSize: '13px',
+                        fontSize: '12px',
                         color: '#333',
                         background: 'transparent',
                         padding: 0,
@@ -3009,7 +3024,7 @@ img.ns-img-ready {
               </div>
 
               {/* Suggestion chips */}
-              <div style={{ padding: '0 12px 6px', display: 'flex', gap: '5px', overflowX: 'auto' }}>
+              <div style={{ padding: '0 8px 4px', display: 'flex', gap: '4px', overflowX: 'auto' }}>
                 {[
                   { label: 'Blur background', prompt: 'Blur the background while keeping the main subject sharp and in focus.' },
                   { label: 'Cinematic look', prompt: 'Apply cinematic color grading with dramatic contrast, rich shadows, and film-like tones.' },
@@ -3026,11 +3041,11 @@ img.ns-img-ready {
                     disabled={imageAiProcessing}
                     onMouseDown={(e) => e.stopPropagation()}
                     style={{
-                      padding: '4px 10px',
+                      padding: '3px 8px',
                       background: 'transparent',
                       border: '1px solid #e0e0e0',
-                      borderRadius: '100px',
-                      fontSize: '10.5px',
+                      borderRadius: '4px',
+                      fontSize: '10px',
                       cursor: imageAiProcessing ? 'default' : 'pointer',
                       color: '#555',
                       fontWeight: 500,
@@ -3047,7 +3062,7 @@ img.ns-img-ready {
               </div>
 
               {/* Action row */}
-              <div style={{ padding: '4px 12px 10px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ padding: '2px 8px 8px 8px', display: 'flex', alignItems: 'center', gap: '5px' }}>
                 {/* Hidden file input for fusion */}
                 <input ref={imageAiFuseFileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleImagePickFuseFiles} />
 

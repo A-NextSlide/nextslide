@@ -157,9 +157,23 @@ function injectPreload(url: string, family: string, weight: string | number): vo
   document.head.appendChild(link);
 }
 
+async function deleteFont(fontId: string): Promise<{ success: boolean; message: string; font_id: string }> {
+  const base = getApiBase();
+  const res = await fetch(`${base}/fonts/font/${encodeURIComponent(fontId)}`, {
+    method: 'DELETE',
+    credentials: 'omit',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Failed to delete font: ${res.status}`);
+  }
+  return res.json();
+}
+
 export const FontApiService = {
   listFonts,
   getFontMeta,
+  deleteFont,
 
   recommend: async (payload: {
     deck_title: string;

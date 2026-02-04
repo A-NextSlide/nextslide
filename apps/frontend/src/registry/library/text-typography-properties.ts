@@ -85,10 +85,10 @@ export const FontFamilyProperty = UIEnum(
       enumGroups: (() => {
         // Deduplicate fonts globally and assign each font to the highest-priority category
         const priorityOrder = [
+          'Essentials',
           'Awwwards Picks',
           'Designer',
           'Designer Local',
-          'System & Web Safe',
           'Premium',
           'Sans-Serif',
           'Serif',

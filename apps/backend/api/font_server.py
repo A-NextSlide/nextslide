@@ -505,6 +505,59 @@ async def get_font_metadata(font_id: str):
     return font_data
 
 
+@router.delete("/font/{font_id}")
+async def delete_font(font_id: str):
+    """
+    Delete a font from the registry by its ID.
+    Removes from the on-disk registry and in-memory data.
+    """
+    global _font_list_cache, _font_list_cache_time
+
+    if font_id not in font_service.all_fonts:
+        raise HTTPException(status_code=404, detail=f"Font '{font_id}' not found")
+
+    font_data = font_service.all_fonts[font_id]
+    source = font_data.get('source', 'unknown')
+
+    # Remove from in-memory store
+    del font_service.all_fonts[font_id]
+
+    # Remove from source-specific dicts
+    if source == 'pixelbuddha' and font_id in font_service.pixelbuddha_fonts:
+        del font_service.pixelbuddha_fonts[font_id]
+    elif source == 'designer' and font_id in font_service.designer_fonts:
+        del font_service.designer_fonts[font_id]
+
+    # Remove from on-disk registry
+    try:
+        if source == 'pixelbuddha':
+            registry_path = Path(__file__).parent.parent / 'assets' / 'fonts' / 'pixelbuddha' / 'font_registry.json'
+        else:
+            registry_path = Path(__file__).parent.parent / 'assets' / 'fonts' / 'designer' / 'font_registry.json'
+
+        if registry_path.exists():
+            with open(registry_path, 'r') as f:
+                registry = json.load(f)
+            if font_id in registry:
+                del registry[font_id]
+                with open(registry_path, 'w') as f:
+                    json.dump(registry, f, indent=2)
+                logger.info(f"Removed font '{font_id}' from {registry_path.name}")
+    except Exception as e:
+        logger.warning(f"Could not update registry file for '{font_id}': {e}")
+
+    # Invalidate cache
+    _font_list_cache = None
+    _font_list_cache_time = 0
+
+    logger.info(f"Deleted font '{font_id}' (source={source})")
+    return JSONResponse(content={
+        "success": True,
+        "message": f"Font '{font_id}' deleted successfully",
+        "font_id": font_id
+    })
+
+
 # Health check endpoint
 @router.get("/health")
 async def health_check():

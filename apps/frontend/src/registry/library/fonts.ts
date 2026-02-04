@@ -80,17 +80,45 @@ export const FONT_CATEGORIES: Record<string, FontDefinition[]> = {
   'Designer Local': [
     ...UNBLAST_LOCAL_FONTS
   ],
-  // System & Web Safe fonts
-  'System & Web Safe': [
+  // Essentials – high-quality system fonts installed on macOS / Windows
+  'Essentials': [
+    // Core sans-serif
     { name: 'Arial', family: 'Arial', source: 'system' },
     { name: 'Helvetica', family: 'Helvetica', source: 'system' },
-    { name: 'Times New Roman', family: 'Times New Roman', source: 'system' },
-    { name: 'Courier New', family: 'Courier New', source: 'system' },
-    { name: 'Georgia', family: 'Georgia', source: 'system' },
     { name: 'Verdana', family: 'Verdana', source: 'system' },
-    { name: 'Impact', family: 'Impact', source: 'system' },
     { name: 'Tahoma', family: 'Tahoma', source: 'system' },
     { name: 'Trebuchet MS', family: 'Trebuchet MS', source: 'system' },
+    { name: 'Segoe UI', family: 'Segoe UI', source: 'system' },
+    { name: 'Calibri', family: 'Calibri', source: 'system' },
+    { name: 'Candara', family: 'Candara', source: 'system' },
+    { name: 'Century Gothic', family: 'Century Gothic', source: 'system' },
+    { name: 'Gill Sans', family: 'Gill Sans', source: 'system' },
+    { name: 'Optima', family: 'Optima', source: 'system' },
+    { name: 'Futura', family: 'Futura', source: 'system' },
+    { name: 'Avenir Next', family: 'Avenir Next', source: 'system' },
+    { name: 'Lucida Grande', family: 'Lucida Grande', source: 'system' },
+    { name: 'Franklin Gothic Medium', family: 'Franklin Gothic Medium', source: 'system' },
+    // Core serif
+    { name: 'Times New Roman', family: 'Times New Roman', source: 'system' },
+    { name: 'Georgia', family: 'Georgia', source: 'system' },
+    { name: 'Palatino', family: 'Palatino', source: 'system' },
+    { name: 'Garamond', family: 'Garamond', source: 'system' },
+    { name: 'Baskerville', family: 'Baskerville', source: 'system' },
+    { name: 'Book Antiqua', family: 'Book Antiqua', source: 'system' },
+    { name: 'Cambria', family: 'Cambria', source: 'system' },
+    { name: 'Constantia', family: 'Constantia', source: 'system' },
+    { name: 'Didot', family: 'Didot', source: 'system' },
+    { name: 'Rockwell', family: 'Rockwell', source: 'system' },
+    // Core mono
+    { name: 'Courier New', family: 'Courier New', source: 'system' },
+    { name: 'Consolas', family: 'Consolas', source: 'system' },
+    { name: 'Menlo', family: 'Menlo', source: 'system' },
+    { name: 'Monaco', family: 'Monaco', source: 'system' },
+    { name: 'Lucida Console', family: 'Lucida Console', source: 'system' },
+    // Display & character
+    { name: 'Impact', family: 'Impact', source: 'system' },
+    { name: 'Copperplate', family: 'Copperplate', source: 'system' },
+    { name: 'American Typewriter', family: 'American Typewriter', source: 'system' },
     { name: 'Comic Sans MS', family: 'Comic Sans MS', source: 'system' }
   ],
   
@@ -539,11 +567,23 @@ export const ALL_FONT_NAMES = Array.from(new Set(Object.values(FONT_CATEGORIES).
 
 // Export common font names
 export const COMMON_FONTS = [
+  // Essentials
   'Arial',
-  'Helvetica', 
+  'Helvetica',
+  'Verdana',
+  'Segoe UI',
+  'Calibri',
+  'Century Gothic',
+  'Gill Sans',
+  'Avenir Next',
+  'Futura',
   'Times New Roman',
   'Georgia',
+  'Palatino',
+  'Garamond',
+  'Baskerville',
   'Courier New',
+  'Consolas',
   'Inter',
   'Poppins',
   'Montserrat',

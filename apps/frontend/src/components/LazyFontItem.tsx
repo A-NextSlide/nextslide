@@ -30,7 +30,7 @@ const LazyFontItem: React.FC<LazyFontItemProps> = ({
   // Determine priority based on category and active state
   const getPriority = () => {
     if (isActive) return 1; // Active font should load immediately
-    if (category === 'System & Web Safe') return 1;
+    if (category === 'Essentials') return 1;
     if (category === 'Sans-Serif' || category === 'Serif') return 2;
     if (isVisible) return 3; // Visible but not selected font
     return 4; // Not visible, lowest priority

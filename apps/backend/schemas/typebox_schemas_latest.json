@@ -2286,23 +2286,7 @@
               "type": "string"
             },
             {
-              "const": "Times New Roman",
-              "type": "string"
-            },
-            {
-              "const": "Courier New",
-              "type": "string"
-            },
-            {
-              "const": "Georgia",
-              "type": "string"
-            },
-            {
               "const": "Verdana",
-              "type": "string"
-            },
-            {
-              "const": "Impact",
               "type": "string"
             },
             {
@@ -2311,6 +2295,118 @@
             },
             {
               "const": "Trebuchet MS",
+              "type": "string"
+            },
+            {
+              "const": "Segoe UI",
+              "type": "string"
+            },
+            {
+              "const": "Calibri",
+              "type": "string"
+            },
+            {
+              "const": "Candara",
+              "type": "string"
+            },
+            {
+              "const": "Century Gothic",
+              "type": "string"
+            },
+            {
+              "const": "Gill Sans",
+              "type": "string"
+            },
+            {
+              "const": "Optima",
+              "type": "string"
+            },
+            {
+              "const": "Futura",
+              "type": "string"
+            },
+            {
+              "const": "Avenir Next",
+              "type": "string"
+            },
+            {
+              "const": "Lucida Grande",
+              "type": "string"
+            },
+            {
+              "const": "Franklin Gothic Medium",
+              "type": "string"
+            },
+            {
+              "const": "Times New Roman",
+              "type": "string"
+            },
+            {
+              "const": "Georgia",
+              "type": "string"
+            },
+            {
+              "const": "Palatino",
+              "type": "string"
+            },
+            {
+              "const": "Garamond",
+              "type": "string"
+            },
+            {
+              "const": "Baskerville",
+              "type": "string"
+            },
+            {
+              "const": "Book Antiqua",
+              "type": "string"
+            },
+            {
+              "const": "Cambria",
+              "type": "string"
+            },
+            {
+              "const": "Constantia",
+              "type": "string"
+            },
+            {
+              "const": "Didot",
+              "type": "string"
+            },
+            {
+              "const": "Rockwell",
+              "type": "string"
+            },
+            {
+              "const": "Courier New",
+              "type": "string"
+            },
+            {
+              "const": "Consolas",
+              "type": "string"
+            },
+            {
+              "const": "Menlo",
+              "type": "string"
+            },
+            {
+              "const": "Monaco",
+              "type": "string"
+            },
+            {
+              "const": "Lucida Console",
+              "type": "string"
+            },
+            {
+              "const": "Impact",
+              "type": "string"
+            },
+            {
+              "const": "Copperplate",
+              "type": "string"
+            },
+            {
+              "const": "American Typewriter",
               "type": "string"
             },
             {
@@ -3533,6 +3629,42 @@
             "control": "grouped-dropdown",
             "controlProps": {
               "enumGroups": {
+                "Essentials": [
+                  "Arial",
+                  "Helvetica",
+                  "Verdana",
+                  "Tahoma",
+                  "Trebuchet MS",
+                  "Segoe UI",
+                  "Calibri",
+                  "Candara",
+                  "Century Gothic",
+                  "Gill Sans",
+                  "Optima",
+                  "Futura",
+                  "Avenir Next",
+                  "Lucida Grande",
+                  "Franklin Gothic Medium",
+                  "Times New Roman",
+                  "Georgia",
+                  "Palatino",
+                  "Garamond",
+                  "Baskerville",
+                  "Book Antiqua",
+                  "Cambria",
+                  "Constantia",
+                  "Didot",
+                  "Rockwell",
+                  "Courier New",
+                  "Consolas",
+                  "Menlo",
+                  "Monaco",
+                  "Lucida Console",
+                  "Impact",
+                  "Copperplate",
+                  "American Typewriter",
+                  "Comic Sans MS"
+                ],
                 "Awwwards Picks": [
                   "HK Grotesk Wide",
                   "Geist",
@@ -3632,18 +3764,6 @@
                   "Timeless Tourist",
                   "TjoekilKajoe",
                   "Vintage Brunch Retro Font Duo"
-                ],
-                "System & Web Safe": [
-                  "Arial",
-                  "Helvetica",
-                  "Times New Roman",
-                  "Courier New",
-                  "Georgia",
-                  "Verdana",
-                  "Impact",
-                  "Tahoma",
-                  "Trebuchet MS",
-                  "Comic Sans MS"
                 ],
                 "Premium": [
                   "Inter",
@@ -4082,13 +4202,37 @@
                 "Vintage Brunch Retro Font Duo",
                 "Arial",
                 "Helvetica",
-                "Times New Roman",
-                "Courier New",
-                "Georgia",
                 "Verdana",
-                "Impact",
                 "Tahoma",
                 "Trebuchet MS",
+                "Segoe UI",
+                "Calibri",
+                "Candara",
+                "Century Gothic",
+                "Gill Sans",
+                "Optima",
+                "Futura",
+                "Avenir Next",
+                "Lucida Grande",
+                "Franklin Gothic Medium",
+                "Times New Roman",
+                "Georgia",
+                "Palatino",
+                "Garamond",
+                "Baskerville",
+                "Book Antiqua",
+                "Cambria",
+                "Constantia",
+                "Didot",
+                "Rockwell",
+                "Courier New",
+                "Consolas",
+                "Menlo",
+                "Monaco",
+                "Lucida Console",
+                "Impact",
+                "Copperplate",
+                "American Typewriter",
                 "Comic Sans MS",
                 "Roboto",
                 "Open Sans",
@@ -5288,23 +5432,7 @@
                   "type": "string"
                 },
                 {
-                  "const": "Times New Roman",
-                  "type": "string"
-                },
-                {
-                  "const": "Courier New",
-                  "type": "string"
-                },
-                {
-                  "const": "Georgia",
-                  "type": "string"
-                },
-                {
                   "const": "Verdana",
-                  "type": "string"
-                },
-                {
-                  "const": "Impact",
                   "type": "string"
                 },
                 {
@@ -5313,6 +5441,118 @@
                 },
                 {
                   "const": "Trebuchet MS",
+                  "type": "string"
+                },
+                {
+                  "const": "Segoe UI",
+                  "type": "string"
+                },
+                {
+                  "const": "Calibri",
+                  "type": "string"
+                },
+                {
+                  "const": "Candara",
+                  "type": "string"
+                },
+                {
+                  "const": "Century Gothic",
+                  "type": "string"
+                },
+                {
+                  "const": "Gill Sans",
+                  "type": "string"
+                },
+                {
+                  "const": "Optima",
+                  "type": "string"
+                },
+                {
+                  "const": "Futura",
+                  "type": "string"
+                },
+                {
+                  "const": "Avenir Next",
+                  "type": "string"
+                },
+                {
+                  "const": "Lucida Grande",
+                  "type": "string"
+                },
+                {
+                  "const": "Franklin Gothic Medium",
+                  "type": "string"
+                },
+                {
+                  "const": "Times New Roman",
+                  "type": "string"
+                },
+                {
+                  "const": "Georgia",
+                  "type": "string"
+                },
+                {
+                  "const": "Palatino",
+                  "type": "string"
+                },
+                {
+                  "const": "Garamond",
+                  "type": "string"
+                },
+                {
+                  "const": "Baskerville",
+                  "type": "string"
+                },
+                {
+                  "const": "Book Antiqua",
+                  "type": "string"
+                },
+                {
+                  "const": "Cambria",
+                  "type": "string"
+                },
+                {
+                  "const": "Constantia",
+                  "type": "string"
+                },
+                {
+                  "const": "Didot",
+                  "type": "string"
+                },
+                {
+                  "const": "Rockwell",
+                  "type": "string"
+                },
+                {
+                  "const": "Courier New",
+                  "type": "string"
+                },
+                {
+                  "const": "Consolas",
+                  "type": "string"
+                },
+                {
+                  "const": "Menlo",
+                  "type": "string"
+                },
+                {
+                  "const": "Monaco",
+                  "type": "string"
+                },
+                {
+                  "const": "Lucida Console",
+                  "type": "string"
+                },
+                {
+                  "const": "Impact",
+                  "type": "string"
+                },
+                {
+                  "const": "Copperplate",
+                  "type": "string"
+                },
+                {
+                  "const": "American Typewriter",
                   "type": "string"
                 },
                 {
@@ -6535,6 +6775,42 @@
                 "control": "grouped-dropdown",
                 "controlProps": {
                   "enumGroups": {
+                    "Essentials": [
+                      "Arial",
+                      "Helvetica",
+                      "Verdana",
+                      "Tahoma",
+                      "Trebuchet MS",
+                      "Segoe UI",
+                      "Calibri",
+                      "Candara",
+                      "Century Gothic",
+                      "Gill Sans",
+                      "Optima",
+                      "Futura",
+                      "Avenir Next",
+                      "Lucida Grande",
+                      "Franklin Gothic Medium",
+                      "Times New Roman",
+                      "Georgia",
+                      "Palatino",
+                      "Garamond",
+                      "Baskerville",
+                      "Book Antiqua",
+                      "Cambria",
+                      "Constantia",
+                      "Didot",
+                      "Rockwell",
+                      "Courier New",
+                      "Consolas",
+                      "Menlo",
+                      "Monaco",
+                      "Lucida Console",
+                      "Impact",
+                      "Copperplate",
+                      "American Typewriter",
+                      "Comic Sans MS"
+                    ],
                     "Awwwards Picks": [
                       "HK Grotesk Wide",
                       "Geist",
@@ -6634,18 +6910,6 @@
                       "Timeless Tourist",
                       "TjoekilKajoe",
                       "Vintage Brunch Retro Font Duo"
-                    ],
-                    "System & Web Safe": [
-                      "Arial",
-                      "Helvetica",
-                      "Times New Roman",
-                      "Courier New",
-                      "Georgia",
-                      "Verdana",
-                      "Impact",
-                      "Tahoma",
-                      "Trebuchet MS",
-                      "Comic Sans MS"
                     ],
                     "Premium": [
                       "Inter",
@@ -7084,13 +7348,37 @@
                     "Vintage Brunch Retro Font Duo",
                     "Arial",
                     "Helvetica",
-                    "Times New Roman",
-                    "Courier New",
-                    "Georgia",
                     "Verdana",
-                    "Impact",
                     "Tahoma",
                     "Trebuchet MS",
+                    "Segoe UI",
+                    "Calibri",
+                    "Candara",
+                    "Century Gothic",
+                    "Gill Sans",
+                    "Optima",
+                    "Futura",
+                    "Avenir Next",
+                    "Lucida Grande",
+                    "Franklin Gothic Medium",
+                    "Times New Roman",
+                    "Georgia",
+                    "Palatino",
+                    "Garamond",
+                    "Baskerville",
+                    "Book Antiqua",
+                    "Cambria",
+                    "Constantia",
+                    "Didot",
+                    "Rockwell",
+                    "Courier New",
+                    "Consolas",
+                    "Menlo",
+                    "Monaco",
+                    "Lucida Console",
+                    "Impact",
+                    "Copperplate",
+                    "American Typewriter",
                     "Comic Sans MS",
                     "Roboto",
                     "Open Sans",
@@ -10644,23 +10932,7 @@
               "type": "string"
             },
             {
-              "const": "Times New Roman",
-              "type": "string"
-            },
-            {
-              "const": "Courier New",
-              "type": "string"
-            },
-            {
-              "const": "Georgia",
-              "type": "string"
-            },
-            {
               "const": "Verdana",
-              "type": "string"
-            },
-            {
-              "const": "Impact",
               "type": "string"
             },
             {
@@ -10669,6 +10941,118 @@
             },
             {
               "const": "Trebuchet MS",
+              "type": "string"
+            },
+            {
+              "const": "Segoe UI",
+              "type": "string"
+            },
+            {
+              "const": "Calibri",
+              "type": "string"
+            },
+            {
+              "const": "Candara",
+              "type": "string"
+            },
+            {
+              "const": "Century Gothic",
+              "type": "string"
+            },
+            {
+              "const": "Gill Sans",
+              "type": "string"
+            },
+            {
+              "const": "Optima",
+              "type": "string"
+            },
+            {
+              "const": "Futura",
+              "type": "string"
+            },
+            {
+              "const": "Avenir Next",
+              "type": "string"
+            },
+            {
+              "const": "Lucida Grande",
+              "type": "string"
+            },
+            {
+              "const": "Franklin Gothic Medium",
+              "type": "string"
+            },
+            {
+              "const": "Times New Roman",
+              "type": "string"
+            },
+            {
+              "const": "Georgia",
+              "type": "string"
+            },
+            {
+              "const": "Palatino",
+              "type": "string"
+            },
+            {
+              "const": "Garamond",
+              "type": "string"
+            },
+            {
+              "const": "Baskerville",
+              "type": "string"
+            },
+            {
+              "const": "Book Antiqua",
+              "type": "string"
+            },
+            {
+              "const": "Cambria",
+              "type": "string"
+            },
+            {
+              "const": "Constantia",
+              "type": "string"
+            },
+            {
+              "const": "Didot",
+              "type": "string"
+            },
+            {
+              "const": "Rockwell",
+              "type": "string"
+            },
+            {
+              "const": "Courier New",
+              "type": "string"
+            },
+            {
+              "const": "Consolas",
+              "type": "string"
+            },
+            {
+              "const": "Menlo",
+              "type": "string"
+            },
+            {
+              "const": "Monaco",
+              "type": "string"
+            },
+            {
+              "const": "Lucida Console",
+              "type": "string"
+            },
+            {
+              "const": "Impact",
+              "type": "string"
+            },
+            {
+              "const": "Copperplate",
+              "type": "string"
+            },
+            {
+              "const": "American Typewriter",
               "type": "string"
             },
             {
@@ -11891,6 +12275,42 @@
             "control": "grouped-dropdown",
             "controlProps": {
               "enumGroups": {
+                "Essentials": [
+                  "Arial",
+                  "Helvetica",
+                  "Verdana",
+                  "Tahoma",
+                  "Trebuchet MS",
+                  "Segoe UI",
+                  "Calibri",
+                  "Candara",
+                  "Century Gothic",
+                  "Gill Sans",
+                  "Optima",
+                  "Futura",
+                  "Avenir Next",
+                  "Lucida Grande",
+                  "Franklin Gothic Medium",
+                  "Times New Roman",
+                  "Georgia",
+                  "Palatino",
+                  "Garamond",
+                  "Baskerville",
+                  "Book Antiqua",
+                  "Cambria",
+                  "Constantia",
+                  "Didot",
+                  "Rockwell",
+                  "Courier New",
+                  "Consolas",
+                  "Menlo",
+                  "Monaco",
+                  "Lucida Console",
+                  "Impact",
+                  "Copperplate",
+                  "American Typewriter",
+                  "Comic Sans MS"
+                ],
                 "Awwwards Picks": [
                   "HK Grotesk Wide",
                   "Geist",
@@ -11990,18 +12410,6 @@
                   "Timeless Tourist",
                   "TjoekilKajoe",
                   "Vintage Brunch Retro Font Duo"
-                ],
-                "System & Web Safe": [
-                  "Arial",
-                  "Helvetica",
-                  "Times New Roman",
-                  "Courier New",
-                  "Georgia",
-                  "Verdana",
-                  "Impact",
-                  "Tahoma",
-                  "Trebuchet MS",
-                  "Comic Sans MS"
                 ],
                 "Premium": [
                   "Inter",
@@ -12440,13 +12848,37 @@
                 "Vintage Brunch Retro Font Duo",
                 "Arial",
                 "Helvetica",
-                "Times New Roman",
-                "Courier New",
-                "Georgia",
                 "Verdana",
-                "Impact",
                 "Tahoma",
                 "Trebuchet MS",
+                "Segoe UI",
+                "Calibri",
+                "Candara",
+                "Century Gothic",
+                "Gill Sans",
+                "Optima",
+                "Futura",
+                "Avenir Next",
+                "Lucida Grande",
+                "Franklin Gothic Medium",
+                "Times New Roman",
+                "Georgia",
+                "Palatino",
+                "Garamond",
+                "Baskerville",
+                "Book Antiqua",
+                "Cambria",
+                "Constantia",
+                "Didot",
+                "Rockwell",
+                "Courier New",
+                "Consolas",
+                "Menlo",
+                "Monaco",
+                "Lucida Console",
+                "Impact",
+                "Copperplate",
+                "American Typewriter",
                 "Comic Sans MS",
                 "Roboto",
                 "Open Sans",
@@ -15429,23 +15861,7 @@
               "type": "string"
             },
             {
-              "const": "Times New Roman",
-              "type": "string"
-            },
-            {
-              "const": "Courier New",
-              "type": "string"
-            },
-            {
-              "const": "Georgia",
-              "type": "string"
-            },
-            {
               "const": "Verdana",
-              "type": "string"
-            },
-            {
-              "const": "Impact",
               "type": "string"
             },
             {
@@ -15454,6 +15870,118 @@
             },
             {
               "const": "Trebuchet MS",
+              "type": "string"
+            },
+            {
+              "const": "Segoe UI",
+              "type": "string"
+            },
+            {
+              "const": "Calibri",
+              "type": "string"
+            },
+            {
+              "const": "Candara",
+              "type": "string"
+            },
+            {
+              "const": "Century Gothic",
+              "type": "string"
+            },
+            {
+              "const": "Gill Sans",
+              "type": "string"
+            },
+            {
+              "const": "Optima",
+              "type": "string"
+            },
+            {
+              "const": "Futura",
+              "type": "string"
+            },
+            {
+              "const": "Avenir Next",
+              "type": "string"
+            },
+            {
+              "const": "Lucida Grande",
+              "type": "string"
+            },
+            {
+              "const": "Franklin Gothic Medium",
+              "type": "string"
+            },
+            {
+              "const": "Times New Roman",
+              "type": "string"
+            },
+            {
+              "const": "Georgia",
+              "type": "string"
+            },
+            {
+              "const": "Palatino",
+              "type": "string"
+            },
+            {
+              "const": "Garamond",
+              "type": "string"
+            },
+            {
+              "const": "Baskerville",
+              "type": "string"
+            },
+            {
+              "const": "Book Antiqua",
+              "type": "string"
+            },
+            {
+              "const": "Cambria",
+              "type": "string"
+            },
+            {
+              "const": "Constantia",
+              "type": "string"
+            },
+            {
+              "const": "Didot",
+              "type": "string"
+            },
+            {
+              "const": "Rockwell",
+              "type": "string"
+            },
+            {
+              "const": "Courier New",
+              "type": "string"
+            },
+            {
+              "const": "Consolas",
+              "type": "string"
+            },
+            {
+              "const": "Menlo",
+              "type": "string"
+            },
+            {
+              "const": "Monaco",
+              "type": "string"
+            },
+            {
+              "const": "Lucida Console",
+              "type": "string"
+            },
+            {
+              "const": "Impact",
+              "type": "string"
+            },
+            {
+              "const": "Copperplate",
+              "type": "string"
+            },
+            {
+              "const": "American Typewriter",
               "type": "string"
             },
             {
@@ -16676,6 +17204,42 @@
             "control": "grouped-dropdown",
             "controlProps": {
               "enumGroups": {
+                "Essentials": [
+                  "Arial",
+                  "Helvetica",
+                  "Verdana",
+                  "Tahoma",
+                  "Trebuchet MS",
+                  "Segoe UI",
+                  "Calibri",
+                  "Candara",
+                  "Century Gothic",
+                  "Gill Sans",
+                  "Optima",
+                  "Futura",
+                  "Avenir Next",
+                  "Lucida Grande",
+                  "Franklin Gothic Medium",
+                  "Times New Roman",
+                  "Georgia",
+                  "Palatino",
+                  "Garamond",
+                  "Baskerville",
+                  "Book Antiqua",
+                  "Cambria",
+                  "Constantia",
+                  "Didot",
+                  "Rockwell",
+                  "Courier New",
+                  "Consolas",
+                  "Menlo",
+                  "Monaco",
+                  "Lucida Console",
+                  "Impact",
+                  "Copperplate",
+                  "American Typewriter",
+                  "Comic Sans MS"
+                ],
                 "Awwwards Picks": [
                   "HK Grotesk Wide",
                   "Geist",
@@ -16775,18 +17339,6 @@
                   "Timeless Tourist",
                   "TjoekilKajoe",
                   "Vintage Brunch Retro Font Duo"
-                ],
-                "System & Web Safe": [
-                  "Arial",
-                  "Helvetica",
-                  "Times New Roman",
-                  "Courier New",
-                  "Georgia",
-                  "Verdana",
-                  "Impact",
-                  "Tahoma",
-                  "Trebuchet MS",
-                  "Comic Sans MS"
                 ],
                 "Premium": [
                   "Inter",
@@ -17225,13 +17777,37 @@
                 "Vintage Brunch Retro Font Duo",
                 "Arial",
                 "Helvetica",
-                "Times New Roman",
-                "Courier New",
-                "Georgia",
                 "Verdana",
-                "Impact",
                 "Tahoma",
                 "Trebuchet MS",
+                "Segoe UI",
+                "Calibri",
+                "Candara",
+                "Century Gothic",
+                "Gill Sans",
+                "Optima",
+                "Futura",
+                "Avenir Next",
+                "Lucida Grande",
+                "Franklin Gothic Medium",
+                "Times New Roman",
+                "Georgia",
+                "Palatino",
+                "Garamond",
+                "Baskerville",
+                "Book Antiqua",
+                "Cambria",
+                "Constantia",
+                "Didot",
+                "Rockwell",
+                "Courier New",
+                "Consolas",
+                "Menlo",
+                "Monaco",
+                "Lucida Console",
+                "Impact",
+                "Copperplate",
+                "American Typewriter",
                 "Comic Sans MS",
                 "Roboto",
                 "Open Sans",

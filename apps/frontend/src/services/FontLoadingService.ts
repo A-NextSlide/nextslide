@@ -24,7 +24,7 @@ const FONT_PRIORITY = {
 
 // Define font priorities by category
 const FONT_PRIORITY_MAP: Record<string, number> = {
-  'System & Web Safe': FONT_PRIORITY.SYSTEM,
+  'Essentials': FONT_PRIORITY.SYSTEM,
   'Awwwards Picks': FONT_PRIORITY.COMMON,
   'Designer': FONT_PRIORITY.COMMON,
   'Designer Local': FONT_PRIORITY.STANDARD,
@@ -115,9 +115,9 @@ function buildBackendFontGroups(fonts: Iterable<FontDefinition & { category?: st
     }
   }
 
-  const systemFonts = (FONT_CATEGORIES['System & Web Safe'] || []).map(f => f.name);
+  const systemFonts = (FONT_CATEGORIES['Essentials'] || []).map(f => f.name);
   if (systemFonts.length) {
-    groups['System & Web Safe'] = systemFonts;
+    groups['Essentials'] = systemFonts;
     systemFonts.forEach(name => seen.add(name.toLowerCase()));
   }
 
@@ -148,7 +148,7 @@ function normalizeSourceGroup(source?: string): string {
   if (src === 'google') return 'Google Fonts';
   if (src === 'fontshare') return 'Fontshare';
   if (src === 'cdn') return 'CDN';
-  if (src === 'system') return 'System & Web Safe';
+  if (src === 'system') return 'Essentials';
   return 'Other';
 }
 
@@ -167,13 +167,13 @@ function buildBackendSourceGroups(fonts: Iterable<FontDefinition & { source?: st
     seen.add(name.toLowerCase());
   }
 
-  const systemFonts = (FONT_CATEGORIES['System & Web Safe'] || []).map(f => f.name);
+  const systemFonts = (FONT_CATEGORIES['Essentials'] || []).map(f => f.name);
   if (systemFonts.length) {
-    if (!groups['System & Web Safe']) groups['System & Web Safe'] = [];
+    if (!groups['Essentials']) groups['Essentials'] = [];
     systemFonts.forEach(name => {
       const key = name.toLowerCase();
       if (seen.has(key)) return;
-      groups['System & Web Safe'].push(name);
+      groups['Essentials'].push(name);
       seen.add(key);
     });
   }
@@ -616,7 +616,7 @@ export const FontLoadingService = {
    */
   preloadSystemFonts: async (): Promise<void> => {
     // First load system fonts immediately
-    const systemFontDefs = FONT_CATEGORIES['System & Web Safe'] || [];
+    const systemFontDefs = FONT_CATEGORIES['Essentials'] || [];
     await FontLoadingService.loadFonts(systemFontDefs);
 
     // Then load common fonts shortly after, plus curated designer set
@@ -767,7 +767,7 @@ export const FontLoadingService = {
       'Designer',
       'PixelBuddha',
       'Designer Local',
-      'System & Web Safe',
+      'Essentials',
       'Premium',
       'Sans-Serif',
       'Serif',
@@ -809,7 +809,7 @@ export const FontLoadingService = {
   preloadForDropdown: async (categories: Record<string, string[]>, activeTab?: string): Promise<void> => {
     const previewLimit = 24;
     // 1. Load system fonts immediately (always available)
-    const systemFonts = categories['System & Web Safe'] || [];
+    const systemFonts = categories['Essentials'] || [];
     await FontLoadingService.loadFonts(systemFonts, { maxConcurrent: 5, delayBetweenBatches: 0 });
 
     // 2. Load active tab fonts immediately
@@ -826,7 +826,7 @@ export const FontLoadingService = {
 
     // 4. Load other categories progressively
     const otherCategories = Object.keys(categories).filter(cat =>
-      cat !== 'System & Web Safe' &&
+      cat !== 'Essentials' &&
       cat !== 'Sans-Serif' &&
       cat !== activeTab
     );
