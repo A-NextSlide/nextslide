@@ -1,15 +1,40 @@
 """
 Dispatch layer for thumbnail rendering via Modal serverless containers.
 
-Follows the same pattern as modal_dispatch.py — tries Modal first,
-falls back to local Playwright rendering on failure, and silently
-skips if both fail (the frontend will use client-side rendering).
+Thumbnails are rendered exclusively on Modal (which has Chromium installed).
+If Modal is unavailable, we skip — the frontend uses client-side rendering.
 """
 
 import logging
+import shutil
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Check once at import time whether Playwright/Chromium is usable locally
+_LOCAL_PLAYWRIGHT_AVAILABLE: Optional[bool] = None
+
+
+def _check_local_playwright() -> bool:
+    global _LOCAL_PLAYWRIGHT_AVAILABLE
+    if _LOCAL_PLAYWRIGHT_AVAILABLE is not None:
+        return _LOCAL_PLAYWRIGHT_AVAILABLE
+    try:
+        from playwright.async_api import async_playwright  # noqa: F401
+        # Also check that the chromium binary actually exists
+        _LOCAL_PLAYWRIGHT_AVAILABLE = shutil.which("chromium") is not None or shutil.which("chrome") is not None
+        if not _LOCAL_PLAYWRIGHT_AVAILABLE:
+            # Playwright is installed but browser binary may still exist in its cache
+            import subprocess
+            result = subprocess.run(
+                ["python", "-m", "playwright", "install", "--dry-run", "chromium"],
+                capture_output=True, timeout=5,
+            )
+            # If dry-run succeeds without error, it's likely installed
+            _LOCAL_PLAYWRIGHT_AVAILABLE = result.returncode == 0
+    except Exception:
+        _LOCAL_PLAYWRIGHT_AVAILABLE = False
+    return _LOCAL_PLAYWRIGHT_AVAILABLE
 
 
 async def render_thumbnail_via_modal(
@@ -20,8 +45,9 @@ async def render_thumbnail_via_modal(
     slide_index: int = 0,
 ) -> Optional[dict]:
     """
-    Render a slide thumbnail via Modal, falling back to local Playwright.
+    Render a slide thumbnail via Modal.
 
+    Falls back to local Playwright only if Chromium is actually installed.
     Returns {"url": "...", "path": "..."} on success, None on failure.
     """
     try:
@@ -44,11 +70,15 @@ async def render_thumbnail_via_modal(
 
     except Exception as exc:
         if isinstance(exc, ModuleNotFoundError):
-            logger.debug("[thumbnail_dispatch] modal not installed, falling back to local")
+            logger.debug("[thumbnail_dispatch] modal not installed")
         else:
-            logger.warning("[thumbnail_dispatch] Modal failed for deck %s, falling back to local: %s", deck_uuid, exc)
+            logger.warning("[thumbnail_dispatch] Modal failed for deck %s: %s", deck_uuid, exc)
 
-        # Local fallback
+        # Only attempt local fallback if Playwright + Chromium are available
+        if not _check_local_playwright():
+            logger.debug("[thumbnail_dispatch] Skipping local fallback — Playwright/Chromium not available")
+            return None
+
         try:
             from services.thumbnail_renderer import render_and_upload_thumbnail
 
@@ -62,8 +92,7 @@ async def render_thumbnail_via_modal(
             logger.info("[thumbnail_dispatch] Local thumbnail OK for deck %s", deck_uuid)
             return result
         except Exception as local_exc:
-            # Playwright may not be installed on the server — this is expected
-            logger.warning("[thumbnail_dispatch] Local fallback also failed for deck %s: %s", deck_uuid, local_exc)
+            logger.warning("[thumbnail_dispatch] Local fallback failed for deck %s: %s", deck_uuid, local_exc)
             return None
 
 
