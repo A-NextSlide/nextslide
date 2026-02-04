@@ -13,6 +13,7 @@ import LockedSlideOverlay from './LockedSlideOverlay';
 import { usePreventMobileZoom, MOBILE_SLIDE_GUARD_STYLE } from '@/hooks/usePreventMobileZoom';
 import { useMobilePinchZoom } from '@/hooks/useMobilePinchZoom';
 import { BROWSER } from '@/utils/browser';
+import MobilePresentationThumbnail from './MobilePresentationThumbnail';
 
 interface PresentationModeProps {
   slides: SlideData[];
@@ -526,6 +527,26 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                         const slideIsLocked = isLocked(index);
                         const pngUrl = getThumbnailUrl(index);
 
+                        // On mobile, use lightweight MobilePresentationThumbnail
+                        // Shows PNG screenshot or background-color placeholder (no heavy component rendering)
+                        if (BROWSER.isMobile) {
+                          return (
+                            <MobilePresentationThumbnail
+                              key={slide.id}
+                              slide={slide}
+                              width={thumbnailWidth}
+                              height={thumbnailHeight}
+                              isActive={validIndex === index}
+                              slideNumber={index + 1}
+                              onClick={() => { goToSlide(index); setShowThumbnails(false); }}
+                              cachedUrl={pngUrl}
+                              isCapturing={false}
+                              isLocked={slideIsLocked}
+                            />
+                          );
+                        }
+
+                        // Desktop: PNG with slide number fallback
                         return (
                           <button
                             key={slide.id}
