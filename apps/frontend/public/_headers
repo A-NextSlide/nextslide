@@ -1,9 +1,7 @@
-# Prevent caching of index.html so deploys take effect immediately
-/index.html
-  Cache-Control: no-cache, no-store, must-revalidate
-
-# Prevent caching of SPA fallback routes (rewritten to index.html)
-/
+# Prevent caching of HTML pages (SPA routes) so deploys take effect immediately.
+# The /* rule covers all routes (/p/xyz, /deck/abc, etc.) that are rewritten to index.html.
+# The /assets/* rule below overrides this for hashed static assets (cached forever).
+/*
   Cache-Control: no-cache, no-store, must-revalidate
 
 # Set correct MIME types for assets
