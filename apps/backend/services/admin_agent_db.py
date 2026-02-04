@@ -192,8 +192,14 @@ async def execute_read_query(
             except asyncio.TimeoutError:
                 return {"error": "Query timed out (30s limit)", "columns": [], "rows": [], "row_count": 0}
             except Exception as e:
-                logger.error(f"[AdminAgent] Read query error: {e}")
-                return {"error": str(e), "columns": [], "rows": [], "row_count": 0}
+                # LLM-generated queries often reference non-existent tables/columns;
+                # these are handled by the retry/replan logic, so log at info level.
+                err_str = str(e)
+                if 'does not exist' in err_str or 'does not have' in err_str:
+                    logger.info(f"[AdminAgent] Read query error (will retry): {e}")
+                else:
+                    logger.error(f"[AdminAgent] Read query error: {e}")
+                return {"error": err_str, "columns": [], "rows": [], "row_count": 0}
 
 
 async def execute_write_query(
@@ -254,8 +260,12 @@ async def execute_write_query(
         except asyncio.TimeoutError:
             return {"error": "Write query timed out (60s limit)", "affected_rows": 0}
         except Exception as e:
-            logger.error(f"[AdminAgent] Write query error: {e}")
-            return {"error": str(e), "affected_rows": 0}
+            err_str = str(e)
+            if 'does not exist' in err_str or 'does not have' in err_str:
+                logger.info(f"[AdminAgent] Write query error (will retry): {e}")
+            else:
+                logger.error(f"[AdminAgent] Write query error: {e}")
+            return {"error": err_str, "affected_rows": 0}
 
 
 class _DeleteTooManyError(Exception):
