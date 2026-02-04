@@ -64,15 +64,21 @@ async def get_deck_status(deck_id: str, auth_token: Optional[str] = None) -> Dec
     # Check user access if auth token provided
     if auth_token:
         session_mgr = SessionManager()
-        user_data = await session_mgr.validate_token(auth_token)
+        user_data = session_mgr.validate_token(auth_token)
         if user_data and deck.get('user_id') and deck['user_id'] != user_data.get('id'):
             logger.warning(f"User {user_data.get('id')} attempted to access deck {deck_id} owned by {deck['user_id']}")
             raise ValueError("Access denied")
     
     # Extract status information
-    deck_data = deck.get('data', {})
-    status_info = deck_data.get('status', {})
-    slides = deck_data.get('slides', [])
+    # slides and status live at top level of the deck row, not nested in 'data'
+    raw_status = deck.get('status', {})
+    if isinstance(raw_status, str):
+        status_info = {"state": raw_status}
+    elif isinstance(raw_status, dict):
+        status_info = raw_status
+    else:
+        status_info = {}
+    slides = deck.get('slides') or []
     
     # Determine overall status
     if status_info.get('state'):
