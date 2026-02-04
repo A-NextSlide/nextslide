@@ -154,6 +154,9 @@ const SharedDeckView: React.FC = () => {
     return preventSafariGestureZoom(el);
   }, []);
 
+  // Owner plan (for badge visibility)
+  const [ownerPlan, setOwnerPlan] = useState<string>('free');
+
   // Share dialog state
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
@@ -418,8 +421,14 @@ const SharedDeckView: React.FC = () => {
           deckId: deckData?.id,
           slidesCount: deckData?.slides?.length,
           is_editable,
-          share_type: share_info?.share_type
+          share_type: share_info?.share_type,
+          owner_plan: share_info?.owner_plan
         });
+
+        // Store owner plan for badge visibility
+        if (share_info?.owner_plan) {
+          setOwnerPlan(share_info.owner_plan);
+        }
 
         // Check if the deck requires a password
         if (response.error === 'Password required') {
@@ -1017,9 +1026,9 @@ const SharedDeckView: React.FC = () => {
             )}
           </div>
 
-          {/* Made with NextSlide badge */}
+          {/* Made with NextSlide badge - shown for free users only */}
           {shareCode && (
-            <MadeWithBadge shareCode={shareCode} />
+            <MadeWithBadge shareCode={shareCode} userPlan={ownerPlan} />
           )}
         </NavigationProvider>
 

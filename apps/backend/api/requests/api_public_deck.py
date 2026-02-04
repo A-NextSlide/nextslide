@@ -55,13 +55,29 @@ async def get_public_deck(
         # Extract share info
         share_info = deck.pop('share_info', {})
         is_editable = share_info.get('is_editable', False)
-        
+
+        # Look up deck owner's subscription plan (for badge/watermark visibility)
+        owner_plan = 'free'
+        deck_user_id = deck.get('user_id')
+        if deck_user_id:
+            try:
+                supabase = get_supabase_client()
+                sub_result = supabase.table('subscriptions').select(
+                    'plan_id, status'
+                ).eq('user_id', deck_user_id).execute()
+                if sub_result.data:
+                    active_subs = [s for s in sub_result.data if s.get('status') == 'active']
+                    sub = active_subs[0] if active_subs else sub_result.data[0]
+                    owner_plan = sub.get('plan_id', 'free')
+            except Exception as e:
+                logger.warning(f"Failed to fetch owner plan: {e}")
+
         # For view-only links, ensure certain fields are read-only
         if not is_editable:
             # Remove sensitive information
             deck.pop('user_id', None)
             deck.pop('status', None)  # Internal generation status
-            
+
             # Mark as read-only
             deck['read_only'] = True
         
@@ -78,7 +94,8 @@ async def get_public_deck(
             deck=deck,
             share_info={
                 'share_type': share_info.get('share_type', 'view'),
-                'accessed_at': datetime.utcnow().isoformat()
+                'accessed_at': datetime.utcnow().isoformat(),
+                'owner_plan': owner_plan,
             },
             is_editable=is_editable,
             access_recorded=True

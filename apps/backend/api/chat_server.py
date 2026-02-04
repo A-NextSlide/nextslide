@@ -165,6 +165,7 @@ from api.requests.api_admin import router as admin_router
 from api.requests.api_admin_analytics import router as admin_analytics_router
 from api.requests.api_admin_agent import router as admin_agent_router
 from api.requests.api_admin_growth import router as admin_growth_router
+from api.requests.api_admin_email import router as admin_email_router
 from api.requests.api_community import router as community_router
 from api.requests.api_google_integration import router as google_router
 from api.requests.api_integrations import router as integrations_router
@@ -364,6 +365,7 @@ app.include_router(admin_router)
 app.include_router(admin_analytics_router)
 app.include_router(admin_agent_router)
 app.include_router(admin_growth_router)
+app.include_router(admin_email_router)
 app.include_router(community_router)
 app.include_router(agent_router)
 app.include_router(agent_stream_router)

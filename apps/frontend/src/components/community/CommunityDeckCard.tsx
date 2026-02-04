@@ -122,7 +122,7 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
         {/* ── Slide count (top-right) ──────────────────────────────────── */}
         <div className="absolute top-2.5 right-2.5 z-[4]">
           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold text-white/80 bg-black/40">
-            <Layers className="h-2.5 w-2.5" />
+            <Layers className="h-3 w-3" />
             {deck.slideCount}
           </span>
         </div>
@@ -136,16 +136,16 @@ const CommunityDeckCard: React.FC<CommunityDeckCardProps> = ({
           >
             {deck.title}
           </h3>
-          <div className="flex items-center gap-3 mt-1 text-[11px] text-white/60" style={{ fontFamily: HK }}>
+          <div className="flex items-center gap-2 mt-1 text-[11px] text-white/60" style={{ fontFamily: HK }}>
             {deck.authorName && (
               <span className="truncate max-w-[45%]">{deck.authorName}</span>
             )}
-            <span className="flex items-center gap-0.5">
-              <Eye className="h-2.5 w-2.5" />
+            <span className="flex items-center gap-1">
+              <Eye className="h-3 w-3" />
               {formatCount(deck.viewCount)}
             </span>
-            <span className="flex items-center gap-0.5">
-              <Copy className="h-2.5 w-2.5" />
+            <span className="flex items-center gap-1">
+              <Copy className="h-3 w-3" />
               {formatCount(deck.remixCount)}
             </span>
           </div>

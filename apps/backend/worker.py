@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 from typing import Any, Dict, Optional
+from arq.cron import cron
 
 # Ensure the backend package is on the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -68,6 +69,13 @@ async def generate_deck_job(
     logger.info(f"[worker] Finished deck generation for {deck_uuid}")
 
 
+async def process_email_campaigns(ctx: dict):
+    """Check for scheduled email campaigns that are due and execute them."""
+    from services.email_campaign_service import check_and_execute_scheduled_campaigns
+    logger.info("[worker] Checking for scheduled email campaigns")
+    await check_and_execute_scheduled_campaigns()
+
+
 async def startup(ctx: dict):
     """Called once when the worker boots."""
     logger.info("[worker] arq worker starting up")
@@ -106,6 +114,10 @@ class WorkerSettings:
     """arq worker configuration."""
 
     functions = [generate_deck_job]
+    cron_jobs = [
+        # Check for due email campaigns every 5 minutes
+        cron(process_email_campaigns, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
+    ]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = _redis_settings()

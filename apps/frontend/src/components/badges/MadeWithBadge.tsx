@@ -1,16 +1,17 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { trackBadgeImpression, trackBadgeClick } from '@/services/analytics';
 import { cn } from '@/lib/utils';
+import { BrandWordmark } from '@/components/common/BrandWordmark';
 
 interface MadeWithBadgeProps {
   shareCode: string;
-  userPlan?: string; // 'free' | 'starter' | 'pro' | 'enterprise'
+  userPlan?: string; // 'free' | 'starter' | 'pro' | 'enterprise' | 'friends_family'
   className?: string;
 }
 
 /**
  * "Made with NextSlide" badge shown on shared presentations.
- * Hidden for paid plan users (starter/pro/enterprise).
+ * Hidden for paid plan users (starter/pro/enterprise/friends_family).
  * Tracks impressions and clicks via PostHog.
  */
 const MadeWithBadge: React.FC<MadeWithBadgeProps> = ({ shareCode, userPlan, className }) => {
@@ -18,7 +19,7 @@ const MadeWithBadge: React.FC<MadeWithBadgeProps> = ({ shareCode, userPlan, clas
   const hasTrackedImpression = useRef(false);
 
   // Hide badge for paid plan users
-  const paidPlans = ['starter', 'pro', 'enterprise'];
+  const paidPlans = ['starter', 'pro', 'enterprise', 'friends_family'];
   if (userPlan && paidPlans.includes(userPlan.toLowerCase())) {
     return null;
   }
@@ -64,18 +65,16 @@ const MadeWithBadge: React.FC<MadeWithBadgeProps> = ({ shareCode, userPlan, clas
       )}
       style={{ transitionProperty: 'opacity, transform, background-color, color' }}
     >
-      {/* NextSlide X icon */}
-      <svg
-        viewBox="0 0 64 64"
-        width={12}
-        height={12}
-        aria-hidden
-        className="flex-shrink-0"
-      >
-        <path d="M8 8 L56 56" stroke="#FF4301" strokeWidth={11} strokeLinecap="round" />
-        <path d="M56 8 L8 56" stroke="#FF4301" strokeWidth={11} strokeLinecap="round" />
-      </svg>
-      <span>Made with NextSlide</span>
+      <span className="text-white/70 text-[10px]">Made with</span>
+      <BrandWordmark
+        sizePx={10}
+        textColor="#ffffff"
+        accentColor="#FF4301"
+        xImageUrl="/brand/nextslide-x.png"
+        gapLeftPx={-1}
+        gapRightPx={-4}
+        xLiftPx={-2}
+      />
     </a>
   );
 };

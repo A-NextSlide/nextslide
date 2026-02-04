@@ -1,6 +1,7 @@
 import os
 import logging
 from typing import Optional
+from datetime import datetime
 
 import httpx
 
@@ -45,6 +46,84 @@ def send_invite_email_via_resend(to_email: str, subject: str, html_body: str) ->
     except Exception as e:
         logger.error(f"Resend email error: {e}", exc_info=True)
         return False
+
+
+def send_tracked_email(
+    to_email: str,
+    subject: str,
+    html_body: str,
+    template_id: Optional[str] = None,
+    campaign_id: Optional[str] = None,
+    recipient_user_id: Optional[str] = None,
+) -> bool:
+    """Send an email via Resend and log it to the email_sends table.
+
+    Returns True on success, False otherwise.
+    """
+    api_key = os.getenv("RESEND_API_KEY")
+    if not api_key:
+        logger.error("RESEND_API_KEY not configured")
+        return False
+
+    from_email = os.getenv("RESEND_FROM_EMAIL", "Nextslide <noreply@nextslide.ai>")
+
+    resend_id = None
+    status = "failed"
+    error_message = None
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "from": from_email,
+            "to": [to_email],
+            "subject": subject,
+            "html": html_body,
+        }
+        resp = httpx.post(
+            "https://api.resend.com/emails",
+            headers=headers,
+            json=payload,
+            timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
+        )
+        if 200 <= resp.status_code < 300:
+            resp_data = resp.json()
+            resend_id = resp_data.get("id")
+            status = "sent"
+            logger.info(f"Tracked email sent: to={to_email}, resend_id={resend_id}")
+        else:
+            error_message = f"HTTP {resp.status_code}: {resp.text[:200]}"
+            logger.error(f"Tracked email failed: {error_message}")
+    except Exception as e:
+        error_message = str(e)[:500]
+        logger.error(f"Tracked email error: {e}", exc_info=True)
+
+    # Log to email_sends table
+    try:
+        from services.supabase import get_supabase_client
+        supabase = get_supabase_client()
+        record = {
+            "recipient_email": to_email,
+            "subject": subject,
+            "status": status,
+            "resend_id": resend_id,
+            "error_message": error_message,
+            "sent_at": datetime.utcnow().isoformat() if status == "sent" else None,
+        }
+        if template_id:
+            record["template_id"] = template_id
+        if campaign_id:
+            record["campaign_id"] = campaign_id
+        if recipient_user_id:
+            record["recipient_user_id"] = recipient_user_id
+
+        supabase.table("email_sends").insert(record).execute()
+    except Exception as e:
+        logger.error(f"Failed to log email send: {e}")
+
+    return status == "sent"
 
 
 def send_collaborator_invite_email(email: str, deck_name: str, share_url: str) -> bool:

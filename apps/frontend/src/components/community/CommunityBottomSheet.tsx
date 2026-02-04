@@ -465,13 +465,13 @@ const PodiumCard: React.FC<{ entry: LeaderboardEntry; rank: number; onClick: () 
       </div>
 
       {/* Stats row */}
-      <div className="px-2.5 py-1.5 flex items-center gap-2.5 text-[10px] text-zinc-500 dark:text-zinc-400" style={{ fontFamily: HK }}>
-        <span className="flex items-center gap-0.5">
-          <Eye className="h-2.5 w-2.5" />
+      <div className="px-2.5 py-1.5 flex items-center gap-2 text-[10px] text-zinc-500 dark:text-zinc-400" style={{ fontFamily: HK }}>
+        <span className="flex items-center gap-1">
+          <Eye className="h-3 w-3" />
           {formatCount(entry.view_count)}
         </span>
-        <span className="flex items-center gap-0.5">
-          <Copy className="h-2.5 w-2.5" />
+        <span className="flex items-center gap-1">
+          <Copy className="h-3 w-3" />
           {formatCount(entry.remix_count)}
         </span>
       </div>
@@ -530,12 +530,12 @@ const RunnerCard: React.FC<{ entry: LeaderboardEntry; onClick: () => void }> = (
       </div>
 
       <div className="px-2 py-1.5 flex items-center gap-2 text-[10px] text-zinc-400 dark:text-zinc-500" style={{ fontFamily: HK }}>
-        <span className="flex items-center gap-0.5">
-          <Eye className="h-2.5 w-2.5" />
+        <span className="flex items-center gap-1">
+          <Eye className="h-3 w-3" />
           {formatCount(entry.view_count)}
         </span>
-        <span className="flex items-center gap-0.5">
-          <Copy className="h-2.5 w-2.5" />
+        <span className="flex items-center gap-1">
+          <Copy className="h-3 w-3" />
           {formatCount(entry.remix_count)}
         </span>
       </div>

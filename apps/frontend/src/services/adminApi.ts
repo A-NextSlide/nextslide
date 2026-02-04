@@ -1408,6 +1408,105 @@ class AdminApi {
       body: JSON.stringify({ slides, style }),
     });
   }
+
+  // ==================== Email Control Center ====================
+
+  async getEmailTemplates(category?: string): Promise<{ templates: EmailTemplate[] }> {
+    const params = category ? `?category=${category}` : '';
+    return this.request(`/admin/email/templates${params}`);
+  }
+
+  async getEmailTemplate(id: string): Promise<EmailTemplate> {
+    return this.request(`/admin/email/templates/${id}`);
+  }
+
+  async createEmailTemplate(data: Partial<EmailTemplate>): Promise<EmailTemplate> {
+    return this.request('/admin/email/templates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateEmailTemplate(id: string, data: Partial<EmailTemplate>): Promise<EmailTemplate> {
+    return this.request(`/admin/email/templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteEmailTemplate(id: string): Promise<{ deleted: boolean }> {
+    return this.request(`/admin/email/templates/${id}`, { method: 'DELETE' });
+  }
+
+  async previewEmailTemplate(id: string, variables?: Record<string, string>): Promise<{ html: string; subject: string }> {
+    return this.request(`/admin/email/templates/${id}/preview`, {
+      method: 'POST',
+      body: JSON.stringify({ variables: variables || {} }),
+    });
+  }
+
+  async sendTestEmail(templateId: string): Promise<{ sent: boolean; to: string }> {
+    return this.request(`/admin/email/templates/${templateId}/send-test`, { method: 'POST' });
+  }
+
+  async generateEmailAI(data: { prompt: string; existing_html?: string; template_context?: string }): Promise<{ html: string; subject: string }> {
+    return this.request('/admin/email/ai/generate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getEmailCampaigns(): Promise<{ campaigns: EmailCampaign[] }> {
+    return this.request('/admin/email/campaigns');
+  }
+
+  async createEmailCampaign(data: Partial<EmailCampaign>): Promise<EmailCampaign> {
+    return this.request('/admin/email/campaigns', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateEmailCampaign(id: string, data: Partial<EmailCampaign>): Promise<EmailCampaign> {
+    return this.request(`/admin/email/campaigns/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async sendEmailCampaign(id: string): Promise<{ started: boolean; campaign_id: string }> {
+    return this.request(`/admin/email/campaigns/${id}/send`, { method: 'POST' });
+  }
+
+  async getCampaignRecipientCount(audience: string, audienceConfig?: Record<string, any>): Promise<{ count: number }> {
+    return this.request('/admin/email/campaigns/audience-count', {
+      method: 'POST',
+      body: JSON.stringify({ audience, audience_config: audienceConfig || {} }),
+    });
+  }
+
+  async getEmailSends(filters?: {
+    template_id?: string;
+    campaign_id?: string;
+    status?: string;
+    email?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<EmailSendsResponse> {
+    const params = new URLSearchParams();
+    if (filters?.template_id) params.append('template_id', filters.template_id);
+    if (filters?.campaign_id) params.append('campaign_id', filters.campaign_id);
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.email) params.append('email', filters.email);
+    if (filters?.date_from) params.append('date_from', filters.date_from);
+    if (filters?.date_to) params.append('date_to', filters.date_to);
+    if (filters?.page) params.append('page', filters.page.toString());
+    if (filters?.limit) params.append('limit', filters.limit.toString());
+    const qs = params.toString();
+    return this.request(`/admin/email/sends${qs ? `?${qs}` : ''}`);
+  }
 }
 
 export interface Brand {
@@ -1688,6 +1787,64 @@ export interface SeoCommunityDeck {
 }
 
 export const adminApi = new AdminApi();
+
+// Email Control Center types
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  slug: string;
+  subject: string;
+  category: 'transactional' | 'growth' | 'onboarding' | 'product_updates';
+  html_body: string;
+  variables: string[];
+  is_system: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  version: number;
+}
+
+export interface EmailCampaign {
+  id: string;
+  name: string;
+  template_id: string;
+  template_name?: string;
+  subject_override?: string;
+  audience: 'all' | 'pro' | 'free' | 'inactive';
+  audience_config: Record<string, any>;
+  status: 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelled';
+  scheduled_at?: string;
+  started_at?: string;
+  completed_at?: string;
+  total_recipients: number;
+  sent_count: number;
+  failed_count: number;
+  created_at: string;
+  error_message?: string;
+}
+
+export interface EmailSend {
+  id: string;
+  campaign_id?: string;
+  template_id?: string;
+  template_name?: string;
+  recipient_email: string;
+  recipient_user_id?: string;
+  subject: string;
+  status: 'pending' | 'sent' | 'delivered' | 'bounced' | 'failed';
+  resend_id?: string;
+  sent_at?: string;
+  error_message?: string;
+  created_at: string;
+}
+
+export interface EmailSendsResponse {
+  sends: EmailSend[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
 
 // Growth Dashboard types
 export interface GrowthStats {
