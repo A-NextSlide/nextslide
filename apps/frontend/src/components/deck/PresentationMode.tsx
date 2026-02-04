@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Grid3X3, Lock } from 'lucide-react';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useNavigation } from '@/context/NavigationContext';
 import { SlideData } from '@/types/SlideTypes';
@@ -12,7 +12,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useLockedSlides } from '@/hooks/useLockedSlides';
 import LockedSlideOverlay from './LockedSlideOverlay';
 import { usePreventMobileZoom, MOBILE_SLIDE_GUARD_STYLE } from '@/hooks/usePreventMobileZoom';
-
+import { useMobilePinchZoom } from '@/hooks/useMobilePinchZoom';
 import { BROWSER } from '@/utils/browser';
 
 interface PresentationModeProps {
@@ -50,9 +50,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const { isLocked, lockedCount } = useLockedSlides();
 
   // Prevent native browser zoom on mobile – pinch-to-zoom on heavy slide DOM crashes the tab.
+  // usePreventMobileZoom modifies the viewport meta tag; useMobilePinchZoom provides a
+  // GPU-composited CSS-transform zoom that replaces the crashy native zoom.
   usePreventMobileZoom();
-  // No zoom in presentation mode — swipe left/right navigates slides instead.
-  const zoomContainerRef = useRef<HTMLDivElement>(null);
+  const { containerRef: zoomContainerRef, isZoomed, resetZoom } = useMobilePinchZoom();
 
   // Edge detection state and timeout ref
   const [isInEdgeZone, setIsInEdgeZone] = useState(false);
@@ -239,6 +240,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   // Dispatch slidechange event when slide changes
   useEffect(() => {
     if (!isPresenting || !currentSlide?.id) return;
+    // Reset pinch-zoom to 1× when navigating to a different slide
+    resetZoom();
     const event = new CustomEvent('slidechange', {
       detail: { slideId: currentSlide.id, index: currentSlideIndex }
     });
@@ -247,7 +250,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
         document.dispatchEvent(event);
       });
     });
-  }, [currentSlideIndex, currentSlide?.id, isPresenting]);
+  }, [currentSlideIndex, currentSlide?.id, isPresenting, resetZoom]);
 
   const handleExitPresentation = useCallback(() => {
     exitPresentation();
@@ -280,37 +283,25 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       }
     };
 
-    // Touch: swipe left/right to navigate, or tap right/left half of screen
+    // Touch/swipe support
     let touchStartX = 0;
     let touchStartY = 0;
-    let touchStartTime = 0;
 
     const handleTouchStart = (e: TouchEvent) => {
       if (!e.touches?.length) return;
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
-      touchStartTime = Date.now();
       if (!showThumbnails) setShowControls(true);
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
-      if (showThumbnails || !e.changedTouches?.length) return;
-      const endX = e.changedTouches[0].clientX;
-      const deltaX = endX - touchStartX;
+      // Skip swipe navigation when user is zoomed in (panning takes priority)
+      if (showThumbnails || !e.changedTouches?.length || isZoomed) return;
+      const deltaX = e.changedTouches[0].clientX - touchStartX;
       const deltaY = e.changedTouches[0].clientY - touchStartY;
-      const elapsed = Date.now() - touchStartTime;
 
-      // Swipe: horizontal movement > 50px
       if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
         if (deltaX < 0) goToNextSlide();
-        else goToPrevSlide();
-        return;
-      }
-
-      // Tap: short press with minimal movement
-      if (elapsed < 300 && Math.abs(deltaX) < 15 && Math.abs(deltaY) < 15) {
-        const screenWidth = window.innerWidth;
-        if (endX > screenWidth / 2) goToNextSlide();
         else goToPrevSlide();
       }
     };
@@ -324,7 +315,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [isPresenting, showThumbnails, goToNextSlide, goToPrevSlide, handleExitPresentation, setShowControls, setShowThumbnails]);
+  }, [isPresenting, showThumbnails, isZoomed, goToNextSlide, goToPrevSlide, handleExitPresentation, setShowControls, setShowThumbnails]);
 
   // Render slide content
   const slideContent = useMemo(() => {
@@ -367,7 +358,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       {/* Slide container — overflow-hidden clips the zoomed slide at screen edges */}
       <div
         className="relative w-full h-full flex items-center justify-center overflow-hidden"
-        style={BROWSER.isMobile ? { ...MOBILE_SLIDE_GUARD_STYLE, touchAction: 'none' } : undefined}
+        style={BROWSER.isMobile ? MOBILE_SLIDE_GUARD_STYLE : undefined}
       >
         <div ref={zoomContainerRef}>
           <div
@@ -435,6 +426,12 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => setShowThumbnails(true)}
+                    className="bg-black/60 rounded-full w-10 h-10 flex items-center justify-center text-white/90 hover:bg-black/80 border border-white/20"
+                  >
+                    <Grid3X3 size={18} />
+                  </button>
+                  <button
                     onClick={handleExitPresentation}
                     className="bg-black/60 rounded-full w-10 h-10 flex items-center justify-center text-white/90 hover:bg-black/80 border border-white/20"
                   >
@@ -444,27 +441,31 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
               </div>
             </div>
 
-            {/* Navigation zones - full height side panels */}
-            <button
-              onClick={goToPrevSlide}
-              disabled={validIndex === 0}
-              className={cn(
-                'absolute left-0 top-0 bottom-0 w-[80px] pointer-events-auto flex items-center justify-center transition-opacity duration-200 group/nav',
-                validIndex === 0 ? 'opacity-0 cursor-default' : 'opacity-100 hover:bg-white/[0.04] active:bg-white/[0.08]'
-              )}
-            >
-              <ChevronLeft size={28} className="text-white/70 group-hover/nav:text-white transition-colors" strokeWidth={1.5} />
-            </button>
-            <button
-              onClick={goToNextSlide}
-              disabled={validIndex === slides.length - 1}
-              className={cn(
-                'absolute right-0 top-0 bottom-0 w-[80px] pointer-events-auto flex items-center justify-center transition-opacity duration-200 group/nav',
-                validIndex === slides.length - 1 ? 'opacity-0 cursor-default' : 'opacity-100 hover:bg-white/[0.04] active:bg-white/[0.08]'
-              )}
-            >
-              <ChevronRight size={28} className="text-white/70 group-hover/nav:text-white transition-colors" strokeWidth={1.5} />
-            </button>
+            {/* Navigation buttons - at sides, vertically centered */}
+            <div className="absolute top-1/2 -translate-y-1/2 left-2 pointer-events-auto">
+              <button
+                onClick={goToPrevSlide}
+                disabled={validIndex === 0}
+                className={cn(
+                  'bg-black/60 rounded-full w-12 h-12 flex items-center justify-center text-white/90 border border-white/20',
+                  validIndex === 0 ? 'opacity-30' : 'hover:bg-black/80 active:scale-95'
+                )}
+              >
+                <ChevronLeft size={24} />
+              </button>
+            </div>
+            <div className="absolute top-1/2 -translate-y-1/2 right-2 pointer-events-auto">
+              <button
+                onClick={goToNextSlide}
+                disabled={validIndex === slides.length - 1}
+                className={cn(
+                  'bg-black/60 rounded-full w-12 h-12 flex items-center justify-center text-white/90 border border-white/20',
+                  validIndex === slides.length - 1 ? 'opacity-30' : 'hover:bg-black/80 active:scale-95'
+                )}
+              >
+                <ChevronRight size={24} />
+              </button>
+            </div>
 
             {/* Progress bar */}
             <div className={cn(
