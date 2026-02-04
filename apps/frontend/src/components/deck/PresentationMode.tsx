@@ -540,17 +540,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                             style={{ height: thumbnailHeight, width: thumbnailWidth }}
                           >
                             <div className="relative bg-white w-full h-full overflow-hidden">
-                              {/* PNG thumbnail with MiniSlide fallback underneath */}
-                              <MiniSlide
-                                slide={slide}
-                                width={thumbnailWidth}
-                                height={thumbnailHeight}
-                                responsive={false}
-                                className="pointer-events-none"
-                                slideSize={deckSlideSize}
-                                isLocked={slideIsLocked}
-                              />
-                              {pngUrl && (
+                              {pngUrl ? (
                                 <img
                                   src={pngUrl}
                                   alt={`Slide ${index + 1}`}
@@ -558,6 +548,16 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                                   draggable={false}
                                   style={slideIsLocked ? { filter: 'blur(8px) saturate(0.7) brightness(0.95)' } : undefined}
                                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                />
+                              ) : (
+                                <MiniSlide
+                                  slide={slide}
+                                  width={thumbnailWidth}
+                                  height={thumbnailHeight}
+                                  responsive={false}
+                                  className="pointer-events-none"
+                                  slideSize={deckSlideSize}
+                                  isLocked={slideIsLocked}
                                 />
                               )}
                             </div>
