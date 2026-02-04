@@ -68,7 +68,8 @@ export const ComponentRenderer: React.FC<Props> = memo(({
   const isEditing = isEditingProp;
   const updateComponent = updateComponentProp || (() => {});
   const activeSlideId = slideIdProp || null;
-  const isTextEditing = useEditorSettingsStore(state => state.isTextEditing);
+  // PERF: Short-circuit when not editing to avoid running selector on every store change
+  const isTextEditing = useEditorSettingsStore(state => isEditingProp && state.isTextEditing);
   const slideSize = slideSizeProp || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
 
   // --- Refs ---
@@ -88,8 +89,10 @@ export const ComponentRenderer: React.FC<Props> = memo(({
   // PERF: Use derived booleans instead of subscribing to the raw Set.
   // Subscribing to the Set causes ALL ComponentRenderers to re-render on every
   // selection change because selectComponent() creates a new Set reference.
-  const isComponentMultiSelected = useEditorStore(state => state.selectedComponentIds.has(componentId));
-  const hasMultipleSelected = useEditorStore(state => state.selectedComponentIds.size > 1);
+  // PERF: Short-circuit when not editing — avoids 2 active subscriptions per component
+  // that run selectors on every store change (critical for mobile presentation mode).
+  const isComponentMultiSelected = useEditorStore(state => isEditingProp && state.selectedComponentIds.has(componentId));
+  const hasMultipleSelected = useEditorStore(state => isEditingProp && state.selectedComponentIds.size > 1);
   const isInMultiSelection = hasMultipleSelected && isComponentMultiSelected;
   const effectiveIsSelected = isSelected || isComponentMultiSelected;
 
@@ -152,8 +155,9 @@ export const ComponentRenderer: React.FC<Props> = memo(({
   const isSelectable = true; // Changed from !isBackground to allow background selection
 
   // Cropping state for Image components - hide selection UI when cropping this component
-  const isCroppingImage = useEditorSettingsStore(state => state.isCroppingImage);
-  const croppingComponentId = useEditorSettingsStore(state => state.croppingComponentId);
+  // PERF: Short-circuit when not editing
+  const isCroppingImage = useEditorSettingsStore(state => isEditingProp && state.isCroppingImage);
+  const croppingComponentId = useEditorSettingsStore(state => isEditingProp ? state.croppingComponentId : null);
   const isCroppingThis = isCroppingImage && croppingComponentId === componentId && componentType === 'Image';
 
   // Element edit mode for CustomComponents - auto-enabled when component is selected in edit mode

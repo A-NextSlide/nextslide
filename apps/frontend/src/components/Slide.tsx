@@ -109,8 +109,9 @@ const SlideContent: React.FC<SlideProps> = ({
 
   // REAL-TIME FIX: Subscribe directly to store for non-edit mode updates
   // This ensures AI agent edits show immediately without needing edit mode
+  // Skip in presentation mode — slides use props directly and this .find() is expensive per-component
   const storeSlideComponents = useDeckStore(state => {
-    if (isThumbnail || isEditing) return null; // Skip for thumbnails and edit mode
+    if (isThumbnail || isEditing || isPresenting) return null;
     const storeSlide = state.deckData.slides?.find(s => s.id === slide.id);
     return storeSlide?.components || null;
   });
@@ -267,8 +268,9 @@ const SlideContent: React.FC<SlideProps> = ({
     componentId: null
   });
   
-  // Listen for line drag events
+  // Listen for line drag events (only when editing — skips in presentation mode)
   useEffect(() => {
+    if (!isEditing) return;
     const handleLineDragUpdate = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (detail) {
@@ -280,13 +282,13 @@ const SlideContent: React.FC<SlideProps> = ({
         });
       }
     };
-    
+
     document.addEventListener('line-drag-update', handleLineDragUpdate);
-    
+
     return () => {
       document.removeEventListener('line-drag-update', handleLineDragUpdate);
     };
-  }, []);
+  }, [isEditing]);
 
   // Get multi-selection state from editor store
   const { isComponentSelected } = React.useContext(ActiveSlideContext) ? {} : { isComponentSelected: () => false };
@@ -301,11 +303,13 @@ const SlideContent: React.FC<SlideProps> = ({
   // Track selected components with proper React state
   // PERF: Use custom equality function to prevent re-renders when selectComponent()
   // creates a new Set reference with the same contents (e.g., re-clicking same component).
+  // PERF: Return empty set in presentation mode to avoid running the Set equality check on every store change
+  const EMPTY_SET = useMemo(() => new Set<string>(), []);
   const selectedComponentIds = useEditorStore(
-    state => state.selectedComponentIds,
+    isEditing ? (state => state.selectedComponentIds) : (() => EMPTY_SET),
     (a, b) => a === b || (a.size === b.size && [...a].every(id => b.has(id)))
   );
-  const isTextEditing = useEditorSettingsStore(state => state.isTextEditing);
+  const isTextEditing = useEditorSettingsStore(state => isEditing && state.isTextEditing);
   const getSelectedComponentsForBoundingBox = useMemo(() => {
     if (!isEditing || !activeSlideContext || selectedComponentIds.size <= 1) {
       return [];
@@ -466,8 +470,8 @@ const SlideContent: React.FC<SlideProps> = ({
           <GroupEditIndicator slideId={slideData.id} />
         )}
 
-        {/* Remote user selection bounding boxes */}
-        {!isThumbnail && isActive && (
+        {/* Remote user selection bounding boxes (skip in presentation mode — no Yjs provider) */}
+        {!isThumbnail && isActive && !isPresenting && (
           <RemoteSelections
             slideId={slideData.id}
             components={componentsToRender}
