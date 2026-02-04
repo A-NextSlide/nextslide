@@ -212,7 +212,7 @@ const ReferralDashboard: React.FC = () => {
           <div className="max-w-sm mx-auto space-y-3 mb-6">
             <div className="flex gap-2">
               <Input
-                placeholder="Choose a custom code (e.g. john)"
+                placeholder="Pick your code (e.g. sarah23)"
                 value={customCode}
                 onChange={(e) => {
                   setCustomCode(e.target.value.replace(/[^a-zA-Z0-9-]/g, ''));

@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from agents.config import GEMINI_3_FLASH
 from services.slack.slack_service import SlackService, get_slack_service
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,8 @@ SUPPORTED_FILE_TYPES = {
     "png", "jpg", "jpeg", "gif", "webp", "svg",
 }
 
-MAX_CONTEXT_CHARS = 3000  # Summarize if raw messages exceed this
+MAX_CONTEXT_CHARS = 12_000  # Summarize if raw messages exceed this
+MAX_MESSAGE_LIMIT = 100     # Fetch up to 100 messages from Slack
 
 
 @dataclass
@@ -87,7 +89,7 @@ class SlackContextGatherer:
         bot_token: str,
         channel_id: str,
         thread_ts: Optional[str],
-        limit: int = 30,
+        limit: int = MAX_MESSAGE_LIMIT,
     ) -> List[Dict[str, Any]]:
         """Fetch recent messages, filtering out bot and system messages."""
         try:
@@ -150,13 +152,14 @@ class SlackContextGatherer:
 
             client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
             prompt = (
-                f"Summarize the following Slack conversation into a concise context "
-                f"(max 500 words) relevant to creating a presentation"
+                f"Summarize the following Slack conversation into a detailed context "
+                f"(max 1500 words) relevant to creating a presentation. "
+                f"Preserve specific facts, data points, names, and key details"
                 f"{' about: ' + user_text if user_text else ''}.\n\n"
-                f"CONVERSATION:\n{raw[:6000]}"
+                f"CONVERSATION:\n{raw[:50_000]}"
             )
             response = client.models.generate_content(
-                model="gemini-2.0-flash-lite",
+                model=GEMINI_3_FLASH,
                 contents=prompt,
             )
             return response.text.strip() if response.text else raw[:MAX_CONTEXT_CHARS]
@@ -310,7 +313,7 @@ class SlackContextGatherer:
                     if markdown:
                         results.append({
                             "url": url,
-                            "content": markdown[:3000],  # cap
+                            "content": markdown[:8000],
                         })
             except Exception as e:
                 logger.debug(f"Failed to scrape {url}: {e}")

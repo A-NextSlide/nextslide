@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -562,13 +563,24 @@ const AdminUserDetail: React.FC = () => {
             <div className="space-y-3">
               <div className="space-y-1">
                 <Label className="text-xs">Total Credits</Label>
-                <Input
-                  type="number"
-                  value={editedCredits.total}
-                  onChange={(e) => setEditedCredits(prev => ({ ...prev, total: parseInt(e.target.value) || 0 }))}
-                  className="font-mono"
-                />
-                <p className="text-xs text-gray-400">Use -1 for unlimited</p>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={editedCredits.total === -1}
+                    onCheckedChange={(checked) =>
+                      setEditedCredits(prev => ({ ...prev, total: checked ? -1 : 0 }))
+                    }
+                  />
+                  <span className="text-xs text-gray-500">Unlimited</span>
+                </div>
+                {editedCredits.total !== -1 && (
+                  <Input
+                    type="number"
+                    min={0}
+                    value={editedCredits.total}
+                    onChange={(e) => setEditedCredits(prev => ({ ...prev, total: parseInt(e.target.value) || 0 }))}
+                    className="font-mono"
+                  />
+                )}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Used Credits</Label>

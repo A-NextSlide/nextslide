@@ -145,7 +145,7 @@ class SlackService:
         token: str,
         channel: str,
         *,
-        limit: int = 30,
+        limit: int = 100,
         latest: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         body: Dict[str, Any] = {"channel": channel, "limit": limit}
@@ -160,7 +160,7 @@ class SlackService:
         channel: str,
         thread_ts: str,
         *,
-        limit: int = 30,
+        limit: int = 100,
     ) -> List[Dict[str, Any]]:
         body = {"channel": channel, "ts": thread_ts, "limit": limit}
         data = await self._api("conversations.replies", token, json_body=body)

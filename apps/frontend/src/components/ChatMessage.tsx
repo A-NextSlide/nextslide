@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { BROWSER } from '@/utils/browser';
-import { Bot, User, ThumbsUp, ThumbsDown, Loader2, CheckCircle2, Image as ImageIcon, FileText, Table, Presentation, File, Zap } from 'lucide-react';
+import { Bot, User, ThumbsUp, ThumbsDown, Loader2, CheckCircle2, Image as ImageIcon, FileText, Table, Presentation, File, Zap, Gift, Share2, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { COLORS } from '@/utils/colors';
 import { Progress } from '@/components/ui/progress';
@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { SlideSnapshotThumbnail } from '@/components/chat/blocks/SlideSnapshotThumbnail';
 import { IntegrationMentionBubble } from '@/components/chat';
 import { LinkedInSearchResults, type LinkedInProfile } from '@/components/chat/blocks';
+import { nativeBridge } from '@/utils/nativeBridge';
 
 export type MessageType = 'ai' | 'user' | 'system';
 export type FeedbackType = 'positive' | 'negative' | null;
@@ -283,8 +284,73 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     );
   }
 
-  // Removed debug logging for font optimization button
+  // Promotional message: Follow our socials (1st deck)
+  if (metadata?.type === 'promo_socials') {
+    return (
+      <div className="flex w-full mb-2 items-start animate-fade-in justify-start">
+        <div className="flex-shrink-0 mr-2">
+          <div className="w-8 h-8 rounded-full text-white flex items-center justify-center" style={{ backgroundColor: COLORS.SUGGESTION_PINK }}>
+            <Bot size={18} />
+          </div>
+        </div>
+        <div className="glass-panel border border-[#929292] shadow-none rounded-lg px-3 py-2" style={{ maxWidth: 560 }}>
+          <div className="text-[12px] leading-snug whitespace-pre-wrap">
+            {safeMessage}
+          </div>
+          <div className="flex flex-wrap gap-2 mt-2.5">
+            <button
+              onClick={() => nativeBridge.openExternal('https://x.com/NextSlideAI')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-black text-white hover:bg-black/80 dark:bg-white dark:text-black dark:hover:bg-white/80 transition-colors cursor-pointer"
+            >
+              <XIcon />
+              Follow on X
+            </button>
+            <button
+              onClick={() => nativeBridge.openExternal('https://www.tiktok.com/@nextslide.ai')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-black text-white hover:bg-black/80 dark:bg-white dark:text-black dark:hover:bg-white/80 transition-colors cursor-pointer"
+            >
+              <TikTokIcon />
+              Follow on TikTok
+            </button>
+            <button
+              onClick={() => nativeBridge.openExternal('https://www.instagram.com/nextslide.ai')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600 transition-colors cursor-pointer"
+            >
+              <InstagramIcon />
+              Follow on Instagram
+            </button>
+          </div>
+          <div className="mt-1.5">
+            <span className="text-[9px] text-muted-foreground/70">{formattedTime}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
+  // Promotional message: Refer friends (2nd deck)
+  if (metadata?.type === 'promo_referral') {
+    return (
+      <div className="flex w-full mb-2 items-start animate-fade-in justify-start">
+        <div className="flex-shrink-0 mr-2">
+          <div className="w-8 h-8 rounded-full text-white flex items-center justify-center" style={{ backgroundColor: COLORS.SUGGESTION_PINK }}>
+            <Bot size={18} />
+          </div>
+        </div>
+        <div className="glass-panel border border-[#929292] shadow-none rounded-lg px-3 py-2" style={{ maxWidth: 560 }}>
+          <div className="text-[12px] leading-snug whitespace-pre-wrap">
+            {safeMessage}
+          </div>
+          <div className="flex flex-wrap gap-2 mt-2.5">
+            <ReferralButton />
+          </div>
+          <div className="mt-1.5">
+            <span className="text-[9px] text-muted-foreground/70">{formattedTime}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Split completion message if needed
   let primaryMessage = safeMessage;
@@ -861,5 +927,38 @@ const UpgradeButton: React.FC = () => {
     </Button>
   );
 };
+
+// Helper component for referral button with navigation
+const ReferralButton: React.FC = () => {
+  const navigate = useNavigate();
+  return (
+    <button
+      onClick={() => navigate('/profile?tab=referrals')}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-[#FF4301] text-white hover:bg-[#E63901] transition-colors cursor-pointer"
+    >
+      <Gift className="h-3 w-3" />
+      Get Your Referral Link
+    </button>
+  );
+};
+
+// Inline SVG icons for social platforms
+const XIcon: React.FC = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+  </svg>
+);
+
+const TikTokIcon: React.FC = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 0 0-.79-.05A6.34 6.34 0 0 0 3.15 15a6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.34-6.34V8.75a8.28 8.28 0 0 0 4.76 1.5v-3.4a4.85 4.85 0 0 1-1-.16z" />
+  </svg>
+);
+
+const InstagramIcon: React.FC = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z" />
+  </svg>
+);
 
 export default ChatMessage;

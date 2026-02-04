@@ -105,63 +105,66 @@ def get_brand_logo() -> Optional[Image.Image]:
         return None
 
 
+def _get_brand_font(size: int) -> ImageFont.FreeTypeFont:
+    """Load the HK Grotesk Wide Black font used by the brand wordmark."""
+    # Bundled brand font (same as frontend BrandWordmark component)
+    brand_font_path = Path(__file__).resolve().parent.parent.parent / "assets" / "fonts" / "HKGroteskWide-Black.otf"
+    if brand_font_path.exists():
+        try:
+            return ImageFont.truetype(str(brand_font_path), size)
+        except Exception as e:
+            logger.warning(f"Failed to load brand font: {e}")
+
+    # Fallback to system bold fonts
+    return get_font(size)
+
+
 def create_brand_watermark(width: int = 200, height: int = 60) -> Image.Image:
     """
     Create the NextSlide brand watermark: NE + X + TSLIDE
     This mimics the BrandWordmark component styling.
+    Uses the bundled HK Grotesk Wide Black font to match the header logo.
     """
-    watermark = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    font_size = 24
+    font = _get_brand_font(font_size)
+
+    # Get logo
+    logo = get_brand_logo()
+
+    # --- Measure everything first to compute the exact canvas width ---
+    temp_img = Image.new("RGBA", (1, 1))
+    temp_draw = ImageDraw.Draw(temp_img)
+    ne_w = temp_draw.textlength("NE", font=font) if hasattr(temp_draw, 'textlength') else font_size * 2
+    ts_w = temp_draw.textlength("TSLIDE", font=font) if hasattr(temp_draw, 'textlength') else font_size * 5
+
+    # Logo sizing: match BrandWordmark ratios (height = fontSize * 1.9, width = fontSize * 1.3)
+    logo_height = int(font_size * 1.9)
+    logo_width = int(font_size * 1.3)
+    gap = max(1, round(font_size * 0.04))  # tiny gap on each side of X, matching component
+
+    total_w = int(ne_w + gap + logo_width + gap + ts_w)
+    total_h = max(height, logo_height + 4)
+
+    watermark = Image.new("RGBA", (total_w, total_h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(watermark)
 
-    # Try to load a font, fall back to default
-    try:
-        # Try common system fonts
-        font_size = 24
-        font = None
-        font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/System/Library/Fonts/Helvetica.ttc",
-            "/Library/Fonts/Arial Bold.ttf",
-            "C:\\Windows\\Fonts\\arialbd.ttf",
-        ]
-        for path in font_paths:
-            if Path(path).exists():
-                font = ImageFont.truetype(path, font_size)
-                break
+    # Vertical center for text (align text baseline with logo center)
+    text_y = (total_h - font_size) // 2
 
-        if font is None:
-            font = ImageFont.load_default()
-            font_size = 12
-    except Exception:
-        font = ImageFont.load_default()
-        font_size = 12
-
-    # Calculate positions
-    text_y = (height - font_size) // 2
-
-    # Draw "NE" text
+    # Draw "NE"
     draw.text((0, text_y), "NE", fill=BRAND_DARK, font=font)
 
-    # Get logo and draw it
-    logo = get_brand_logo()
+    # Draw X logo
     if logo:
-        # Scale logo to fit
-        logo_height = int(font_size * 1.5)
-        logo_width = int(logo_height * (logo.width / logo.height))
         scaled_logo = logo.resize((logo_width, logo_height), Image.Resampling.LANCZOS)
-
-        # Position after "NE"
-        ne_width = draw.textlength("NE", font=font) if hasattr(draw, 'textlength') else font_size * 2
-        logo_x = int(ne_width) + 2
-        logo_y = (height - logo_height) // 2
-
+        logo_x = int(ne_w) + gap
+        logo_y = (total_h - logo_height) // 2
         watermark.paste(scaled_logo, (logo_x, logo_y), scaled_logo)
 
-        # Draw "TSLIDE" after logo
-        text_x = logo_x + logo_width + 2
+        # Draw "TSLIDE"
+        text_x = logo_x + logo_width + gap
         draw.text((text_x, text_y), "TSLIDE", fill=BRAND_DARK, font=font)
     else:
-        # Fallback without logo
         draw.text((0, text_y), "NEXTSLIDE", fill=BRAND_DARK, font=font)
 
     return watermark

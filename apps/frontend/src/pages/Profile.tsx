@@ -1242,7 +1242,7 @@ const Profile: React.FC = () => {
   const navItems = [
     { id: 'profile' as const, label: 'Profile', icon: User },
     { id: 'security' as const, label: 'Security', icon: Shield },
-    { id: 'billing' as const, label: 'Billing', icon: CreditCard },
+    { id: 'billing' as const, label: 'Credits & Billing', icon: CreditCard },
     { id: 'referrals' as const, label: 'Referrals', icon: Gift },
     { id: 'badges' as const, label: 'Badges', icon: Zap },
     { id: 'team' as const, label: 'Team', icon: Users },
@@ -1727,7 +1727,7 @@ const Profile: React.FC = () => {
                             <div className="flex-1">
                               <p className="font-medium text-sm mb-1">Upgrade for more credits</p>
                               <p className="text-sm text-muted-foreground">
-                                Get up to 2,000 credits/month with Pro, plus priority support and unlimited presentations.
+                                Get up to 2,000 credits/month with Pro, plus priority support.
                               </p>
                             </div>
                             <Button size="sm" onClick={() => navigate('/pricing?from=settings')}>

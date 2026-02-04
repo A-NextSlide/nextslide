@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { ExtendedChatMessageProps } from '@/components/chat';
 import { getWelcomeMessage } from '@/components/chat';
+import { deckSyncService } from '@/lib/deckSyncService';
+
+const PROMO_SOCIALS_SHOWN_KEY = 'nextslide_promo_socials_shown';
+const PROMO_REFERRAL_SHOWN_KEY = 'nextslide_promo_referral_shown';
 
 interface UseChatSystemMessagesOptions {
   newSystemMessage?: Omit<ExtendedChatMessageProps, 'id' | 'timestamp' | 'type' | 'feedback'> & { message: string };
@@ -247,6 +251,50 @@ export function useChatSystemMessages({
           return [...prev, welcomeMessage];
         });
       }, 800);
+
+      // Add promotional message based on deck count
+      setTimeout(async () => {
+        try {
+          const result = await deckSyncService.getAllDecks(1, 0);
+          const deckCount = result.count;
+
+          // 1st deck: Follow socials
+          if (deckCount === 1 && !localStorage.getItem(PROMO_SOCIALS_SHOWN_KEY)) {
+            localStorage.setItem(PROMO_SOCIALS_SHOWN_KEY, 'true');
+            setMessages(prev => {
+              if (prev.some(m => m.id === 'promo-socials')) return prev;
+              const promoMessage: ExtendedChatMessageProps = {
+                id: 'promo-socials',
+                type: 'ai',
+                message: "Congrats on your first presentation! We'd love to have you in our community — follow us to stay in the loop with tips, updates, and new features.",
+                timestamp: new Date(),
+                feedback: null,
+                metadata: { type: 'promo_socials', streamed: true, forceShow: true }
+              } as any;
+              return [...prev, promoMessage];
+            });
+          }
+
+          // 2nd deck: Referral prompt
+          if (deckCount === 2 && !localStorage.getItem(PROMO_REFERRAL_SHOWN_KEY)) {
+            localStorage.setItem(PROMO_REFERRAL_SHOWN_KEY, 'true');
+            setMessages(prev => {
+              if (prev.some(m => m.id === 'promo-referral')) return prev;
+              const promoMessage: ExtendedChatMessageProps = {
+                id: 'promo-referral',
+                type: 'ai',
+                message: "We hope you're enjoying NextSlide! Know someone who'd love it too? Share your referral link and you'll both earn free credits.",
+                timestamp: new Date(),
+                feedback: null,
+                metadata: { type: 'promo_referral', streamed: true, forceShow: true }
+              } as any;
+              return [...prev, promoMessage];
+            });
+          }
+        } catch (err) {
+          console.error('[ChatSystemMessages] Failed to check deck count for promo:', err);
+        }
+      }, 2500);
     };
 
     window.addEventListener('deck_finalized', handleDeckFinalized as EventListener);
