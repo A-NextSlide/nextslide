@@ -7,7 +7,6 @@ import { SlideData } from '@/types/SlideTypes';
 import { cn } from '@/lib/utils';
 import { DEFAULT_SLIDE_HEIGHT, DEFAULT_SLIDE_WIDTH } from '@/utils/deckUtils';
 import Watermark from '@/components/common/Watermark';
-import MiniSlide from './MiniSlide';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLockedSlides } from '@/hooks/useLockedSlides';
 import LockedSlideOverlay from './LockedSlideOverlay';
@@ -539,18 +538,12 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                             )}
                             style={{ height: thumbnailHeight, width: thumbnailWidth }}
                           >
-                            <div className="relative bg-white w-full h-full overflow-hidden">
-                              {/* MiniSlide as base layer — always renders as fallback */}
-                              <MiniSlide
-                                slide={slide}
-                                width={thumbnailWidth}
-                                height={thumbnailHeight}
-                                responsive={false}
-                                className="pointer-events-none"
-                                slideSize={deckSlideSize}
-                                isLocked={slideIsLocked}
-                              />
-                              {/* PNG screenshot overlay — covers MiniSlide when available */}
+                            <div className="relative bg-gray-900 w-full h-full overflow-hidden">
+                              {/* Slide number fallback — always visible behind PNG */}
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <span className="text-3xl font-bold text-white/20">{index + 1}</span>
+                              </div>
+                              {/* PNG screenshot overlay — covers fallback when available */}
                               {pngUrl && (
                                 <img
                                   src={pngUrl}
