@@ -4,8 +4,6 @@ import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useEditorStore } from '@/stores/editorStore';
 import { calculateSnap, SnapGuideInfo } from '@/utils/snapUtils';
-import { useActiveSlide } from '@/context/ActiveSlideContext';
-import { useEditorState } from '@/context/EditorStateContext';
 import { sendComponentLayoutUpdate } from '@/utils/componentSyncUtils';
 import { updateConnectedLines } from '@/utils/lineSnapUtils';
 
@@ -20,6 +18,7 @@ interface UseComponentDragProps {
   allComponents: ComponentInstance[];
   onSelect: (id: string) => void;
   updateComponent: (id: string, updates: Partial<ComponentInstance>, skipHistory: boolean) => void;
+  slideId?: string | null;
 }
 
 interface UseComponentDragReturn {
@@ -44,6 +43,7 @@ export function useComponentDrag({
   allComponents,
   onSelect,
   updateComponent,
+  slideId: slideIdProp,
 }: UseComponentDragProps): UseComponentDragReturn {
   const [isDragging, setIsDragging] = useState(false);
   const [visualDragOffset, setVisualDragOffset] = useState<{ x: number; y: number } | null>(null);
@@ -79,13 +79,17 @@ export function useComponentDrag({
   };
   
   const isSnapEnabled = useEditorSettingsStore(state => state.isSnapEnabled);
-  const { slideId } = useActiveSlide();
+  const slideId = slideIdProp || null;
   const historyStore = useHistoryStore.getState();
   const editorStore = useEditorStore.getState();
   
-  // Get multi-selection state
-  const { selectedComponentIds, isComponentSelected, updateDraftComponent: updateStoreComponent } = useEditorStore();
-  const isInMultiSelection = selectedComponentIds.size > 1 && isComponentSelected(component.id);
+  // PERF: Use derived booleans instead of subscribing to the raw Set.
+  // Subscribing to the Set causes re-renders on every selection change
+  // because selectComponent() creates a new Set reference via new Set(...).
+  // Use getState() for iteration inside event handlers where current value is needed.
+  const hasMultipleSelected = useEditorStore(state => state.selectedComponentIds.size > 1);
+  const isThisComponentSelected = useEditorStore(state => state.selectedComponentIds.has(component.id));
+  const isInMultiSelection = hasMultipleSelected && isThisComponentSelected;
   const isDraggingGroup = component.type === 'Group';
   
   // Track initial positions for multi-drag
@@ -163,7 +167,9 @@ export function useComponentDrag({
       
       if (isInMultiSelection) {
         // Store positions of all selected components
-        selectedComponentIds.forEach(id => {
+        // Use getState() for iteration - no need to subscribe to the Set
+        const currentSelectedIds = useEditorStore.getState().selectedComponentIds;
+        currentSelectedIds.forEach(id => {
           const comp = slideComponents.find(c => c.id === id);
           if (comp?.props.position) {
             multiDragStartPositions.current.set(id, { ...comp.props.position });
@@ -220,8 +226,7 @@ export function useComponentDrag({
     slideSize,
     slideId,
     onSelect,
-    isInMultiSelection,
-    selectedComponentIds
+    isInMultiSelection
   ]);
 
   const handleMouseMove = useCallback((moveEvent: MouseEvent) => {
@@ -293,7 +298,9 @@ export function useComponentDrag({
         // ALSO apply to ALL other selected components if in multi-selection mode
         // This ensures visual sync for the whole group
         if (isInMultiSelection || isDraggingGroup) {
-          selectedComponentIds.forEach(id => {
+          // Use getState() for iteration - no subscription needed
+          const currentSelectedIds = useEditorStore.getState().selectedComponentIds;
+          currentSelectedIds.forEach(id => {
             if (id !== component.id) {
               const peerEl = document.querySelector(`[data-component-id="${id}"]`) as HTMLElement | null;
               if (peerEl) {
@@ -387,8 +394,10 @@ export function useComponentDrag({
               });
             }
           });
+          // Use getState() to avoid subscribing to updateDraftComponent
+          const storeUpdateFn = useEditorStore.getState().updateDraftComponent;
           updates.forEach(({ id, position }) => {
-            updateStoreComponent(slideId, id, {
+            storeUpdateFn(slideId, id, {
               props: { position }
             }, true);
           });
@@ -406,8 +415,7 @@ export function useComponentDrag({
     isSnapEnabled,
     slideId,
     updateComponent,
-    isInMultiSelection,
-    updateStoreComponent
+    isInMultiSelection
   ]);
 
   const handleDragEnd = useCallback((e: MouseEvent) => {
@@ -415,8 +423,6 @@ export function useComponentDrag({
 
     e.preventDefault();
     e.stopPropagation();
-
-    // No animation frames to cancel anymore
 
     // Calculate final position
     const finalPosX = dragStartPosRef.current.x + dragOffsetRef.current.x;
@@ -427,28 +433,52 @@ export function useComponentDrag({
     const initialPos = component.props.position || { x: 0, y: 0 };
     const positionChanged = Math.round(initialPos.x) !== finalPosition.x || Math.round(initialPos.y) !== finalPosition.y;
 
-    // Clear visual states
-    setSnapGuides([]);
-    setVisualDragOffset(null);
-    // Reset CSS variables to avoid persistent transforms
+    // ===================================================================
+    // Step 1 (SYNCHRONOUS): Direct DOM position updates ONLY.
+    // NO store updates here. The store update triggers a React re-render
+    // via the context chain (store → ActiveSlideProvider → Slide → ComponentRenderer).
+    // If that render happens before the rAF cleanup, React overwrites our direct
+    // DOM styles with the old isDragging=true state, causing a visual flash.
+    // By deferring ALL store/state changes to the rAF, we guarantee the browser
+    // paints the correct final position first, then React catches up in the
+    // next frame with all changes applied atomically.
+    // ===================================================================
     if (containerRef.current) {
       const el = containerRef.current as HTMLElement;
+      if (positionChanged) {
+        const slideW = slideSize.width || 1;
+        const slideH = slideSize.height || 1;
+        el.style.left = `${(finalPosition.x / slideW) * 100}%`;
+        el.style.top = `${(finalPosition.y / slideH) * 100}%`;
+      }
       el.style.removeProperty('--drag-x');
       el.style.removeProperty('--drag-y');
-      // Reset inline transform to rotation only to avoid stale var usage
       const rotation = (component.props.rotation || 0);
       el.style.transform = `rotate(${rotation}deg)`;
     }
 
-    // Clear CSS variables for all other selected components
+    // Clear CSS variables for all other selected components (direct DOM only)
     if (isInMultiSelection || isDraggingGroup) {
-      selectedComponentIds.forEach(id => {
+      const currentSelectedIds = useEditorStore.getState().selectedComponentIds;
+      currentSelectedIds.forEach(id => {
         if (id !== component.id) {
           const peerEl = document.querySelector(`[data-component-id="${id}"]`) as HTMLElement | null;
           if (peerEl) {
+            if (positionChanged) {
+              const startPos = multiDragStartPositions.current.get(id);
+              if (startPos) {
+                const peerFinalPos = {
+                  x: Math.round(startPos.x + dragOffsetRef.current.x),
+                  y: Math.round(startPos.y + dragOffsetRef.current.y)
+                };
+                const slideW = slideSize.width || 1;
+                const slideH = slideSize.height || 1;
+                peerEl.style.left = `${(peerFinalPos.x / slideW) * 100}%`;
+                peerEl.style.top = `${(peerFinalPos.y / slideH) * 100}%`;
+              }
+            }
             peerEl.style.removeProperty('--drag-x');
             peerEl.style.removeProperty('--drag-y');
-            // Reset transform to just rotation (position is handled by top/left)
             const peerRotation = peerEl.style.transform.match(/rotate\(([^)]+)\)/)?.[1] || '0deg';
             peerEl.style.transform = `rotate(${peerRotation})`;
           }
@@ -461,6 +491,19 @@ export function useComponentDrag({
       childIds.forEach((childId) => {
         const childEl = document.querySelector(`[data-component-id="${childId}"]`) as HTMLElement | null;
         if (!childEl) return;
+        if (positionChanged) {
+          const startPos = multiDragStartPositions.current.get(childId);
+          if (startPos) {
+            const childFinalPos = {
+              x: Math.round(startPos.x + dragOffsetRef.current.x),
+              y: Math.round(startPos.y + dragOffsetRef.current.y)
+            };
+            const slideW = slideSize.width || 1;
+            const slideH = slideSize.height || 1;
+            childEl.style.left = `${(childFinalPos.x / slideW) * 100}%`;
+            childEl.style.top = `${(childFinalPos.y / slideH) * 100}%`;
+          }
+        }
         childEl.style.removeProperty('--drag-x');
         childEl.style.removeProperty('--drag-y');
         const childRotation = childEl.style.transform.match(/rotate\(([^)]+)\)/)?.[1] || '0deg';
@@ -468,97 +511,110 @@ export function useComponentDrag({
       });
     }
 
-    // Notify selection overlays that drag ended
-    if (typeof document !== 'undefined') {
-      const evt = new CustomEvent('selection:drag-end', {
-        bubbles: true,
-        detail: { componentId: component.id, slideId }
-      });
-      document.dispatchEvent(evt);
+    // Only set flag to prevent click events after an ACTUAL drag (mouse moved),
+    // not after a simple click (mousedown+mouseup with no movement).
+    // Without this check, the click handler in useComponentSelection is
+    // blocked by didJustDrag even for simple clicks, preventing component selection.
+    const dragDistance = Math.hypot(
+      e.clientX - dragStartMouseRef.current.x,
+      e.clientY - dragStartMouseRef.current.y
+    );
+    if (dragDistance > 3) {
+      didJustDragRef.current = true;
+      setTimeout(() => {
+        didJustDragRef.current = false;
+      }, 100);
     }
-    setIsDragging(false);
-    
-    // Restore text selection and remove drag class
-    document.body.style.userSelect = '';
-    document.body.style.webkitUserSelect = '';
-    document.body.classList.remove('dragging-component');
 
-    // Set flag to prevent click events after drag
-    didJustDragRef.current = true;
-    setTimeout(() => {
-      didJustDragRef.current = false;
-    }, 100);
+    // Capture drag offset before clearing state (needed for peer updates in rAF)
+    const capturedDragOffset = { ...dragOffsetRef.current };
+    // Capture multi-drag positions (the Map will be cleared on next drag start)
+    const capturedMultiPositions = new Map(multiDragStartPositions.current);
 
-    // Update final position if changed
-    if (positionChanged && slideId) {
-      // Update main component
-      updateComponent(component.id, {
-        props: {
-          ...component.props,
-          position: finalPosition
+    // ===================================================================
+    // Step 2 (NEXT FRAME): ALL store updates, React state, CSS cleanup.
+    // Everything happens in a single rAF so React processes all changes
+    // together in one render pass. No intermediate renders can occur
+    // between the DOM update above and these state changes.
+    // ===================================================================
+    requestAnimationFrame(() => {
+      // --- Store updates ---
+      if (positionChanged && slideId) {
+        updateComponent(component.id, {
+          props: {
+            ...component.props,
+            position: finalPosition
+          }
+        }, false);
+
+        sendComponentLayoutUpdate(
+          component.id,
+          slideId,
+          {
+            position: finalPosition,
+            size: component.props.size,
+            rotation: component.props.rotation
+          },
+          false
+        );
+
+        // Handle multi-selection final store updates
+        if (isInMultiSelection) {
+          const storeUpdateFn = useEditorStore.getState().updateDraftComponent;
+          capturedMultiPositions.forEach((startPos, compId) => {
+            if (compId !== component.id) {
+              const finalCompPosition = {
+                x: Math.round(startPos.x + capturedDragOffset.x),
+                y: Math.round(startPos.y + capturedDragOffset.y)
+              };
+
+              storeUpdateFn(slideId, compId, {
+                props: { position: finalCompPosition }
+              }, false);
+
+              sendComponentLayoutUpdate(
+                compId,
+                slideId,
+                { position: finalCompPosition },
+                false
+              );
+            }
+          });
         }
-      }, false);
 
-      // Send final WebSocket update
-      sendComponentLayoutUpdate(
-        component.id,
-        slideId,
-        {
-          position: finalPosition,
-          size: component.props.size,
-          rotation: component.props.rotation
-        },
-        false
-      );
-
-      // Handle multi-selection final updates
-      if (isInMultiSelection) {
-        multiDragStartPositions.current.forEach((startPos, compId) => {
-          if (compId !== component.id) {
+        // Handle group drag final store updates
+        if (component.type === 'Group' && capturedMultiPositions.size > 0) {
+          const storeUpdateFn = useEditorStore.getState().updateDraftComponent;
+          capturedMultiPositions.forEach((startPos, compId) => {
             const finalCompPosition = {
-              x: Math.round(startPos.x + dragOffsetRef.current.x),
-              y: Math.round(startPos.y + dragOffsetRef.current.y)
+              x: Math.round(startPos.x + capturedDragOffset.x),
+              y: Math.round(startPos.y + capturedDragOffset.y)
             };
-            
-            updateStoreComponent(slideId, compId, {
+
+            storeUpdateFn(slideId, compId, {
               props: { position: finalCompPosition }
-            }, false);
-            
+            }, compId === component.id);
+
             sendComponentLayoutUpdate(
               compId,
               slideId,
               { position: finalCompPosition },
               false
             );
-          }
-        });
+          });
+        }
       }
-      
-      // Handle group drag final updates
-      if (component.type === 'Group' && multiDragStartPositions.current.size > 0) {
-        multiDragStartPositions.current.forEach((startPos, compId) => {
-          const finalCompPosition = {
-            x: Math.round(startPos.x + dragOffsetRef.current.x),
-            y: Math.round(startPos.y + dragOffsetRef.current.y)
-          };
-          
-          updateStoreComponent(slideId, compId, {
-            props: { position: finalCompPosition }
-          }, compId === component.id);
-          
-          sendComponentLayoutUpdate(
-            compId,
-            slideId,
-            { position: finalCompPosition },
-            false
-          );
-        });
-      }
-    }
 
-    // Dispatch drag end event
-    if (typeof document !== 'undefined') {
-      // Re-enable chart animations if this was a chart
+      // --- End transient operation (may update history store) ---
+      if (slideId) {
+        historyStore.endTransientOperation(component.id, slideId);
+      }
+
+      // --- CSS cleanup ---
+      document.body.classList.remove('dragging-component');
+      document.body.style.userSelect = '';
+      document.body.style.webkitUserSelect = '';
+
       if (component.type === 'Chart') {
         document.body.classList.remove('charts-dragging');
         if (typeof window !== 'undefined') {
@@ -566,7 +622,19 @@ export function useComponentDrag({
           (window as any).__chartAnimationsEnabled = true;
         }
       }
-      
+
+      // --- React state changes ---
+      setIsDragging(false);
+      setSnapGuides([]);
+      setVisualDragOffset(null);
+
+      // --- Event dispatch ---
+      const evt = new CustomEvent('selection:drag-end', {
+        bubbles: true,
+        detail: { componentId: component.id, slideId }
+      });
+      document.dispatchEvent(evt);
+
       const dragEndEvent = new CustomEvent('component:dragend', {
         bubbles: true,
         detail: {
@@ -576,20 +644,15 @@ export function useComponentDrag({
         }
       });
       document.dispatchEvent(dragEndEvent);
-    }
-
-    // End transient operation
-    if (slideId) {
-      historyStore.endTransientOperation(component.id, slideId);
-    }
+    });
   }, [
     isDragging,
     component.id,
     component.type,
     component.props,
     slideId,
+    slideSize,
     updateComponent,
-    updateStoreComponent,
     isInMultiSelection
   ]);
 

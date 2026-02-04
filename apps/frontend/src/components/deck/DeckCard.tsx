@@ -21,6 +21,8 @@ interface DeckCardProps {
   onThumbnailRef?: (element: HTMLDivElement | null) => void;
   /** Force immediate thumbnail render, bypassing lazy loading */
   forceRender?: boolean;
+  /** Skip stale server thumbnail and use live client render instead */
+  skipServerThumbnail?: boolean;
 }
 
 const DeckCard: React.FC<DeckCardProps> = React.memo(({
@@ -32,7 +34,8 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
   thumbnailRenderMode = 'full',
   cachedThumbnailUrl,
   onThumbnailRef,
-  forceRender = false
+  forceRender = false,
+  skipServerThumbnail = false
 }) => {
   const navigate = useNavigate();
   const touchHandledRef = React.useRef(false);
@@ -139,7 +142,7 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
           ) : (
             /* Render live thumbnail */
             <div ref={onThumbnailRef} className="w-full h-full">
-              <DeckThumbnail deck={deck} renderMode={thumbnailRenderMode} forceRender={forceRender} />
+              <DeckThumbnail deck={deck} renderMode={thumbnailRenderMode} forceRender={forceRender} skipServerThumbnail={skipServerThumbnail} />
             </div>
           )}
         </div>

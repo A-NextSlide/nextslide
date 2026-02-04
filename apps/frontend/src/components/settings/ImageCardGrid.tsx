@@ -332,25 +332,25 @@ const ImageCard: React.FC<ImageCardProps> = ({
   ];
 
   return (
-    <div className="space-y-1.5">
-      {/* Image Card - Full Width, Taller */}
+    <div className="space-y-1">
+      {/* Image Card */}
       <div
-        className="relative rounded-lg overflow-hidden border border-border/50 bg-card"
+        className="relative rounded-md overflow-hidden border border-border/50 bg-card"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Image or Placeholder - Taller (h-28) */}
+        {/* Image or Placeholder */}
         <div
           onClick={() => setIsMediaDialogOpen(true)}
           className={cn(
-            "relative w-full h-28 cursor-pointer group",
-            "bg-[repeating-conic-gradient(#f5f5f5_0_90deg,#fafafa_90deg_180deg)_0_0/12px_12px]"
+            "relative w-full h-24 cursor-pointer group",
+            "bg-[repeating-conic-gradient(#f5f5f5_0_90deg,#fafafa_90deg_180deg)_0_0/10px_10px]"
           )}
         >
           {isProcessing && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-20">
-              <Loader2 className="w-5 h-5 animate-spin text-white" />
-              <span className="text-white text-[9px] mt-1 font-medium">Processing...</span>
+              <Loader2 className="w-4 h-4 animate-spin text-white" />
+              <span className="text-white text-[9px] mt-0.5 font-medium">Processing...</span>
             </div>
           )}
 
@@ -362,56 +362,53 @@ const ImageCard: React.FC<ImageCardProps> = ({
                 className="w-full h-full"
                 style={{ objectFit }}
               />
-              {/* Hover overlay */}
               <div className={cn(
-                "absolute inset-0 bg-black/0 transition-all duration-200 flex items-center justify-center",
-                isHovered && !isExpanded && "bg-black/40"
+                "absolute inset-0 bg-black/0 transition-all duration-150 flex items-center justify-center",
+                isHovered && !isExpanded && "bg-black/35"
               )}>
                 <span className={cn(
-                  "text-white text-[10px] font-medium opacity-0 transition-opacity flex items-center gap-1",
+                  "text-white text-[9px] font-medium opacity-0 transition-opacity flex items-center gap-1",
                   isHovered && !isExpanded && "opacity-100"
                 )}>
-                  <Search className="w-3 h-3" />
-                  Click to browse
+                  <Search className="w-2.5 h-2.5" />
+                  Browse
                 </span>
               </div>
             </>
           ) : (
-            <div className="flex flex-col items-center justify-center h-full gap-1 text-muted-foreground group-hover:text-foreground transition-colors">
-              <ImageIcon className="w-5 h-5" />
+            <div className="flex flex-col items-center justify-center h-full gap-0.5 text-muted-foreground group-hover:text-foreground transition-colors">
+              <ImageIcon className="w-4 h-4" />
               <span className="text-[9px]">Click to select</span>
             </div>
           )}
         </div>
 
-        {/* Top bar with label and fit dropdown */}
-        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-1.5 py-1">
-          {/* Label badge */}
-          <div className="px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm">
-            <span className="text-[9px] text-white font-medium truncate max-w-[120px] block">
+        {/* Top bar with label and fit */}
+        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-1 py-0.5">
+          <div className="px-1 py-px rounded bg-black/50 backdrop-blur-sm">
+            <span className="text-[8px] text-white font-medium truncate max-w-[100px] block leading-tight">
               {displayName}
             </span>
           </div>
 
-          {/* Object-fit dropdown - show for all images */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 onClick={(e) => e.stopPropagation()}
-                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm text-white text-[9px] font-medium hover:bg-black/70 transition-colors"
+                className="flex items-center gap-px px-1 py-px rounded bg-black/50 backdrop-blur-sm text-white text-[8px] font-medium hover:bg-black/60 transition-colors"
               >
                 {fitOptions.find(f => f.value === objectFit)?.label || 'Cover'}
-                <ChevronDown className="w-2.5 h-2.5" />
+                <ChevronDown className="w-2 h-2" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[80px]">
+            <DropdownMenuContent align="end" className="min-w-[72px]">
               {fitOptions.map((option) => (
                 <DropdownMenuItem
                   key={option.value}
                   onClick={() => handleObjectFitChange(option.value)}
                   className={cn(
-                    "text-xs",
-                    objectFit === option.value && "bg-orange-50 text-orange-600"
+                    "text-[11px] py-1",
+                    objectFit === option.value && "bg-orange-50 text-orange-600 dark:bg-orange-500/10"
                   )}
                 >
                   {option.label}
@@ -425,10 +422,11 @@ const ImageCard: React.FC<ImageCardProps> = ({
         <AnimatePresence>
           {(isHovered || isExpanded) && !isProcessing && (
             <motion.div
-              initial={{ opacity: 0, y: 4 }}
+              initial={{ opacity: 0, y: 3 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              className="absolute bottom-1.5 left-1.5 right-1.5 flex gap-1"
+              exit={{ opacity: 0, y: 3 }}
+              transition={{ duration: 0.12 }}
+              className="absolute bottom-1 left-1 right-1 flex gap-0.5"
             >
               {[
                 { action: 'edit' as ActionType, icon: Wand2, label: 'AI' },
@@ -442,13 +440,13 @@ const ImageCard: React.FC<ImageCardProps> = ({
                     onToggleAction(element.id, expandedAction === action ? null : action);
                   }}
                   className={cn(
-                    "flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[10px] font-medium transition-all",
+                    "flex-1 flex items-center justify-center gap-0.5 py-1 rounded text-[9px] font-medium transition-all",
                     expandedAction === action
-                      ? "bg-orange-500 text-white shadow-sm"
-                      : "bg-white/90 text-gray-700 hover:bg-white hover:shadow-sm backdrop-blur-sm"
+                      ? "bg-orange-500 text-white"
+                      : "bg-white/90 text-zinc-700 hover:bg-white backdrop-blur-sm"
                   )}
                 >
-                  <Icon className="w-3 h-3" />
+                  <Icon className="w-2.5 h-2.5" />
                   {label}
                 </button>
               ))}
@@ -464,40 +462,41 @@ const ImageCard: React.FC<ImageCardProps> = ({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.15 }}
             className="overflow-hidden"
           >
-            <div className="p-2 rounded-lg border bg-muted/30 space-y-2">
+            <div className="p-1.5 rounded-md border bg-muted/20 space-y-1.5">
               {/* AI Edit Panel */}
               {expandedAction === 'edit' && (
                 <>
                   {!hasImage ? (
-                    <p className="text-[10px] text-muted-foreground text-center py-2">
+                    <p className="text-[9px] text-muted-foreground text-center py-2">
                       Select an image first
                     </p>
                   ) : (
                     <>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-0.5">
                         {editCategories.map((category) => (
                           <div key={category.label} className="relative group/edit">
                             <button
                               disabled={isProcessing}
                               className={cn(
-                                "px-2 py-1 rounded text-[10px] font-medium transition-colors flex items-center gap-0.5",
-                                "bg-white border hover:bg-orange-50 hover:border-orange-200 hover:text-orange-600",
+                                "px-1.5 py-0.5 rounded text-[9px] font-medium transition-colors flex items-center gap-px",
+                                "bg-background border border-border/60 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-600 dark:hover:bg-orange-500/10",
                                 isProcessing && "opacity-50"
                               )}
                             >
                               {category.label}
-                              <ChevronDown className="w-2.5 h-2.5 opacity-50" />
+                              <ChevronDown className="w-2 h-2 opacity-40" />
                             </button>
                             <div className="absolute top-full left-0 pt-0.5 hidden group-hover/edit:block z-50">
-                              <div className="bg-white rounded-md border shadow-lg py-1 min-w-[140px]">
+                              <div className="bg-popover rounded-md border shadow-lg py-0.5 min-w-[120px]">
                                 {category.suggestions.map((s) => (
                                   <button
                                     key={s.label}
                                     onClick={() => callEditApi(s.prompt)}
                                     disabled={isProcessing}
-                                    className="w-full text-left px-3 py-1.5 text-[10px] text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors disabled:opacity-50"
+                                    className="w-full text-left px-2 py-1 text-[10px] hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-500/10 transition-colors disabled:opacity-50"
                                   >
                                     {s.label}
                                   </button>
@@ -511,12 +510,12 @@ const ImageCard: React.FC<ImageCardProps> = ({
                         value={aiPrompt}
                         onChange={(e) => setAiPrompt(e.target.value)}
                         placeholder="Custom edit instruction..."
-                        className="min-h-[52px] text-[11px] resize-none"
+                        className="min-h-[44px] text-[10px] resize-none"
                         disabled={isProcessing}
                       />
                       <Button
                         size="sm"
-                        className="w-full h-7 text-[11px] bg-orange-500 hover:bg-orange-600"
+                        className="w-full h-6 text-[10px] bg-[#FF4301] hover:bg-[#E63901]"
                         disabled={isProcessing || !aiPrompt.trim()}
                         onClick={() => callEditApi(aiPrompt)}
                       >
@@ -530,32 +529,32 @@ const ImageCard: React.FC<ImageCardProps> = ({
               {/* Fuse Panel */}
               {expandedAction === 'fuse' && (
                 <>
-                  <div className="flex gap-1.5 flex-wrap">
+                  <div className="flex gap-1 flex-wrap">
                     {hasImage && (
-                      <div className="relative w-10 h-10 rounded border overflow-hidden">
+                      <div className="relative w-9 h-9 rounded border overflow-hidden">
                         <img src={element.src} alt="Base" className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                          <span className="text-[8px] text-white font-medium">Base</span>
+                          <span className="text-[7px] text-white font-medium">Base</span>
                         </div>
                       </div>
                     )}
                     {fuseImages.map((img, idx) => (
-                      <div key={idx} className="relative w-10 h-10 rounded border overflow-hidden group">
+                      <div key={idx} className="relative w-9 h-9 rounded border overflow-hidden group">
                         <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
                         <button
                           onClick={() => setFuseImages(prev => prev.filter((_, i) => i !== idx))}
-                          className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100"
+                          className="absolute top-0 right-0 p-0.5 rounded-bl bg-black/60 text-white opacity-0 group-hover:opacity-100"
                         >
-                          <X className="w-2.5 h-2.5" />
+                          <X className="w-2 h-2" />
                         </button>
                       </div>
                     ))}
                     {fuseImages.length < 3 && (
                       <button
                         onClick={() => fuseInputRef.current?.click()}
-                        className="w-10 h-10 rounded border-2 border-dashed flex items-center justify-center hover:border-orange-300 hover:bg-orange-50/30 text-muted-foreground hover:text-orange-500"
+                        className="w-9 h-9 rounded border-[1.5px] border-dashed flex items-center justify-center hover:border-orange-300 hover:bg-orange-50/30 dark:hover:bg-orange-500/10 text-muted-foreground hover:text-orange-500"
                       >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
@@ -563,12 +562,12 @@ const ImageCard: React.FC<ImageCardProps> = ({
                     value={fusePrompt}
                     onChange={(e) => setFusePrompt(e.target.value)}
                     placeholder="How to combine? (optional)"
-                    className="h-7 text-[11px]"
+                    className="h-6 text-[10px]"
                     disabled={isProcessing}
                   />
                   <Button
                     size="sm"
-                    className="w-full h-7 text-[11px] bg-orange-500 hover:bg-orange-600"
+                    className="w-full h-6 text-[10px] bg-[#FF4301] hover:bg-[#E63901]"
                     disabled={isProcessing || fuseImages.length < (hasImage ? 1 : 2)}
                     onClick={callFuseApi}
                   >
@@ -591,26 +590,26 @@ const ImageCard: React.FC<ImageCardProps> = ({
               {/* URL Panel */}
               {expandedAction === 'url' && (
                 <>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-1">
                     <Input
                       value={urlInput}
                       onChange={(e) => setUrlInput(e.target.value)}
                       placeholder="Paste image URL..."
-                      className="h-7 text-[11px] flex-1"
+                      className="h-6 text-[10px] flex-1"
                       onKeyDown={(e) => e.key === 'Enter' && handleUrlSubmit()}
                     />
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7 px-2"
+                      className="h-6 w-6 p-0"
                       disabled={!urlInput.trim()}
                       onClick={handleUrlSubmit}
                     >
-                      <Check className="w-3 h-3" />
+                      <Check className="w-2.5 h-2.5" />
                     </Button>
                   </div>
-                  <p className="text-[9px] text-muted-foreground">
-                    Or click the image above to browse media
+                  <p className="text-[8px] text-muted-foreground">
+                    Or click the image above to browse
                   </p>
                 </>
               )}
@@ -619,7 +618,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Media Selection Dialog - Instant mount/unmount (no exit animation) */}
+      {/* Media Selection Dialog */}
       {isMediaDialogOpen && (
         <Dialog open onOpenChange={(open) => { if (!open) setIsMediaDialogOpen(false); }}>
           <DialogContent
@@ -630,14 +629,14 @@ const ImageCard: React.FC<ImageCardProps> = ({
             <DialogDescription className="sr-only">
               Search or upload an image for {displayName}
             </DialogDescription>
-            <div className="bg-white rounded-2xl overflow-hidden border border-zinc-200 shadow-xl w-full flex flex-col max-h-[85vh]">
+            <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 shadow-xl w-full flex flex-col max-h-[85vh]">
               {/* Orange gradient top bar */}
-              <div className="h-[3px] bg-gradient-to-r from-[#FF6B00] via-[#FF8533] to-[#FF6B00] shrink-0" />
+              <div className="h-[2px] bg-gradient-to-r from-[#FF4301] via-[#FF6B33] to-[#FF4301] shrink-0" />
 
               {/* Header */}
-              <div className="px-4 py-3 border-b border-zinc-100 shrink-0">
+              <div className="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800 shrink-0">
                 <h2
-                  className="text-base text-zinc-900"
+                  className="text-sm text-foreground"
                   style={{
                     fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
                     fontWeight: 700,
@@ -646,13 +645,13 @@ const ImageCard: React.FC<ImageCardProps> = ({
                 >
                   Select Image
                 </h2>
-                <p className="text-xs text-zinc-500 mt-0.5">
-                  Search or upload an image for {displayName}
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {displayName}
                 </p>
               </div>
 
               {/* Upload option */}
-              <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/50 shrink-0">
+              <div className="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800 bg-muted/30 shrink-0">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -662,16 +661,16 @@ const ImageCard: React.FC<ImageCardProps> = ({
                 />
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-zinc-300 hover:border-orange-400 hover:bg-orange-50/50 text-sm text-zinc-600 hover:text-orange-600 transition-all"
+                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border-[1.5px] border-dashed border-zinc-300 dark:border-zinc-600 hover:border-orange-400 hover:bg-orange-50/50 dark:hover:bg-orange-500/10 text-xs text-muted-foreground hover:text-orange-600 transition-all"
                 >
-                  <Upload className="w-4 h-4" />
+                  <Upload className="w-3.5 h-3.5" />
                   Upload from device
                 </button>
               </div>
 
-              {/* Search Tab - with fixed height for scrolling */}
+              {/* Search Tab */}
               <div className="flex-1 overflow-hidden flex flex-col min-h-0" style={{ height: '400px' }}>
-                <div className="flex-1 overflow-y-auto p-4">
+                <div className="flex-1 overflow-y-auto p-3">
                   <SearchTab
                     onSelect={(url, type) => {
                       if (url && typeof url === 'string') {
@@ -714,16 +713,15 @@ const ImageCardGrid: React.FC<ImageCardGridProps> = ({
 
   if (images.length === 0) {
     return (
-      <div className="text-center py-4 text-muted-foreground">
-        <ImageIcon className="w-6 h-6 mx-auto mb-1.5 opacity-50" />
-        <p className="text-[10px]">No images detected</p>
-        <p className="text-[9px] mt-1">Click refresh to re-scan</p>
+      <div className="text-center py-3 text-muted-foreground">
+        <ImageIcon className="w-4 h-4 mx-auto mb-1 opacity-40" />
+        <p className="text-[9px]">No images detected</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5 pt-1.5">
       {images.map((element, index) => (
         <ImageCard
           key={element.id}

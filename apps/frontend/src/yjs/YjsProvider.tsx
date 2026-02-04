@@ -3,7 +3,7 @@
  */
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { YjsDocumentManager } from './YjsDocumentManager';
-import { YjsDocOptions, UserPresence, ComponentLock, LockResponse } from './YjsTypes';
+import { YjsDocOptions, UserPresence } from './YjsTypes';
 import { CompleteDeckData } from '../types/DeckTypes';
 import { SlideData } from '../types/SlideTypes';
 import { ComponentInstance } from '../types/components';
@@ -39,16 +39,6 @@ interface YjsContextType {
   // Cursor tracking
   updateCursor: (slideId: string, x: number, y: number) => void;
   updateSelection: (slideId: string, componentIds: string[]) => void;
-  
-  // Component locking
-  requestLock: (slideId: string, componentId: string) => Promise<LockResponse>;
-  releaseLock: (slideId: string, componentId: string, force?: boolean) => boolean;
-  isComponentLocked: (slideId: string, componentId: string) => boolean;
-  getComponentLock: (slideId: string, componentId: string) => ComponentLock | null;
-  getAllLocks: () => ComponentLock[];
-  getOwnedLocks: () => ComponentLock[];
-  approveLockRequest: (slideId: string, componentId: string, userId: string) => boolean;
-  denyLockRequest: (slideId: string, componentId: string, userId: string) => boolean;
 }
 
 // Create context with default values
@@ -68,15 +58,6 @@ const YjsContext = createContext<YjsContextType>({
   removeComponent: () => {},
   updateCursor: () => {},
   updateSelection: () => {},
-  // Component locking
-  requestLock: async () => ({ componentId: '', slideId: '', granted: false }),
-  releaseLock: () => false,
-  isComponentLocked: () => false,
-  getComponentLock: () => null,
-  getAllLocks: () => [],
-  getOwnedLocks: () => [],
-  approveLockRequest: () => false,
-  denyLockRequest: () => false,
 });
 
 export interface YjsProviderProps {
@@ -389,49 +370,6 @@ export const YjsProvider: React.FC<YjsProviderProps> = ({
     }
   };
   
-  // Component locking methods
-  const requestLock = async (slideId: string, componentId: string): Promise<LockResponse> => {
-    if (!docManagerRef.current) {
-      return { componentId, slideId, granted: false, error: 'Document manager not available' };
-    }
-    return docManagerRef.current.requestLock(slideId, componentId);
-  };
-  
-  const releaseLock = (slideId: string, componentId: string, force = false): boolean => {
-    if (!docManagerRef.current) return false;
-    return docManagerRef.current.releaseLock(slideId, componentId, force);
-  };
-  
-  const isComponentLocked = (slideId: string, componentId: string): boolean => {
-    if (!docManagerRef.current) return false;
-    return docManagerRef.current.isComponentLocked(slideId, componentId);
-  };
-  
-  const getComponentLock = (slideId: string, componentId: string): ComponentLock | null => {
-    if (!docManagerRef.current) return null;
-    return docManagerRef.current.getComponentLock(slideId, componentId);
-  };
-  
-  const getAllLocks = (): ComponentLock[] => {
-    if (!docManagerRef.current) return [];
-    return docManagerRef.current.getAllLocks();
-  };
-  
-  const getOwnedLocks = (): ComponentLock[] => {
-    if (!docManagerRef.current) return [];
-    return docManagerRef.current.getOwnedLocks();
-  };
-  
-  const approveLockRequest = (slideId: string, componentId: string, userId: string): boolean => {
-    if (!docManagerRef.current) return false;
-    return docManagerRef.current.approveLockRequest(slideId, componentId, userId);
-  };
-  
-  const denyLockRequest = (slideId: string, componentId: string, userId: string): boolean => {
-    if (!docManagerRef.current) return false;
-    return docManagerRef.current.denyLockRequest(slideId, componentId, userId);
-  };
-
   return (
     <YjsContext.Provider
       value={{
@@ -450,15 +388,6 @@ export const YjsProvider: React.FC<YjsProviderProps> = ({
         removeComponent,
         updateCursor,
         updateSelection,
-        // Component locking
-        requestLock,
-        releaseLock,
-        isComponentLocked,
-        getComponentLock,
-        getAllLocks,
-        getOwnedLocks,
-        approveLockRequest,
-        denyLockRequest,
       }}
     >
       {children}

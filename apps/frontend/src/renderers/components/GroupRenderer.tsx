@@ -7,18 +7,29 @@ import { registerRenderer } from '../utils';
  * GroupRenderer - Renders a group of components
  * Groups are containers that allow multiple components to be moved/transformed together
  */
-const GroupRenderer: React.FC<RendererProps> = ({ 
-  component, 
+const GroupRenderer: React.FC<RendererProps> = ({
+  component,
   isSelected = false,
   containerRef,
   styles,
   isEditing
 }) => {
-  const { isComponentSelected, editingGroupId, setEditingGroupId } = useEditorStore();
   const childIds = (component.props.children as string[]) || [];
-  
+
+  // PERF: Use specific selectors instead of subscribing to the entire store.
+  // useEditorStore() (no selector) causes this component to re-render on EVERY
+  // store change (draft updates, version bumps, selection changes), which bypasses
+  // the parent ComponentRenderer's React.memo.
+  const editingGroupId = useEditorStore(state => state.editingGroupId);
+  const setEditingGroupId = useEditorStore(state => state.setEditingGroupId);
+  // Derive a boolean for child selection – stable primitive that only changes
+  // when an actual child gets selected/deselected.
+  const isAnyChildSelected = useEditorStore(state =>
+    childIds.some(id => state.selectedComponentIds.has(id))
+  );
+
   // Calculate if group should show selection based on any child being selected
-  const isGroupOrChildSelected = isSelected || childIds.some(id => isComponentSelected(id));
+  const isGroupOrChildSelected = isSelected || isAnyChildSelected;
   const isEditingThisGroup = editingGroupId === component.id;
   
   // Don't render anything if the group is invisible

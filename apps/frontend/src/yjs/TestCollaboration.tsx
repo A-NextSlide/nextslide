@@ -4,10 +4,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { YjsProvider, useYjs } from './YjsProvider';
 import CollaborationStatus from './components/CollaborationStatus';
-import CollaborativeCursors from './components/CollaborativeCursors';
 import { DeckStoreInitializer } from '../components/DeckStoreInitializer';
-import { LockDemo } from './components/LockDemo';
-import { LockRequestHandler } from './components/LockRequestHandler';
 import * as Y from 'yjs';
 
 // Safe JSON stringify to handle circular references
@@ -633,10 +630,6 @@ const SimpleEditor: React.FC<{ slideId: string }> = ({ slideId }) => {
           </div>
         ))}
         
-        <CollaborativeCursors 
-          slideId={slideId} 
-          containerRef={containerRef} 
-        />
       </div>
       
       <div className="mt-4 bg-muted/50 border border-border rounded-md text-xs">
@@ -723,23 +716,18 @@ const TestCollaboration: React.FC = () => {
   const [userName] = useState(getRandomName());
   const [userId] = useState(`user-${Math.floor(Math.random() * 10000)}`);
 
-  // Standardized document ID for collaboration
-  const sharedDocId = "shared-test-document";
-  
-  // State to toggle between editor and lock demo
-  const [showLockDemo, setShowLockDemo] = useState(false);
-  
+  const sharedDocId = "collaboration-test";
+
   return (
     <>
-      {/* Disable Supabase sync for the collaboration test */}
-      <DeckStoreInitializer 
-        syncEnabled={false} 
-        useRealtimeSubscription={false} 
+      <DeckStoreInitializer
+        syncEnabled={false}
+        useRealtimeSubscription={false}
         autoSyncInterval={0}
         collaborationEnabled={true}
         collaborationUrl={import.meta.env.VITE_WEBSOCKET_URL || 'wss://slide-websocket.onrender.com'}
       />
-      
+
       <YjsProvider
         docId={sharedDocId}
         userName={userName}
@@ -748,42 +736,8 @@ const TestCollaboration: React.FC = () => {
         autoConnect={true}
       >
         <div className="p-4">
-          {/* Horizontal tabs above content */}
-          <div className="flex space-x-2 mb-4">
-            <button
-              onClick={() => setShowLockDemo(false)}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                !showLockDemo 
-                  ? 'bg-muted font-medium' 
-                  : 'text-muted-foreground hover:bg-muted/50'
-              }`}
-            >
-              Collaborative Editor
-            </button>
-            <button
-              onClick={() => setShowLockDemo(true)}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                showLockDemo 
-                  ? 'bg-muted font-medium' 
-                  : 'text-muted-foreground hover:bg-muted/50'
-              }`}
-            >
-              Lock Demo
-            </button>
-          </div>
-          
-          {/* Main content area */}
-          <div>
-            {showLockDemo ? (
-              <LockDemo />
-            ) : (
-              <SimpleEditor slideId={slideId} />
-            )}
-          </div>
+          <SimpleEditor slideId={slideId} />
         </div>
-        
-        {/* Always show lock request handler */}
-        <LockRequestHandler />
       </YjsProvider>
     </>
   );

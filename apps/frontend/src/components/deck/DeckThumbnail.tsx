@@ -5,11 +5,11 @@ import MiniSlide from './MiniSlide';
 import { BROWSER } from '@/utils/browser';
 
 // Component to render a deck thumbnail using the first slide
-const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'background'; forceRender?: boolean }> = React.memo(({ deck, renderMode = 'full', forceRender = false }) => {
+const DeckThumbnail: React.FC<{ deck: CompleteDeckData; renderMode?: 'full' | 'background'; forceRender?: boolean; skipServerThumbnail?: boolean }> = React.memo(({ deck, renderMode = 'full', forceRender = false, skipServerThumbnail = false }) => {
   const [thumbnailError, setThumbnailError] = useState(false);
 
   // Prefer server-rendered thumbnail on all platforms for instant loading
-  const serverThumbnail = (deck as any).thumbnail_url;
+  const serverThumbnail = skipServerThumbnail ? null : (deck as any).thumbnail_url;
   if (serverThumbnail && !thumbnailError) {
     return (
       <img

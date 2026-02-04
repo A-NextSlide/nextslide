@@ -15,7 +15,7 @@ import { ComponentInstance } from '../types/components';
 import { SlideData } from '../types/SlideTypes';
 import { API_CONFIG } from '../config/environment';
 import { CompleteDeckData } from '../types/DeckTypes';
-import { ComponentLock, LockResponse, UserPresence } from './YjsTypes';
+import { UserPresence } from './YjsTypes';
 
 /**
  * Configuration options for the ShardedYjsProvider
@@ -147,46 +147,6 @@ export interface ShardedYjsContextType {
   updateSelection: (slideId: string, componentIds: string[]) => Promise<void>;
   
   /**
-   * Request a lock on a component
-   */
-  requestLock: (slideId: string, componentId: string) => Promise<LockResponse>;
-  
-  /**
-   * Release a lock on a component
-   */
-  releaseLock: (slideId: string, componentId: string, force?: boolean) => Promise<boolean>;
-  
-  /**
-   * Check if a component is locked
-   */
-  isComponentLocked: (slideId: string, componentId: string) => Promise<boolean>;
-  
-  /**
-   * Get information about a component lock
-   */
-  getComponentLock: (slideId: string, componentId: string) => Promise<ComponentLock | null>;
-  
-  /**
-   * Get all locks for a specific slide
-   */
-  getLocksForSlide: (slideId: string) => Promise<ComponentLock[]>;
-  
-  /**
-   * Get all locks owned by the current user
-   */
-  getOwnedLocks: () => Promise<ComponentLock[]>;
-  
-  /**
-   * Approve a lock request from another user
-   */
-  approveLockRequest: (slideId: string, componentId: string, userId: string) => Promise<boolean>;
-  
-  /**
-   * Deny a lock request from another user
-   */
-  denyLockRequest: (slideId: string, componentId: string, userId: string) => Promise<boolean>;
-  
-  /**
    * Connection statistics
    */
   connectionStats: {
@@ -209,14 +169,6 @@ const ShardedYjsContext = createContext<ShardedYjsContextType>({
   removeComponent: async () => {},
   updateCursor: async () => {},
   updateSelection: async () => {},
-  requestLock: async () => ({ slideId: '', componentId: '', granted: false }),
-  releaseLock: async () => false,
-  isComponentLocked: async () => false,
-  getComponentLock: async () => null,
-  getLocksForSlide: async () => [],
-  getOwnedLocks: async () => [],
-  approveLockRequest: async () => false,
-  denyLockRequest: async () => false,
   connectionStats: {
     activeConnections: 0,
     totalConnections: 0,
@@ -471,65 +423,6 @@ export const ShardedYjsProvider: React.FC<ShardedYjsProviderProps> = ({
         await shardManagerRef.current.updateSelection(slideId, componentIds);
       },
       
-      // Request lock
-      requestLock: async (slideId: string, componentId: string) => {
-        if (!shardManagerRef.current) {
-          return { slideId, componentId, granted: false, error: 'Shard manager not initialized' };
-        }
-        
-        return shardManagerRef.current.requestLock(slideId, componentId);
-      },
-      
-      // Release lock
-      releaseLock: async (slideId: string, componentId: string, force = false) => {
-        if (!shardManagerRef.current) return false;
-        
-        return shardManagerRef.current.releaseLock(slideId, componentId, force);
-      },
-      
-      // Check if component is locked
-      isComponentLocked: async (slideId: string, componentId: string) => {
-        if (!shardManagerRef.current) return false;
-        
-        const locks = await shardManagerRef.current.getLocksForSlide(slideId);
-        return locks.some(lock => lock.componentId === componentId);
-      },
-      
-      // Get component lock
-      getComponentLock: async (slideId: string, componentId: string) => {
-        if (!shardManagerRef.current) return null;
-        
-        const locks = await shardManagerRef.current.getLocksForSlide(slideId);
-        return locks.find(lock => lock.componentId === componentId) || null;
-      },
-      
-      // Get locks for slide
-      getLocksForSlide: async (slideId: string) => {
-        if (!shardManagerRef.current) return [];
-        
-        return shardManagerRef.current.getLocksForSlide(slideId);
-      },
-      
-      // Get owned locks
-      getOwnedLocks: async () => {
-        // This would need to be implemented in DocumentShardManager
-        // For now, we'll return an empty array
-        return [];
-      },
-      
-      // Approve lock request
-      approveLockRequest: async (slideId: string, componentId: string, userId: string) => {
-        // This would need to be implemented in DocumentShardManager
-        // For now, we'll return false
-        return false;
-      },
-      
-      // Deny lock request
-      denyLockRequest: async (slideId: string, componentId: string, userId: string) => {
-        // This would need to be implemented in DocumentShardManager
-        // For now, we'll return false
-        return false;
-      }
     } as ShardedYjsContextType;
   }, [isConnected, clientId, users, connectionStats]);
   

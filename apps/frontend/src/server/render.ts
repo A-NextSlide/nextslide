@@ -47,9 +47,13 @@ function broadcast(room: Set<WebSocket> | undefined, sender: WebSocket, message:
   });
 }
 
-// Extract room name from URL - always use standardized room name for consistency
-function getRoomName(): string {
-  return 'shared-test-document';
+// Extract room name from the WebSocket request URL path
+// y-websocket sends the room name as the URL path (e.g. /my-deck-id)
+function getRoomName(req: http.IncomingMessage): string {
+  const url = req.url || '/';
+  // Strip leading slash and decode URI components
+  const room = decodeURIComponent(url.replace(/^\/+/, ''));
+  return room || 'default-room';
 }
 
 // Check for common encoding issues in a binary update
@@ -123,8 +127,8 @@ function encodeStateAsUpdate(doc: Y.Doc, encodedStateVector?: Uint8Array): Uint8
 wss.on('connection', (ws, req) => {
   ws.binaryType = 'arraybuffer';
   
-  // Use standardized room name
-  const roomName = getRoomName();
+  // Extract room name from the request URL path
+  const roomName = getRoomName(req);
   console.log(`New connection to room: ${roomName}`);
   
   // Get or create document for this room
@@ -306,7 +310,7 @@ wss.on('connection', (ws, req) => {
 // Start the server
 server.listen(PORT, () => {
   console.log(`Yjs WebSocket server running on port ${PORT}`);
-  console.log(`Room standardization: All clients will be connected to 'shared-test-document' room`);
+  console.log(`Room isolation: Each deck gets its own room based on URL path`);
 });
 
 // Handle graceful shutdown

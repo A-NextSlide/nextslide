@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { IconButton } from '../ui/IconButton';
@@ -66,6 +66,12 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
   const [isChatSelecting, setIsChatSelecting] = useState(false);
   const { setTheme } = useTheme();
   const deckData = useDeckStore(state => state.deckData);
+  const slides = deckData?.slides || [];
+  const slideIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    slides.forEach((s: any, i: number) => map.set(s.id, i + 1));
+    return map;
+  }, [slides]);
   const [isExporting, setIsExporting] = useState(false);
 
   const { signOut, user } = useAuth();
@@ -74,6 +80,17 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
 
   // Get locked slides info for share button blocking
   const { hasLockedSlides, lockedCount } = useLockedSlides();
+
+  // Track unresolved comment count for the badge
+  const [commentCount, setCommentCount] = useState(0);
+  useEffect(() => {
+    const handler = (e: any) => {
+      const count = e?.detail?.count;
+      if (typeof count === 'number') setCommentCount(count);
+    };
+    window.addEventListener('comments:count-update', handler as EventListener);
+    return () => window.removeEventListener('comments:count-update', handler as EventListener);
+  }, []);
 
   // Get Yjs status from deck store
   const getYjsConnectionStatus = useDeckStore(state => (state as any).getYjsConnectionStatus);
@@ -97,9 +114,12 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
     // Update users list only if it has actually changed
     if (Array.isArray(yjsUsers)) {
       setUsers(prevUsers => {
-        // Compare arrays to avoid unnecessary updates
+        // Compare arrays to avoid unnecessary updates (include cursor.slideId so slide navigation triggers re-render)
         if (prevUsers.length !== yjsUsers.length ||
-          prevUsers.some((user, idx) => user.clientId !== yjsUsers[idx]?.clientId)) {
+          prevUsers.some((user, idx) =>
+            user.clientId !== yjsUsers[idx]?.clientId ||
+            user.cursor?.slideId !== yjsUsers[idx]?.cursor?.slideId
+          )) {
           return yjsUsers;
         }
         return prevUsers;
@@ -128,13 +148,20 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
   }, []);
 
   const handleBackToDeckList = async () => {
-    // Kick off save, but navigate immediately to avoid blocking Back
+    // Kick off save + thumbnail render, but navigate immediately to avoid blocking Back
     const deckData = useDeckStore.getState().deckData;
+    if (deckData?.uuid) {
+      // Mark this deck so the deck list skips the stale server thumbnail
+      // and uses a live client-side render instead
+      sessionStorage.setItem('skipThumbnailUrl', deckData.uuid);
+    }
     (async () => {
       try {
         if (deckData && deckData.uuid) {
           const { deckSyncService } = await import('@/lib/deckSyncService');
           await deckSyncService.saveDeck(deckData);
+          // Render OG thumbnail now that the user is leaving the editor
+          deckSyncService.triggerThumbnail(deckData.uuid);
           console.log('[DeckHeader] Deck saved after navigation');
         }
       } catch (error) {
@@ -381,6 +408,11 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
                             {user.name || 'Unknown User'}
                             {user.self && <span className="text-muted-foreground ml-1">(you)</span>}
                           </span>
+                          <span className="text-[10px] text-muted-foreground ml-auto tabular-nums">
+                            {user.cursor?.slideId && slideIndexMap.get(user.cursor.slideId)
+                              ? `Slide ${slideIndexMap.get(user.cursor.slideId)}`
+                              : ''}
+                          </span>
                         </div>
                       ))
                     ) : (
@@ -415,19 +447,26 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
 
           {/* Add comment quick icon - hide on mobile */}
           {!isMobile && (
-            <IconButton
-              variant="ghost"
-              size="xs"
-              aria-label="Add comment"
-              onClick={() => {
-                try {
-                  window.dispatchEvent(new CustomEvent('editor:force-edit-mode'));
-                  window.dispatchEvent(new CustomEvent('comments:toggle-panel'));
-                } catch { }
-              }}
-            >
-              <MessageSquare size={14} />
-            </IconButton>
+            <div className="relative">
+              <IconButton
+                variant="ghost"
+                size="xs"
+                aria-label="Add comment"
+                onClick={() => {
+                  try {
+                    window.dispatchEvent(new CustomEvent('editor:force-edit-mode'));
+                    window.dispatchEvent(new CustomEvent('comments:toggle-panel'));
+                  } catch { }
+                }}
+              >
+                <MessageSquare size={14} />
+              </IconButton>
+              {commentCount > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 min-w-4 px-1 rounded-full bg-[#FF4301] text-white text-[9px] font-bold flex items-center justify-center pointer-events-none">
+                  {commentCount}
+                </span>
+              )}
+            </div>
           )}
 
           {/* Mobile: Tiny Share and Present buttons side by side */}

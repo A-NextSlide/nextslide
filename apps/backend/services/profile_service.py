@@ -181,7 +181,7 @@ class ProfileService:
         try:
             client = self._get_client()
 
-            allowed_fields = {"bio", "social_links", "is_profile_public", "avatar_url"}
+            allowed_fields = {"bio", "social_links", "is_profile_public", "avatar_url", "hide_watermark"}
             update_data = {k: v for k, v in data.items() if k in allowed_fields}
 
             if not update_data:

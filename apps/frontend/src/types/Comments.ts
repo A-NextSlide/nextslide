@@ -54,3 +54,11 @@ export interface CommentsListResponse {
 
 // Alias for backward compatibility
 export type Comment = CommentEntity;
+
+export type CommentFilterTab = 'all' | 'open' | 'resolved';
+
+export interface EnrichedCommentThread extends CommentThread {
+  rootComment: CommentEntity;
+  replyCount: number;
+  lastActivity: string; // ISO timestamp of last comment in thread
+}

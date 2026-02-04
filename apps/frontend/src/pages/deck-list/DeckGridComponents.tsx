@@ -369,8 +369,13 @@ export const VirtualizedDeckGrid = React.memo(({
         }
 
         // Prefer server thumbnail on ALL platforms for instant loading;
-        // fall back to client cache on mobile/desktop app only
-        const cachedUrl = (deck as any).thumbnail_url
+        // fall back to client cache on mobile/desktop app only.
+        // Skip stale server thumbnail for the deck the user just exited
+        // (the OG render is still in-flight; show a live client render instead).
+        const skipUuid = sessionStorage.getItem('skipThumbnailUrl');
+        const shouldSkipServer = !!(skipUuid && deck.uuid === skipUuid);
+        const serverThumb = shouldSkipServer ? null : (deck as any).thumbnail_url;
+        const cachedUrl = serverThumb
           || ((BROWSER.isMobile || BROWSER.isDesktopApp) && deck.uuid ? getCachedThumbnail(deck.uuid) : null)
           || null;
 
@@ -395,6 +400,7 @@ export const VirtualizedDeckGrid = React.memo(({
                 shouldAnimate={shouldAnimate}
                 thumbnailRenderMode="full"
                 cachedThumbnailUrl={cachedUrl}
+                skipServerThumbnail={shouldSkipServer}
                 onThumbnailRef={(el) => {
                   if (el && deck.uuid) {
                     thumbnailRefsMapRef.current.set(deck.uuid, el);

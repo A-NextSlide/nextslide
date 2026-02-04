@@ -1411,45 +1411,28 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         // Update global store for settings panel
         setDetectedElements(elements);
 
-        // On first extraction, auto-select the element closest to the cursor position
-        if (isFirstExtractionRef.current && elements.length > 0 && lastCursorPositionRef.current) {
+        // On first extraction, auto-select the first text element (or first element)
+        // so the user immediately sees a bounding box and knows things are editable
+        if (isFirstExtractionRef.current && elements.length > 0) {
           isFirstExtractionRef.current = false;
 
-          const cursorX = lastCursorPositionRef.current.x;
-          const cursorY = lastCursorPositionRef.current.y;
+          // Prefer the first visible text element, fall back to first element
+          const firstText = elements.find(el =>
+            el.type === 'text' &&
+            el.bounds.width > 0 &&
+            el.bounds.height > 0
+          );
+          const autoSelectElement = firstText || elements[0];
 
-          // Find the element whose center is closest to the cursor
-          let closestElement: VirtualElement | null = null;
-          let closestDistance = Infinity;
-
-          for (const el of elements) {
-            // Calculate center of element
-            const centerX = el.bounds.x + el.bounds.width / 2;
-            const centerY = el.bounds.y + el.bounds.height / 2;
-
-            // Calculate distance from cursor to center
-            const distance = Math.sqrt(
-              Math.pow(cursorX - centerX, 2) + Math.pow(cursorY - centerY, 2)
-            );
-
-            // Prefer smaller elements when distances are similar (within 50px)
-            // This helps select nested elements over their containers
-            const area = el.bounds.width * el.bounds.height;
-            const adjustedDistance = distance + Math.log(area + 1) * 5;
-
-            if (adjustedDistance < closestDistance) {
-              closestDistance = adjustedDistance;
-              closestElement = el;
-            }
-          }
-
-          if (closestElement) {
-            const path = getSelectionPathForElement(closestElement.id);
-            applySelectionPath(path, { x: cursorX, y: cursorY }, 0);
-            const selected = path.length > 0 ? elements.find(el => el.id === path[0]) : closestElement;
+          if (autoSelectElement) {
+            const centerX = autoSelectElement.bounds.x + autoSelectElement.bounds.width / 2;
+            const centerY = autoSelectElement.bounds.y + autoSelectElement.bounds.height / 2;
+            const path = getSelectionPathForElement(autoSelectElement.id);
+            applySelectionPath(path, { x: centerX, y: centerY }, 0);
+            const selected = path.length > 0 ? elements.find(el => el.id === path[0]) : autoSelectElement;
             if (selected) {
               skipNextSelectionNotifyRef.current = true;
-              onElementSelect(toDetectedElement(selected), cursorX, cursorY);
+              onElementSelect(toDetectedElement(selected), centerX, centerY);
             }
           }
         }
@@ -1759,6 +1742,10 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
             ...e,
             iframeBounds: newBounds,
             bounds: coordinatorRef.current?.iframeToParent(newBounds) || newBounds,
+            computedStyle: {
+              ...e.computedStyle,
+              ...styles,
+            },
           }
         : e
     ));
@@ -1814,6 +1801,10 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
             ...e,
             iframeBounds: newBounds,
             bounds: coordinatorRef.current?.iframeToParent(newBounds) || newBounds,
+            computedStyle: {
+              ...e.computedStyle,
+              ...styles,
+            },
           }
         : e
     ));

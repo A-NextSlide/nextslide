@@ -355,10 +355,9 @@ export const CustomComponentRenderer: React.FC<{
       };
       DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Updated props:', Object.keys(updatedProps));
 
-      // Update the component
+      // Update only the changed prop (delta update to avoid overwriting concurrent changes)
       updateComponent(component.id, {
         props: {
-          ...component.props,
           props: updatedProps,
         }
       });
@@ -373,7 +372,7 @@ export const CustomComponentRenderer: React.FC<{
     return () => {
       window.removeEventListener('customcomponent:image-selected', handleImageSelected as EventListener);
     };
-  }, [isEditing, isThumbnail, component.id, component.props, updateComponent]);
+  }, [isEditing, isThumbnail, component.id, component.props.props, updateComponent]);
 
   useCustomComponentImageAutoApply({ component, renderCode, isEditing, isThumbnail, updateComponent });
   useCustomComponentImageProxy({ component, renderCode, isEditing, isThumbnail, updateComponent });
@@ -1433,6 +1432,27 @@ img.ns-img-ready {
     return html;
   }, [iframeSrcDoc, component.id, isEditing, isThumbnail, propsKey, effectiveIsEditMode, isSelected, resolvedFonts.bodyFont, resolvedFonts.heroFont]); // fontCatalogVersion removed - fonts are loaded globally and don't need to invalidate iframe srcDoc
 
+  const baseIframeKey = useMemo(() => {
+    return `${component.id}-${renderCodeHash}-${propsKey.length}-${propsKey.slice(-20)}-${resolvedFonts.bodyFont || ''}-${resolvedFonts.heroFont || ''}`;
+  }, [component.id, renderCodeHash, propsKey, resolvedFonts.bodyFont, resolvedFonts.heroFont]);
+
+  const isEditingSelection = effectiveIsEditMode && isSelected && isIframeComponent;
+  const [pinnedIframe, setPinnedIframe] = useState<{ srcDoc: string | null; key: string } | null>(null);
+
+  useEffect(() => {
+    if (!isEditingSelection) {
+      setPinnedIframe(null);
+      return;
+    }
+    if (!stableIframeSrcDoc) return;
+
+    // Pin the current srcDoc/key while editing to avoid iframe reload flashes on drag/drop.
+    setPinnedIframe(prev => prev ?? { srcDoc: stableIframeSrcDoc, key: baseIframeKey });
+  }, [isEditingSelection, stableIframeSrcDoc, baseIframeKey]);
+
+  const iframeKey = pinnedIframe?.key || baseIframeKey;
+  const iframeSrcDocToUse = pinnedIframe?.srcDoc || stableIframeSrcDoc;
+
   // Listen for messages from iframe (placeholder image clicks and edit mode)
   // NOTE: Disabled on iOS due to postMessage crash issues
   useEffect(() => {
@@ -1554,10 +1574,9 @@ img.ns-img-ready {
             const updatedHtml = stableIframeSrcDoc.replace(pattern, newText);
 
             if (updatedHtml !== stableIframeSrcDoc) {
-              // Update the component with the new HTML
+              // Update only the render prop (delta update to avoid overwriting concurrent changes)
               updateComponent(component.id, {
                 props: {
-                  ...component.props,
                   render: updatedHtml
                 }
               });
@@ -1605,9 +1624,9 @@ img.ns-img-ready {
               // Strip injected scripts before saving
               const cleanHtml = stripInjectedScripts(updatedHtml);
 
+              // Delta update to avoid overwriting concurrent changes
               updateComponent(component.id, {
                 props: {
-                  ...component.props,
                   render: cleanHtml
                 }
               });
@@ -1639,7 +1658,7 @@ img.ns-img-ready {
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [isIframeComponent, isEditing, component.id, component.slideId, stableIframeSrcDoc, updateComponent, component.props, selectedElement]);
+  }, [isIframeComponent, isEditing, component.id, component.slideId, stableIframeSrcDoc, updateComponent, selectedElement]);
 
   // Render the component content (non-iframe path)
   const content = useMemo(() => {
@@ -1820,10 +1839,9 @@ img.ns-img-ready {
     const cleanHtml = stripInjectedScripts(newHtml);
     DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] After stripping injected scripts, length:', cleanHtml.length);
 
-    // Update the component with clean HTML
+    // Update only the render prop (delta update to avoid overwriting concurrent prop changes)
     updateComponent(component.id, {
       props: {
-        ...component.props,
         render: cleanHtml
       }
     });
@@ -1837,7 +1855,7 @@ img.ns-img-ready {
         console.error('[CustomComponent] Failed to persist HTML changes:', e);
       }
     }, 300);
-  }, [updateComponent, component.id, component.props]);
+  }, [updateComponent, component.id]);
 
   // Handler for text editing inside custom component
   const handleTextEdit = useCallback((element: DetectedElement, newText: string) => {
@@ -1868,10 +1886,9 @@ img.ns-img-ready {
       // CRITICAL: Strip injected scripts before saving to prevent accumulation
       const cleanHtml = stripInjectedScripts(updatedHtml);
 
-      // Update the component with clean HTML
+      // Delta update to avoid overwriting concurrent changes
       updateComponent(component.id, {
         props: {
-          ...component.props,
           render: cleanHtml
         }
       });
@@ -1887,7 +1904,7 @@ img.ns-img-ready {
         }
       }, 500);
     }
-  }, [stableIframeSrcDoc, updateComponent, component.id, component.props]);
+  }, [stableIframeSrcDoc, updateComponent, component.id]);
 
   // Handler for image swap inside custom component
   const handleImageSwap = useCallback((element: DetectedElement, newImageUrl: string) => {
@@ -1917,10 +1934,9 @@ img.ns-img-ready {
       // CRITICAL: Strip injected scripts before saving to prevent accumulation
       const cleanHtml = stripInjectedScripts(updatedHtml);
 
-      // THEN: Update the component state with clean HTML
+      // THEN: Update only the render prop (delta update to avoid overwriting concurrent changes)
       updateComponent(component.id, {
         props: {
-          ...component.props,
           render: cleanHtml
         }
       });
@@ -1939,7 +1955,7 @@ img.ns-img-ready {
 
     setSelectedElement(null);
     setShowImageToolbar(false);
-  }, [stableIframeSrcDoc, updateComponent, component.id, component.props, iframeRef]);
+  }, [stableIframeSrcDoc, updateComponent, component.id, iframeRef]);
 
   // Handler for AI-based element editing - dispatches to main chat panel
   const handleElementAiEdit = useCallback((element: DetectedElement, instruction: string) => {
@@ -2080,13 +2096,13 @@ img.ns-img-ready {
         >
           {/* IFRAME RENDERING - Simple 100% fill, HTML handles responsive layout */}
           {/* On iOS thumbnails: strip scripts for memory safety, full view keeps scripts */}
-          {isIframeComponent && stableIframeSrcDoc && (
+          {isIframeComponent && iframeSrcDocToUse && (
             <iframe
               ref={iframeRef}
-              key={`${component.id}-${renderCodeHash}-${propsKey.length}-${propsKey.slice(-20)}-${resolvedFonts.bodyFont || ''}-${resolvedFonts.heroFont || ''}`}
+              key={iframeKey}
               srcDoc={shouldUseStaticHtml
-                ? stableIframeSrcDoc.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                : stableIframeSrcDoc
+                ? iframeSrcDocToUse.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                : iframeSrcDocToUse
               }
               style={{
                 position: 'absolute',
@@ -2114,13 +2130,13 @@ img.ns-img-ready {
           {/* ELEMENT-LEVEL EDIT OVERLAY for selected custom components */}
           {/* Renders interaction layer over the iframe with hit areas, selection, drag/resize, and text editing */}
           {/* NOTE: Disabled on iOS due to iframe/postMessage crash issues */}
-          {effectiveIsEditMode && isSelected && isIframeComponent && stableIframeSrcDoc && !BROWSER.isIOS && (
+          {effectiveIsEditMode && isSelected && isIframeComponent && iframeSrcDocToUse && !BROWSER.isIOS && (
             <CustomComponentEditOverlay
               componentId={component.id}
               slideId={component.slideId}
               isEditing={effectiveIsEditMode}
               isSelected={isSelected}
-              srcDoc={stableIframeSrcDoc}
+              srcDoc={iframeSrcDocToUse}
               scale={scale}
               containerWidth={containerWidth}
               containerHeight={containerHeight}
@@ -2681,6 +2697,9 @@ img.ns-img-ready {
   if (prevPos?.x !== nextPos?.x || prevPos?.y !== nextPos?.y) return false;
   if (prevProps.component.props?.width !== nextProps.component.props?.width) return false;
   if (prevProps.component.props?.height !== nextProps.component.props?.height) return false;
+
+  // Check nested props changes (settings panel edits)
+  if (prevProps.component.props?.props !== nextProps.component.props?.props) return false;
 
   // Skip baseStyles comparison - usually stable
   return true;

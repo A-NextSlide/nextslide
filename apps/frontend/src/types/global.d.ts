@@ -1,18 +1,7 @@
-// Extend the global Window interface for custom debugging properties
+// Extend the global Window interface for custom properties
 
-// Define the structure for the test cursor function arguments if needed
-type AddTestCursorFn = (id: string, x?: number, y?: number) => string;
-type SendTestCursorFn = (slideIdToUse?: string) => string;
-type TrackWebSocketFn = (ws: WebSocket) => string | void;
-// type TestComponentPositionFn = (componentId: string, slideId: string) => string; // Old
-type TestComponentLayoutFn = (componentId: string, slideId: string, layout?: Partial<RemoteComponentLayout['layout']>) => string; // New
-// type TestComponentMoveFn = (componentId: string, slideId: string) => string; // Old, can be covered by TestComponentLayoutFn
+type TestComponentLayoutFn = (componentId: string, slideId: string, layout?: Partial<RemoteComponentLayout['layout']>) => string;
 type MonitorWebSocketsFn = () => string | void;
-
-// Extend WebSocket to allow monitoring property
-interface ExtendedWebSocket extends WebSocket {
-  _monitored?: boolean;
-}
 
 // Definition for the remote component layout stored in the global registry
 interface RemoteComponentLayout {
@@ -46,16 +35,9 @@ interface TopicImageCacheEntry {
 
 declare global {
   interface Window {
-    // Debugging properties added in DirectCursors.tsx
-    wsConnectionTest?: () => Promise<string | void>;
-    _sendTestCursor?: SendTestCursorFn;
-    _addTestCursor?: AddTestCursorFn;
-    _webSocketDebugAdded?: boolean;
-    _trackWebSocket?: TrackWebSocketFn;
+    // Component layout testing
+    _testComponentLayout?: TestComponentLayoutFn;
 
-    // Component layout testing (replaces old position testing)
-    _testComponentLayout?: TestComponentLayoutFn; 
-    
     // WebSocket monitoring
     _monitorWebSockets?: MonitorWebSocketsFn;
     _wsMonitoringActive?: boolean;
@@ -64,25 +46,15 @@ declare global {
     // __remoteComponentPositions?: Map<string, any>; // Old, keeping structure similar for now
     __remoteComponentLayouts?: Map<string, RemoteComponentLayout>; // New
 
-    // Debugging properties added elsewhere (ensure these are declared too)
-    _directCursorInfo?: { id: string; color: string; name: string };
-    _directCursorPosition?: { slideId: string; x: number; y: number; timestamp: number; zoomLevel?: number };
-    _inspectDirectCursors?: () => any;
-    _yProviders?: any[]; // Use a more specific type if possible
+    _yProviders?: any[];
 
     // Yjs provider registry for cursor and component position tracking
     // _yProviders?: any[]; // Already declared above
     
     // Cursor tracking functionality
     _awareness?: any;
-    // _trackWebSocket?: (ws: WebSocket) => void; // Already declared above
     _updateCursorDirectly?: (slideId: string, x: number, y: number) => void;
     _shouldBroadcastCursor?: (slideId: string) => boolean;
-    // _directCursorPosition?: { // Already declared above
-    //   x: number;
-    //   y: number;
-    //   timestamp: number;
-    // };
     
     // Component position tracking (used by the drag hook)
     __isDragging?: boolean; // This might become __isInteracting or similar

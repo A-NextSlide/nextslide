@@ -1437,6 +1437,42 @@ body {
   animation-fill-mode: forwards; /* Keep the final state */
 }
 
+/* ===== WELCOME OVERLAY GLOW ===== */
+@keyframes glowPulse {
+  0%, 100% {
+    box-shadow:
+      0 0 15px 4px rgba(255, 67, 1, 0.35),
+      0 0 40px 8px rgba(255, 67, 1, 0.15);
+  }
+  50% {
+    box-shadow:
+      0 0 25px 8px rgba(255, 67, 1, 0.5),
+      0 0 60px 16px rgba(255, 67, 1, 0.25);
+  }
+}
+
+.welcome-glow-ring {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+/* ===== HERO POST-DISMISS GLOW ===== */
+@keyframes heroGlowFade {
+  0% {
+    box-shadow:
+      0 0 30px 10px rgba(255, 67, 1, 0.5),
+      0 0 60px 20px rgba(255, 67, 1, 0.25);
+  }
+  100% {
+    box-shadow:
+      0 0 0px 0px rgba(255, 67, 1, 0),
+      0 0 0px 0px rgba(255, 67, 1, 0);
+  }
+}
+
+.hero-glow-active {
+  animation: heroGlowFade 2s ease-out forwards;
+}
+
 /* Ensure login page maintains desktop viewport */
 #login-page {
   min-width: 100vw;

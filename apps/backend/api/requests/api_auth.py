@@ -924,9 +924,6 @@ async def update_deck(
         
         if result.data:
             logger.debug(f"Deck {deck_uuid} updated by user {user['id']}")
-            if request.slides is not None:
-                from services.thumbnail_dispatch import trigger_thumbnail_render
-                background_tasks.add_task(trigger_thumbnail_render, deck_uuid)
             return result.data[0]
         else:
             raise HTTPException(status_code=400, detail="Failed to update deck")
@@ -956,7 +953,7 @@ async def associate_deck(deck_uuid: str, token: Optional[str] = Depends(get_auth
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/decks/share")
-async def share_deck(request: ShareDeckRequest, token: Optional[str] = Depends(get_auth_header)):
+async def share_deck(request: ShareDeckRequest, background_tasks: BackgroundTasks, token: Optional[str] = Depends(get_auth_header)):
     """Share a deck with another user"""
     try:
         auth_service = get_auth_service()
@@ -965,6 +962,9 @@ async def share_deck(request: ShareDeckRequest, token: Optional[str] = Depends(g
             with_user_email=request.with_user_email,
             permissions=request.permissions
         )
+        # Render OG thumbnail when deck is shared
+        from services.thumbnail_dispatch import trigger_thumbnail_render
+        background_tasks.add_task(trigger_thumbnail_render, request.deck_uuid)
         return {"share": share, "message": f"Deck shared with {request.with_user_email}"}
     except Exception as e:
         logger.error(f"Share deck error: {str(e)}")
@@ -988,6 +988,42 @@ async def revoke_deck_share(
     except Exception as e:
         logger.error(f"Revoke share error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/decks/{deck_uuid}/thumbnail")
+async def trigger_deck_thumbnail(
+    deck_uuid: str,
+    background_tasks: BackgroundTasks,
+    token: Optional[str] = Depends(get_auth_header),
+):
+    """Trigger OG thumbnail render for a deck (called on deck exit)."""
+    try:
+        auth_service = get_auth_service()
+        user = auth_service.get_user_with_token(token) if token else None
+        if not user:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+
+        # Verify the user owns or has access to this deck
+        from utils.supabase import get_supabase_client, perform_supabase_operation_with_retry
+        supabase = get_supabase_client()
+        result = perform_supabase_operation_with_retry(
+            lambda: supabase.table("decks").select("uuid,user_id").eq("uuid", deck_uuid).execute(),
+            description=f"check deck ownership for thumbnail {deck_uuid}",
+            max_attempts=2,
+            timeout_seconds=5.0,
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if result.data[0].get("user_id") != user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        from services.thumbnail_dispatch import trigger_thumbnail_render
+        background_tasks.add_task(trigger_thumbnail_render, deck_uuid)
+        return {"message": "Thumbnail render queued"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Trigger thumbnail error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/decks/{deck_uuid}")
 async def delete_deck(

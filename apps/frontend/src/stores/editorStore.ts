@@ -255,11 +255,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
        }
      }
      
+     // Also increment draftComponentsVersion so ActiveSlideContext detects the change
+     // without needing to subscribe to historyIndex from a separate store.
      set(state => ({
         draftComponents: {
             ...state.draftComponents,
             [slideId]: componentsToSet
-        }
+        },
+        draftComponentsVersion: state.draftComponentsVersion + 1
      }));
   },
   // NEW: Set last operation
@@ -513,11 +516,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Remove the deep clone flag as we've now done it
       _needsDeepClone: undefined
     };
-    // Debug logging disabled for performance
-    // Only log significant CustomComponent changes
-    if (originalComponent.type === 'CustomComponent' && oldRender !== updatedComponent.props?.render) {
-      console.log(`[EditorStore] CustomComponent ${componentId} render updated: ${oldRender?.length || 0} → ${updatedComponent.props?.render?.length || 0} chars`);
-    }
 
     // PERFORMANCE: Create new array by mutating (faster for frequent updates like resize)
     // Still creates a new reference so Zustand detects the change, but faster than slice/spread
@@ -531,24 +529,23 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       ? updateGroupsForIds(updatedComponents, [previousParentId, nextParentId])
       : updatedComponents;
 
-    // PERFORMANCE: Update directly without additional cloning
+    // PERFORMANCE: Batch all state updates into a single set() call.
+    // Previously this was 3-4 separate set() calls, each triggering a Zustand
+    // notification cycle to ALL subscribers. Batching reduces this to 1 notification.
+    const shouldMarkChanged = skipHistory;
+    const currentHasUnsaved = shouldMarkChanged ? get().hasUnsavedChanges[slideId] : true;
+    const hasDraft = shouldMarkChanged ? (finalComponents.length > 0) : false;
+    const needsUnsavedUpdate = shouldMarkChanged && hasDraft && !currentHasUnsaved;
+
     set(state => ({
       draftComponents: {
         ...state.draftComponents,
         [slideId]: finalComponents
-      }
+      },
+      lastOperation: `update-${componentId}-${Date.now()}`,
+      draftComponentsVersion: state.draftComponentsVersion + 1,
+      ...(needsUnsavedUpdate ? { hasUnsavedChanges: { ...state.hasUnsavedChanges, [slideId]: true } } : {})
     }));
-
-    // Mark slide as changed (handled by historyStore.addToHistory or manually if skipped)
-    if (skipHistory) {
-        get().markSlideAsChanged(slideId);
-    }
-
-    // Set last operation to trigger UI updates
-    get().setLastOperation(`update-${componentId}-${Date.now()}`);
-
-    // Increment version to force React re-render
-    set(state => ({ draftComponentsVersion: state.draftComponentsVersion + 1 }));
   },
 
   addDraftComponent: (slideId: string, component: ComponentInstance, skipHistory: boolean = false) => {

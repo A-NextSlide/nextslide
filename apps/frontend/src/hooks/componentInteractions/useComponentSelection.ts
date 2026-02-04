@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore'; // Restore import
 import { useEditorStore } from '@/stores/editorStore';
-import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { getSelectionPathAtPoint } from '@/utils/selectionUtils';
 
 interface UseComponentSelectionProps {
@@ -12,6 +11,7 @@ interface UseComponentSelectionProps {
   onSelect: (id: string) => void;
   containerRef: React.RefObject<HTMLElement>; // Ref for focusing/manipulating contentEditable
   didJustDrag: React.MutableRefObject<boolean>; // Add prop for the ref
+  slideId?: string | null;
 }
 
 interface UseComponentSelectionReturn {
@@ -31,8 +31,9 @@ export function useComponentSelection({
   onSelect,
   containerRef, // Restore usage
   didJustDrag, // Receive the ref
+  slideId: slideIdProp,
 }: UseComponentSelectionProps): UseComponentSelectionReturn {
-  const { slideId: activeSlideId } = useActiveSlide();
+  const activeSlideId = slideIdProp || null;
   // Restore global text editing state access
   const isTextEditingGlobal = useEditorSettingsStore(state => state.isTextEditing);
   const setTextEditingGlobal = useEditorSettingsStore(state => state.setTextEditing);

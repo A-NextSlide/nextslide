@@ -58,6 +58,7 @@ export interface OwnProfile {
   avatar_url: string | null;
   social_links: SocialLinks;
   is_profile_public: boolean;
+  hide_watermark: boolean;
   creator_tier: string;
   created_at: string;
 }
@@ -67,6 +68,7 @@ export interface ProfileUpdateData {
   social_links?: SocialLinks;
   is_profile_public?: boolean;
   avatar_url?: string;
+  hide_watermark?: boolean;
 }
 
 export interface FollowUser {

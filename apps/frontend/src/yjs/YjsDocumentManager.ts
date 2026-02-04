@@ -8,16 +8,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { CompleteDeckData } from '../types/DeckTypes';
 import { SlideData } from '../types/SlideTypes';
 import { ComponentInstance } from '../types/components';
-import { 
-  YjsDocOptions, 
-  YjsDocumentStructure, 
-  YjsOperationType, 
-  YjsOperationPayload,
-  ComponentLock,
-  LockRequest,
-  LockResponse
+import {
+  YjsDocOptions,
+  YjsDocumentStructure,
+  YjsOperationType,
+  YjsOperationPayload
 } from './YjsTypes';
-import { LockManager } from './LockManager';
 
 // Add this type declaration near the top of the file
 // Types to help TypeScript understand YJS better
@@ -32,7 +28,7 @@ type YArrayType = Y.Array<any> & {
 class SimpleWebsocketProvider {
   doc: Y.Doc;
   url: string;
-  roomName: string = 'shared-test-document';
+  roomName: string;
   ws: WebSocket | null = null;
   connected = false;
   retryCount = 0; // Track connection retry attempts
@@ -42,9 +38,10 @@ class SimpleWebsocketProvider {
     on: () => {}
   };
   
-  constructor(url: string, doc: Y.Doc) {
+  constructor(url: string, doc: Y.Doc, roomName: string) {
     this.url = url;
     this.doc = doc;
+    this.roomName = roomName;
     this.connect();
   }
   
@@ -166,9 +163,6 @@ export class YjsDocumentManager {
   private deckMap: Y.Map<any>;
   private slidesArray: YArrayType;
   
-  // Lock manager for component locking
-  private lockManager: LockManager;
-  
   // Configuration
   private options: YjsDocOptions;
   
@@ -191,12 +185,6 @@ export class YjsDocumentManager {
     this.deckMap = this.doc.getMap('deck');
     this.slidesArray = this.doc.getArray('slides') as YArrayType;
     
-    // Initialize lock manager
-    this.lockManager = new LockManager(this.doc);
-    
-    // Set up lock manager event forwarding
-    this.setupLockManagerEvents();
-    
     // Setup persistence if enabled
     if (this.options.persistenceEnabled) {
       this.setupPersistence();
@@ -209,26 +197,6 @@ export class YjsDocumentManager {
     
     // Set up document change observation
     this.observeChanges();
-  }
-  
-  /**
-   * Set up lock manager event forwarding
-   */
-  private setupLockManagerEvents() {
-    // Forward lock manager events to YjsDocumentManager listeners
-    const events = [
-      'locks-changed',
-      'lock-acquired',
-      'lock-released',
-      'lock-requested',
-      'lock-requests-changed'
-    ];
-    
-    events.forEach(event => {
-      this.lockManager.on(event, (data: any) => {
-        this.emitEvent(event, data);
-      });
-    });
   }
   
   /**
@@ -281,108 +249,6 @@ export class YjsDocumentManager {
   }
   
   /**
-   * Track a WebSocket connection for cursor messages
-   * This function ensures that cursor data is extracted from binary WebSocket messages
-   */
-  private trackWebSocketForCursors(ws: WebSocket): void {
-    if (!ws || (ws as any)._cursorTracking) return;
-    (ws as any)._cursorTracking = true;
-    
-    console.log('[YjsDocumentManager] Adding cursor message tracking to WebSocket');
-    
-    // Add direct event listener to track messages
-    ws.addEventListener('message', (event) => {
-      try {
-        // Handle string data that contains cursor information
-        if (typeof event.data === 'string' && event.data.includes('"type":"cursor"')) {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'cursor') {
-              // Dispatch cursor event for DirectCursors component
-              const customEvent = new CustomEvent('ws-cursor-message', { 
-                detail: data
-              });
-              document.dispatchEvent(customEvent);
-            }
-          } catch (e) {
-            // Ignore parse errors
-          }
-        }
-        // Handle binary data that might contain cursor information
-        else if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
-          const blobData = event.data instanceof Blob ? event.data : new Blob([event.data]);
-          
-          // Convert blob to text to check if it's a cursor message
-          blobData.text().then(text => {
-            try {
-              if (text.includes('"type":"cursor"')) {
-                // Try to extract the JSON part if it's mixed with binary data
-                let jsonText = text;
-                const jsonStart = text.indexOf('{');
-                if (jsonStart > 0) {
-                  jsonText = text.substring(jsonStart);
-                }
-                
-                const data = JSON.parse(jsonText);
-                if (data.type === 'cursor') {
-                  // Dispatch cursor event for DirectCursors component
-                  const customEvent = new CustomEvent('ws-cursor-message', { 
-                    detail: data
-                  });
-                  document.dispatchEvent(customEvent);
-                }
-              }
-            } catch (e) {
-              // Ignore parse errors for binary data
-            }
-          }).catch(err => {
-            // Ignore errors reading binary data
-          });
-        }
-      } catch (err) {
-        // Silent error handling to avoid breaking WebSocket communication
-      }
-    });
-    
-    // Send test cursor data to check if the server is responding
-    // This helps initialize the connection for cursor data
-    this.sendTestCursor(ws);
-  }
-  
-  // Send a test cursor message to verify the connection is working
-  private sendTestCursor(ws: WebSocket): void {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    
-    // Wait a moment for the connection to stabilize
-    setTimeout(() => {
-      try {
-        if (ws.readyState === WebSocket.OPEN) {
-          // Create a cursor message with position off-screen
-          // This won't be visible but verifies the connection works
-          const testMsg = JSON.stringify({
-            type: 'cursor',
-            clientId: `init-test-${Date.now()}`,
-            slideId: '',
-            x: -100, // Off-screen
-            y: -100, // Off-screen
-            timestamp: Date.now(),
-            user: {
-              id: `test-init-${Date.now()}`,
-              name: 'Connection Test',
-              color: '#00ff00'
-            }
-          });
-          
-          // Send the message
-          ws.send(testMsg);
-        }
-      } catch (err) {
-        // Silent error - not critical
-      }
-    }, 1000);
-  }
-
-  /**
    * Connect to the WebSocket server
    */
   public connect(): void {
@@ -393,7 +259,7 @@ export class YjsDocumentManager {
     
     try {
       const { wsUrl, user } = this.options;
-      const roomName = 'shared-test-document';
+      const roomName = this.options.docId || 'default-room';
       
       try {
         // Create standard WebSocket provider with better error handling
@@ -439,20 +305,6 @@ export class YjsDocumentManager {
           // Add the provider to the global registry if not already there
           if (!window._yProviders.includes(this.wsProvider)) {
             window._yProviders.push(this.wsProvider);
-            
-            // Track this WebSocket for cursor messages
-            if (this.wsProvider.ws) {
-              this.trackWebSocketForCursors(this.wsProvider.ws);
-            }
-            
-            // Also use global tracking function if available (for compatibility)
-            if (window._trackWebSocket && this.wsProvider.ws) {
-              try {
-                window._trackWebSocket(this.wsProvider.ws);
-              } catch (err) {
-                // Silent error handling
-              }
-            }
           }
           
           // Store awareness for direct access
@@ -547,24 +399,6 @@ export class YjsDocumentManager {
             // Broadcast immediately if no recent broadcast
             broadcastUsers();
           }
-        };
-        
-        // Monitor WebSocket reconnections to add cursor tracking to new WebSocket instances
-        const originalWsProviderConnect = this.wsProvider.connect;
-        this.wsProvider.connect = () => {
-          const result = originalWsProviderConnect.call(this.wsProvider);
-          
-          // After a reconnection, the WebSocket object might be new
-          // Wait a short moment for the connection to be established
-          setTimeout(() => {
-            if (this.wsProvider && this.wsProvider.ws) {
-              // Track new WebSocket for cursor messages
-              this.trackWebSocketForCursors(this.wsProvider.ws);
-              console.log('[YjsDocumentManager] Added cursor tracking after WebSocket reconnection');
-            }
-          }, 500);
-          
-          return result;
         };
         
         // Listen for official awareness changes
@@ -675,7 +509,7 @@ export class YjsDocumentManager {
         });
       } catch (err) {
         // Fallback to simple provider without logging
-        this.wsProvider = new SimpleWebsocketProvider(wsUrl!, this.doc);
+        this.wsProvider = new SimpleWebsocketProvider(wsUrl!, this.doc, roomName);
         
         // Simulate connection event
         setTimeout(() => {
@@ -1545,100 +1379,20 @@ export class YjsDocumentManager {
       this.persistence.destroy();
     }
     
-    // Clean up lock manager
-    this.lockManager.destroy();
-    
     this.doc.destroy();
     this.eventCallbacks.clear();
-  }
-  
-  /**
-   * Request a lock on a component
-   * 
-   * @param slideId - The ID of the slide containing the component
-   * @param componentId - The ID of the component to lock
-   * @returns Promise resolving to the lock response
-   */
-  public async requestLock(slideId: string, componentId: string): Promise<LockResponse> {
-    return this.lockManager.requestLock(slideId, componentId);
-  }
-  
-  /**
-   * Release a lock on a component
-   * 
-   * @param slideId - The ID of the slide containing the component
-   * @param componentId - The ID of the component to unlock
-   * @param force - Force release even if not the lock owner
-   * @returns Whether the lock was released
-   */
-  public releaseLock(slideId: string, componentId: string, force = false): boolean {
-    const result = this.lockManager.releaseLock(slideId, componentId, force);
-    
-    if (result) {
-      this.recordOperation(YjsOperationType.UNLOCK_COMPONENT, { 
-        slideId, 
-        componentId,
-        forced: force
-      });
-    }
-    
-    return result;
-  }
-  
-  /**
-   * Extend an existing lock's expiration time
-   */
-  public extendLock(slideId: string, componentId: string): boolean {
-    return this.lockManager.extendLock(slideId, componentId);
-  }
-  
-  /**
-   * Check if a component is locked
-   */
-  public isComponentLocked(slideId: string, componentId: string): boolean {
-    return this.lockManager.isLocked(slideId, componentId);
-  }
-  
-  /**
-   * Get information about a component lock
-   */
-  public getComponentLock(slideId: string, componentId: string): ComponentLock | null {
-    return this.lockManager.getLock(slideId, componentId);
-  }
-  
-  /**
-   * Get all locks across all components
-   */
-  public getAllLocks(): ComponentLock[] {
-    return this.lockManager.getAllLocks();
-  }
-  
-  /**
-   * Get locks owned by the current client
-   */
-  public getOwnedLocks(): ComponentLock[] {
-    return this.lockManager.getOwnedLocks();
-  }
-  
-  /**
-   * Approve a lock request from another user
-   */
-  public approveLockRequest(slideId: string, componentId: string, userId: string): boolean {
-    return this.lockManager.approveLockRequest(slideId, componentId, userId);
-  }
-  
-  /**
-   * Deny a lock request from another user
-   */
-  public denyLockRequest(slideId: string, componentId: string, userId: string): boolean {
-    return this.lockManager.denyLockRequest(slideId, componentId, userId);
   }
   
   /**
    * Get a random color for user identification
    */
   private getRandomColor(): string {
-    return this.lockManager.getRandomColor();
+    const colors = [
+      '#FF5733', '#33FF57', '#3357FF', '#FF33F5',
+      '#33FFF5', '#F5FF33', '#FF9633', '#33FF96',
+      '#9633FF', '#FF3396', '#33FFFF', '#FF33FF'
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
   }
   
   /**

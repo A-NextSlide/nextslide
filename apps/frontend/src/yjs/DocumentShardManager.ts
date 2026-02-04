@@ -13,7 +13,7 @@ import { YjsDocumentManager } from './YjsDocumentManager';
 import { SlideData } from '../types/SlideTypes';
 import { EventEmitter } from '../utils/EventEmitter';
 import { ComponentInstance } from '../types/components';
-import { ComponentLock, LockResponse, UserPresence, YjsDocOptions } from './YjsTypes';
+import { UserPresence, YjsDocOptions } from './YjsTypes';
 import { DocumentConnectionPool } from './DocumentConnectionPool';
 
 export interface ShardManagerOptions {
@@ -682,71 +682,6 @@ export class DocumentShardManager extends EventEmitter {
     
     // Update the selection in the document
     docManager.updateSelection(componentIds);
-  }
-  
-  /**
-   * Request a lock on a component
-   * 
-   * @param slideId The ID of the slide containing the component
-   * @param componentId The ID of the component to lock
-   */
-  async requestLock(slideId: string, componentId: string): Promise<LockResponse> {
-    // Mark this slide as accessed
-    this.markSlideAccessed(slideId);
-    
-    // Load the document if needed
-    const docManager = await this.loadDocumentForSlide(slideId);
-    if (!docManager) {
-      return {
-        slideId,
-        componentId,
-        granted: false,
-        error: 'Document not loaded'
-      };
-    }
-    
-    // Request the lock from the document
-    return docManager.requestLock(slideId, componentId);
-  }
-  
-  /**
-   * Release a lock on a component
-   * 
-   * @param slideId The ID of the slide containing the component
-   * @param componentId The ID of the component to unlock
-   * @param force Force release even if not the lock owner
-   */
-  async releaseLock(slideId: string, componentId: string, force = false): Promise<boolean> {
-    // Mark this slide as accessed
-    this.markSlideAccessed(slideId);
-    
-    // Load the document if needed
-    const docManager = await this.loadDocumentForSlide(slideId);
-    if (!docManager) {
-      return false;
-    }
-    
-    // Release the lock in the document
-    return docManager.releaseLock(slideId, componentId, force);
-  }
-  
-  /**
-   * Get all locks for a specific slide
-   * 
-   * @param slideId The ID of the slide to get locks for
-   */
-  async getLocksForSlide(slideId: string): Promise<ComponentLock[]> {
-    // Mark this slide as accessed
-    this.markSlideAccessed(slideId);
-    
-    // Load the document if needed
-    const docManager = await this.loadDocumentForSlide(slideId);
-    if (!docManager) {
-      return [];
-    }
-    
-    // Get locks from the document
-    return docManager.getAllLocks();
   }
   
   /**

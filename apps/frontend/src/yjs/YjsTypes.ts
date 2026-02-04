@@ -86,8 +86,6 @@ export enum YjsOperationType {
   UPDATE_COMPONENT = 'update-component',
   REMOVE_COMPONENT = 'remove-component',
   UPDATE_DECK = 'update-deck',
-  LOCK_COMPONENT = 'lock-component',
-  UNLOCK_COMPONENT = 'unlock-component',
 }
 
 /**
@@ -129,74 +127,3 @@ export interface ComponentUpdatePayload {
   props: Partial<ComponentInstance['props']>;
 }
 
-/**
- * Information about a component lock
- */
-export interface ComponentLock {
-  /** ID of the component that is locked */
-  componentId: string;
-  
-  /** ID of the slide containing the component */
-  slideId: string;
-  
-  /** ID of the user who owns the lock */
-  userId: string;
-  
-  /** Client ID of the user who owns the lock */
-  clientId: number;
-  
-  /** Name of the user who owns the lock */
-  userName: string;
-  
-  /** Color associated with the user for visual indication */
-  userColor: string;
-  
-  /** Timestamp when the lock was acquired */
-  timestamp: number;
-  
-  /** Optional expiration time for auto-release */
-  expiresAt?: number;
-}
-
-/**
- * Request for a component lock
- */
-export interface LockRequest {
-  /** ID of the component to lock */
-  componentId: string;
-  
-  /** ID of the slide containing the component */
-  slideId: string;
-  
-  /** ID of the user requesting the lock */
-  userId: string;
-  
-  /** Name of the user requesting the lock */
-  userName: string;
-  
-  /** Timestamp of the request */
-  timestamp: number;
-}
-
-/**
- * Response to a lock request
- */
-export interface LockResponse {
-  /** ID of the component that was requested */
-  componentId: string;
-  
-  /** ID of the slide containing the component */
-  slideId: string;
-  
-  /** Whether the lock was granted */
-  granted: boolean;
-  
-  /** If not granted, the current lock holder */
-  currentLockHolder?: {
-    userId: string;
-    userName: string;
-  };
-  
-  /** Optional error message */
-  error?: string;
-}

@@ -160,6 +160,18 @@ export const createYjsOperations = (
         if (!isLocal && get().yjsSyncEnabled) {
           // Only update store if change came from remote and sync is enabled
           set({ deckData });
+          // Also update editor drafts so editing users see remote changes
+          try {
+            const { useEditorStore } = require('./editorStore');
+            const editorState = useEditorStore.getState();
+            deckData.slides?.forEach((slide: any) => {
+              if (editorState.draftComponents[slide.id]) {
+                editorState.setDraftComponentsForSlide(slide.id, slide.components || []);
+              }
+            });
+          } catch (e) {
+            // Silent - editor store may not be available
+          }
         }
       });
       

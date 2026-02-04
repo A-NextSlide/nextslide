@@ -2,8 +2,6 @@ import React, { useRef, useState, useEffect, useCallback, memo } from "react";
 import { createPortal } from "react-dom";
 import { ComponentInstance } from "@/types/components";
 import { createComponentStyles, rendererRegistry, RendererProps } from "./index";
-import { useEditorState } from '@/context/EditorStateContext';
-import { useActiveSlide } from '@/context/ActiveSlideContext';
 import SelectionBoundingBox from '@/components/SelectionBoundingBox';
 import { useEditorStore } from '@/stores/editorStore';
 
@@ -33,7 +31,7 @@ import './index';
 import { SnapGuideInfo } from '@/utils/snapUtils';
 import SnapGuides from '@/components/SnapGuides';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
-import { useSlideElementBounds } from '@/hooks/useElementBounds';
+
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 
 type Props = {
@@ -42,6 +40,10 @@ type Props = {
   onSelect?: (id: string) => void;
   allComponents?: ComponentInstance[]; // All components on the current slide
   isThumbnail?: boolean; // Add isThumbnail prop
+  updateComponent?: (componentId: string, updates: Partial<ComponentInstance>, skipHistory?: boolean) => void;
+  slideId?: string | null;
+  isEditing?: boolean;
+  slideSize?: { width: number; height: number };
 };
 
 /**
@@ -54,19 +56,23 @@ export const ComponentRenderer: React.FC<Props> = memo(({
   isSelected = false,
   onSelect = () => { }, // Provide default empty function
   allComponents = [],
-  isThumbnail = false // Destructure isThumbnail
+  isThumbnail = false, // Destructure isThumbnail
+  updateComponent: updateComponentProp,
+  slideId: slideIdProp,
+  isEditing: isEditingProp = false,
+  slideSize: slideSizeProp
 }) => {
+
   // --- Context and Store Access ---
-  const { isEditing } = useEditorState(); // Get editing mode from context
-  const { updateComponent, slideId: activeSlideId } = useActiveSlide(); // Get update function from context and slideId
+  // Use props instead of context to avoid context-change re-renders bypassing React.memo
+  const isEditing = isEditingProp;
+  const updateComponent = updateComponentProp || (() => {});
+  const activeSlideId = slideIdProp || null;
   const isTextEditing = useEditorSettingsStore(state => state.isTextEditing);
-  // Get full context state, then select slideSize with fallback
-  const editorState = useEditorState();
-  const slideSize = editorState.slideSize || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
+  const slideSize = slideSizeProp || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT };
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
-  const { ref: boundingBoxRef } = useSlideElementBounds(slideSize); // Bounding box ref
 
   // --- Component Properties ---
   const {
@@ -79,9 +85,12 @@ export const ComponentRenderer: React.FC<Props> = memo(({
   const componentDefinition = registry.getDefinition(componentType);
 
   // Check if component is selected (either single or multi-selection)
-  const isComponentMultiSelected = useEditorStore(state => state.isComponentSelected(componentId));
-  const selectedComponentIds = useEditorStore(state => state.selectedComponentIds);
-  const isInMultiSelection = selectedComponentIds.size > 1 && isComponentMultiSelected;
+  // PERF: Use derived booleans instead of subscribing to the raw Set.
+  // Subscribing to the Set causes ALL ComponentRenderers to re-render on every
+  // selection change because selectComponent() creates a new Set reference.
+  const isComponentMultiSelected = useEditorStore(state => state.selectedComponentIds.has(componentId));
+  const hasMultipleSelected = useEditorStore(state => state.selectedComponentIds.size > 1);
+  const isInMultiSelection = hasMultipleSelected && isComponentMultiSelected;
   const effectiveIsSelected = isSelected || isComponentMultiSelected;
 
   // Extract props with fallbacks from TypeBox schema defaults or basic defaults
@@ -199,6 +208,7 @@ export const ComponentRenderer: React.FC<Props> = memo(({
     allComponents,
     onSelect,
     updateComponent,
+    slideId: activeSlideId,
   });
 
   // Use component resize hook with proper interface
@@ -208,6 +218,7 @@ export const ComponentRenderer: React.FC<Props> = memo(({
     allComponents,
     updateComponent,
     setSnapGuides: setLocalSnapGuides, // Pass setter for resize guides
+    slideId: activeSlideId,
   });
 
   // Use component rotate hook with proper interface
@@ -217,6 +228,7 @@ export const ComponentRenderer: React.FC<Props> = memo(({
     isRotatable,
     isSelected,
     updateComponent,
+    slideId: activeSlideId,
   });
 
   // Selection handling
@@ -231,6 +243,7 @@ export const ComponentRenderer: React.FC<Props> = memo(({
     },
     containerRef,
     didJustDrag,
+    slideId: activeSlideId,
   });
 
   // Listen for selection requests from CustomComponent iframes
@@ -327,7 +340,11 @@ export const ComponentRenderer: React.FC<Props> = memo(({
     opacity,
     cursor: effectiveDraggable ? (isDragging ? 'grabbing' : 'move') : 'default',
     boxSizing: 'border-box',
-    willChange: (isDragging || isResizing) ? 'transform' : 'auto',
+    // PERF: Removed willChange toggle. Toggling between 'transform' and 'auto'
+    // causes the browser to promote/de-promote the element from its own GPU compositing
+    // layer, triggering a full repaint that can flash. The CSS in dragging.css already
+    // sets will-change: transform via [data-is-dragging="true"]. For resize, the browser
+    // handles GPU promotion automatically when it detects frequent transform changes.
     // For Lines and Background components, disable pointer events on the wrapper
     pointerEvents: (isLines || (isBackground && isEditing)) ? 'none' : 'auto',
     // In edit mode: visible so resize handles show. In view mode: hidden to clip content.
@@ -560,6 +577,18 @@ export const ComponentRenderer: React.FC<Props> = memo(({
         }
 
         if (isEditing && e.button === 0 && !isBackground) {
+          // Select the component on mousedown for reliable selection.
+          // The click-based selection (handleClick in useComponentSelection) can
+          // be blocked by race conditions between drag state and click events,
+          // especially for components with heavy renderers (e.g. TiptapTextBlock).
+          // Selecting on mousedown ensures the component is always selected
+          // when the user clicks on it.
+          if (!effectiveIsSelected) {
+            const store = useEditorStore.getState();
+            const isMultiSelectKey = e.shiftKey || e.metaKey || e.ctrlKey;
+            store.selectComponent(componentId, isMultiSelectKey, activeSlideId || undefined);
+            onSelect(componentId);
+          }
           handleDragStart(e);
         }
       }}
@@ -635,6 +664,10 @@ export const ComponentRenderer: React.FC<Props> = memo(({
   // Custom comparison for performance - only re-render when necessary
   if (prevProps.isSelected !== nextProps.isSelected) return false;
   if (prevProps.isThumbnail !== nextProps.isThumbnail) return false;
+  if (prevProps.isEditing !== nextProps.isEditing) return false;
+  if (prevProps.slideId !== nextProps.slideId) return false;
+  if (prevProps.slideSize?.width !== nextProps.slideSize?.width) return false;
+  if (prevProps.slideSize?.height !== nextProps.slideSize?.height) return false;
   if (prevProps.component.id !== nextProps.component.id) return false;
   if (prevProps.component.type !== nextProps.component.type) return false;
 

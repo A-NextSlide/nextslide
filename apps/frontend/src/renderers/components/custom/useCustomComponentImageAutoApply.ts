@@ -395,7 +395,6 @@ export const useCustomComponentImageAutoApply = ({
 
         updateComponent(component.id, {
           props: {
-            ...component.props,
             render: currentHtml,
             props: updatedProps
           }

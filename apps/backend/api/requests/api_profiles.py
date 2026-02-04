@@ -85,6 +85,7 @@ class UpdateProfileRequest(BaseModel):
     social_links: Optional[Dict[str, Any]] = None
     is_profile_public: Optional[bool] = None
     avatar_url: Optional[str] = None
+    hide_watermark: Optional[bool] = None
 
 
 class SetUsernameRequest(BaseModel):

@@ -107,7 +107,6 @@ export const useCustomComponentImageProxy = ({
       if (updated) {
         updateComponent(component.id, {
           props: {
-            ...component.props,
             render: currentHtml
           }
         });

@@ -244,7 +244,7 @@ class SupabaseAuthService:
             raise
     
     # Tutorial deck UUID that gets copied for every new user
-    TUTORIAL_DECK_UUID = "a9e3b5ea-8b19-4f3d-8566-9b1a96a6746d"
+    TUTORIAL_DECK_UUID = "8025ed72-4571-484c-b9d4-bd23d2695eba"
 
     def ensure_user_profile(self, user_id: str, email: str, metadata: Optional[Dict] = None) -> Dict[str, Any]:
         """
@@ -315,7 +315,7 @@ class SupabaseAuthService:
             # First check if user already has a tutorial deck (by name pattern)
             existing_tutorial = self.supabase.table("decks").select("uuid").eq(
                 "user_id", user_id
-            ).ilike("name", "%How to Use%").execute()
+            ).ilike("name", "%Welcome to NextSlide%").execute()
 
             if existing_tutorial.data and len(existing_tutorial.data) > 0:
                 logger.debug(f"User {user_id} already has tutorial deck")
@@ -344,7 +344,7 @@ class SupabaseAuthService:
             new_deck = {
                 "uuid": new_uuid,
                 "user_id": user_id,
-                "name": source_deck.get("name", "How to Use NextSlide"),
+                "name": source_deck.get("name", "Welcome to NextSlide"),
                 "slides": source_deck.get("slides", []),
                 "description": source_deck.get("description") or "Learn how to create amazing presentations with NextSlide",
                 "data": source_deck.get("data", {}),

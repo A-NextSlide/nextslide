@@ -65,14 +65,10 @@ async def add_locked_slide_info_if_needed(
             logger.info(f"User {user_id} (paid plan): all {total_slides} slides unlocked")
 
     except Exception as e:
-        logger.warning(f"Error checking slide locking for user {user_id}: {e}")
-        # Default to locking for free plan behavior
-        if total_slides > 10:
-            deck_data["locked_slide_info"] = {
-                "unlocked_count": 10,
-                "total_count": total_slides,
-                "locked_at": datetime.now(timezone.utc).isoformat(),
-            }
+        logger.error(f"Error checking slide locking for user {user_id}: {e}")
+        # Default to NOT locking — falsely locking a paid user is worse
+        # than temporarily giving a free user full access on a transient error
+        deck_data.pop("locked_slide_info", None)
 
     return deck_data
 

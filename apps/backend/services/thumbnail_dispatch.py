@@ -98,7 +98,10 @@ async def render_thumbnail_via_modal(
 
 async def trigger_thumbnail_render(deck_uuid: str) -> None:
     """
-    Fetch deck from Supabase and trigger thumbnail rendering for all slides.
+    Fetch deck from Supabase and render the first slide as the OG thumbnail.
+
+    Uses the `first_slide` column (which tracks the actual first displayed slide)
+    rather than `slides[0]` which may not be in display order.
 
     Designed to be called as a fire-and-forget background task.
     Silently swallows all errors so it never breaks the main request flow.
@@ -108,7 +111,7 @@ async def trigger_thumbnail_render(deck_uuid: str) -> None:
 
         supabase = get_supabase_client()
         result = supabase.table("decks").select(
-            "uuid, slides, size, data"
+            "uuid, first_slide, size, data"
         ).eq("uuid", deck_uuid).execute()
 
         if not result.data:
@@ -116,30 +119,37 @@ async def trigger_thumbnail_render(deck_uuid: str) -> None:
             return
 
         deck = result.data[0]
-        slides = deck.get("slides") or []
-        if not slides:
-            logger.debug("[thumbnail_dispatch] Deck %s has no slides, skipping thumbnail", deck_uuid)
+        first_slide = deck.get("first_slide")
+        if not first_slide:
+            logger.debug("[thumbnail_dispatch] Deck %s has no first_slide, skipping thumbnail", deck_uuid)
             return
 
+        # first_slide may be stored as a JSON string
+        if isinstance(first_slide, str):
+            import json
+            try:
+                first_slide = json.loads(first_slide)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("[thumbnail_dispatch] Deck %s first_slide is not valid JSON", deck_uuid)
+                return
+
         slide_size = deck.get("size")
-        # Theme data may be embedded in the deck's data field
         deck_data = deck.get("data") or {}
         theme_data = deck_data.get("theme")
 
-        for slide_index, slide_data in enumerate(slides):
-            try:
-                await render_thumbnail_via_modal(
-                    deck_uuid=deck_uuid,
-                    slide_data=slide_data,
-                    slide_size=slide_size,
-                    theme_data=theme_data,
-                    slide_index=slide_index,
-                )
-            except Exception as slide_exc:
-                logger.warning(
-                    "[thumbnail_dispatch] Failed to render slide %d for deck %s: %s",
-                    slide_index, deck_uuid, slide_exc,
-                )
+        try:
+            await render_thumbnail_via_modal(
+                deck_uuid=deck_uuid,
+                slide_data=first_slide,
+                slide_size=slide_size,
+                theme_data=theme_data,
+                slide_index=0,
+            )
+        except Exception as slide_exc:
+            logger.warning(
+                "[thumbnail_dispatch] Failed to render first slide for deck %s: %s",
+                deck_uuid, slide_exc,
+            )
 
     except Exception as exc:
         logger.error("[thumbnail_dispatch] trigger_thumbnail_render failed for %s: %s", deck_uuid, exc)

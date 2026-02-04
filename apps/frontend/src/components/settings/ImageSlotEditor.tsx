@@ -3,7 +3,6 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Image as ImageIcon,
   X,
@@ -13,12 +12,19 @@ import {
   Layers,
   Maximize,
   Upload,
-  Plus
+  Plus,
+  ChevronDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { useToast } from '@/hooks/use-toast';
 import { MediaHub, MediaSource } from '@/components/media/MediaHub';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface ImageSlotEditorProps {
   propName: string;
@@ -307,6 +313,14 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
     { id: 'source' as TabType, label: 'URL', icon: Link2 },
   ];
 
+  const fitOptions = [
+    { label: 'Cover', value: 'cover' },
+    { label: 'Contain', value: 'contain' },
+    { label: 'Fill', value: 'fill' },
+    { label: 'None', value: 'none' },
+    { label: 'Scale Down', value: 'scale-down' },
+  ];
+
   const quickEdits = [
     { label: 'Enhance', prompt: 'Enhance lighting, contrast, and clarity' },
     { label: 'BG Remove', prompt: 'Remove the background and keep the subject clean' },
@@ -318,54 +332,35 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
 
   return (
     <div
-      className="rounded-md border bg-card/80 overflow-hidden"
+      className="rounded-md border border-border/60 bg-card/80 overflow-hidden"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       style={{ position: 'relative', zIndex: 20000 }}
     >
-      {/* Header with label */}
-      <div className="px-2.5 py-1.5 border-b bg-muted/20 flex items-center gap-2">
-        <span className="text-[11px] font-medium truncate flex-1">{label}</span>
-        {onObjectFitChange && (
-          <Select value={localFit} onValueChange={handleFitChange}>
-            <SelectTrigger className="h-5 w-auto gap-1 px-1.5 text-[9px] border-0 bg-transparent text-muted-foreground hover:text-foreground">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="cover" className="text-xs">Cover</SelectItem>
-              <SelectItem value="contain" className="text-xs">Contain</SelectItem>
-              <SelectItem value="fill" className="text-xs">Fill</SelectItem>
-              <SelectItem value="none" className="text-xs">None</SelectItem>
-              <SelectItem value="scale-down" className="text-xs">Scale Down</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
-      </div>
-
       {/* Image Preview */}
       <MediaHub
         trigger={
           <div
             className={cn(
-              "relative w-full h-24 cursor-pointer group",
-              "bg-[repeating-conic-gradient(#f0f0f0_0_90deg,#fafafa_90deg_180deg)_0_0/16px_16px]",
+              "relative w-full h-20 cursor-pointer group",
+              "bg-[repeating-conic-gradient(#f0f0f0_0_90deg,#fafafa_90deg_180deg)_0_0/10px_10px]",
               isProcessingAi && "pointer-events-none"
             )}
           >
             {isProcessingAi ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 z-10">
-                <Loader2 className="w-6 h-6 animate-spin text-white" />
-                <span className="text-white text-[10px] mt-1.5 font-medium">Processing...</span>
+                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                <span className="text-white text-[9px] mt-0.5 font-medium">Processing...</span>
               </div>
             ) : null}
             {isLoading ? (
               <div className="flex items-center justify-center h-full">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
               </div>
             ) : isPlaceholder || imageError ? (
-              <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground hover:text-foreground transition-colors">
-                <ImageIcon className="w-6 h-6" />
-                <span className="text-[10px]">
+              <div className="flex flex-col items-center justify-center h-full gap-1 text-muted-foreground hover:text-foreground transition-colors">
+                <ImageIcon className="w-4 h-4" />
+                <span className="text-[9px]">
                   {searchQuery && searchQuery !== 'image' ? `"${searchQuery}"` : 'Click to select'}
                 </span>
               </div>
@@ -376,25 +371,60 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
                   src={localUrl}
                   alt={label}
                   className={cn(
-                    "w-full h-full transition-transform group-hover:scale-[1.02]",
+                    "w-full h-full transition-transform group-hover:scale-[1.01]",
                     isProcessingAi && "opacity-50"
                   )}
                   style={{ objectFit: localFit }}
                   onError={() => setImageError(true)}
                   onLoad={() => setIsLoading(false)}
                 />
+                {/* Top bar with label and fit */}
+                <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-1 py-0.5 z-[1]">
+                  <div className="px-1 py-px rounded bg-black/50 backdrop-blur-sm">
+                    <span className="text-[8px] text-white font-medium truncate max-w-[100px] block leading-tight">
+                      {label}
+                    </span>
+                  </div>
+                  {onObjectFitChange && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex items-center gap-px px-1 py-px rounded bg-black/50 backdrop-blur-sm text-white text-[8px] font-medium hover:bg-black/60 transition-colors"
+                        >
+                          {fitOptions.find(f => f.value === localFit)?.label || 'Cover'}
+                          <ChevronDown className="w-2 h-2" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-[72px]">
+                        {fitOptions.map((option) => (
+                          <DropdownMenuItem
+                            key={option.value}
+                            onClick={() => handleFitChange(option.value as any)}
+                            className={cn(
+                              "text-[11px] py-1",
+                              localFit === option.value && "bg-orange-50 text-orange-600 dark:bg-orange-500/10"
+                            )}
+                          >
+                            {option.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
                 {!isProcessingAi && (
                   <>
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-                      <span className="text-white text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="text-white text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity">
                         Change
                       </span>
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); clearImage(); }}
-                      className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 hover:bg-black/80 text-white transition-all opacity-0 group-hover:opacity-100"
+                      className="absolute bottom-1 right-1 p-0.5 rounded-full bg-black/60 hover:bg-black/80 text-white transition-all opacity-0 group-hover:opacity-100"
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-2.5 h-2.5" />
                     </button>
                   </>
                 )}
@@ -408,105 +438,95 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
       />
 
       {/* Tabs */}
-      <div className="flex border-b">
+      <div className="flex border-b border-border/40">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[9px] font-medium transition-colors",
+              "flex-1 flex items-center justify-center gap-1 py-1 text-[9px] font-medium transition-colors",
               activeTab === tab.id
-                ? "text-orange-600 border-b-2 border-orange-500 bg-orange-50/50"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                ? "text-orange-600 border-b-[1.5px] border-orange-500 bg-orange-50/40 dark:bg-orange-500/10"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
             )}
           >
-            <tab.icon className="w-3 h-3" />
+            <tab.icon className="w-2.5 h-2.5" />
             {tab.label}
           </button>
         ))}
       </div>
 
       {/* Tab Content */}
-      <div className="p-2">
+      <div className="p-1.5">
         {/* Source Tab */}
         {activeTab === 'source' && (
-          <div className="space-y-1.5">
-            <div className="flex gap-2">
-              <Input
-                value={localUrl}
-                onChange={handleUrlChange}
-                onBlur={handleUrlBlur}
-                onKeyDown={handleUrlKeyDown}
-                placeholder="https://..."
-                className="h-7 text-[11px] flex-1"
-              />
-            </div>
-            <p className="text-[10px] text-muted-foreground">
-              Paste URL or click image above to browse media
+          <div className="space-y-1">
+            <Input
+              value={localUrl}
+              onChange={handleUrlChange}
+              onBlur={handleUrlBlur}
+              onKeyDown={handleUrlKeyDown}
+              placeholder="https://..."
+              className="h-6 text-[10px] flex-1"
+            />
+            <p className="text-[8px] text-muted-foreground">
+              Paste URL or click image above to browse
             </p>
           </div>
         )}
 
         {/* AI Edit Tab */}
         {activeTab === 'edit' && (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {isPlaceholder ? (
-              <p className="text-xs text-muted-foreground text-center py-4">
-                Select an image first to use AI editing
+              <p className="text-[10px] text-muted-foreground text-center py-2">
+                Select an image first
               </p>
             ) : (
               <>
-                <div className="space-y-2">
-                  <Textarea
-                    value={aiPrompt}
-                    onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="Make any change to this image..."
-                    className="min-h-[52px] text-[11px] resize-none"
-                    disabled={isProcessingAi}
-                  />
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-muted-foreground">Quick edits</span>
-                    <div className="flex flex-wrap gap-1">
-                      {quickEdits.map((edit) => (
-                        <button
-                          key={edit.label}
-                          type="button"
-                          className={cn(
-                            "px-2 py-1 rounded-md border text-[9px] font-medium transition-colors",
-                            "bg-muted/30 border-muted-foreground/20 hover:bg-muted/60 hover:border-muted-foreground/40",
-                            isProcessingAi && "opacity-50 pointer-events-none"
-                          )}
-                          onClick={() => {
-                            setAiPrompt(edit.prompt);
-                            if (!isProcessingAi) {
-                              callEditApi(edit.prompt);
-                            }
-                          }}
-                        >
-                          {edit.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    className="w-full h-6 text-[11px] bg-orange-500 hover:bg-orange-600"
-                    disabled={isProcessingAi || !aiPrompt.trim()}
-                    onClick={() => callEditApi(aiPrompt)}
-                  >
-                    {isProcessingAi ? (
-                      <>
-                        <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <Wand2 className="w-3 h-3 mr-1.5" />
-                        Apply Edit
-                      </>
-                    )}
-                  </Button>
+                <Textarea
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  placeholder="Make any change to this image..."
+                  className="min-h-[40px] text-[10px] resize-none"
+                  disabled={isProcessingAi}
+                />
+                <div className="flex flex-wrap gap-0.5">
+                  {quickEdits.map((edit) => (
+                    <button
+                      key={edit.label}
+                      type="button"
+                      className={cn(
+                        "px-1.5 py-0.5 rounded border text-[8px] font-medium transition-colors",
+                        "bg-muted/20 border-border/60 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-600 dark:hover:bg-orange-500/10",
+                        isProcessingAi && "opacity-50 pointer-events-none"
+                      )}
+                      onClick={() => {
+                        setAiPrompt(edit.prompt);
+                        if (!isProcessingAi) {
+                          callEditApi(edit.prompt);
+                        }
+                      }}
+                    >
+                      {edit.label}
+                    </button>
+                  ))}
                 </div>
+                <Button
+                  size="sm"
+                  className="w-full h-5 text-[10px] bg-[#FF4301] hover:bg-[#E63901]"
+                  disabled={isProcessingAi || !aiPrompt.trim()}
+                  onClick={() => callEditApi(aiPrompt)}
+                >
+                  {isProcessingAi ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <>
+                      <Wand2 className="w-2.5 h-2.5 mr-1" />
+                      Apply
+                    </>
+                  )}
+                </Button>
               </>
             )}
           </div>
@@ -514,87 +534,72 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
 
         {/* Fuse Tab */}
         {activeTab === 'fuse' && (
-          <div className="space-y-2">
-            {/* Current + Fuse Images Preview */}
-            <div className="flex gap-2 flex-wrap">
-              {/* Current image thumbnail */}
+          <div className="space-y-1.5">
+            <div className="flex gap-1 flex-wrap">
               {!isPlaceholder && (
-                <div className="relative w-10 h-10 rounded border overflow-hidden bg-muted/30">
+                <div className="relative w-9 h-9 rounded border overflow-hidden bg-muted/30">
                   <img src={localUrl} alt="Current" className="w-full h-full object-cover" />
                   <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                    <span className="text-[8px] text-white font-medium">Base</span>
+                    <span className="text-[7px] text-white font-medium">Base</span>
                   </div>
                 </div>
               )}
-
-              {/* Fuse images */}
               {fuseImages.map((img, idx) => (
-                <div key={idx} className="relative w-10 h-10 rounded border overflow-hidden bg-muted/30 group">
+                <div key={idx} className="relative w-9 h-9 rounded border overflow-hidden bg-muted/30 group">
                   <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
                   <button
                     onClick={() => removeFuseImage(idx)}
-                    className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-0 right-0 p-0.5 rounded-bl bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
                   >
-                    <X className="w-2.5 h-2.5" />
+                    <X className="w-2 h-2" />
                   </button>
                 </div>
               ))}
-
-              {/* Add more button */}
               {fuseImages.length < 3 && (
                 <button
                   onClick={() => fuseInputRef.current?.click()}
-                  className={cn(
-                    "w-10 h-10 rounded border-2 border-dashed flex items-center justify-center transition-colors",
-                    "hover:border-orange-300 hover:bg-orange-50/30 text-muted-foreground hover:text-orange-500"
-                  )}
+                  className="w-9 h-9 rounded border-[1.5px] border-dashed flex items-center justify-center hover:border-orange-300 hover:bg-orange-50/30 dark:hover:bg-orange-500/10 text-muted-foreground hover:text-orange-500"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
 
-            {/* Drop zone */}
             <div
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
               className={cn(
-                "border-2 border-dashed rounded-md p-2 text-center transition-colors",
-                isDragging ? "border-orange-400 bg-orange-50/50" : "border-muted-foreground/20"
+                "border-[1.5px] border-dashed rounded p-1.5 text-center transition-colors",
+                isDragging ? "border-orange-400 bg-orange-50/50 dark:bg-orange-500/10" : "border-border/50"
               )}
             >
-              <Upload className="w-4 h-4 mx-auto mb-1 text-muted-foreground" />
-              <p className="text-[10px] text-muted-foreground">
-                Drop images here or <button onClick={() => fuseInputRef.current?.click()} className="text-orange-500 hover:underline">browse</button>
+              <Upload className="w-3 h-3 mx-auto mb-0.5 text-muted-foreground" />
+              <p className="text-[8px] text-muted-foreground">
+                Drop or <button onClick={() => fuseInputRef.current?.click()} className="text-orange-500 hover:underline">browse</button>
               </p>
             </div>
 
-            {/* Fuse prompt */}
             <Textarea
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
               placeholder="How to combine? (optional)"
-              className="min-h-[46px] text-[11px] resize-none"
+              className="min-h-[36px] text-[10px] resize-none"
               disabled={isProcessingAi}
             />
 
-            {/* Fuse button */}
             <Button
               size="sm"
-              className="w-full h-6 text-[11px] bg-orange-500 hover:bg-orange-600"
+              className="w-full h-5 text-[10px] bg-[#FF4301] hover:bg-[#E63901]"
               disabled={isProcessingAi || (isPlaceholder && fuseImages.length < 2) || (!isPlaceholder && fuseImages.length < 1)}
               onClick={callFuseApi}
             >
               {isProcessingAi ? (
-                <>
-                  <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
-                  Fusing...
-                </>
+                <Loader2 className="w-3 h-3 animate-spin" />
               ) : (
                 <>
-                  <Layers className="w-3 h-3 mr-1.5" />
-                  Fuse {(isPlaceholder ? 0 : 1) + fuseImages.length} Images
+                  <Layers className="w-2.5 h-2.5 mr-1" />
+                  Fuse {(isPlaceholder ? 0 : 1) + fuseImages.length}
                 </>
               )}
             </Button>

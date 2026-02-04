@@ -1,10 +1,9 @@
-import React, { createContext, useState, useContext, useEffect, ReactNode, useMemo, useRef, useCallback } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, ReactNode, useMemo, useRef } from 'react';
 import { SlideData } from '@/types/SlideTypes';
 import { ComponentInstance } from '../types/components';
 import { useEditorState } from './EditorStateContext';
 import { useDeckStore } from '../stores/deckStore';
 import { useEditorStore } from '../stores/editorStore';
-import { useHistoryStore } from '../stores/historyStore';
 import { useNavigation } from './NavigationContext';
 import { useEditModeTransitionStore } from '@/stores/editModeTransitionStore';
 import { FontLoadingService } from '@/services/FontLoadingService';
@@ -50,114 +49,66 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
   const updateDraftComponent = useEditorStore(state => state.updateDraftComponent);
   const addDraftComponent = useEditorStore(state => state.addDraftComponent);
   const removeDraftComponent = useEditorStore(state => state.removeDraftComponent);
-  const lastOperation = useEditorStore(state => state.lastOperation); // Track undo/redo operations
   const draftComponentsVersion = useEditorStore(state => state.draftComponentsVersion); // Track draft modifications
   const setActiveSlideId = useEditorStore(state => state.setActiveSlideId);
 
-  // Get history index from history store
-  const historyIndex = useHistoryStore(state => state.historyIndex); // Track history changes
-  
-  // Local state to track components and force re-renders
-  const [componentVersion, setComponentVersion] = useState(0);
-  
+  // PERF: Removed historyIndex subscription. Previously needed to detect undo/redo
+  // changes (since setDraftComponentsForSlide didn't increment draftComponentsVersion).
+  // Now setDraftComponentsForSlide also increments draftComponentsVersion, so the
+  // cross-store dependency is eliminated. This avoids potential batching issues between
+  // the historyStore and editorStore.
+
   // Get current slide from deck store
   const currentSlide = slides[currentSlideIndex] || null;
-  
+
   // Track the current slide ID
   const currentSlideId = currentSlide?.id;
 
   useEffect(() => {
     setActiveSlideId(currentSlideId || null);
   }, [currentSlideId, setActiveSlideId]);
-  
-  // Keep a local copy of active components
-  const [activeComponents, setActiveComponents] = useState<ComponentInstance[]>([]);
-  
-  // PERFORMANCE: Batch component updates with RAF
-  const pendingUpdateRef = useRef<boolean>(false);
-  const forceComponentUpdate = useCallback(() => {
-    if (!pendingUpdateRef.current) {
-      pendingUpdateRef.current = true;
-      requestAnimationFrame(() => {
-        setComponentVersion(prev => prev + 1);
-        pendingUpdateRef.current = false;
-      });
-    }
-  }, []);
-  
-  // Track previous slide ID to detect actual slide changes
-  const previousSlideIdRef = useRef<string | null>(null);
-  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  // Track previous components to detect realtime updates in view mode
-  const previousComponentsRef = useRef<ComponentInstance[] | null>(null);
 
-  // Fetch components when needed dependencies change
-  useEffect(() => {
-    if (!currentSlide) {
-      setActiveComponents([]);
-      return;
-    }
+  // Refs for stable callback references — avoids recreating callbacks on every render
+  const currentSlideRef = useRef(currentSlide);
+  currentSlideRef.current = currentSlide;
+  const isEditingRef = useRef(isEditing);
+  isEditingRef.current = isEditing;
 
-    // PERFORMANCE: Skip during transitions
+  // Ref to preserve components during edit-mode transitions
+  const lastTransitionComponentsRef = useRef<ComponentInstance[]>([]);
+
+  // Compute active components synchronously (not via useEffect) to prevent
+  // a one-frame flash when CSS drag variables are cleared before position updates propagate.
+  const activeComponents = useMemo(() => {
+    if (!currentSlide) return [];
+
+    // During transitions, preserve the last known components to prevent flicker
     if (isInTransition) {
-      return;
+      return lastTransitionComponentsRef.current;
     }
 
-    // Check if we're actually changing slides
-    const isSlideChange = previousSlideIdRef.current !== currentSlide.id;
-    if (isSlideChange) {
-      previousSlideIdRef.current = currentSlide.id;
+    let result: ComponentInstance[];
+    if (isEditing) {
+      result = getDraftComponents(currentSlide.id);
+    } else {
+      result = currentSlide.components || [];
     }
 
-    // Check if components have changed (for realtime updates in view mode)
-    const currentComponents = currentSlide.components || [];
-    const hasComponentsChanged = previousComponentsRef.current !== currentComponents;
-
-    // For non-editing mode, only update if the slide actually changed or components updated
-    // This prevents double updates during navigation but allows realtime updates
-    if (!isEditing && !isSlideChange && !hasComponentsChanged && componentVersion === 0 && !lastOperation) {
-      return;
-    }
-
-    // Update the previous components ref
-    previousComponentsRef.current = currentComponents;
-
-    // Clear any pending update
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current);
-    }
-
-    const updateComponents = () => {
-      if (isEditing) {
-        // Get draft components
-        const drafts = getDraftComponents(currentSlide.id);
-        setActiveComponents(drafts);
-      } else {
-        const components = currentSlide.components || [];
-        setActiveComponents(components);
-      }
-    };
-
-    // Always update synchronously — async delays cause stale slide display
-    updateComponents();
-
-    return () => {
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current);
-      }
-    };
-  }, [currentSlide, isEditing, getDraftComponents, componentVersion, historyIndex, lastOperation, draftComponentsVersion, isInTransition]);
+    lastTransitionComponentsRef.current = result;
+    return result;
+  // PERF: Removed `lastOperation` and `historyIndex` from deps.
+  // - `lastOperation`: not used in the computation, but every selectComponent() /
+  //   updateDraftComponent() call changed it, causing unnecessary recomputation.
+  // - `historyIndex`: no longer needed because setDraftComponentsForSlide now
+  //   increments draftComponentsVersion, eliminating the cross-store dependency.
+  // `draftComponentsVersion` alone is sufficient to detect all draft changes
+  // (edits, undo/redo, add, remove).
+  }, [currentSlide, isEditing, getDraftComponents, draftComponentsVersion, isInTransition]);
   
-  // Force update on history operations
-  useEffect(() => {
-    if (lastOperation && (lastOperation.startsWith('undo-') || lastOperation.startsWith('redo-'))) {
-      forceComponentUpdate();
-    }
-  }, [lastOperation, forceComponentUpdate, currentSlideId, isEditing]);
-  
-  // Update a component in the active slide
-  const updateComponent = (componentId: string, updates: Partial<ComponentInstance>, skipHistory?: boolean) => {
-    if (!currentSlide) return;
+  // Update a component in the active slide (stable reference via useCallback + refs)
+  const updateComponent = useCallback((componentId: string, updates: Partial<ComponentInstance>, skipHistory?: boolean) => {
+    const slide = currentSlideRef.current;
+    if (!slide) return;
 
     const props = updates.props || {};
     const fontCandidates = new Set<string>();
@@ -181,121 +132,91 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
       });
     }
 
-    if (isEditing) {
-      // When editing, update the draft component
-      updateDraftComponent(currentSlide.id, componentId, updates, skipHistory);
-      // Force a lightweight re-render via RAF so live controls (color sliders) reflect immediately
-      // This is already batched by pendingUpdateRef to avoid spamming
-      // CRITICAL: Skip force update during text editing (skipHistory=true) to prevent
-      // re-render that would trigger sync effect before the save propagates through the store
-      if (!skipHistory) {
-        forceComponentUpdate();
+    if (isEditingRef.current) {
+      updateDraftComponent(slide.id, componentId, updates, skipHistory);
+      const deckState = useDeckStore.getState();
+      if (deckState.yjsSyncEnabled && deckState.yjsDocManager && updates.props) {
+        deckState.yjsDocManager.updateComponent(slide.id, componentId, updates.props);
       }
     } else {
-      // When not editing, update the slide directly
-      // This should be rare/unused but included for completeness
-      if (!currentSlide.components) return;
-      
-      const updatedComponents = currentSlide.components.map(comp => 
-        comp.id === componentId 
-          ? { ...comp, ...updates, props: { ...comp.props, ...(updates.props || {}) } } 
+      if (!slide.components) return;
+      const updatedComponents = slide.components.map(comp =>
+        comp.id === componentId
+          ? { ...comp, ...updates, props: { ...comp.props, ...(updates.props || {}) } }
           : comp
       );
-      
-      updateSlide(currentSlide.id, { components: updatedComponents });
+      updateSlide(slide.id, { components: updatedComponents });
     }
-  };
-  
-  // Add a component to the active slide
-  const addComponent = (component: ComponentInstance, skipHistory?: boolean) => {
-    if (!currentSlide) return;
-    
-    // Get the current components to calculate z-index
-    const currentComps = isEditing 
-      ? getDraftComponents(currentSlide.id)
-      : currentSlide.components || [];
-    
-    // Create a new component with properly calculated z-index
-    // If component already has props.existingComponents, we'll respect them
-    // Otherwise we'll add the current slide's components
-    const updatedComponent = { 
+  }, [updateDraftComponent, updateSlide]);
+
+  // Add a component to the active slide (stable reference)
+  const addComponent = useCallback((component: ComponentInstance, skipHistory?: boolean) => {
+    const slide = currentSlideRef.current;
+    if (!slide) return;
+
+    const currentComps = isEditingRef.current
+      ? getDraftComponents(slide.id)
+      : slide.components || [];
+
+    const updatedComponent = {
       ...component,
       props: {
         ...component.props,
-        // Add existing components for z-index calculation if not already present
-        // This property will be removed during component creation
         existingComponents: component.props.existingComponents || currentComps
       }
     };
-    
-    // The createComponent function in componentUtils will handle z-index calculation
-    // using the existingComponents property we just added
-    
-    if (isEditing) {
-      // When editing, add to the draft store (pass skipHistory param)
-      addDraftComponent(currentSlide.id, updatedComponent, skipHistory);
-      // Force a re-render
-      forceComponentUpdate();
+
+    if (isEditingRef.current) {
+      addDraftComponent(slide.id, updatedComponent, skipHistory);
+      const deckState = useDeckStore.getState();
+      if (deckState.yjsSyncEnabled && deckState.yjsDocManager) {
+        deckState.yjsDocManager.addComponent(slide.id, updatedComponent);
+      }
     } else {
-      // When not editing, add to the slide directly
-      // This should be rare/unused but included for completeness
-      const currentComponents = currentSlide.components || [];
-      updateSlide(currentSlide.id, { 
-        components: [...currentComponents, updatedComponent] 
+      const currentComponents = slide.components || [];
+      updateSlide(slide.id, {
+        components: [...currentComponents, updatedComponent]
       });
     }
-  };
-  
-  // Remove a component from the active slide
-  const removeComponent = (componentId: string, skipHistory?: boolean) => {
-    if (!currentSlide) return;
-    
-    // Guard: prevent deleting background components
-    const allComponents = isEditing ? getDraftComponents(currentSlide.id) : (currentSlide.components || []);
+  }, [getDraftComponents, addDraftComponent, updateSlide]);
+
+  // Remove a component from the active slide (stable reference)
+  const removeComponent = useCallback((componentId: string, skipHistory?: boolean) => {
+    const slide = currentSlideRef.current;
+    if (!slide) return;
+
+    const allComponents = isEditingRef.current ? getDraftComponents(slide.id) : (slide.components || []);
     const target = allComponents.find(c => c.id === componentId);
     const isBackgroundComponent =
       target && (target.type === 'Background' || (target.id && target.id.toLowerCase().includes('background')));
-    if (isBackgroundComponent) {
-      // No toast here to keep context generic; UI handlers already give feedback
-      return;
-    }
-    
-    if (isEditing) {
-      // When editing, remove from the draft store
-      removeDraftComponent(currentSlide.id, componentId, skipHistory);
-      // Force a re-render
-      forceComponentUpdate();
-    } else {
-      // When not editing, remove from the slide directly
-      // This should be rare/unused but included for completeness
-      if (!currentSlide.components) return;
-      
-      const filteredComponents = currentSlide.components.filter(comp => comp.id !== componentId);
-      updateSlide(currentSlide.id, { components: filteredComponents });
-    }
-  };
+    if (isBackgroundComponent) return;
 
-  // Update the current slide components when they change
-  useEffect(() => {
-    if (isEditing && currentSlide) {
-      const draftComponents = getDraftComponents(currentSlide.id);
-      setActiveComponents(draftComponents);
-    } else if (!isEditing && currentSlide) {
-      setActiveComponents(currentSlide.components || []);
+    if (isEditingRef.current) {
+      removeDraftComponent(slide.id, componentId, skipHistory);
+      const deckState = useDeckStore.getState();
+      if (deckState.yjsSyncEnabled && deckState.yjsDocManager) {
+        deckState.yjsDocManager.removeComponent(slide.id, componentId);
+      }
+    } else {
+      if (!slide.components) return;
+      const filteredComponents = slide.components.filter(comp => comp.id !== componentId);
+      updateSlide(slide.id, { components: filteredComponents });
     }
-  }, [isEditing, currentSlide, getDraftComponents, lastOperation]);
+  }, [getDraftComponents, removeDraftComponent, updateSlide]);
+
+  // Memoize context value to prevent unnecessary consumer re-renders.
+  // With stable callback refs, this only changes when activeComponents or currentSlide changes.
+  const value = useMemo(() => ({
+    activeSlide: currentSlide,
+    slideId: currentSlide?.id || null,
+    activeComponents,
+    updateComponent,
+    addComponent,
+    removeComponent
+  }), [currentSlide, activeComponents, updateComponent, addComponent, removeComponent]);
 
   return (
-    <ActiveSlideContext.Provider 
-      value={{
-        activeSlide: currentSlide,
-        slideId: currentSlide?.id || null,
-        activeComponents,
-        updateComponent,
-        addComponent,
-        removeComponent
-      }}
-    >
+    <ActiveSlideContext.Provider value={value}>
       {children}
     </ActiveSlideContext.Provider>
   );

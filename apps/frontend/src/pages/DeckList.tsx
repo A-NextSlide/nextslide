@@ -62,7 +62,7 @@ import { GenerationCoordinator } from '@/services/generation/GenerationCoordinat
 import { useAuth } from '@/context/SupabaseAuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useThemeStore } from '@/stores/themeStore';
-import AppearanceOnboarding, { THEME_ONBOARDING_KEY } from '@/components/onboarding/AppearanceOnboarding';
+import WelcomeOverlay, { THEME_ONBOARDING_KEY } from '@/components/onboarding/WelcomeOverlay';
 import ConversationalOnboarding from '@/components/onboarding/ConversationalOnboarding';
 import ParticleAnimation from '@/components/visuals/ParticleAnimation';
 import { CreditWarningDialog } from '@/components/billing/CreditWarningDialog';
@@ -411,7 +411,9 @@ const DeckList: React.FC = () => {
   const [showGallery, setShowGallery] = useState(false);
   const [showGoogleImport, setShowGoogleImport] = useState(false);
   const [showCommunity, setShowCommunity] = useState(false);
-  const [showAppearanceOnboarding, setShowAppearanceOnboarding] = useState(false);
+  const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false);
+  const [heroGlowActive, setHeroGlowActive] = useState(false);
+  const heroContainerRef = useRef<HTMLDivElement>(null);
   const [showConversationalOnboarding, setShowConversationalOnboarding] = useState(false);
   const [isAgentThinking, setIsAgentThinking] = useState(false);
   // Credit warning dialog state
@@ -1347,6 +1349,27 @@ const DeckList: React.FC = () => {
   const [isMounted, setIsMounted] = useState(false);
   const [pageReady, setPageReady] = useState(false);
 
+  // Show a welcome screen while the tutorial deck is being created for new users
+  const [isNewUserSetup, setIsNewUserSetup] = useState(false);
+  useEffect(() => {
+    // New user: onboarding is still loading and initial deck fetch returned empty
+    if (onboardingLoading && !onboardingLoadedRef.current && !isLoading && decks !== undefined && decks.length === 0) {
+      setIsNewUserSetup(true);
+    }
+  }, [onboardingLoading, isLoading, decks]);
+
+  // Clear setup screen once onboarding finishes and decks reload
+  useEffect(() => {
+    if (!isNewUserSetup) return;
+    if (!onboardingLoading && onboardingLoadedRef.current && !isLoading && decks && decks.length > 0) {
+      const t = setTimeout(() => setIsNewUserSetup(false), 400);
+      return () => clearTimeout(t);
+    }
+    // Safety: never stay on setup screen longer than 8 seconds
+    const fallback = setTimeout(() => setIsNewUserSetup(false), 8000);
+    return () => clearTimeout(fallback);
+  }, [isNewUserSetup, onboardingLoading, isLoading, decks]);
+
   // Style preferences state lifted from OutlineEditor
   const [stylePreferences, setStylePreferences] = useState<{
     initialIdea?: string;
@@ -1469,6 +1492,8 @@ const DeckList: React.FC = () => {
           // Clear the session storage to prevent repeated resets
           sessionStorage.removeItem('lastEditedDeckId');
           sessionStorage.removeItem('lastGeneratedDeckId');
+          // Keep skipThumbnailUrl — it stays until the user opens a deck
+          // or refreshes, ensuring the stale server thumbnail is never shown
         }
       }
     } catch (e) {
@@ -1488,15 +1513,16 @@ const DeckList: React.FC = () => {
   // NOTE: Avoid global html/body style mutations based on isMobileView.
   // This page already manages its own scrolling/overflow via layout containers.
 
-  // Show appearance onboarding only on first visit to the app page
+  // Show welcome overlay only on first visit, after loading finishes
   useEffect(() => {
+    if (!pageReady || isNewUserSetup) return;
     try {
       const hasOnboarded = localStorage.getItem(THEME_ONBOARDING_KEY);
       if (!hasOnboarded) {
-        setShowAppearanceOnboarding(true);
+        setShowWelcomeOverlay(true);
       }
     } catch { }
-  }, []);
+  }, [pageReady, isNewUserSetup]);
 
   // Callback to receive style preference updates from OutlineEditor
   const handleStylePreferencesUpdate = useCallback((preferences: {
@@ -1978,10 +2004,13 @@ const DeckList: React.FC = () => {
     <div className="h-[100dvh] sm:h-screen bg-white dark:bg-black flex flex-col overflow-hidden relative font-sans">
       {/* Loading overlay — covers content until fonts are ready. Content stays
           mounted underneath so images (logo) preload and no remount flash occurs. */}
-      {!pageReady && (
-        <div className="absolute inset-0 z-[100] bg-white dark:bg-black flex items-center justify-center">
-          <div className="flex flex-col items-center gap-8">
+      {(!pageReady || isNewUserSetup) && (
+        <div className="absolute inset-0 z-[100] bg-white dark:bg-black flex items-center justify-center transition-opacity duration-500" style={{ opacity: !pageReady || isNewUserSetup ? 1 : 0 }}>
+          <div className="flex flex-col items-center gap-5">
             <div className="w-10 h-10 border-4 border-zinc-200 dark:border-zinc-800 border-t-[#FF4301] rounded-full animate-spin" />
+            {pageReady && isNewUserSetup && (
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 animate-pulse">Setting up your workspace&hellip;</p>
+            )}
           </div>
         </div>
       )}
@@ -2602,7 +2631,7 @@ const DeckList: React.FC = () => {
 
                           {/* Input Area */}
                           <div className="relative max-w-full sm:max-w-2xl mx-auto">
-                            <div className="relative group">
+                            <div ref={heroContainerRef} className={cn("relative group", heroGlowActive && "hero-glow-active")}>
                               <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                               <div
                                 className={cn(
@@ -3176,9 +3205,15 @@ const DeckList: React.FC = () => {
                       </DialogContent>
                     </Dialog>
 
-                    <AppearanceOnboarding
-                      open={showAppearanceOnboarding}
-                      onComplete={() => setShowAppearanceOnboarding(false)}
+                    <WelcomeOverlay
+                      open={showWelcomeOverlay}
+                      onComplete={() => {
+                        setShowWelcomeOverlay(false);
+                        setHeroGlowActive(true);
+                        setTimeout(() => setHeroGlowActive(false), 2000);
+                      }}
+                      heroContainerRef={heroContainerRef}
+                      isMobileView={isMobileView}
                     />
 
                     <GoogleSlidesImportModal open={showGoogleImport} onOpenChange={setShowGoogleImport} />

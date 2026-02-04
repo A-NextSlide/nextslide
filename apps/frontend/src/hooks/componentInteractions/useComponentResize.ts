@@ -4,7 +4,6 @@ import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { calculateSnap, SnapGuideInfo } from '@/utils/snapUtils';
 import { sendComponentLayoutUpdate } from '@/utils/componentSyncUtils';
-import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { updateConnectedLines } from '@/utils/lineSnapUtils';
 
 interface UseComponentResizeProps {
@@ -13,7 +12,8 @@ interface UseComponentResizeProps {
   allComponents: ComponentInstance[];
   updateComponent: (id: string, updates: Partial<ComponentInstance>, skipHistory: boolean) => void;
   // Callback to update snap guides in the parent renderer
-  setSnapGuides: (guides: SnapGuideInfo[]) => void; 
+  setSnapGuides: (guides: SnapGuideInfo[]) => void;
+  slideId?: string | null;
 }
 
 /**
@@ -24,8 +24,9 @@ export const useComponentResize = ({
   component, 
   slideSize, 
   allComponents, 
-  updateComponent, 
-  setSnapGuides 
+  updateComponent,
+  setSnapGuides,
+  slideId: slideIdProp
 }: UseComponentResizeProps) => {
   const [isResizing, setIsResizing] = useState(false);
   const [localSnapGuides, setLocalSnapGuides] = useState<SnapGuideInfo[]>([]);
@@ -50,8 +51,8 @@ export const useComponentResize = ({
   const startTransientOperation = useHistoryStore(state => state.startTransientOperation);
   const endTransientOperation = useHistoryStore(state => state.endTransientOperation);
   
-  // Get slide ID
-  const { slideId } = useActiveSlide();
+  // Get slide ID from props instead of context to avoid bypassing React.memo
+  const slideId = slideIdProp || null;
   
   // Apply pending update if any
   useEffect(() => {

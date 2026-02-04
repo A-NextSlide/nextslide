@@ -7,6 +7,7 @@
 
 import { useMemo, useCallback } from 'react';
 import { useDeckStore } from '@/stores/deckStore';
+import { useShallow } from 'zustand/react/shallow';
 import { LockedSlideInfo } from '@/types/DeckTypes';
 
 interface UseLockedSlidesReturn {
@@ -34,53 +35,40 @@ interface UseLockedSlidesReturn {
  * @returns Object with locked slide state and helper functions
  */
 export function useLockedSlides(): UseLockedSlidesReturn {
-  // Handle both camelCase and snake_case from backend
-  const lockedSlideInfo = useDeckStore(state => {
-    const deckData = state.deckData as any;
-    if (!deckData) return undefined;
-    // Check camelCase first, then snake_case
-    const info = deckData.lockedSlideInfo || deckData.locked_slide_info;
-    // Debug logging
-    if (info) {
-      console.log('[useLockedSlides] Found locked_slide_info:', info);
-    }
-    return info;
-  });
-  const slidesLength = useDeckStore(state => state.deckData?.slides?.length ?? 0);
-
-  // Derive counts from lockedSlideInfo (handle both camelCase and snake_case)
-  const { unlockedCount, totalCount, lockedCount, hasLockedSlides } = useMemo(() => {
-    if (!lockedSlideInfo) {
+  // Extract only the primitive values we need, so the selector returns a stable
+  // result that won't trigger re-renders when unrelated deckData fields change.
+  const { unlockedCountRaw, totalCountRaw, lockedAt, slidesLength } = useDeckStore(
+    useShallow(state => {
+      const deckData = state.deckData as any;
+      if (!deckData) return { unlockedCountRaw: undefined, totalCountRaw: undefined, lockedAt: undefined, slidesLength: 0 };
+      const info = deckData.lockedSlideInfo || deckData.locked_slide_info;
+      if (!info) return { unlockedCountRaw: undefined, totalCountRaw: undefined, lockedAt: undefined, slidesLength: deckData.slides?.length ?? 0 };
       return {
-        unlockedCount: slidesLength,
-        totalCount: slidesLength,
-        lockedCount: 0,
-        hasLockedSlides: false
+        unlockedCountRaw: info.unlockedCount ?? info.unlocked_count,
+        totalCountRaw: info.totalCount ?? info.total_count,
+        lockedAt: info.lockedAt ?? info.locked_at,
+        slidesLength: deckData.slides?.length ?? 0,
       };
-    }
+    })
+  );
+  const hasInfo = unlockedCountRaw !== undefined || totalCountRaw !== undefined || lockedAt !== undefined;
 
-    // Handle both camelCase and snake_case field names
-    const info = lockedSlideInfo as any;
-    const unlocked = info.unlockedCount ?? info.unlocked_count ?? slidesLength;
-    const total = info.totalCount ?? info.total_count ?? slidesLength;
-    const locked = Math.max(0, total - unlocked);
+  // Derive counts directly from the extracted primitives (all stable values)
+  const unlockedCount = hasInfo ? (unlockedCountRaw ?? slidesLength) : slidesLength;
+  const totalCount = hasInfo ? (totalCountRaw ?? slidesLength) : slidesLength;
+  const lockedCount = Math.max(0, totalCount - unlockedCount);
+  const hasLockedSlides = lockedCount > 0;
 
-    console.log('[useLockedSlides] Derived counts:', { unlocked, total, locked, hasLocked: locked > 0 });
-
-    return {
-      unlockedCount: unlocked,
-      totalCount: total,
-      lockedCount: locked,
-      hasLockedSlides: locked > 0
-    };
-  }, [lockedSlideInfo, slidesLength]);
-
-  // Check if a specific slide index is locked
   const isLocked = useCallback((slideIndex: number): boolean => {
-    if (!lockedSlideInfo) return false;
-    // Use the derived unlockedCount which handles both case formats
+    if (!hasInfo) return false;
     return slideIndex >= unlockedCount;
-  }, [lockedSlideInfo, unlockedCount]);
+  }, [hasInfo, unlockedCount]);
+
+  // Reconstruct lockedSlideInfo only for consumers that need the raw object
+  const lockedSlideInfo: LockedSlideInfo | undefined = useMemo(() => {
+    if (!hasInfo) return undefined;
+    return { unlockedCount: unlockedCountRaw!, totalCount: totalCountRaw!, lockedAt } as any;
+  }, [hasInfo, unlockedCountRaw, totalCountRaw, lockedAt]);
 
   return {
     isLocked,

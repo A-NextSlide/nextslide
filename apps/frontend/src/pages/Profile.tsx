@@ -53,6 +53,7 @@ import { useCredits } from '@/context/CreditsContext';
 import { googleIntegrationApi } from '@/services/googleIntegrationApi';
 import { SlackIntegrationCard } from '@/components/integrations/SlackIntegrationCard';
 import { billingApi, type CreditBalance, type Subscription, type UsageStats } from '@/services/billingApi';
+import { profileApi } from '@/services/profileApi';
 import { developerApiService, type ApiKey, type CreateApiKeyResponse } from '@/services/developerApiService';
 import { WelcomeModal } from '@/components/billing/WelcomeModal';
 import { CancellationModal } from '@/components/billing/CancellationModal';
@@ -233,6 +234,10 @@ const Profile: React.FC = () => {
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
+  // Watermark toggle state
+  const [hideWatermark, setHideWatermark] = useState(false);
+  const [savingWatermark, setSavingWatermark] = useState(false);
+
   // Validation states
   const [profileChanged, setProfileChanged] = useState(false);
   const [passwordError, setPasswordError] = useState('');
@@ -324,6 +329,10 @@ const Profile: React.FC = () => {
         full_name: user.user_metadata?.full_name || '',
         company: user.user_metadata?.company || ''
       });
+      // Load watermark preference from profile
+      profileApi.getOwnProfile().then(p => {
+        setHideWatermark(p.hide_watermark ?? false);
+      }).catch(() => {});
     }
   }, [user]);
 
@@ -577,6 +586,24 @@ const Profile: React.FC = () => {
       });
     } finally {
       setIsUpdatingProfile(false);
+    }
+  };
+
+  // Handle watermark toggle
+  const handleWatermarkToggle = async (checked: boolean) => {
+    setHideWatermark(checked);
+    setSavingWatermark(true);
+    try {
+      const result = await profileApi.updateProfile({ hide_watermark: checked });
+      if (!result.success) {
+        setHideWatermark(!checked);
+        toast({ variant: 'destructive', title: 'Failed to save', description: result.error || 'Could not update preference.' });
+      }
+    } catch {
+      setHideWatermark(!checked);
+      toast({ variant: 'destructive', title: 'Failed to save', description: 'Could not update preference.' });
+    } finally {
+      setSavingWatermark(false);
     }
   };
 
@@ -1428,6 +1455,30 @@ const Profile: React.FC = () => {
                         onChange={(e) => setProfileData(prev => ({ ...prev, company: e.target.value }))}
                       />
                     </div>
+
+                    {/* Watermark toggle - only for paid users */}
+                    {creditsBalance && creditsBalance.plan_id !== 'free' && (
+                      <>
+                        <Separator />
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex-1">
+                            <Label htmlFor="hideWatermark" className="cursor-pointer">Hide NextSlide watermark</Label>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Remove the NextSlide branding from your shared link previews
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {savingWatermark && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                            <Switch
+                              id="hideWatermark"
+                              checked={hideWatermark}
+                              onCheckedChange={handleWatermarkToggle}
+                              disabled={savingWatermark}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
 
                     <Button
                       type="submit"

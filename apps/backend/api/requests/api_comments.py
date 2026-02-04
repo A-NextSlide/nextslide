@@ -197,6 +197,15 @@ async def update_comment(deck_id: str, id: str, request: UpdateCommentRequest, t
     user = _require_user(token)
     _assert_can_comment(deck_id, user["id"])  # allow commenter/editor/owner
     supabase = _get_supabase()
+
+    # Enforce author-only body edits
+    if request.body is not None:
+        existing = supabase.table("comments").select("author_id").eq("id", id).eq("deck_id", deck_id).maybe_single().execute()
+        if not existing or not existing.data:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        if existing.data.get("author_id") != user["id"]:
+            raise HTTPException(status_code=403, detail="You can only edit your own comments")
+
     updates: Dict[str, Any] = {}
     if request.body is not None:
         updates["body"] = request.body
@@ -210,7 +219,19 @@ async def update_comment(deck_id: str, id: str, request: UpdateCommentRequest, t
     res = supabase.table("comments").update(updates).eq("id", id).eq("deck_id", deck_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Comment not found")
-    return res.data[0]
+
+    comment = res.data[0]
+
+    # Enrich with author name (same as create does)
+    author_res = supabase.table("users").select("email, full_name, metadata").eq("id", comment.get("author_id", "")).maybe_single().execute()
+    if author_res and author_res.data:
+        full_name = author_res.data.get("full_name")
+        if not full_name:
+            metadata = author_res.data.get("metadata") or {}
+            full_name = metadata.get("full_name") or metadata.get("name")
+        comment["author_name"] = full_name or author_res.data.get("email", "").split("@")[0]
+
+    return comment
 
 
 @router.delete("/{deck_id}/comments/{id}")
@@ -218,6 +239,19 @@ async def delete_comment(deck_id: str, id: str, token: Optional[str] = Depends(g
     user = _require_user(token)
     _assert_can_comment(deck_id, user["id"])  # allow commenter/editor/owner
     supabase = _get_supabase()
+
+    # Enforce author-only or deck-owner deletes
+    existing = supabase.table("comments").select("author_id, deck_id").eq("id", id).eq("deck_id", deck_id).maybe_single().execute()
+    if not existing or not existing.data:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    is_author = existing.data.get("author_id") == user["id"]
+    # Check if user is deck owner
+    from utils.supabase import get_deck
+    deck = get_deck(deck_id)
+    is_deck_owner = deck and deck.get("user_id") == user["id"]
+    if not is_author and not is_deck_owner:
+        raise HTTPException(status_code=403, detail="You can only delete your own comments")
+
     res = supabase.table("comments").delete().eq("id", id).eq("deck_id", deck_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Comment not found")

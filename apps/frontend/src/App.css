@@ -329,14 +329,14 @@ body.agent-select-mode [data-component-id] {
 .slide-container .slide-background {
   transition: none !important;
 }
-/* Prevent opacity/size transitions on slide components that cause flash on mode toggle.
-   Scoped to component wrappers and their content — buttons/links keep their hover transitions. */
+/* Kill ALL transitions on slide components to prevent visual flashing.
+   Previously only set transition-property: transform, but this still allowed transform
+   transitions when a transition-duration was inherited from Tailwind classes or other CSS.
+   When drag ends and the body.dragging-component class is removed, the re-enabled transform
+   transition caused a visible flash as the component animated from its drag position.
+   Using transition: none is the definitive fix — component positions are set via direct
+   DOM style properties (left/top) or CSS variables, which don't need CSS transitions. */
 .slide-container .component-wrapper,
 .slide-container .component-wrapper * {
-  transition-property: transform !important;
-}
-/* Images must never transition size or opacity — they should snap to their final state */
-.slide-container .component-type-Image,
-.slide-container .component-type-Image * {
   transition: none !important;
 }

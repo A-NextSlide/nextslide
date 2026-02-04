@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SlideData } from '@/types/SlideTypes';
 import {
   ContextMenu,
@@ -35,6 +35,8 @@ interface ThumbnailItemProps {
   isGenerating?: boolean;
   /** Whether this slide is locked (freemium gating) */
   isLocked?: boolean;
+  /** Collaborators currently viewing this slide */
+  collaborators?: Array<{ color: string; name: string }>;
 }
 
 const getSlideFallbackBackground = (slide: SlideData): string | undefined => {
@@ -95,6 +97,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
   slideSize,
   isGenerating = false,
   isLocked = false,
+  collaborators,
 }) => {
   const hasComponents = useMemo(() => {
     return Array.isArray(slide?.components) && slide.components.length > 0;
@@ -145,6 +148,25 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
             className="absolute inset-0 z-30 cursor-pointer"
             onClick={() => onSelect(index)}
           />
+
+          {/* Collaborator presence dots */}
+          {collaborators && collaborators.length > 0 && (
+            <div className="absolute -bottom-4 left-0 right-0 flex items-center justify-center gap-0.5 z-40">
+              {collaborators.slice(0, 3).map((u, i) => (
+                <div
+                  key={i}
+                  className="h-2 w-2 rounded-full ring-1 ring-background"
+                  style={{ backgroundColor: u.color }}
+                  title={u.name}
+                />
+              ))}
+              {collaborators.length > 3 && (
+                <span className="text-[8px] text-muted-foreground ml-0.5">
+                  +{collaborators.length - 3}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Main thumbnail content */}
           <div className="w-full h-full flex items-center justify-center overflow-hidden rounded-sm">
@@ -264,6 +286,35 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
   slideSize,
 }) => {
   const isMobile = useIsMobile();
+
+  // Collaborator presence polling (mirrors DeckHeader pattern)
+  const getYjsUsers = useDeckStore(state => (state as any).getYjsUsers);
+  const [collaborators, setCollaborators] = useState<any[]>([]);
+
+  useEffect(() => {
+    const update = () => {
+      const users = getYjsUsers?.() || [];
+      setCollaborators(users);
+    };
+    update();
+    const interval = setInterval(update, 2000);
+    return () => clearInterval(interval);
+  }, [getYjsUsers]);
+
+  // Map slide ID → list of non-self collaborators viewing that slide
+  const slideCollaborators = useMemo(() => {
+    const map = new Map<string, Array<{ color: string; name: string }>>();
+    if (!collaborators?.length) return map;
+    collaborators
+      .filter((u: any) => !u.self && u.cursor?.slideId)
+      .forEach((u: any) => {
+        const sid = u.cursor!.slideId;
+        if (!map.has(sid)) map.set(sid, []);
+        map.get(sid)!.push({ color: u.color, name: u.name });
+      });
+    return map;
+  }, [collaborators]);
+
   // Check if deck is generating
   const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating' || deckStatus?.state === 'pending';
   const totalExpectedSlides = deckStatus?.totalSlides || 0;
@@ -634,6 +685,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                     slideSize={slideSize}
                     isGenerating={isGenerating}
                     isLocked={isLocked(index)}
+                    collaborators={slideCollaborators.get(slide.id)}
                   />
                 </motion.div>
 

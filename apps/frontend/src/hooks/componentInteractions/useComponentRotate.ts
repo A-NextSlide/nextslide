@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { ComponentInstance } from '@/types/components';
 import { sendComponentLayoutUpdate } from '@/utils/componentSyncUtils';
-import { useActiveSlide } from '@/context/ActiveSlideContext';
 
 interface UseComponentRotateProps {
   componentId: string;
@@ -9,6 +8,7 @@ interface UseComponentRotateProps {
   isRotatable?: boolean;
   isSelected?: boolean;
   updateComponent: (id: string, updates: Partial<any>, skipHistory: boolean) => void;
+  slideId?: string | null;
 }
 
 /**
@@ -20,8 +20,9 @@ export function useComponentRotate({
   isRotatable,
   isSelected,
   updateComponent,
+  slideId: slideIdProp,
 }: UseComponentRotateProps): void {
-  const { slideId } = useActiveSlide();
+  const slideId = slideIdProp || null;
   const lastWsSendTimeRef = useRef(0);
   const THROTTLE_INTERVAL_MS = 30;
 

@@ -22,7 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { useYjs } from '@/yjs/YjsProvider';
 import SimpleCursors from './SimpleCursors';
-import DirectCursors from './DirectCursors';
+
 import SlideGeneratingPlaceholder from './SlideGeneratingPlaceholder';
 import { DeckStatus } from '@/types/DeckTypes';
 import ThumbnailNavigator from './ThumbnailNavigator';
@@ -446,6 +446,18 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       window.removeEventListener('comments:close-panel', close as EventListener);
       window.removeEventListener('comments:toggle-panel', toggle as EventListener);
     };
+  }, []);
+
+  // Ctrl/Cmd+Shift+C shortcut to toggle comments panel
+  React.useEffect(() => {
+    const handleCommentsShortcut = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'C') {
+        e.preventDefault();
+        setShowCommentsPanel(v => !v);
+      }
+    };
+    document.addEventListener('keydown', handleCommentsShortcut, true);
+    return () => document.removeEventListener('keydown', handleCommentsShortcut, true);
   }, []);
 
   // Add keyboard shortcut 'e' to toggle edit mode
@@ -1008,12 +1020,6 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
             {currentSlide && (
               <>
                 <SimpleCursors
-                  slideId={currentSlide.id}
-                  containerRef={scrollContainerRef}
-                  offsetY={24}
-                  zoomLevel={zoomLevel}
-                />
-                <DirectCursors
                   slideId={currentSlide.id}
                   containerRef={scrollContainerRef}
                   offsetY={24}

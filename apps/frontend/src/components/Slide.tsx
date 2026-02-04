@@ -18,6 +18,7 @@ import { isBackgroundOnlySelection } from '@/utils/selectionUtils';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useEditorStateSafe } from '@/context/EditorStateContext';
 import LockedSlideOverlay from '@/components/deck/LockedSlideOverlay';
+import RemoteSelections from '@/components/deck/RemoteSelections';
 
 interface SlideProps {
   slide: SlideData;
@@ -64,40 +65,11 @@ const SlideContent: React.FC<SlideProps> = ({
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const isDraggingRef = useRef(false);
-  const [positionUpdateCounter, setPositionUpdateCounter] = useState(0);
   const isPresenting = usePresentationStore(state => state.isPresenting);
-  
+
   // Enable remote layout sync only when viewing (not editing) and not a thumbnail
   // This avoids background DOM writes fighting with local interactions while editing
   useComponentPositionSync(isActive && !isThumbnail && !isEditing && !isPresenting);
-  
-  // Track real-time component position updates
-  useEffect(() => {
-    if (!isActive) return;
-    
-    // Listen for component position updates
-    const handleComponentPosition = (event: Event) => {
-      // Increment counter to force a re-render of the slide
-      setPositionUpdateCounter(prev => prev + 1);
-      
-      // Add extra logging for debugging
-      const detail = (event as CustomEvent).detail;
-      if (detail) {
-  
-      }
-    };
-    
-    // Listen for component position messages from old system
-    document.addEventListener('component-position-message', handleComponentPosition);
-    
-    // ALSO listen for our new custom event
-    document.addEventListener('component-position-updated', handleComponentPosition);
-    
-    return () => {
-      document.removeEventListener('component-position-message', handleComponentPosition);
-      document.removeEventListener('component-position-updated', handleComponentPosition);
-    };
-  }, [isActive]);
   
   // Track drag operations to prevent unnecessary rerenders
   useEffect(() => {
@@ -155,19 +127,6 @@ const SlideContent: React.FC<SlideProps> = ({
 
   // Track slide to properly manage state
   const [slideData, setSlideData] = useState<SlideData>(slide);
-  
-  // Debug for real-time movement
-  useEffect(() => {
-    if (isActive && positionUpdateCounter > 0) {
-
-      
-      // Add visual debugging if enabled
-      if (typeof window !== 'undefined' && (window as any).__remoteComponentLayouts) {
-        const layouts = (window as any).__remoteComponentLayouts;
-        // Debug logging removed to reduce console noise
-      }
-    }
-  }, [isActive, positionUpdateCounter]);
   
   // Update slide data when props change
   useEffect(() => {
@@ -340,7 +299,12 @@ const SlideContent: React.FC<SlideProps> = ({
   };
   
   // Track selected components with proper React state
-  const selectedComponentIds = useEditorStore(state => state.selectedComponentIds);
+  // PERF: Use custom equality function to prevent re-renders when selectComponent()
+  // creates a new Set reference with the same contents (e.g., re-clicking same component).
+  const selectedComponentIds = useEditorStore(
+    state => state.selectedComponentIds,
+    (a, b) => a === b || (a.size === b.size && [...a].every(id => b.has(id)))
+  );
   const isTextEditing = useEditorSettingsStore(state => state.isTextEditing);
   const getSelectedComponentsForBoundingBox = useMemo(() => {
     if (!isEditing || !activeSlideContext || selectedComponentIds.size <= 1) {
@@ -396,8 +360,6 @@ const SlideContent: React.FC<SlideProps> = ({
       data-slide-width={slideSize.width}
       data-slide-height={slideSize.height}
       data-dragging={isDraggingRef.current ? 'true' : 'false'}
-
-      data-position-update-count={positionUpdateCounter}
     >
       <SlideContainer
         {...containerProps}
@@ -436,12 +398,16 @@ const SlideContent: React.FC<SlideProps> = ({
               zIndex: 0
             }}
           >
-            <ComponentRenderer 
+            <ComponentRenderer
               component={backgroundComponent}
               isThumbnail={isThumbnail}
               isSelected={selectedComponentId === backgroundComponent.id}
-              onSelect={isEditing ? (id) => handleComponentSelect(backgroundComponent) : undefined} // Changed from undefined to allow selection
+              onSelect={isEditing ? (id) => handleComponentSelect(backgroundComponent) : undefined}
               allComponents={allComponents}
+              updateComponent={updateComponent}
+              slideId={slideData.id}
+              isEditing={isEditing}
+              slideSize={slideSize}
             />
           </div>
         )}
@@ -452,20 +418,17 @@ const SlideContent: React.FC<SlideProps> = ({
             !(component.type === "Background" || (component.id && component.id.toLowerCase().includes('background')))
           )
           .map(component => (
-            <ComponentRenderer 
-              key={component.id} 
-              component={{
-                ...component,
-                props: {
-                  ...component.props,
-                  _originalScale: 0.0833333, // Keep scale factor for consistent sizing
-                  preserveLayout: true // Ensure layout is preserved during drag operations
-                }
-              }}
+            <ComponentRenderer
+              key={component.id}
+              component={component}
               isThumbnail={isThumbnail}
               isSelected={selectedComponentId === component.id}
               onSelect={isEditing ? (id) => handleComponentSelect(component) : undefined}
               allComponents={allComponents}
+              updateComponent={updateComponent}
+              slideId={slideData.id}
+              isEditing={isEditing}
+              slideSize={slideSize}
             />
           ))}
         
@@ -501,6 +464,15 @@ const SlideContent: React.FC<SlideProps> = ({
         {/* Group edit mode indicator */}
         {isEditing && activeSlideContext && !isThumbnail && isActive && (
           <GroupEditIndicator slideId={slideData.id} />
+        )}
+
+        {/* Remote user selection bounding boxes */}
+        {!isThumbnail && isActive && (
+          <RemoteSelections
+            slideId={slideData.id}
+            components={componentsToRender}
+            slideSize={slideSize}
+          />
         )}
 
         {/* Citations overlay removed */}

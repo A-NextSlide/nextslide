@@ -140,7 +140,7 @@ def create_brand_watermark(width: int = 200, height: int = 60) -> Image.Image:
     # Logo sizing: match BrandWordmark ratios (height = fontSize * 1.9, width = fontSize * 1.3)
     logo_height = int(font_size * 1.9)
     logo_width = int(font_size * 1.3)
-    gap = max(1, round(font_size * 0.04))  # tiny gap on each side of X, matching component
+    gap = -2  # negative gap to tuck letters closer to the X logo (compensates for PNG padding)
 
     total_w = int(ne_w + gap + logo_width + gap + ts_w)
     total_h = max(height, logo_height + 4)
@@ -247,7 +247,7 @@ def get_font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def create_fallback_og_image(title: str = "NextSlide Presentation") -> Image.Image:
+def create_fallback_og_image(title: str = "NextSlide Presentation", show_watermark: bool = True) -> Image.Image:
     """Create a fallback OG image when no thumbnail is available."""
     # Dark gradient background for better visual appeal
     image = Image.new("RGB", (OG_WIDTH, OG_HEIGHT), (30, 30, 35))
@@ -303,9 +303,10 @@ def create_fallback_og_image(title: str = "NextSlide Presentation") -> Image.Ima
         font=subtitle_font
     )
 
-    # Add branding watermark
-    watermark = create_brand_watermark(200, 45)
-    image = apply_watermark(image, watermark, "bottom-right", margin=30, opacity=0.9)
+    # Add branding watermark (skip for paid users)
+    if show_watermark:
+        watermark = create_brand_watermark(200, 45)
+        image = apply_watermark(image, watermark, "bottom-right", margin=30, opacity=0.9)
 
     return image
 
@@ -407,7 +408,7 @@ async def get_og_image(short_code: str):
         og_image_url = metadata.get('og_image_url')
 
         # Get deck data (name, slides, and pre-rendered thumbnail for image extraction)
-        deck_result = supabase.table('decks').select('name, slides, thumbnail_url').eq(
+        deck_result = supabase.table('decks').select('name, slides, thumbnail_url, user_id').eq(
             'uuid', share_data['deck_uuid']
         ).execute()
 
@@ -416,6 +417,34 @@ async def get_og_image(short_code: str):
         if deck_result.data:
             deck_data = deck_result.data[0]
             deck_name = deck_data.get('name', 'Presentation')
+
+        # Check if deck owner has opted to hide the watermark (paid users only)
+        should_hide_watermark = False
+        deck_user_id = deck_data.get('user_id')
+        if deck_user_id:
+            try:
+                # Check user preference
+                user_result = supabase.table('users').select('hide_watermark').eq(
+                    'id', deck_user_id
+                ).execute()
+                user_wants_hidden = (
+                    user_result.data
+                    and user_result.data[0].get('hide_watermark', False)
+                )
+
+                # Only honor the preference for paid plans
+                if user_wants_hidden:
+                    sub_result = supabase.table('subscriptions').select('plan_id, status').eq(
+                        'user_id', deck_user_id
+                    ).execute()
+                    if sub_result.data:
+                        active_subs = [s for s in sub_result.data if s.get('status') == 'active']
+                        sub = active_subs[0] if active_subs else sub_result.data[0]
+                        should_hide_watermark = sub.get('plan_id') in (
+                            'starter', 'pro', 'enterprise', 'friends_family'
+                        )
+            except Exception as e:
+                logger.warning(f"Failed to check watermark preference: {e}")
 
         # Build a list of candidate image URLs to try in priority order
         candidate_urls = []
@@ -446,22 +475,25 @@ async def get_og_image(short_code: str):
                 if base_image.size != (OG_WIDTH, OG_HEIGHT):
                     base_image = resize_cover(base_image, OG_WIDTH, OG_HEIGHT)
 
-                # Apply watermark
-                watermark = create_brand_watermark(180, 45)
-                final_image = apply_watermark(
-                    base_image,
-                    watermark,
-                    position="bottom-right",
-                    margin=25,
-                    opacity=0.95
-                )
+                # Apply watermark (skip for paid users)
+                if should_hide_watermark:
+                    final_image = base_image
+                else:
+                    watermark = create_brand_watermark(180, 45)
+                    final_image = apply_watermark(
+                        base_image,
+                        watermark,
+                        position="bottom-right",
+                        margin=25,
+                        opacity=0.95
+                    )
                 break
             else:
                 logger.warning(f"Failed to fetch OG image from: {url[:100]}")
 
         # Fallback to generated image
         if final_image is None:
-            final_image = create_fallback_og_image(deck_name[:50])
+            final_image = create_fallback_og_image(deck_name[:50], show_watermark=not should_hide_watermark)
 
         # Convert to bytes
         img_byte_arr = io.BytesIO()

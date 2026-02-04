@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback, useMemo } from 'react';
 import { useEditorStore } from '../stores/editorStore';
 import { useDeckStore } from '../stores/deckStore';
 import { ComponentInstance } from "../types/components";
@@ -72,6 +72,14 @@ export const EditorStateProvider = ({
   const deckData = useDeckStore(state => state.deckData);
   const overrideWidth = slideSizeOverride?.width;
   const overrideHeight = slideSizeOverride?.height;
+
+  // Refs for stable setIsEditing callback
+  const isEditingRef = useRef(isEditing);
+  isEditingRef.current = isEditing;
+  const onEditingChangeRef = useRef(onEditingChange);
+  onEditingChangeRef.current = onEditingChange;
+  const deckDataRef = useRef(deckData);
+  deckDataRef.current = deckData;
   
   // Update slide size when deck data changes
   useEffect(() => {
@@ -93,21 +101,22 @@ export const EditorStateProvider = ({
   const slides = useDeckStore(state => state.deckData.slides);
   
   // Wrapper for setIsEditing that can notify parent components and manage draft components
-  const setIsEditing = async (editing: boolean) => {
+  // Wrapped in useCallback with refs for a stable reference — prevents context value from changing every render
+  const setIsEditing = useCallback(async (editing: boolean) => {
     try {
       const deckStore = useDeckStore.getState();
       const transitionStore = useEditModeTransitionStore.getState();
-      
+
       // Set global edit mode flag
       if (typeof window !== 'undefined') {
         (window as any).__isEditMode = editing;
       }
-      
-      if (editing && !isEditing) {
+
+      if (editing && !isEditingRef.current) {
         // Enter edit mode immediately
         transitionStore.startTransition();
         setIsEditingState(true);
-        if (onEditingChange) onEditingChange(true);
+        if (onEditingChangeRef.current) onEditingChangeRef.current(true);
         
         // Ensure we have the freshest deck data before pausing subscriptions and creating drafts
         // IMPORTANT: If there are pending local changes (e.g. applied by AI chat with skipBackend),
@@ -157,7 +166,7 @@ export const EditorStateProvider = ({
         // Initialize draft components synchronously
         const navigationContext = (window as any).__navigationContext;
         const currentSlideIndex = navigationContext?.currentSlideIndex || 0;
-        const currentSlideId = deckData.slides[currentSlideIndex]?.id;
+        const currentSlideId = deckDataRef.current.slides[currentSlideIndex]?.id;
 
         if (currentSlideId) {
           await initializeDraftComponents(currentSlideId);
@@ -174,7 +183,7 @@ export const EditorStateProvider = ({
         // Clear transition immediately
         transitionStore.endTransition();
       }
-      else if (!editing && isEditing) {
+      else if (!editing && isEditingRef.current) {
         // Exit edit mode
         transitionStore.startTransition();
         
@@ -190,7 +199,7 @@ export const EditorStateProvider = ({
         
         // Update state
         setIsEditingState(false);
-        if (onEditingChange) onEditingChange(false);
+        if (onEditingChangeRef.current) onEditingChangeRef.current(false);
         
         transitionStore.endTransition();
         
@@ -201,8 +210,8 @@ export const EditorStateProvider = ({
       console.error("Error in setIsEditing:", error);
       useEditModeTransitionStore.getState().endTransition();
     }
-  };
-  
+  }, [initializeDraftComponents]);
+
   // Update sync state if provided
   useEffect(() => {
     if (onSyncUpdate && typeof onSyncUpdate === 'function') {
@@ -210,15 +219,15 @@ export const EditorStateProvider = ({
     }
   }, [isSyncing, lastSyncTime, onSyncUpdate]);
 
-  // Provide all the values
-  const value: EditorStateContextType = {
+  // Provide all the values — memoized to prevent unnecessary consumer re-renders
+  const value = useMemo<EditorStateContextType>(() => ({
     isEditing,
     setIsEditing,
     isSyncing,
     lastSyncTime,
     slideSize,
     syncConfig
-  };
+  }), [isEditing, setIsEditing, isSyncing, lastSyncTime, slideSize, syncConfig]);
 
   return (
     <EditorStateContext.Provider value={value}>
@@ -266,15 +275,15 @@ export const StaticEditorStateProvider = ({
   children,
   slideSize
 }: StaticEditorStateProviderProps) => {
-  // Static value - no hooks, no subscriptions, no re-renders
-  const value: EditorStateContextType = {
+  // Static value - memoized so the provider never triggers consumer re-renders
+  const value = useMemo<EditorStateContextType>(() => ({
     isEditing: false,
     setIsEditing: () => {},
     isSyncing: false,
     lastSyncTime: null,
     slideSize: slideSize || { width: DEFAULT_SLIDE_WIDTH, height: DEFAULT_SLIDE_HEIGHT },
     syncConfig: { enabled: false, useSupabase: false }
-  };
+  }), [slideSize]);
 
   return (
     <EditorStateContext.Provider value={value}>

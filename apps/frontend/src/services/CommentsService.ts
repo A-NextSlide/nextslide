@@ -86,14 +86,32 @@ export class CommentsService {
   }
 
   static async update(deckId: string, commentId: string, body: string): Promise<CommentEntity> {
-    const res = await apiClient.put<CommentEntity>(`/api/decks/${deckId}/comments/${commentId}`, { body });
+    const res = await apiClient.request<CommentEntity>(`/api/decks/${deckId}/comments/${commentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ body }),
+      headers: { 'Content-Type': 'application/json' },
+    });
     if (!res.ok) throw new Error(res.error || 'Failed to update comment');
+
+    try {
+      window.dispatchEvent(new CustomEvent('comments:updated', {
+        detail: { deckId, commentId }
+      }));
+    } catch {}
+
     return res.data!;
   }
 
   static async remove(deckId: string, commentId: string): Promise<{ success: true }> {
     const res = await apiClient.delete<{ success: true }>(`/api/decks/${deckId}/comments/${commentId}`);
     if (!res.ok) throw new Error(res.error || 'Failed to delete comment');
+
+    try {
+      window.dispatchEvent(new CustomEvent('comments:deleted', {
+        detail: { deckId, commentId }
+      }));
+    } catch {}
+
     return res.data || { success: true };
   }
 
@@ -103,5 +121,3 @@ export class CommentsService {
     return res.data!;
   }
 }
-
-

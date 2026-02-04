@@ -26,7 +26,7 @@ import { DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { LazyLoadSlideContainer } from '@/yjs/LazyLoadSlideContainer';
 import { useShardedYjs } from '@/yjs/ShardedYjsProvider';
 import SimpleCursors from './SimpleCursors';
-import DirectCursors from './DirectCursors';
+
 import SlideGeneratingPlaceholder from './SlideGeneratingPlaceholder';
 import { DeckStatus } from '@/types/DeckTypes';
 import ThumbnailNavigator from './ThumbnailNavigator';
@@ -630,13 +630,6 @@ const ShardedSlideViewport: React.FC<ShardedSlideViewportProps> = ({
                 <>
                   {/* Try Yjs-based cursor tracking first */}
                   <SimpleCursors
-                    slideId={currentSlide.id}
-                    containerRef={viewportRef}
-                    zoomLevel={zoomLevel}
-                  />
-                  
-                  {/* Fallback to direct cursor tracking if Yjs isn't working */}
-                  <DirectCursors
                     slideId={currentSlide.id}
                     containerRef={viewportRef}
                     zoomLevel={zoomLevel}

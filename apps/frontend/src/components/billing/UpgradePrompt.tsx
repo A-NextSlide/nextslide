@@ -163,12 +163,12 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({ onClose, action: p
                 'Unlock all your slides instantly',
                 'Share your full presentation',
                 'Export to PDF & offline formats',
-                'Unlimited presentations'
+                'No NextSlide watermark on shared links'
               ] : [
                 '2,000 credits/month (~400 presentations)',
                 'Priority AI generation',
                 'All export formats',
-                'Pay-as-you-go if you need more'
+                'No NextSlide watermark on shared links'
               ]).map((benefit, i) => (
                 <motion.div
                   key={i}

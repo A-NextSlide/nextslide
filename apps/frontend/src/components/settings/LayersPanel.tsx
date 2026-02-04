@@ -97,11 +97,11 @@ const buildLayerTree = (elements: VirtualElement[]): LayerNode[] => {
 const getElementIcon = (element: VirtualElement) => {
   switch (element.type) {
     case 'text':
-      return <Type className="w-3.5 h-3.5 text-blue-500" />;
+      return <Type className="w-3 h-3 text-blue-500" />;
     case 'image':
-      return <Image className="w-3.5 h-3.5 text-green-500" />;
+      return <Image className="w-3 h-3 text-green-500" />;
     default:
-      return <Box className="w-3.5 h-3.5 text-muted-foreground" />;
+      return <Box className="w-3 h-3 text-muted-foreground" />;
   }
 };
 
@@ -143,14 +143,14 @@ const LayerRow: React.FC<{
   return (
     <div
       className={cn(
-        'group flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-all',
+        'group flex items-center gap-1.5 px-1.5 py-0.5 rounded cursor-pointer transition-all',
         'hover:bg-muted/50',
-        isSelected && 'bg-pink-50 dark:bg-pink-950/30 border border-pink-200 dark:border-pink-800',
+        isSelected && 'bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/30',
         isDropInside && 'bg-muted/70',
-        isDropBefore && 'border-t-2 border-pink-500',
-        isDropAfter && 'border-b-2 border-pink-500'
+        isDropBefore && 'border-t-[1.5px] border-orange-500',
+        isDropAfter && 'border-b-[1.5px] border-orange-500'
       )}
-      style={{ paddingLeft: `${depth * 12 + 8}px` }}
+      style={{ paddingLeft: `${depth * 10 + 6}px` }}
       draggable
       onDragStart={() => onDragStart(node.id)}
       onDragOver={(e) => onDragOver(e, node)}
@@ -167,38 +167,38 @@ const LayerRow: React.FC<{
           }}
         >
           {isExpanded ? (
-            <ChevronDown className="w-3 h-3" />
+            <ChevronDown className="w-2.5 h-2.5" />
           ) : (
-            <ChevronRight className="w-3 h-3" />
+            <ChevronRight className="w-2.5 h-2.5" />
           )}
         </button>
       ) : (
-        <span className="w-3 h-3" />
+        <span className="w-2.5 h-2.5" />
       )}
 
       <div
         className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <GripVertical className="w-3 h-3" />
+        <GripVertical className="w-2.5 h-2.5" />
       </div>
 
       {getElementIcon(node.element)}
 
-      <span className="flex-1 text-[11px] truncate">
+      <span className="flex-1 text-[10px] truncate">
         {getElementDisplayName(node.element, elementIndexById.get(node.id))}
       </span>
 
       <Button
         variant="ghost"
         size="sm"
-        className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:opacity-100 hover:bg-red-100 hover:text-red-600"
+        className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-500/10"
         onClick={(e) => {
           e.stopPropagation();
           onDelete(node.id);
         }}
       >
-        <Trash2 className="w-3 h-3" />
+        <Trash2 className="w-2.5 h-2.5" />
       </Button>
     </div>
   );
@@ -332,31 +332,29 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ onSave }) => {
 
   return (
     <div
-      className="border rounded-md overflow-hidden"
+      className="border border-border/60 rounded-md overflow-hidden"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center gap-2 w-full px-2.5 py-1.5 bg-muted/20">
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-2 flex-1 hover:bg-muted/50 -ml-1 pl-1 py-0.5 rounded transition-colors"
-        >
-          {isExpanded ? (
-            <ChevronDown className="w-3.5 h-3.5" />
-          ) : (
-            <ChevronRight className="w-3.5 h-3.5" />
-          )}
-          <Layers className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="text-[11px] font-medium">Layers</span>
-          <span className="text-[10px] text-muted-foreground">
-            {detectedElements.length}
-          </span>
-        </button>
-      </div>
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center gap-1.5 px-2 py-1.5 hover:bg-muted/60 transition-colors"
+      >
+        {isExpanded ? (
+          <ChevronDown className="w-3 h-3 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="w-3 h-3 text-muted-foreground" />
+        )}
+        <Layers className="w-3 h-3 text-muted-foreground" />
+        <span className="text-[11px] font-medium flex-1 text-left">Layers</span>
+        <span className="text-[9px] text-muted-foreground tabular-nums">
+          {detectedElements.length}
+        </span>
+      </button>
 
       {isExpanded && (
-        <div className="p-1.5 space-y-0.5 max-h-[320px] overflow-y-auto">
+        <div className="p-1 space-y-px max-h-[280px] overflow-y-auto border-t border-border/40">
           {renderNodes(layerTree, 0)}
         </div>
       )}

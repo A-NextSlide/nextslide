@@ -68,17 +68,19 @@ const TabButton: React.FC<TabButtonProps> = ({
   label,
   className
 }) => (
-  <button 
+  <button
     onClick={onClick}
-    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors flex-1 justify-center text-xs ${
-      active ? 'hover:bg-pink-500/10' : 'hover:bg-secondary/50 text-muted-foreground'
+    className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all text-[11px] font-medium ${
+      active
+        ? 'bg-orange-50 dark:bg-orange-500/10'
+        : 'hover:bg-muted/60 text-muted-foreground'
     } ${className || ''}`}
     style={{
       color: active ? COLORS.SUGGESTION_PINK : undefined
     }}
     title={label}
   >
-    <Icon size={14} />
+    <Icon size={13} strokeWidth={active ? 2.2 : 1.8} />
     <span>{label}</span>
   </button>
 );
@@ -168,10 +170,10 @@ const ComponentSettingsEditor: React.FC<ComponentSettingsEditorProps> = ({
   // Show empty state when no component is selected
   if (!component || !componentInfo) {
     return (
-      <div className="bg-background outline outline-1 outline-border rounded-lg shadow-sm h-full w-full flex flex-col items-center justify-center p-6 text-center text-muted-foreground">
-        <MousePointer className="w-10 h-10 mb-3 opacity-40" />
-        <h3 className="text-sm font-medium mb-1">No Component Selected</h3>
-        <p className="text-xs">
+      <div className="bg-background h-full w-full flex flex-col items-center justify-center p-6 text-center text-muted-foreground">
+        <MousePointer className="w-8 h-8 mb-2 opacity-30" />
+        <h3 className="text-[11px] font-medium mb-0.5 text-foreground/60">No Component Selected</h3>
+        <p className="text-[10px] text-muted-foreground/70">
           Select a component on the slide to edit its properties.
         </p>
       </div>
@@ -206,7 +208,7 @@ const ComponentSettingsEditor: React.FC<ComponentSettingsEditorProps> = ({
   // Generic prop change handler
   const handlePropChange = (propName: string, value: any, skipHistory: boolean = false) => {
     if (!component) return;
-    
+
     // IMPORTANT: Only send the changed prop to avoid overwriting
     // concurrent updates that might be happening in the same frame.
     // This prevents cases where a subsequent update (e.g., clearing
@@ -214,16 +216,19 @@ const ComponentSettingsEditor: React.FC<ComponentSettingsEditorProps> = ({
     // using a stale snapshot of component.props.
     const propUpdate: Record<string, any> = { [propName]: value };
 
-    if (onUpdate) {
-      // Pass only the delta so the parent can merge safely
-      onUpdate({ props: propUpdate });
-    } else {
+    // Use context directly to properly respect skipHistory.
+    // Going through onUpdate loses the skipHistory flag, causing every
+    // intermediate change (slider drag, typing) to create history entries
+    // and forcing RAF-delayed re-renders that make controls briefly reset.
+    if (contextUpdateComponent) {
       try {
-        // Send only the delta to the store; it merges with current props
-        contextUpdateComponent?.(component.id, { props: propUpdate }, skipHistory);
+        contextUpdateComponent(component.id, { props: propUpdate }, skipHistory);
       } catch (error) {
         console.error("Error updating component:", error);
       }
+    } else if (onUpdate) {
+      // Fallback when context is not available
+      onUpdate({ props: propUpdate });
     }
   };
 
@@ -553,9 +558,9 @@ const ComponentSettingsEditor: React.FC<ComponentSettingsEditorProps> = ({
   // Complete settings editor UI with tabs
   return (
     <div className="bg-background h-full w-full flex flex-col overflow-hidden" style={{ position: 'relative', zIndex: 60, pointerEvents: 'auto' }} data-tour="component-settings">
-      {/* Tab Navigation with component title and delete button */}
-      <div className="flex items-center justify-between p-2 sticky top-0 z-10 bg-background">
-        <div className="flex gap-1">
+      {/* Tab Navigation - tight, dense header */}
+      <div className="flex items-center justify-between px-2 py-1.5 sticky top-0 z-10 bg-background border-b border-border/40">
+        <div className="flex gap-0.5">
           <TabButton
             active={activeTab === 'component'}
             onClick={() => setActiveTab('component')}
@@ -569,46 +574,43 @@ const ComponentSettingsEditor: React.FC<ComponentSettingsEditorProps> = ({
             label="Layout"
           />
         </div>
-        
-        <div className="flex items-center gap-2">
-          {component && !(component.type === 'Background' || (component.id && component.id.toLowerCase().includes('background'))) && (
-            <button
-              className="rounded-md h-8 w-8 p-0 inline-flex items-center justify-center hover:bg-pink-500/10 border-0"
-              onClick={handleDeleteComponent}
-              title="Delete component"
-              style={{ color: COLORS.SUGGESTION_PINK }}
-            >
-              <Trash2 size={16} />
-            </button>
-          )}
-        </div>
+
+        {component && !(component.type === 'Background' || (component.id && component.id.toLowerCase().includes('background'))) && (
+          <button
+            className="rounded-md h-6 w-6 p-0 inline-flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors border-0"
+            onClick={handleDeleteComponent}
+            title="Delete component"
+          >
+            <Trash2 size={13} className="text-muted-foreground hover:text-red-500 transition-colors" />
+          </button>
+        )}
       </div>
-      
+
       {/* Tab Content */}
       <div className="flex-grow overflow-hidden relative">
         {/* Top fade effect */}
         {showTopFade && (
-          <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-background to-transparent z-10 pointer-events-none" />
+          <div className="absolute top-0 left-0 right-0 h-6 bg-gradient-to-b from-background to-transparent z-10 pointer-events-none" />
         )}
-        
+
         <div
           ref={scrollRef}
-          className="h-full overflow-auto p-3"
+          className="h-full overflow-auto px-2.5 py-2"
           onScroll={handleScroll}
           style={{ overscrollBehavior: 'contain', scrollbarGutter: 'stable both-edges' }}
         >
           {activeTab === 'component' && (
-            <div className="space-y-6">
+            <div className="space-y-3">
               {/* Specialized Editors */}
               {specializedEditor}
-              
+
               {/* Only show the rest if no specialized editor */}
               {!specializedEditor && (
                 <>
-                  {/* Shadow Settings - Only show if component has shadow properties */}
+                  {/* Shadow Settings */}
                   {component.props?.shadow !== undefined && (
-                    <div className="space-y-4">
-                      <h4 className="text-sm font-medium">Shadow</h4>
+                    <div className="space-y-2">
+                      <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Shadow</h4>
                       <ShadowSettingsEditor
                         component={component}
                         onUpdate={adaptPropChangeToRecord}
@@ -617,13 +619,13 @@ const ComponentSettingsEditor: React.FC<ComponentSettingsEditorProps> = ({
                       />
                     </div>
                   )}
-                  
-                  {/* Background Settings - Only show for components with background properties */}
-                  {(component.props?.backgroundColor !== undefined || 
-                    component.props?.backgroundImage !== undefined || 
+
+                  {/* Background Settings */}
+                  {(component.props?.backgroundColor !== undefined ||
+                    component.props?.backgroundImage !== undefined ||
                     component.props?.gradient !== undefined ||
                     component.props?.color !== undefined) && (
-                    <div className="space-y-4">
+                    <div className="space-y-2">
                       <BackgroundSettingsEditor
                         component={component}
                         onUpdate={updateComponentProps}
@@ -631,27 +633,27 @@ const ComponentSettingsEditor: React.FC<ComponentSettingsEditorProps> = ({
                       />
                     </div>
                   )}
-                  
+
                   {/* Other Component Properties */}
-                  <div className="space-y-4">
-                    <h4 className="text-sm font-medium">Properties</h4>
+                  <div className="space-y-2">
+                    <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Properties</h4>
                     {renderComponentProps()}
                   </div>
                 </>
               )}
             </div>
           )}
-          
+
           {activeTab === 'layout' && (
-            <div className="space-y-4">
+            <div className="space-y-2">
               {renderLayoutSettings()}
             </div>
           )}
         </div>
-        
+
         {/* Bottom fade effect */}
         {showBottomFade && (
-          <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-background to-transparent z-10 pointer-events-none" />
+          <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-background to-transparent z-10 pointer-events-none" />
         )}
       </div>
     </div>

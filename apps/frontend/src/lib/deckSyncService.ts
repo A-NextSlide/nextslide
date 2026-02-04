@@ -884,8 +884,27 @@ export class DeckSyncService {
       ...(deck.notes && { notes: deck.notes })
       // Don't include user_id - backend sets it from auth token
     };
-    
+
     return formattedDeck;
+  }
+
+  /**
+   * Fire-and-forget: ask the backend to render OG thumbnails for a deck.
+   * Called when the user exits the deck editor.
+   */
+  async triggerThumbnail(deckId: string): Promise<void> {
+    try {
+      const token = await authService.getAuthTokenAsync();
+      const url = this.getApiUrl(`/auth/decks/${deckId}/thumbnail`);
+      await fetch(url, {
+        method: 'POST',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+    } catch {
+      // Non-critical — swallow errors silently
+    }
   }
 }
 

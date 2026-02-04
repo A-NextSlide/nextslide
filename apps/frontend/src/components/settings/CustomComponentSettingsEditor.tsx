@@ -201,15 +201,15 @@ const DynamicTextEditor: React.FC<{
 
   return (
     <div
-      className="space-y-2"
+      className="space-y-1.5"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      {/* Hide text input when in edit mode - user is editing directly in the slide */}
+      {/* Text input - hidden when editing directly in the slide */}
       {!hideTextInput && (
-        <div className="space-y-1">
-          <Label className="text-[11px] text-muted-foreground">Text</Label>
+        <div className="space-y-0.5">
+          <Label className="text-[10px] text-muted-foreground">Text</Label>
           <Textarea
             value={localText}
             onChange={(e) => {
@@ -217,40 +217,28 @@ const DynamicTextEditor: React.FC<{
               onTextUpdate(element.id, e.target.value);
             }}
             onBlur={() => onSave('Updated text')}
-            className="w-full text-[11px] min-h-[52px] resize-none"
+            className="w-full text-[11px] min-h-[44px] resize-none"
           />
         </div>
       )}
 
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground">Font</Label>
+      <div className="space-y-0.5">
+        <Label className="text-[10px] text-muted-foreground">Font</Label>
         <GroupedDropdown
           value={currentFont}
           options={allFonts}
           groups={fontCategories}
           onChange={(value) => {
-            // Update local state immediately for responsive UI
             setCurrentFont(value);
-
-            // Get font definition to determine source type
             const fontDef = FontLoadingService.getFontDefinition?.(value);
-            console.log('[DynamicTextEditor] Font selected:', { value, fontDef });
-
-            // First inject the font into the iframe with source info
             onInjectFont?.(value, fontDef ? {
               source: fontDef.source,
               url: fontDef.url,
               family: fontDef.family,
-              id: (fontDef as any).id, // Designer fonts have an ID for API lookup
+              id: (fontDef as any).id,
             } : undefined);
-
-            // Apply the font family style - JS DOM API handles quoting automatically
             onStyleUpdate(element.selector, 'fontFamily', value);
-
-            // Also load in parent for consistency
             FontLoadingService.loadFont(value).catch(() => {});
-
-            // Request HTML update to persist
             onRequestHtmlUpdate?.();
             onSave('Changed font');
           }}
@@ -258,116 +246,28 @@ const DynamicTextEditor: React.FC<{
         />
       </div>
 
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground">Size</Label>
-        <div className="flex items-center gap-2">
-          <Slider
-            min={8}
-            max={maxFontSize}
-            step={1}
-            value={[fontSize]}
-            onValueChange={(values) => onStyleUpdate(element.selector, 'fontSize', `${values[0]}px`)}
-            onPointerUp={() => {
-              onRequestHtmlUpdate?.();
-              onSave('Changed font size');
-            }}
-            className="flex-grow"
-          />
-          <span className="text-[11px] w-10 text-right">{fontSize}px</span>
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground">Weight</Label>
-        <div className="flex gap-0.5">
-          {['300', '400', '500', '600', '700'].map((weight) => (
-            <Button
-              key={weight}
-              variant={element.computedStyle?.fontWeight === weight ? 'default' : 'outline'}
-              size="sm"
-              className="h-5 px-1.5 text-[9px] flex-1"
-              onClick={() => {
-                onStyleUpdate(element.selector, 'fontWeight', weight);
+      {/* Size + Color on same row */}
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <div className="space-y-0.5">
+          <Label className="text-[10px] text-muted-foreground">Size</Label>
+          <div className="flex items-center gap-1.5">
+            <Slider
+              min={8}
+              max={maxFontSize}
+              step={1}
+              value={[fontSize]}
+              onValueChange={(values) => onStyleUpdate(element.selector, 'fontSize', `${values[0]}px`)}
+              onPointerUp={() => {
                 onRequestHtmlUpdate?.();
-                onSave('Changed font weight');
+                onSave('Changed font size');
               }}
-            >
-              {weight === '300' ? 'Lt' :
-               weight === '400' ? 'Rg' :
-               weight === '500' ? 'Md' :
-               weight === '600' ? 'Sb' : 'Bd'}
-            </Button>
-          ))}
+              className="flex-grow"
+            />
+            <span className="text-[10px] w-8 text-right tabular-nums">{fontSize}px</span>
+          </div>
         </div>
-      </div>
-
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground">Alignment</Label>
-        <div className="flex gap-0.5">
-          {[
-            { value: 'left', Icon: AlignLeft },
-            { value: 'center', Icon: AlignCenter },
-            { value: 'right', Icon: AlignRight },
-            { value: 'justify', Icon: AlignJustify },
-          ].map(({ value, Icon }) => (
-            <Button
-              key={value}
-              variant={textAlign === value ? 'default' : 'outline'}
-              size="sm"
-              className="h-5 px-1.5 flex-1"
-              onClick={() => {
-                onStyleUpdate(element.selector, 'textAlign', value);
-                onRequestHtmlUpdate?.();
-                onSave('Changed text alignment');
-              }}
-            >
-              <Icon className="w-3 h-3" />
-            </Button>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground">Line Height</Label>
-        <div className="flex items-center gap-2">
-          <Slider
-            min={0.8}
-            max={3}
-            step={0.1}
-            value={[lineHeight]}
-            onValueChange={(values) => onStyleUpdate(element.selector, 'lineHeight', String(values[0]))}
-            onPointerUp={() => {
-              onRequestHtmlUpdate?.();
-              onSave('Changed line height');
-            }}
-            className="flex-grow"
-          />
-          <span className="text-[11px] w-8 text-right">{lineHeight.toFixed(1)}</span>
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground">Letter Spacing</Label>
-        <div className="flex items-center gap-2">
-          <Slider
-            min={-2}
-            max={10}
-            step={0.5}
-            value={[letterSpacing]}
-            onValueChange={(values) => onStyleUpdate(element.selector, 'letterSpacing', `${values[0]}px`)}
-            onPointerUp={() => {
-              onRequestHtmlUpdate?.();
-              onSave('Changed letter spacing');
-            }}
-            className="flex-grow"
-          />
-          <span className="text-[11px] w-10 text-right">{letterSpacing}px</span>
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground">Color</Label>
-        <div className="flex items-center gap-2">
+        <div className="space-y-0.5">
+          <Label className="text-[10px] text-muted-foreground">Color</Label>
           <Popover open={colorPickerOpen} onOpenChange={(open) => {
             setColorPickerOpen(open);
             if (!open) {
@@ -377,31 +277,123 @@ const DynamicTextEditor: React.FC<{
           }}>
             <PopoverTrigger asChild>
               <button
-                className="w-5 h-5 rounded-md border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 flex-shrink-0"
+                className="w-6 h-6 rounded border border-border cursor-pointer focus:outline-none focus:ring-1 focus:ring-orange-500 flex-shrink-0"
                 style={{ backgroundColor: textColor }}
               />
             </PopoverTrigger>
-            <PopoverContent className="w-[216px] p-2" align="start" sideOffset={5}>
+            <PopoverContent className="w-[200px] p-2" align="end" sideOffset={5}>
               <HexColorPicker
                 color={textColor}
                 onChange={(color) => {
                   setTextColor(color);
                   onStyleUpdate(element.selector, 'color', color);
                 }}
-                className="!w-full !h-[200px]"
+                className="!w-full !h-[180px]"
+              />
+              <Input
+                value={textColor}
+                onChange={(e) => {
+                  setTextColor(e.target.value);
+                  onStyleUpdate(element.selector, 'color', e.target.value);
+                }}
+                onBlur={() => onSave('Changed color')}
+                className="mt-1.5 h-6 text-[10px] font-mono"
+                placeholder="#000000"
               />
             </PopoverContent>
           </Popover>
-          <Input
-            value={textColor}
-            onChange={(e) => {
-              setTextColor(e.target.value);
-              onStyleUpdate(element.selector, 'color', e.target.value);
-            }}
-            onBlur={() => onSave('Changed color')}
-            className="flex-1 h-6 text-[11px] font-mono"
-            placeholder="#000000"
-          />
+        </div>
+      </div>
+
+      {/* Weight + Alignment on same row */}
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className="space-y-0.5">
+          <Label className="text-[10px] text-muted-foreground">Weight</Label>
+          <div className="flex gap-px">
+            {['300', '400', '500', '600', '700'].map((weight) => (
+              <Button
+                key={weight}
+                variant={element.computedStyle?.fontWeight === weight ? 'default' : 'outline'}
+                size="sm"
+                className="h-5 px-1 text-[8px] flex-1 rounded-sm"
+                onClick={() => {
+                  onStyleUpdate(element.selector, 'fontWeight', weight);
+                  onRequestHtmlUpdate?.();
+                  onSave('Changed font weight');
+                }}
+              >
+                {weight === '300' ? 'Lt' :
+                 weight === '400' ? 'Rg' :
+                 weight === '500' ? 'Md' :
+                 weight === '600' ? 'Sb' : 'Bd'}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-0.5">
+          <Label className="text-[10px] text-muted-foreground">Align</Label>
+          <div className="flex gap-px">
+            {[
+              { value: 'left', Icon: AlignLeft },
+              { value: 'center', Icon: AlignCenter },
+              { value: 'right', Icon: AlignRight },
+              { value: 'justify', Icon: AlignJustify },
+            ].map(({ value, Icon }) => (
+              <Button
+                key={value}
+                variant={textAlign === value ? 'default' : 'outline'}
+                size="sm"
+                className="h-5 px-1 flex-1 rounded-sm"
+                onClick={() => {
+                  onStyleUpdate(element.selector, 'textAlign', value);
+                  onRequestHtmlUpdate?.();
+                  onSave('Changed text alignment');
+                }}
+              >
+                <Icon className="w-2.5 h-2.5" />
+              </Button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Line Height + Letter Spacing on same row */}
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className="space-y-0.5">
+          <Label className="text-[10px] text-muted-foreground">Line Height</Label>
+          <div className="flex items-center gap-1">
+            <Slider
+              min={0.8}
+              max={3}
+              step={0.1}
+              value={[lineHeight]}
+              onValueChange={(values) => onStyleUpdate(element.selector, 'lineHeight', String(values[0]))}
+              onPointerUp={() => {
+                onRequestHtmlUpdate?.();
+                onSave('Changed line height');
+              }}
+              className="flex-grow"
+            />
+            <span className="text-[9px] w-6 text-right tabular-nums">{lineHeight.toFixed(1)}</span>
+          </div>
+        </div>
+        <div className="space-y-0.5">
+          <Label className="text-[10px] text-muted-foreground">Spacing</Label>
+          <div className="flex items-center gap-1">
+            <Slider
+              min={-2}
+              max={10}
+              step={0.5}
+              value={[letterSpacing]}
+              onValueChange={(values) => onStyleUpdate(element.selector, 'letterSpacing', `${values[0]}px`)}
+              onPointerUp={() => {
+                onRequestHtmlUpdate?.();
+                onSave('Changed letter spacing');
+              }}
+              className="flex-grow"
+            />
+            <span className="text-[9px] w-7 text-right tabular-nums">{letterSpacing}px</span>
+          </div>
         </div>
       </div>
     </div>
@@ -495,15 +487,15 @@ const DynamicContainerEditor: React.FC<{
 
   return (
     <div
-      className="space-y-2"
+      className="space-y-1.5"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Background Color */}
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground">Background</Label>
-        <div className="flex items-center gap-2">
+      <div className="space-y-0.5">
+        <Label className="text-[10px] text-muted-foreground">Background</Label>
+        <div className="flex items-center gap-1.5">
           <Popover open={bgColorOpen} onOpenChange={(open) => {
             setBgColorOpen(open);
             if (!open) {
@@ -513,18 +505,18 @@ const DynamicContainerEditor: React.FC<{
           }}>
             <PopoverTrigger asChild>
               <button
-                className="w-5 h-5 rounded-md border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 flex-shrink-0"
+                className="w-5 h-5 rounded border border-border cursor-pointer focus:outline-none focus:ring-1 focus:ring-orange-500 flex-shrink-0"
                 style={{ backgroundColor: bgColor }}
               />
             </PopoverTrigger>
-            <PopoverContent className="w-[216px] p-2" align="start" sideOffset={5}>
+            <PopoverContent className="w-[200px] p-2" align="start" sideOffset={5}>
               <HexColorPicker
                 color={bgColor}
                 onChange={(color) => {
                   setBgColor(color);
                   onStyleUpdate(element.selector, 'backgroundColor', color);
                 }}
-                className="!w-full !h-[200px]"
+                className="!w-full !h-[180px]"
               />
             </PopoverContent>
           </Popover>
@@ -535,62 +527,62 @@ const DynamicContainerEditor: React.FC<{
               onStyleUpdate(element.selector, 'backgroundColor', e.target.value);
             }}
             onBlur={() => onSave('Changed background')}
-            className="flex-1 h-6 text-[11px] font-mono"
+            className="flex-1 h-5 text-[10px] font-mono"
             placeholder="#ffffff"
           />
         </div>
       </div>
 
-      {/* Border Radius */}
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground">Corner Radius</Label>
-        <div className="flex items-center gap-2">
-          <Slider
-            min={0}
-            max={50}
-            step={1}
-            value={[borderRadius]}
-            onValueChange={(values) => {
-              setBorderRadius(values[0]);
-              onStyleUpdate(element.selector, 'borderRadius', `${values[0]}px`);
-            }}
-            onPointerUp={() => {
-              onRequestHtmlUpdate?.();
-              onSave('Changed border radius');
-            }}
-            className="flex-grow"
-          />
-          <span className="text-[11px] w-10 text-right">{borderRadius}px</span>
+      {/* Corner Radius + Padding on same row */}
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className="space-y-0.5">
+          <Label className="text-[10px] text-muted-foreground">Radius</Label>
+          <div className="flex items-center gap-1">
+            <Slider
+              min={0}
+              max={50}
+              step={1}
+              value={[borderRadius]}
+              onValueChange={(values) => {
+                setBorderRadius(values[0]);
+                onStyleUpdate(element.selector, 'borderRadius', `${values[0]}px`);
+              }}
+              onPointerUp={() => {
+                onRequestHtmlUpdate?.();
+                onSave('Changed border radius');
+              }}
+              className="flex-grow"
+            />
+            <span className="text-[9px] w-7 text-right tabular-nums">{borderRadius}px</span>
+          </div>
         </div>
-      </div>
-
-      {/* Padding */}
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground">Padding</Label>
-        <div className="flex items-center gap-2">
-          <Slider
-            min={0}
-            max={100}
-            step={4}
-            value={[padding]}
-            onValueChange={(values) => {
-              setPadding(values[0]);
-              onStyleUpdate(element.selector, 'padding', `${values[0]}px`);
-            }}
-            onPointerUp={() => {
-              onRequestHtmlUpdate?.();
-              onSave('Changed padding');
-            }}
-            className="flex-grow"
-          />
-          <span className="text-[11px] w-10 text-right">{padding}px</span>
+        <div className="space-y-0.5">
+          <Label className="text-[10px] text-muted-foreground">Padding</Label>
+          <div className="flex items-center gap-1">
+            <Slider
+              min={0}
+              max={100}
+              step={4}
+              value={[padding]}
+              onValueChange={(values) => {
+                setPadding(values[0]);
+                onStyleUpdate(element.selector, 'padding', `${values[0]}px`);
+              }}
+              onPointerUp={() => {
+                onRequestHtmlUpdate?.();
+                onSave('Changed padding');
+              }}
+              className="flex-grow"
+            />
+            <span className="text-[9px] w-7 text-right tabular-nums">{padding}px</span>
+          </div>
         </div>
       </div>
 
       {/* Border */}
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground">Border</Label>
-        <div className="flex items-center gap-2">
+      <div className="space-y-0.5">
+        <Label className="text-[10px] text-muted-foreground">Border</Label>
+        <div className="flex items-center gap-1.5">
           <Popover open={borderColorOpen} onOpenChange={(open) => {
             setBorderColorOpen(open);
             if (!open) {
@@ -600,18 +592,18 @@ const DynamicContainerEditor: React.FC<{
           }}>
             <PopoverTrigger asChild>
               <button
-                className="w-5 h-5 rounded-md border-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 flex-shrink-0"
+                className="w-5 h-5 rounded border-2 cursor-pointer focus:outline-none focus:ring-1 focus:ring-orange-500 flex-shrink-0"
                 style={{ borderColor: borderColor, backgroundColor: 'transparent' }}
               />
             </PopoverTrigger>
-            <PopoverContent className="w-[216px] p-2" align="start" sideOffset={5}>
+            <PopoverContent className="w-[200px] p-2" align="start" sideOffset={5}>
               <HexColorPicker
                 color={borderColor}
                 onChange={(color) => {
                   setBorderColor(color);
                   onStyleUpdate(element.selector, 'borderColor', color);
                 }}
-                className="!w-full !h-[200px]"
+                className="!w-full !h-[180px]"
               />
             </PopoverContent>
           </Popover>
@@ -627,9 +619,9 @@ const DynamicContainerEditor: React.FC<{
               onSave('Changed border');
             }}
           >
-          <SelectTrigger className="h-6 text-[11px] flex-1">
-            <SelectValue />
-          </SelectTrigger>
+            <SelectTrigger className="h-5 text-[10px] flex-1">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">None</SelectItem>
               <SelectItem value="1px">1px</SelectItem>
@@ -652,18 +644,19 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   const [showCodeEditor, setShowCodeEditor] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState<Record<string, boolean>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    selected: false,  // Selected element section collapsed by default
+    selected: false,
     text: false,
-    images: true,
+    images: false,
     containers: false,
   });
 
   // Reset expanded sections when component changes (navigating slides)
+  // All start collapsed - the selected section auto-expands on element click
   useEffect(() => {
     setExpandedSections({
       selected: false,
       text: false,
-      images: true,
+      images: false,
       containers: false,
     });
   }, [component.id]);
@@ -679,10 +672,10 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   // Track if we're in text edit mode (editingElement is set but selectedElement is null)
   const isTextEditMode = isActiveComponent && editingElement && !selectedElement;
 
-  // Auto-expand the selected section when an image element is selected
+  // Auto-expand the selected section whenever an element is selected (any type)
   const activeSelectedElementRef = useRef<typeof activeSelectedElement>(null);
   useEffect(() => {
-    if (activeSelectedElement?.type === 'image' && activeSelectedElement !== activeSelectedElementRef.current) {
+    if (activeSelectedElement && activeSelectedElement !== activeSelectedElementRef.current) {
       setExpandedSections(prev => ({ ...prev, selected: true }));
     }
     activeSelectedElementRef.current = activeSelectedElement;
@@ -1212,94 +1205,77 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
     }, 150);
   };
   
+  // Shared collapsible section header style
+  const SectionHeader: React.FC<{
+    expanded: boolean;
+    onToggle: () => void;
+    icon: React.ReactNode;
+    label: string;
+    count?: number;
+    accent?: boolean;
+  }> = ({ expanded, onToggle, icon, label, count, accent }) => (
+    <button
+      onClick={onToggle}
+      className={`w-full flex items-center gap-1.5 px-2 py-1.5 text-left transition-colors rounded-md ${
+        accent && !expanded
+          ? 'bg-orange-50 dark:bg-orange-500/10 hover:bg-orange-100 dark:hover:bg-orange-500/15'
+          : 'hover:bg-muted/60'
+      }`}
+    >
+      {expanded
+        ? <ChevronDown className="w-3 h-3 text-muted-foreground" />
+        : <ChevronRight className={`w-3 h-3 ${accent ? 'text-orange-500' : 'text-muted-foreground'}`} />
+      }
+      {icon}
+      <span className="text-[11px] font-medium flex-1 truncate">{label}</span>
+      {count !== undefined && (
+        <span className="text-[9px] text-muted-foreground tabular-nums">{count}</span>
+      )}
+    </button>
+  );
+
   return (
     <div
-      className="space-y-2"
+      className="space-y-1"
       // CRITICAL: Stop all event propagation to prevent selecting components underneath
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      {/* Component Settings Header */}
-      <div className="flex items-center gap-2 pb-2 mb-1 border-b border-zinc-100">
-        <div className="w-5 h-5 rounded-md bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center">
-          <Zap className="w-3 h-3 text-white" />
+      {/* Component Settings Header - minimal brand accent */}
+      <div className="flex items-center gap-1.5 pb-1.5 mb-0.5">
+        <div className="w-4 h-4 rounded bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center flex-shrink-0">
+          <Zap className="w-2.5 h-2.5 text-white" />
         </div>
-        <h3 className="text-[12px] font-semibold text-zinc-800">Custom Property</h3>
+        <span className="text-[11px] font-semibold">Custom Property</span>
       </div>
-      {/* Code Editor - temporarily hidden
-      <Dialog open={showCodeEditor} onOpenChange={setShowCodeEditor}>
-        <DialogTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-[11px] mt-2"
-          >
-            <Code className="w-3 h-3 mr-1" />
-            code editor
-          </Button>
-        </DialogTrigger>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto overscroll-contain">
-          <DialogHeader>
-            <DialogTitle>Custom Component Code Editor</DialogTitle>
-            <DialogDescription>
-              Edit your custom component's React code.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="mt-4">
-            <AdvancedCodeEditor
-              value={renderCode}
-              onChange={(value) => {
-                // Store exactly what user types (unescaped newlines)
-                handlePropChangeRef.current('render', value, true);
-              }}
-              onBlur={() => saveComponentToHistoryRef.current('Updated component code')}
-              minHeight="400px"
-              maxHeight="60vh"
-            />
-            <div className="mt-4 text-xs text-muted-foreground space-y-1">
-              <p>• Use <code className="bg-muted px-1 rounded">const propName = props.propName || defaultValue;</code> to create editable properties</p>
-              <p>• The component must define a <code className="bg-muted px-1 rounded">render</code> function</p>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-      */}
 
       {/* Dynamic Element Editor for HTML components */}
       {isHtmlComponent && isActiveComponent && activeDetectedElements.length > 0 && (
-        <div className="space-y-2">
-          {/* Selected Element Editor - AT THE TOP */}
+        <div className="space-y-0.5">
+          {/* Selected Element Editor */}
           {activeSelectedElement && (
-            <div className={`rounded-lg overflow-hidden border ${expandedSections.selected ? 'border-zinc-200 bg-white' : 'border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50'}`}>
-              {/* Collapsible header */}
-              <button
-                onClick={() => setExpandedSections(prev => ({ ...prev, selected: !prev.selected }))}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors ${
-                  expandedSections.selected
-                    ? 'hover:bg-zinc-50'
-                    : 'hover:from-orange-100 hover:to-amber-100'
-                }`}
-              >
-                {expandedSections.selected ? <ChevronDown className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronRight className="w-3.5 h-3.5 text-orange-500" />}
-                {activeSelectedElement.type === 'text' && <Type className={`w-3.5 h-3.5 ${expandedSections.selected ? 'text-blue-500' : 'text-orange-600'}`} />}
-                {activeSelectedElement.type === 'image' && <Image className={`w-3.5 h-3.5 ${expandedSections.selected ? 'text-green-500' : 'text-orange-600'}`} />}
-                {activeSelectedElement.type === 'container' && <Maximize2 className={`w-3.5 h-3.5 ${expandedSections.selected ? 'text-purple-500' : 'text-orange-600'}`} />}
-                <span className={`text-[11px] font-medium flex-1 truncate ${expandedSections.selected ? 'text-zinc-700' : 'text-orange-700'}`}>
-                  Selected: {activeSelectedElement.type === 'text'
-                    ? (activeSelectedElement.textContent?.slice(0, 20) + (activeSelectedElement.textContent && activeSelectedElement.textContent.length > 20 ? '...' : ''))
-                    : getElementDisplayName(activeSelectedElement)}
-                </span>
-                {activeSelectedElement.bounds && (
-                  <span className={`text-[9px] ${expandedSections.selected ? 'text-zinc-400' : 'text-orange-500'}`}>
-                    {Math.round(activeSelectedElement.bounds.width)}×{Math.round(activeSelectedElement.bounds.height)}
-                  </span>
-                )}
-              </button>
+            <div className={`rounded-md overflow-hidden border ${
+              expandedSections.selected ? 'border-border bg-background' : 'border-orange-200 dark:border-orange-500/30 bg-orange-50/50 dark:bg-orange-500/5'
+            }`}>
+              <SectionHeader
+                expanded={expandedSections.selected}
+                onToggle={() => setExpandedSections(prev => ({ ...prev, selected: !prev.selected }))}
+                accent={!expandedSections.selected}
+                icon={
+                  activeSelectedElement.type === 'text'
+                    ? <Type className="w-3 h-3 text-blue-500" />
+                    : activeSelectedElement.type === 'image'
+                    ? <Image className="w-3 h-3 text-green-500" />
+                    : <Maximize2 className="w-3 h-3 text-purple-500" />
+                }
+                label={activeSelectedElement.type === 'text'
+                  ? (activeSelectedElement.textContent?.slice(0, 25) + (activeSelectedElement.textContent && activeSelectedElement.textContent.length > 25 ? '...' : ''))
+                  : getElementDisplayName(activeSelectedElement)}
+              />
 
-              {/* Expanded content */}
               {expandedSections.selected && (
-                <div className="px-3 pb-3 pt-1 border-t border-zinc-100">
+                <div className="px-2 pb-2 pt-1 border-t border-border/40">
                   {activeSelectedElement.type === 'text' && (
                     <DynamicTextEditor
                       element={activeSelectedElement}
@@ -1313,11 +1289,11 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                   )}
 
                   {activeSelectedElement.type === 'image' && activeSelectedElement.src && (
-                    <div className="rounded-lg overflow-hidden border border-border/50 bg-[repeating-conic-gradient(#f5f5f5_0_90deg,#fafafa_90deg_180deg)_0_0/12px_12px]">
+                    <div className="rounded-md overflow-hidden border border-border/40 bg-[repeating-conic-gradient(#f5f5f5_0_90deg,#fafafa_90deg_180deg)_0_0/10px_10px]">
                       <img
                         src={activeSelectedElement.src}
                         alt={getElementDisplayName(activeSelectedElement)}
-                        className="w-full h-28 object-contain"
+                        className="w-full h-24 object-contain"
                       />
                     </div>
                   )}
@@ -1335,22 +1311,20 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
             </div>
           )}
 
-          {/* Collapsible sections - ALWAYS visible regardless of selection */}
-            <div className="space-y-2 border-t pt-2">
-            {/* Image Elements - Card Grid */}
-            <div className={`rounded-lg overflow-hidden border ${expandedSections.images ? 'border-zinc-200 bg-white' : 'border-zinc-200 bg-zinc-50'}`}>
-              <button
-                onClick={() => setExpandedSections(prev => ({ ...prev, images: !prev.images }))}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-100 transition-colors"
-              >
-                {expandedSections.images ? <ChevronDown className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />}
-                <Image className="w-3.5 h-3.5 text-green-500" />
-                <span className="text-[11px] font-medium text-zinc-700">Images</span>
-                <span className="text-[10px] text-zinc-400">({imageElements.length})</span>
-              </button>
+          {/* Collapsible sections */}
+          <div className="space-y-0.5 pt-1">
+            {/* Image Elements */}
+            <div className={`rounded-md overflow-hidden border ${expandedSections.images ? 'border-border bg-background' : 'border-border/60'}`}>
+              <SectionHeader
+                expanded={expandedSections.images}
+                onToggle={() => setExpandedSections(prev => ({ ...prev, images: !prev.images }))}
+                icon={<Image className="w-3 h-3 text-green-500" />}
+                label="Images"
+                count={imageElements.length}
+              />
 
               {expandedSections.images && (
-                <div className="px-3 pb-3 border-t border-zinc-100">
+                <div className="px-2 pb-2 border-t border-border/40">
                   <ImageCardGrid
                     images={imageElements}
                     componentId={component.id}
@@ -1365,22 +1339,20 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
 
             {/* Text Elements */}
             {activeDetectedElements.filter(e => e.type === 'text').length > 0 && (
-              <div className={`rounded-lg overflow-hidden border ${expandedSections.text ? 'border-zinc-200 bg-white' : 'border-zinc-200 bg-zinc-50'}`}>
-                <button
-                  onClick={() => setExpandedSections(prev => ({ ...prev, text: !prev.text }))}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-100 transition-colors"
-                >
-                  {expandedSections.text ? <ChevronDown className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />}
-                  <Type className="w-3.5 h-3.5 text-blue-500" />
-                  <span className="text-[11px] font-medium text-zinc-700">Text</span>
-                  <span className="text-[10px] text-zinc-400">({activeDetectedElements.filter(e => e.type === 'text').length})</span>
-                </button>
+              <div className={`rounded-md overflow-hidden border ${expandedSections.text ? 'border-border bg-background' : 'border-border/60'}`}>
+                <SectionHeader
+                  expanded={expandedSections.text}
+                  onToggle={() => setExpandedSections(prev => ({ ...prev, text: !prev.text }))}
+                  icon={<Type className="w-3 h-3 text-blue-500" />}
+                  label="Text"
+                  count={activeDetectedElements.filter(e => e.type === 'text').length}
+                />
 
                 {expandedSections.text && (
-                  <div className="px-3 pb-3 border-t border-zinc-100 space-y-3 pt-2">
+                  <div className="px-2 pb-2 border-t border-border/40 space-y-2 pt-1.5">
                     {activeDetectedElements.filter(e => e.type === 'text').map((element, index) => (
-                      <div key={element.id} className="space-y-1.5 pb-2 border-b border-zinc-100 last:border-0 last:pb-0">
-                        <div className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium">
+                      <div key={element.id} className="space-y-1 pb-1.5 border-b border-border/30 last:border-0 last:pb-0">
+                        <div className="text-[9px] text-muted-foreground uppercase tracking-wider font-medium">
                           {element.tagName} - {element.textContent?.slice(0, 20)}...
                         </div>
                         <DynamicTextEditor
@@ -1401,22 +1373,20 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
 
             {/* Container/Box Elements */}
             {activeDetectedElements.filter(e => e.type === 'container').length > 0 && (
-              <div className={`rounded-lg overflow-hidden border ${expandedSections.containers ? 'border-zinc-200 bg-white' : 'border-zinc-200 bg-zinc-50'}`}>
-                <button
-                  onClick={() => setExpandedSections(prev => ({ ...prev, containers: !prev.containers }))}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-100 transition-colors"
-                >
-                  {expandedSections.containers ? <ChevronDown className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />}
-                  <Square className="w-3.5 h-3.5 text-purple-500" />
-                  <span className="text-[11px] font-medium text-zinc-700">Boxes</span>
-                  <span className="text-[10px] text-zinc-400">({activeDetectedElements.filter(e => e.type === 'container').length})</span>
-                </button>
+              <div className={`rounded-md overflow-hidden border ${expandedSections.containers ? 'border-border bg-background' : 'border-border/60'}`}>
+                <SectionHeader
+                  expanded={expandedSections.containers}
+                  onToggle={() => setExpandedSections(prev => ({ ...prev, containers: !prev.containers }))}
+                  icon={<Square className="w-3 h-3 text-purple-500" />}
+                  label="Containers"
+                  count={activeDetectedElements.filter(e => e.type === 'container').length}
+                />
 
                 {expandedSections.containers && (
-                  <div className="px-3 pb-3 border-t border-zinc-100 space-y-3 pt-2">
+                  <div className="px-2 pb-2 border-t border-border/40 space-y-2 pt-1.5">
                     {activeDetectedElements.filter(e => e.type === 'container').map((element, index) => (
-                      <div key={element.id} className="space-y-1.5 pb-2 border-b border-zinc-100 last:border-0 last:pb-0">
-                        <div className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium">
+                      <div key={element.id} className="space-y-1 pb-1.5 border-b border-border/30 last:border-0 last:pb-0">
+                        <div className="text-[9px] text-muted-foreground uppercase tracking-wider font-medium">
                           {getElementDisplayName(element, index)}
                         </div>
                         <DynamicContainerEditor
@@ -1433,45 +1403,41 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
             )}
           </div>
 
-          {/* Layers Panel - AT THE BOTTOM */}
+          {/* Layers Panel */}
           <LayersPanel onSave={saveComponentToHistory} />
         </div>
       )}
 
       {/* Loading state for HTML components waiting for element detection */}
       {isHtmlComponent && !isActiveComponent && (
-        <div className="space-y-1.5 border-t pt-2">
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            <div className="w-3 h-3 border-2 border-pink-300 border-t-transparent rounded-full animate-spin" />
-            <span>Detecting editable elements...</span>
-          </div>
-          <p className="text-[10px] text-muted-foreground">
-            Click on the slide to edit text, images, and styles.
-          </p>
+        <div className="flex items-center gap-2 py-3 text-[10px] text-muted-foreground">
+          <div className="w-3 h-3 border-[1.5px] border-orange-400 border-t-transparent rounded-full animate-spin" />
+          <span>Detecting editable elements...</span>
         </div>
       )}
 
       {/* Parsed Variables from props.xxx pattern */}
       {variables.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-2 pt-1">
           {/* Unified Text Block */}
           {nonFontTextVariables.length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-[11px] font-medium text-muted-foreground">All Text Content</h4>
+            <div className="space-y-1">
+              <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Text Content</h4>
               <Textarea
-                className="w-full text-[11px] min-h-[90px]"
+                className="w-full text-[11px] min-h-[72px]"
                 value={combinedTextValue}
                 onChange={handleCombinedTextChange}
                 placeholder={nonFontTextVariables.map(v => String(v.defaultValue ?? '')).join('\n')}
               />
-              <p className="text-[10px] text-muted-foreground">Each line maps to a text property in order.</p>
+              <p className="text-[9px] text-muted-foreground">Each line maps to a text property in order.</p>
             </div>
           )}
-          {/* Font Properties (show font-related text props only) */}
+
+          {/* Font Properties */}
           {groupedVariables.text.filter(v => v.name.toLowerCase().includes('font')).length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-[11px] font-medium text-muted-foreground">Font Properties</h4>
-              <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Fonts</h4>
+              <div className="grid grid-cols-2 gap-1.5">
                 {groupedVariables.text
                   .filter(v => v.name.toLowerCase().includes('font'))
                   .map(renderVariableControl)}
@@ -1481,9 +1447,9 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
 
           {/* Image Properties (from parsed props) */}
           {showPropImages && (
-            <div className="space-y-2">
-              <h4 className="text-[11px] font-medium text-muted-foreground">Image Properties</h4>
-              <div className="grid grid-cols-1 gap-3">
+            <div className="space-y-1">
+              <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Images</h4>
+              <div className="grid grid-cols-1 gap-2">
                 {groupedVariables.image.map((variable, index) => {
                   const currentValue = (componentProps as any)[variable.name] ?? variable.defaultValue;
                   return renderVariableControl({
@@ -1497,9 +1463,9 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
 
           {/* Numeric Properties */}
           {groupedVariables.number.length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-[11px] font-medium text-muted-foreground">Numeric Properties</h4>
-              <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Numbers</h4>
+              <div className="grid grid-cols-2 gap-1.5">
                 {groupedVariables.number.map(renderVariableControl)}
               </div>
             </div>
@@ -1507,9 +1473,9 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
 
           {/* Color Properties */}
           {groupedVariables.color.length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-[11px] font-medium text-muted-foreground">Color Properties</h4>
-              <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Colors</h4>
+              <div className="grid grid-cols-2 gap-1.5">
                 {groupedVariables.color.map(renderVariableControl)}
               </div>
             </div>
@@ -1517,9 +1483,9 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
 
           {/* Boolean Properties */}
           {groupedVariables.boolean.length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-[11px] font-medium text-muted-foreground">Toggle Properties</h4>
-              <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Toggles</h4>
+              <div className="grid grid-cols-2 gap-1.5">
                 {groupedVariables.boolean.map(renderVariableControl)}
               </div>
             </div>
@@ -1527,9 +1493,9 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
 
           {/* Select Properties */}
           {groupedVariables.select.length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-[11px] font-medium text-muted-foreground">Select Properties</h4>
-              <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Options</h4>
+              <div className="grid grid-cols-2 gap-1.5">
                 {groupedVariables.select.map(renderVariableControl)}
               </div>
             </div>
@@ -1537,33 +1503,18 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
         </div>
       )}
 
-      {/* No editable properties message - only show for non-HTML components with no parsed variables */}
+      {/* No editable properties message */}
       {!isHtmlComponent && variables.length === 0 && htmlPlaceholderImages.length === 0 && (
-        <div className="text-[11px] text-muted-foreground text-center py-3">
-          <p>No editable properties detected in the component code.</p>
-          <p className="mt-1">To make your component editable, add property definitions like:</p>
-          <div className="mt-2 space-y-1">
-            <code className="block font-mono text-[11px] bg-muted px-2 py-1 rounded text-left">
-              const text = props.text || "Default text";
+        <div className="text-center py-4 space-y-2">
+          <p className="text-[10px] text-muted-foreground">No editable properties detected.</p>
+          <div className="space-y-0.5">
+            <code className="block font-mono text-[10px] bg-muted/50 px-2 py-0.5 rounded text-left">
+              const text = props.text || "Default";
             </code>
-            <code className="block font-mono text-[11px] bg-muted px-2 py-1 rounded text-left">
+            <code className="block font-mono text-[10px] bg-muted/50 px-2 py-0.5 rounded text-left">
               const color = props.color || "#ff0000";
             </code>
-            <code className="block font-mono text-[11px] bg-muted px-2 py-1 rounded text-left">
-              const size = props.size || 24; // px
-            </code>
-            <code className="block font-mono text-[11px] bg-muted px-2 py-1 rounded text-left">
-              const heroImage = props.heroImage || "placeholder";
-            </code>
           </div>
-          <Button
-            variant="link"
-            size="sm"
-            className="mt-2 text-[11px]"
-            onClick={() => setShowCodeEditor(true)}
-          >
-            Open Code Editor
-          </Button>
         </div>
       )}
     </div>
