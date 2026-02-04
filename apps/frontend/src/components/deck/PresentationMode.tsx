@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, startTransition } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronLeft, ChevronRight, Grid3X3, Lock } from 'lucide-react';
 import { usePresentationStore } from '@/stores/presentationStore';
@@ -160,9 +160,20 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     return Math.max(0, Math.min(currentSlideIndex, slides.length - 1));
   }, [currentSlideIndex, slides.length]);
 
+  // Deferred index for heavy slide rendering — prevents rapid mount/unmount cascades
+  // that crash the tab when tapping next/prev quickly. The UI counter updates instantly
+  // via validIndex, but the expensive Slide component only re-renders after rapid
+  // taps settle (React abandons in-flight renders when a new startTransition arrives).
+  const [renderIndex, setRenderIndex] = useState(validIndex);
+  useEffect(() => {
+    startTransition(() => {
+      setRenderIndex(validIndex);
+    });
+  }, [validIndex]);
+
   const currentSlide = useMemo(
-    () => (slides.length ? slides[validIndex] : null),
-    [slides, validIndex]
+    () => (slides.length ? slides[Math.max(0, Math.min(renderIndex, slides.length - 1))] : null),
+    [slides, renderIndex]
   );
 
   // Check if current slide is locked
@@ -237,20 +248,20 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     return () => document.body.classList.remove('presentation-mode');
   }, [isPresenting]);
 
-  // Dispatch slidechange event when slide changes
+  // Dispatch slidechange event when the rendered slide actually changes (deferred)
   useEffect(() => {
     if (!isPresenting || !currentSlide?.id) return;
     // Reset pinch-zoom to 1× when navigating to a different slide
     resetZoom();
     const event = new CustomEvent('slidechange', {
-      detail: { slideId: currentSlide.id, index: currentSlideIndex }
+      detail: { slideId: currentSlide.id, index: renderIndex }
     });
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         document.dispatchEvent(event);
       });
     });
-  }, [currentSlideIndex, currentSlide?.id, isPresenting, resetZoom]);
+  }, [renderIndex, currentSlide?.id, isPresenting, resetZoom]);
 
   const handleExitPresentation = useCallback(() => {
     exitPresentation();
@@ -317,11 +328,11 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     };
   }, [isPresenting, showThumbnails, isZoomed, goToNextSlide, goToPrevSlide, handleExitPresentation, setShowControls, setShowThumbnails]);
 
-  // Render slide content
+  // Render slide content — uses renderIndex (deferred) to avoid crash from rapid navigation
   const slideContent = useMemo(() => {
     if (!isPresenting || !currentSlide) return null;
-    return renderSlide(currentSlide, validIndex, 1, false);
-  }, [currentSlide, isPresenting, renderSlide, validIndex]);
+    return renderSlide(currentSlide, renderIndex, 1, false);
+  }, [currentSlide, isPresenting, renderSlide, renderIndex]);
 
   if (!isPresenting || slideScale === null) return null;
 
