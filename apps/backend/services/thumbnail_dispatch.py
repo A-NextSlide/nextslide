@@ -68,7 +68,7 @@ async def render_thumbnail_via_modal(
 
 async def trigger_thumbnail_render(deck_uuid: str) -> None:
     """
-    Fetch deck from Supabase and trigger thumbnail rendering for the first slide.
+    Fetch deck from Supabase and trigger thumbnail rendering for all slides.
 
     Designed to be called as a fire-and-forget background task.
     Silently swallows all errors so it never breaks the main request flow.
@@ -91,19 +91,25 @@ async def trigger_thumbnail_render(deck_uuid: str) -> None:
             logger.debug("[thumbnail_dispatch] Deck %s has no slides, skipping thumbnail", deck_uuid)
             return
 
-        first_slide = slides[0]
         slide_size = deck.get("size")
         # Theme data may be embedded in the deck's data field
         deck_data = deck.get("data") or {}
         theme_data = deck_data.get("theme")
 
-        await render_thumbnail_via_modal(
-            deck_uuid=deck_uuid,
-            slide_data=first_slide,
-            slide_size=slide_size,
-            theme_data=theme_data,
-            slide_index=0,
-        )
+        for slide_index, slide_data in enumerate(slides):
+            try:
+                await render_thumbnail_via_modal(
+                    deck_uuid=deck_uuid,
+                    slide_data=slide_data,
+                    slide_size=slide_size,
+                    theme_data=theme_data,
+                    slide_index=slide_index,
+                )
+            except Exception as slide_exc:
+                logger.warning(
+                    "[thumbnail_dispatch] Failed to render slide %d for deck %s: %s",
+                    slide_index, deck_uuid, slide_exc,
+                )
 
     except Exception as exc:
         logger.error("[thumbnail_dispatch] trigger_thumbnail_render failed for %s: %s", deck_uuid, exc)

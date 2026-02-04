@@ -332,6 +332,7 @@ const CommunityDeckView: React.FC = () => {
                 renderSlide={renderSlide}
                 isViewOnly={true}
                 slideSize={deckSlideSize}
+                deckUuid={deckId}
               />
             </ActiveSlideProvider>
           </EditorStateProvider>

@@ -176,9 +176,11 @@ class BillingService:
                 except Exception as reset_err:
                     logger.warning(f"Failed to reset expired period for user {user_id}: {reset_err}")
 
-            # -1 monthly_credits = unlimited (Friends & Family)
+            # -1 monthly_credits = unlimited (Friends & Family) → treat as Pro
             if balance["monthly_credits"] == -1:
                 remaining = -1  # Infinite
+                plan_id = "pro"
+                plan_name = "Pro"
             else:
                 remaining = max(0, (balance["monthly_credits"] + balance["purchased_credits"]) - balance["used_credits"])
 

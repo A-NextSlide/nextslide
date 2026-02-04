@@ -985,6 +985,7 @@ const SharedDeckView: React.FC = () => {
                 renderSlide={renderSlide}
                 isViewOnly={!canEdit}
                 slideSize={deckSlideSize}
+                deckUuid={deck.uuid || deck.id}
               />
             </ActiveSlideProvider>
           </EditorStateProvider>

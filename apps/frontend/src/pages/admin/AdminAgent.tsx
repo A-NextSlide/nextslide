@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Send, Bot, AlertCircle, Sparkles } from 'lucide-react';
+import { Send, Bot, AlertCircle, Sparkles, ChevronRight, ChevronDown, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
@@ -15,6 +15,7 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  hasAnalysis?: boolean;
   data?: {
     columns: string[];
     rows: Record<string, any>[];
@@ -91,6 +92,8 @@ const AdminAgent: React.FC = () => {
       };
 
       if (response.response_type === 'data') {
+        assistantMsg.content = response.analysis || response.summary;
+        assistantMsg.hasAnalysis = !!response.analysis;
         assistantMsg.data = {
           columns: response.columns || [],
           rows: response.rows || [],
@@ -320,9 +323,7 @@ const MessageBubble: React.FC<{
                 code: ({ children, className }) => {
                   const isBlock = className?.includes('language-');
                   return isBlock ? (
-                    <pre className="bg-[#f5f5f5] dark:bg-[#1a1a1a] border border-[#eaeaea] dark:border-[#333] rounded-lg p-2.5 overflow-x-auto my-1.5">
-                      <code className="text-xs font-mono">{children}</code>
-                    </pre>
+                    <CodeBlock language={className?.replace('language-', '')}>{children}</CodeBlock>
                   ) : (
                     <code className="bg-[#f5f5f5] dark:bg-[#1a1a1a] px-1 py-0.5 rounded text-xs font-mono">{children}</code>
                   );
@@ -346,12 +347,13 @@ const MessageBubble: React.FC<{
         )}
 
         {message.data && (
-          <AgentDataTable
+          <DataTableCollapsible
             columns={message.data.columns}
             rows={message.data.rows}
             rowCount={message.data.rowCount}
             truncated={message.data.truncated}
             entityLinks={message.data.entityLinks}
+            defaultCollapsed={!!message.hasAnalysis}
           />
         )}
 
@@ -372,6 +374,99 @@ const MessageBubble: React.FC<{
           </div>
         )}
       </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Collapsible data table wrapper
+// ---------------------------------------------------------------------------
+const DataTableCollapsible: React.FC<{
+  columns: string[];
+  rows: Record<string, any>[];
+  rowCount: number;
+  truncated: boolean;
+  entityLinks: Record<string, 'user' | 'deck'>;
+  defaultCollapsed: boolean;
+}> = ({ columns, rows, rowCount, truncated, entityLinks, defaultCollapsed }) => {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+
+  if (!defaultCollapsed) {
+    return (
+      <AgentDataTable
+        columns={columns}
+        rows={rows}
+        rowCount={rowCount}
+        truncated={truncated}
+        entityLinks={entityLinks}
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-[#eaeaea] dark:border-[#333] overflow-hidden">
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        className="w-full flex items-center gap-1.5 px-3 py-2 text-xs text-[#666] dark:text-[#999] hover:bg-[#fafafa] dark:hover:bg-[#0a0a0a] transition-colors"
+      >
+        {collapsed ? (
+          <ChevronRight className="h-3 w-3 shrink-0" />
+        ) : (
+          <ChevronDown className="h-3 w-3 shrink-0" />
+        )}
+        <span className="font-medium">{rowCount} row{rowCount !== 1 ? 's' : ''} returned</span>
+        {truncated && <span className="text-[#999]">(truncated)</span>}
+      </button>
+      {!collapsed && (
+        <div className="border-t border-[#eaeaea] dark:border-[#333]">
+          <AgentDataTable
+            columns={columns}
+            rows={rows}
+            rowCount={rowCount}
+            truncated={truncated}
+            entityLinks={entityLinks}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Code block with copy button
+// ---------------------------------------------------------------------------
+const CodeBlock: React.FC<{ language?: string; children: React.ReactNode }> = ({ language, children }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const text = typeof children === 'string' ? children : String(children);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="relative group my-1.5">
+      <pre className="bg-[#f5f5f5] dark:bg-[#1a1a1a] border border-[#eaeaea] dark:border-[#333] rounded-lg p-2.5 pr-10 overflow-x-auto">
+        <code className="text-xs font-mono">{children}</code>
+      </pre>
+      <button
+        onClick={handleCopy}
+        className="absolute top-2 right-2 p-1 rounded-md bg-[#e5e5e5] dark:bg-[#2a2a2a] border border-[#ddd] dark:border-[#444] opacity-0 group-hover:opacity-100 transition-opacity"
+        title={copied ? 'Copied!' : 'Copy code'}
+      >
+        {copied ? (
+          <Check className="h-3 w-3 text-green-500" />
+        ) : (
+          <Copy className="h-3 w-3 text-[#666] dark:text-[#999]" />
+        )}
+      </button>
+      {language && (
+        <span className="absolute top-2 right-9 text-[9px] text-[#999] dark:text-[#555] font-mono opacity-0 group-hover:opacity-100 transition-opacity">
+          {language}
+        </span>
+      )}
     </div>
   );
 };

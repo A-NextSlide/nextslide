@@ -44,12 +44,16 @@ async def _get_pool() -> asyncpg.Pool:
 # Schema discovery
 # ---------------------------------------------------------------------------
 _schema_cache: Optional[Dict[str, Any]] = None
+_schema_cache_time: float = 0
+_SCHEMA_CACHE_TTL = 600  # 10 minutes
 
 
 async def discover_schema(force_refresh: bool = False) -> Dict[str, Any]:
     """Query information_schema for all user tables, columns, types, and constraints."""
-    global _schema_cache
-    if _schema_cache is not None and not force_refresh:
+    global _schema_cache, _schema_cache_time
+    import time
+    now = time.time()
+    if _schema_cache is not None and not force_refresh and (now - _schema_cache_time) < _SCHEMA_CACHE_TTL:
         return _schema_cache
 
     pool = await _get_pool()
@@ -102,6 +106,7 @@ async def discover_schema(force_refresh: bool = False) -> Dict[str, Any]:
                 tables[tname]["row_count_estimate"] = -1
 
         _schema_cache = {"tables": tables}
+        _schema_cache_time = now
         logger.info(f"[AdminAgent] Discovered schema: {len(tables)} tables")
         return _schema_cache
 

@@ -18,7 +18,7 @@ from services.admin_agent_db import (
     execute_write_query,
     count_affected_rows,
 )
-from services.admin_agent_llm import plan_query, detect_entity_links
+from services.admin_agent_llm import plan_query, replan_query, detect_entity_links, analyze_results
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,8 @@ class ChatResponse(BaseModel):
     operation_type: Optional[str] = None
     # For conversation responses
     message: Optional[str] = None
+    # For data analysis
+    analysis: Optional[str] = None
     # For errors
     error: Optional[str] = None
 
@@ -113,7 +115,7 @@ async def agent_chat(
     session = _get_session(body.session_id)
 
     try:
-        # 1. Discover schema (cached)
+        # 1. Discover schema (cached, auto-refreshes every 10 minutes)
         schema = await discover_schema()
 
         # 2. Plan the query via LLM
@@ -146,6 +148,32 @@ async def agent_chat(
 
             result = await execute_read_query(plan.sql, plan.params)
 
+            # Auto-retry on query errors (e.g., missing table, bad column)
+            if result.get("error"):
+                error_msg = result["error"]
+                logger.info(f"[AdminAgent] Query failed, retrying: {error_msg}")
+                try:
+                    plan = replan_query(
+                        original_message=body.message,
+                        failed_sql=plan.sql,
+                        error=error_msg,
+                        history=session["history"],
+                        schema=schema,
+                    )
+                    # If LLM switched to conversation (table doesn't exist), return that
+                    if plan.response_type == "conversation":
+                        reply_text = plan.message or plan.summary
+                        session["history"].append({"role": "assistant", "content": reply_text})
+                        return ChatResponse(
+                            response_type="conversation",
+                            summary=plan.summary,
+                            message=reply_text,
+                        )
+                    if plan.sql:
+                        result = await execute_read_query(plan.sql, plan.params)
+                except Exception as e:
+                    logger.warning(f"[AdminAgent] Retry also failed: {e}")
+
             if result.get("error"):
                 session["history"].append({"role": "assistant", "content": f"Error: {result['error']}"})
                 return ChatResponse(
@@ -160,6 +188,21 @@ async def agent_chat(
                 result.get("rows", []),
                 sql=plan.sql,
             )
+
+            # Analyze results (non-fatal — raw table still renders on failure)
+            analysis = None
+            try:
+                analysis = analyze_results(
+                    question=body.message,
+                    sql=plan.sql,
+                    columns=result.get("columns", []),
+                    rows=result.get("rows", []),
+                    row_count=result.get("row_count", 0),
+                    truncated=result.get("truncated", False),
+                    history=session["history"],
+                )
+            except Exception as e:
+                logger.warning(f"[AdminAgent] Analysis failed (non-fatal): {e}")
 
             session["history"].append({
                 "role": "assistant",
@@ -181,6 +224,7 @@ async def agent_chat(
                 row_count=result.get("row_count", 0),
                 truncated=result.get("truncated", False),
                 entity_links=links,
+                analysis=analysis,
             )
 
         if plan.response_type == "write":

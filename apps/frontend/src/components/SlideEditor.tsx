@@ -1734,11 +1734,14 @@ const SlideEditorContent: React.FC = () => {
         {isMobile ? (
           <div
             ref={mobileContainerRef}
-            className={`flex flex-col h-full w-full overflow-hidden ${isChatDragging ? 'cursor-row-resize' : ''}`}
+            className={`relative h-full w-full overflow-hidden ${isChatDragging ? 'cursor-row-resize' : ''}`}
             onPointerDownCapture={handleMobileChatHintDismiss}
           >
-            {/* Slide area - takes remaining space above chat */}
-            <div className="flex-1 min-h-0 px-2">
+            {/* Slide area - fixed size based on space above minimum chat position, never resizes during drag */}
+            <div
+              className="absolute top-0 left-0 right-0 px-2 overflow-hidden"
+              style={{ bottom: `${minMobileChatHeight + 24}px` }}
+            >
               <DeckPanel
                 deckStatus={deckStatus}
                 isNewDeck={isNewDeck}
@@ -1748,41 +1751,44 @@ const SlideEditorContent: React.FC = () => {
               />
             </div>
 
-            {/* Drag handle - sits between slide area and chat, right under nav arrows */}
-            <div className="relative flex items-center justify-center h-6 flex-shrink-0 bg-white dark:bg-zinc-900 border-t border-border/70">
-              <button
-                type="button"
-                onPointerDown={handleChatHandlePointerDown}
-                className="group relative flex items-center justify-center w-full h-full touch-none"
-                aria-label="Resize chat"
-              >
-                <span className="h-1 w-10 rounded-full bg-zinc-400/70 dark:bg-zinc-600/70 group-active:bg-zinc-500 dark:group-active:bg-zinc-500 transition-colors" />
-              </button>
-
-              {showChatDragHint && (
+            {/* Bottom overlay: drag handle + chat - overlays slide when chat is expanded */}
+            <div className="absolute bottom-0 left-0 right-0 z-10">
+              {/* Drag handle */}
+              <div className="relative flex items-center justify-center h-6 flex-shrink-0 bg-white dark:bg-zinc-900 border-t border-border/70">
                 <button
                   type="button"
-                  onClick={handleMobileChatHintDismiss}
-                  className="absolute top-1/2 -translate-y-1/2 left-[calc(50%+36px)] px-2 py-1 rounded-full bg-[#FF4301] text-white text-[9px] font-medium shadow-lg whitespace-nowrap"
+                  onPointerDown={handleChatHandlePointerDown}
+                  className="group relative flex items-center justify-center w-full h-full touch-none"
+                  aria-label="Resize chat"
                 >
-                  drag ↕
+                  <span className="h-1 w-10 rounded-full bg-zinc-400/70 dark:bg-zinc-600/70 group-active:bg-zinc-500 dark:group-active:bg-zinc-500 transition-colors" />
                 </button>
-              )}
-            </div>
 
-            {/* Chat panel - fixed height below the drag handle */}
-            <div
-              className="flex flex-col flex-shrink-0 bg-white dark:bg-zinc-900 shadow-2xl"
-              style={{ height: `${mobileChatHeight || minMobileChatHeight}px` }}
-            >
-              <div className="flex-1 min-h-0 px-3 pb-[calc(env(safe-area-inset-bottom)+12px)]">
-                <ChatPanel
-                  onCollapseChange={handleCollapseChange}
-                  onUserMessageSend={handleMobileFirstMessage}
-                  opacity={1}
-                  newSystemMessage={lastSystemMessageForChat}
-                  isExistingDeck={!isNewDeck || deckStatus?.state === 'completed'}
-                />
+                {showChatDragHint && (
+                  <button
+                    type="button"
+                    onClick={handleMobileChatHintDismiss}
+                    className="absolute top-1/2 -translate-y-1/2 left-[calc(50%+36px)] px-2 py-1 rounded-full bg-[#FF4301] text-white text-[9px] font-medium shadow-lg whitespace-nowrap"
+                  >
+                    drag ↕
+                  </button>
+                )}
+              </div>
+
+              {/* Chat panel */}
+              <div
+                className="flex flex-col flex-shrink-0 bg-white dark:bg-zinc-900 shadow-2xl"
+                style={{ height: `${mobileChatHeight || minMobileChatHeight}px` }}
+              >
+                <div className="flex-1 min-h-0 px-3 pb-[calc(env(safe-area-inset-bottom)+12px)]">
+                  <ChatPanel
+                    onCollapseChange={handleCollapseChange}
+                    onUserMessageSend={handleMobileFirstMessage}
+                    opacity={1}
+                    newSystemMessage={lastSystemMessageForChat}
+                    isExistingDeck={!isNewDeck || deckStatus?.state === 'completed'}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -1855,6 +1861,7 @@ const SlideEditorContent: React.FC = () => {
           renderSlide={renderSlide}
           alwaysShowControls={isMobile}
           slideSize={deckData.size}
+          deckUuid={deckData.uuid}
         />
       )}
 

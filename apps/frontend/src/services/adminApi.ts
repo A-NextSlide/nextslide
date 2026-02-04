@@ -1637,6 +1637,8 @@ export interface AgentChatResponse {
   operation_type?: string;
   // Conversation responses
   message?: string;
+  // Analysis
+  analysis?: string;
   // Error responses
   error?: string;
 }

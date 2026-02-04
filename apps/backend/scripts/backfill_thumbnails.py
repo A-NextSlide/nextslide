@@ -37,40 +37,44 @@ async def render_one(sem: asyncio.Semaphore, i: int, total: int, deck: dict, *, 
         skipped += 1
         return
 
-    first_slide = slides[0]
     slide_size = deck.get("size")
     deck_data = deck.get("data") or {}
     theme_data = deck_data.get("theme")
 
     async with sem:
-        logger.info("  [%d/%d] Rendering %s ...", i, total, uuid)
-        try:
-            if local:
-                from services.thumbnail_renderer import render_and_upload_thumbnail
-                result = await render_and_upload_thumbnail(
-                    deck_uuid=uuid,
-                    slide_data=first_slide,
-                    slide_size=slide_size,
-                    theme_data=theme_data,
-                    slide_index=0,
-                )
-            else:
-                from services.thumbnail_dispatch import render_thumbnail_via_modal
-                result = await render_thumbnail_via_modal(
-                    deck_uuid=uuid,
-                    slide_data=first_slide,
-                    slide_size=slide_size,
-                    theme_data=theme_data,
-                    slide_index=0,
-                )
-            if result:
-                logger.info("    OK [%d/%d]: %s", i, total, result.get("url", "")[:80])
-                success += 1
-            else:
-                logger.warning("    FAILED [%d/%d] (returned None)", i, total)
-                failed += 1
-        except Exception as e:
-            logger.error("    ERROR [%d/%d]: %s", i, total, e)
+        logger.info("  [%d/%d] Rendering %s (%d slides) ...", i, total, uuid, len(slides))
+        deck_ok = True
+        for slide_index, slide_data in enumerate(slides):
+            try:
+                if local:
+                    from services.thumbnail_renderer import render_and_upload_thumbnail
+                    result = await render_and_upload_thumbnail(
+                        deck_uuid=uuid,
+                        slide_data=slide_data,
+                        slide_size=slide_size,
+                        theme_data=theme_data,
+                        slide_index=slide_index,
+                    )
+                else:
+                    from services.thumbnail_dispatch import render_thumbnail_via_modal
+                    result = await render_thumbnail_via_modal(
+                        deck_uuid=uuid,
+                        slide_data=slide_data,
+                        slide_size=slide_size,
+                        theme_data=theme_data,
+                        slide_index=slide_index,
+                    )
+                if result:
+                    logger.info("    OK [%d/%d] slide %d: %s", i, total, slide_index, result.get("url", "")[:80])
+                else:
+                    logger.warning("    FAILED [%d/%d] slide %d (returned None)", i, total, slide_index)
+                    deck_ok = False
+            except Exception as e:
+                logger.error("    ERROR [%d/%d] slide %d: %s", i, total, slide_index, e)
+                deck_ok = False
+        if deck_ok:
+            success += 1
+        else:
             failed += 1
 
 

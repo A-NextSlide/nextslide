@@ -1,13 +1,11 @@
 import type { RefObject } from 'react';
-import { ChevronDown, ChevronRight, ChevronUp, Plus, Lock } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useEditorState } from '@/context/EditorStateContext';
-import { useCredits } from '@/context/CreditsContext';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useNavigate } from 'react-router-dom';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -116,12 +114,6 @@ export function ChatInputArea({
   // Get editor state for edit mode button
   const { isEditing, setIsEditing } = useEditorState();
   const isMobile = useIsMobile();
-  const navigate = useNavigate();
-  const { balance } = useCredits();
-
-  // Check if user is on free plan - block AI chat for free users
-  const isFreePlan = balance?.plan_name?.toLowerCase() === 'free';
-  const isChatLocked = isFreePlan;
 
   return (
     <div className="px-2.5 pt-4 pb-[calc(env(safe-area-inset-bottom)+10px)] sm:pt-6 sm:pb-2.5 min-w-0">
@@ -178,63 +170,6 @@ export function ChatInputArea({
               </span>
             </div>
           </div>
-        )}
-
-        {/* Locked overlay for free users - disabled during generation */}
-        {isChatLocked && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div
-                className={cn(
-                  "absolute inset-0 flex items-center justify-center bg-white/90 dark:bg-zinc-900/90 rounded-xl z-20 transition-all",
-                  isGenerating
-                    ? "cursor-not-allowed opacity-60"
-                    : "cursor-pointer hover:bg-white/95 dark:hover:bg-zinc-900/95"
-                )}
-                onClick={() => {
-                  if (!isGenerating) {
-                    navigate('/profile?tab=billing');
-                  }
-                }}
-              >
-                <div className="flex flex-col items-center gap-3 text-center px-6">
-                  <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center"
-                    style={{
-                      background: 'linear-gradient(135deg, #FF4301 0%, #FF6B35 100%)',
-                      boxShadow: '0 4px 14px rgba(255, 67, 1, 0.3)'
-                    }}
-                  >
-                    <Lock className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                      Slide Agent
-                    </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                      Upgrade to edit slides with AI
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent
-              side="top"
-              className="max-w-[220px] text-center bg-zinc-900 text-white border-zinc-700"
-            >
-              {isGenerating ? (
-                <>
-                  <p className="text-sm font-medium">Generation in progress</p>
-                  <p className="text-xs text-zinc-400 mt-1">Wait for your slides to finish generating</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm font-medium">Upgrade for access to our slide agent!</p>
-                  <p className="text-xs text-zinc-400 mt-1">Edit, redesign, and enhance slides with AI</p>
-                </>
-              )}
-            </TooltipContent>
-          </Tooltip>
         )}
 
         <SelectionBubbles selections={selectedElements} onRemove={onRemoveSelection} />

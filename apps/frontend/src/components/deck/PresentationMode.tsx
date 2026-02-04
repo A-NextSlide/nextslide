@@ -22,6 +22,7 @@ interface PresentationModeProps {
   isViewOnly?: boolean;
   alwaysShowControls?: boolean;
   slideSize?: { width: number; height: number };
+  deckUuid?: string;
 }
 
 const PresentationMode: React.FC<PresentationModeProps> = ({
@@ -30,7 +31,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   renderSlide,
   isViewOnly = false,
   alwaysShowControls = false,
-  slideSize
+  slideSize,
+  deckUuid
 }) => {
   const {
     isPresenting,
@@ -145,6 +147,13 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const thumbnailWidth = (!isFinite(rawThumbnailWidth) || rawThumbnailWidth <= 0)
     ? Math.round(thumbnailHeight * (16 / 9))
     : Math.round(rawThumbnailWidth);
+
+  // Build PNG thumbnail URL for a given slide index (same pattern as community slides)
+  const getThumbnailUrl = useCallback((slideIndex: number) => {
+    if (!deckUuid) return null;
+    const base = import.meta.env.VITE_SUPABASE_URL || 'https://auth.nextslide.ai';
+    return `${base}/storage/v1/object/public/thumbnails/thumbnails/${deckUuid}_s${slideIndex}.png`;
+  }, [deckUuid]);
 
   const validIndex = useMemo(() => {
     if (!slides.length) return 0;
@@ -507,6 +516,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                         if (!slide?.id || slide.id.startsWith('placeholder-')) return null;
 
                         const slideIsLocked = isLocked(index);
+                        const pngUrl = getThumbnailUrl(index);
 
                         return (
                           <button
@@ -521,15 +531,26 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                             style={{ height: thumbnailHeight, width: thumbnailWidth }}
                           >
                             <div className="relative bg-white w-full h-full overflow-hidden">
-                              <MiniSlide
-                                slide={slide}
-                                width={thumbnailWidth}
-                                height={thumbnailHeight}
-                                responsive={false}
-                                className="pointer-events-none"
-                                slideSize={deckSlideSize}
-                                isLocked={slideIsLocked}
-                              />
+                              {pngUrl ? (
+                                <img
+                                  src={pngUrl}
+                                  alt={`Slide ${index + 1}`}
+                                  className="absolute inset-0 w-full h-full object-cover"
+                                  draggable={false}
+                                  style={slideIsLocked ? { filter: 'blur(8px) saturate(0.7) brightness(0.95)' } : undefined}
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                />
+                              ) : (
+                                <MiniSlide
+                                  slide={slide}
+                                  width={thumbnailWidth}
+                                  height={thumbnailHeight}
+                                  responsive={false}
+                                  className="pointer-events-none"
+                                  slideSize={deckSlideSize}
+                                  isLocked={slideIsLocked}
+                                />
+                              )}
                             </div>
                             <div className="absolute top-1 left-1 bg-black/70 rounded-full px-2 py-0.5 text-white text-xs font-medium flex items-center gap-1">
                               {slideIsLocked && <Lock size={10} className="text-orange-400" />}
