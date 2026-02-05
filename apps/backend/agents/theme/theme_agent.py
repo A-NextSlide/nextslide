@@ -914,7 +914,8 @@ class ThemeAgent:
                 context=context,
                 inspiration=theme_analysis.get("inspiration"),
                 mood=theme_analysis.get("mood"),
-                theme_type=theme_type
+                theme_type=theme_type,
+                color_hints=theme_analysis.get("color_hints"),
             )
 
             if contextual_theme:
@@ -1514,7 +1515,8 @@ IMPORTANT:
         context: Optional[str],
         inspiration: Optional[str],
         mood: Optional[str],
-        theme_type: str
+        theme_type: str,
+        color_hints: Optional[list] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Generate a contextually appropriate theme using AI.
@@ -1525,9 +1527,13 @@ IMPORTANT:
             from agents.config import THEME_MODEL
 
             # Build context for color generation
+            hints_line = ""
+            if color_hints and isinstance(color_hints, list) and len(color_hints) > 0:
+                hints_line = f"\nColor direction: {', '.join(color_hints)}. Strongly prefer these colors in the palette."
+
             color_context = f"""Generate a color palette for: {title}
 Inspiration: {inspiration or 'None'}
-Mood: {mood or 'professional'}
+Mood: {mood or 'professional'}{hints_line}
 
 Return ONLY this JSON (no explanation):
 {{"background":"#HEX","text":"#HEX","accent":"#HEX","accent2":"#HEX","colors":["#HEX","#HEX"],"hero_font":"FontName","body_font":"FontName"}}
