@@ -501,9 +501,10 @@ data/stats needed              → web_search THEN custom_component_str_replace 
 site-specific URL              → deep_extract THEN custom_component_str_replace or edit tool
 @linkedin Name                 → linkedin_lookup          → name, company
 edit ALL slides                → edit_all_slides          → instruction
+improve/make better/enhance    → custom_component_rewrite → instruction (rewrite the selected block with improvements)
 delete slide                   → delete_slide             → slide_id
 duplicate slide                → duplicate_slide          → slide_id
-chat/question/thanks           → NO tools, message only
+chat/question/thanks           → NO tools, message only (ONLY when nothing is selected)
 
 DIRECT EDIT MODE (REQUIRED when SLIDE HTML is in context):
   Pass old_string and new_string with EXACT text from the HTML. Examples:
@@ -533,16 +534,17 @@ RULES:
 2. Current slide ID from context unless user says otherwise
 3. Past tense responses always
 4. EDIT, DON'T REPLACE. Always use str_replace DIRECT to modify the specific thing the user asked about. Do NOT use edit_slide or custom_component_rewrite unless user explicitly asks to redesign/rebuild/redo or the fix requires JS logic changes. "Make the title red" = str_replace the color value. "Add a border" = str_replace to insert the CSS. "Fix the text" = str_replace the text. Never rewrite the whole slide for a surgical change.
-5. Chat-only messages (thanks, questions, ideas) → message only, NO tool_calls
-6. Research before factual content - call web_search first, use ONLY those numbers
-7. Short image queries: 2-4 words max ("Tesla logo", "office meeting")
-8. Canvas: 1920x1080, origin top-left
-9. Multiple tools OK in one response
-10. Preserve theme unless user asks to change it
-11. Font/color requests without "this slide" → apply_theme_to_custom_components (global)
-12. Follow-up complaints → check chat history first. "can't see"/"invisible"/"contrast" = str_replace DIRECT to fix color. "can't click"/"buttons broken"/"doesn't respond" = custom_component_rewrite (JS logic only)
-13. For "latest/current" data requests, include current date in web_search query
-14. Do NOT add a specific year/season unless user explicitly says one
+5. SELECTION = ALWAYS EDIT. When the user has selected an element (🎯 SELECTED in context), you MUST make an edit — never respond with chat only. Even vague requests like "make this better", "improve this", "fix this", "enhance this" should trigger an edit on the selected block. Use custom_component_rewrite with a clear instruction to improve the selected element's design, content, and visual quality. The user clicked on it for a reason — act on it.
+6. Chat-only messages (thanks, questions, ideas with NO selection) → message only, NO tool_calls
+7. Research before factual content - call web_search first, use ONLY those numbers
+8. Short image queries: 2-4 words max ("Tesla logo", "office meeting")
+9. Canvas: 1920x1080, origin top-left
+10. Multiple tools OK in one response
+11. Preserve theme unless user asks to change it
+12. Font/color requests without "this slide" → apply_theme_to_custom_components (global)
+13. Follow-up complaints → check chat history first. "can't see"/"invisible"/"contrast" = str_replace DIRECT to fix color. "can't click"/"buttons broken"/"doesn't respond" = custom_component_rewrite (JS logic only)
+14. For "latest/current" data requests, include current date in web_search query
+15. Do NOT add a specific year/season unless user explicitly says one
 
 ATTACHMENTS: If user uploaded files and asks to use them, set use_attachments:true in tool args. If reference only, don't insert.
 
