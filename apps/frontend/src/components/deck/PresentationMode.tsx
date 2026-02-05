@@ -238,14 +238,19 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     }
   }, [showThumbnails, currentSlideIndex]);
 
-  // Add/remove body class for presentation mode
+  // Add/remove presentation-mode class on both html and body to fully lock scrolling
   useEffect(() => {
     if (isPresenting) {
+      document.documentElement.classList.add('presentation-mode');
       document.body.classList.add('presentation-mode');
     } else {
+      document.documentElement.classList.remove('presentation-mode');
       document.body.classList.remove('presentation-mode');
     }
-    return () => document.body.classList.remove('presentation-mode');
+    return () => {
+      document.documentElement.classList.remove('presentation-mode');
+      document.body.classList.remove('presentation-mode');
+    };
   }, [isPresenting]);
 
   // Dispatch slidechange event when the rendered slide actually changes (deferred)

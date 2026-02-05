@@ -1,8 +1,11 @@
 /* Presentation Mode Styles */
 
 /* Disable scrolling when in presentation mode */
+html.presentation-mode,
 body.presentation-mode {
-  overflow: hidden;
+  overflow: hidden !important;
+  height: 100vh;
+  height: 100dvh;
 }
 
 /* Smooth transitions for presentation elements */

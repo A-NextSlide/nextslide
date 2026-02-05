@@ -275,6 +275,10 @@ export const ImageElementToolbar: React.FC<ImageElementToolbarProps> = ({
                   </Button>
                 }
                 onSelect={(url) => {
+                  // Intercept generating/failed placeholders — keep MediaHub open
+                  if (url === 'generating://ai-image' || url === 'failed://ai-image') {
+                    return;
+                  }
                   if (url && typeof url === 'string') {
                     onSwap(url);
                     toast({ title: 'Image updated' });

@@ -582,9 +582,20 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
             open={true}
             onClose={() => setIsMediaHubOpen(false)}
             onSelect={(url) => {
+              // Intercept generating/failed placeholders — keep MediaHub open
+              if (url === 'generating://ai-image') {
+                handlePropChange('src', url, true);
+                handlePropChange('isGenerating', true, true);
+                return;
+              }
+              if (url === 'failed://ai-image') {
+                handlePropChange('isGenerating', false, true);
+                return;
+              }
               if (url && typeof url === 'string') {
                 setImageUrl(url);
                 handlePropChange('src', url);
+                handlePropChange('isGenerating', false, true);
                 saveComponentToHistory('Changed image source');
               }
               setIsMediaHubOpen(false);

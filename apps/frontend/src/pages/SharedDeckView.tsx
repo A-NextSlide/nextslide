@@ -44,7 +44,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useDeckStore } from '@/stores/deckStore';
 import PresentationMode from '@/components/deck/PresentationMode';
 import { usePresentationStore } from '@/stores/presentationStore';
-import { useReturnBannerStore } from '@/stores/returnBannerStore';
 import { SlideData } from '@/types/SlideTypes';
 import { normalizeSlideForRender, resolveSlideSize } from '@/utils/slideNormalization';
 import { NavigationProvider } from '@/context/NavigationContext';
@@ -172,11 +171,9 @@ const SharedDeckView: React.FC = () => {
   console.log('[SharedDeckView] Accessing presentation store...');
   let isPresenting: boolean;
   let enterPresentation: () => void;
-  let setPendingPresentation: (code: string, name: string) => void;
   try {
     isPresenting = usePresentationStore(state => state.isPresenting);
     enterPresentation = usePresentationStore(state => state.enterPresentation);
-    setPendingPresentation = useReturnBannerStore(state => state.setPendingPresentation);
     console.log('[SharedDeckView] Store hooks succeeded', { isPresenting });
   } catch (e) {
     console.error('[SharedDeckView] Store hooks failed:', e);
@@ -238,11 +235,10 @@ const SharedDeckView: React.FC = () => {
       // Send final tracking data before leaving
       sendTrackingData();
 
-      // User exited the presentation - redirect to landing with return banner
-      setPendingPresentation(shareCode, deck.name || 'your presentation');
-      navigate(BROWSER.isNativeApp ? '/app' : '/');
+      // User exited the presentation - redirect to home page (full reload)
+      window.location.href = BROWSER.isNativeApp ? '/app' : '/';
     }
-  }, [isPresenting, deck, shareCode, navigate, setPendingPresentation]);
+  }, [isPresenting, deck, shareCode]);
 
   // Track slide changes
   useEffect(() => {
@@ -1042,9 +1038,9 @@ const SharedDeckView: React.FC = () => {
         />
       </div>
 
-      {/* SEO content below the presentation viewport - visible to crawlers,
-          accessible if users scroll past the full-screen presentation */}
-      {shareCode && (
+      {/* SEO content below the presentation viewport - visible to crawlers only
+          (hidden while presenting to prevent scroll-past) */}
+      {shareCode && !isPresenting && (
         <div className="seo-below-fold">
           <SlideTranscript slides={deck.slides} deckTitle={deck.name || deckName} />
           <RelatedPresentations shareCode={shareCode} limit={4} />

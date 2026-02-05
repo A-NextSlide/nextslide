@@ -602,12 +602,12 @@ async def get_leaderboard(
 
 
 def _backfill_thumbnails(client, rows: List[Dict[str, Any]]) -> Dict[str, str]:
-    """Batch-fetch thumbnail URLs from source decks for rows missing them."""
-    missing = [r["deck_uuid"] for r in rows if not r.get("thumbnail_url") and r.get("deck_uuid")]
-    if not missing:
+    """Batch-fetch fresh thumbnail URLs from source decks for all rows."""
+    uuids = [r["deck_uuid"] for r in rows if r.get("deck_uuid")]
+    if not uuids:
         return {}
     try:
-        src = client.table("decks").select("uuid, thumbnail_url").in_("uuid", missing).execute()
+        src = client.table("decks").select("uuid, thumbnail_url").in_("uuid", uuids).execute()
         return {r["uuid"]: r["thumbnail_url"] for r in (src.data or []) if r.get("thumbnail_url")}
     except Exception as e:
         logger.debug("Thumbnail backfill failed: %s", e)
@@ -634,7 +634,7 @@ def _build_entry(row: Dict[str, Any], rank: int, score_field: str, thumb_map: Di
         "tags": row.get("tags"),
         "slide_count": row.get("slide_count"),
         "first_slide": row.get("first_slide"),
-        "thumbnail_url": row.get("thumbnail_url") or thumb_map.get(du) or _thumbnail_url_for(du),
+        "thumbnail_url": thumb_map.get(du) or row.get("thumbnail_url") or _thumbnail_url_for(du),
         "author_name": row.get("author_name", "Anonymous"),
         "view_count": row.get("view_count", 0),
         "remix_count": row.get("remix_count", 0),

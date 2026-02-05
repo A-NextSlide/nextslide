@@ -1039,6 +1039,8 @@ img.ns-img-ready {
   };
 
   // Inject image props into HTML by replacing placeholder src attributes
+  const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
   const injectImageProps = (html: string, props: Record<string, any>): string => {
     if (!html || !props) return html;
 
@@ -1170,7 +1172,7 @@ img.ns-img-ready {
         // Replace occurrences in JS where the prop is referenced
         // Pattern: props.propName || 'placeholder' or props?.propName ?? 'placeholder'
         const jsPattern = new RegExp(
-          `(props\\??\\.${propName}\\s*(?:\\|\\||\\?\\?)\\s*)['"\`]placeholder['"\`]`,
+          `(props\\??\\.${escapeRegExp(propName)}\\s*(?:\\|\\||\\?\\?)\\s*)['"\`]placeholder['"\`]`,
           'gi'
         );
         result = result.replace(jsPattern, `$1'${propValue}'`);
@@ -1178,7 +1180,7 @@ img.ns-img-ready {
         // Also replace: const varName = 'placeholder' style declarations
         // if the varName matches the propName (common in AI-generated code)
         const constPattern = new RegExp(
-          `(const\\s+${propName}\\s*=\\s*)['"\`]placeholder['"\`]`,
+          `(const\\s+${escapeRegExp(propName)}\\s*=\\s*)['"\`]placeholder['"\`]`,
           'gi'
         );
         result = result.replace(constPattern, `$1'${propValue}'`);
@@ -1191,7 +1193,7 @@ img.ns-img-ready {
       if (typeof propValue === 'string' && propValue.startsWith('http')) {
         // Handle case-insensitive prop matching
         const propNamePattern = new RegExp(
-          `(const\\s+\\w+\\s*=\\s*props\\.${propName}\\s*\\|\\|\\s*)['"\`][^'"\`]*['"\`]`,
+          `(const\\s+\\w+\\s*=\\s*props\\.${escapeRegExp(propName)}\\s*\\|\\|\\s*)['"\`][^'"\`]*['"\`]`,
           'gi'
         );
         result = result.replace(propNamePattern, `$1'${propValue}'`);
@@ -2908,6 +2910,10 @@ img.ns-img-ready {
                 defaultSearchTerm={selectedElement.alt || ''}
                 autoSearch={!!selectedElement.alt}
                 onSelect={(url) => {
+                  // Intercept generating/failed placeholders — keep MediaHub open
+                  if (url === 'generating://ai-image' || url === 'failed://ai-image') {
+                    return;
+                  }
                   if (url && typeof url === 'string' && selectedElement) {
                     // Dismiss popup and swap the image URL in the render HTML
                     setShowAiChatBubble(false);

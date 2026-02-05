@@ -335,7 +335,7 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                     </div>
                 </div>
 
-                <div className="p-2 min-h-[180px] max-h-[400px] flex flex-col">
+                <div className="p-2 min-h-[180px] max-h-[400px] overflow-y-auto">
                     <TabsContent value="image" className="flex-1 flex flex-col min-h-0">
                        <ImageTab onSelect={(url, type) => handleSelect(url, type, 'image')} />
                     </TabsContent>

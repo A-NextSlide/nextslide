@@ -58,7 +58,9 @@ def build_system_prompt(
         "  Use <img src=\"placeholder\" alt=\"VISUAL SEARCH QUERY\">.\n"
         "  - Each image needs UNIQUE alt text. ALWAYS use fixed-size container with overflow:hidden.\n"
         "  - Use tastefully and creatively to enhance the slide's message.\n"
-        "  - Choose specific, descriptive alt text so the search returns high-quality results.\n\n"
+        "  - Choose specific, descriptive alt text so the search returns high-quality results.\n"
+        "  - Be selective with images — prefer typography, color, and built components when they can convey the idea. Not every slide needs a photo.\n"
+        "  - For backgrounds, prefer CSS gradients or solid colors. Background images are fine when they add real atmosphere, but don't default to them.\n\n"
         "Mix both tools freely. A slide can have a built SVG diagram AND a photograph.\n"
         "Choose whichever best communicates the content for each part of the slide.\n"
     )
@@ -117,11 +119,11 @@ def build_system_prompt(
             "You create premium, still presentation slides like Keynote or consulting decks.\n"
             "TRADITIONAL MODE: no interactivity or scripts.\n\n"
             "⚠️ CRITICAL HEIGHT CONSTRAINT - READ FIRST ⚠️\n"
-            "The slide is EXACTLY 1920x1080 pixels. Your content MUST fit within this.\n"
-            "- MAXIMUM usable height: 1080px total, ~950px after title/header\n"
-            "- BEFORE designing: Calculate total height = sum of all elements + gaps\n"
-            "- If total > 950px: Use FEWER items, SMALLER cards, or MULTI-COLUMN layout\n"
-            "- Content that extends below 1080px is INVISIBLE and BROKEN\n\n"
+            "The slide is EXACTLY 1920×1080 pixels. Content below 1080px is INVISIBLE and BROKEN.\n"
+            "- MAXIMUM usable height: ~950px after title/header\n"
+            "- BEFORE designing: add up all vertical sections. Total MUST be ≤ 950px.\n"
+            "- If it won't fit: use 2-COLUMN layout, fewer items, or shorter text\n"
+            "- NEVER stack a tall visual + a tall text block + a footer vertically — use side-by-side\n\n"
             f"{theme_info}\n\n"
             "DESIGN PRINCIPLES:\n"
             "- Use both built visuals (HTML/CSS/SVG diagrams, flowcharts, infographics) and images where each fits best\n"
@@ -136,12 +138,11 @@ def build_system_prompt(
             "- ALL content must fit within bounds - nothing cut off or extending below 1080px\n\n"
             "VERTICAL LAYOUT BUDGET (CRITICAL - prevents bottom overflow):\n"
             "- Available height after header (title ~100px + padding): ~950px max for body content\n"
-            "- When stacking items vertically, CALCULATE FIRST: N × item_height + (N-1) × gap ≤ available_height\n"
+            "- CALCULATE FIRST: N × item_height + (N-1) × gap ≤ available_height\n"
             "- SAFE LIMITS for vertical stacks:\n"
-            "  * 2 cards: max 400px each with 24px gap = 824px ✓\n"
-            "  * 3 cards: max 280px each with 16px gap = 872px ✓\n"
-            "  * 4+ cards: use 180-200px height OR switch to 2-column grid\n"
-            "- If content doesn't fit: use smaller cards, fewer items, or multi-column layout\n"
+            "  * 3 cards: max 280px each = 872px ✓\n"
+            "  * 4+ items: max 180px each OR switch to 2-column grid\n"
+            "- Multiple sections stacked (visual + text + stats): use side-by-side layout instead\n"
             "- NEVER let flex/grid children auto-grow beyond available space - set explicit max-heights\n\n"
             "FIXED ELEMENT POSITIONS (MUST follow on EVERY slide for consistency across the deck):\n"
             "- Title: top-left (position:absolute; left:80px; top:50px), 48-56px font\n"
@@ -221,11 +222,11 @@ def build_system_prompt(
         "  * Example: mainImage.src = items[index].image; mainImage.alt = items[index].imageAlt;\n"
         "  * WRONG: One static image for all tabs. RIGHT: Each tab shows its own relevant image.\n\n"
         "⚠️ CRITICAL HEIGHT CONSTRAINT ⚠️\n"
-        "The slide is EXACTLY 1920x1080 pixels. Your content MUST fit within this.\n"
-        "- MAXIMUM usable height: 1080px total, ~950px after title/header\n"
-        "- BEFORE designing: Calculate total height = sum of all elements + gaps\n"
-        "- If total > 950px: Use FEWER items, SMALLER cards, or MULTI-COLUMN layout\n"
-        "- Content that extends below 1080px is INVISIBLE and BROKEN\n\n"
+        "The slide is EXACTLY 1920×1080 pixels. Content below 1080px is INVISIBLE and BROKEN.\n"
+        "- MAXIMUM usable height: ~950px after title/header\n"
+        "- BEFORE designing: add up all vertical sections. Total MUST be ≤ 950px.\n"
+        "- If it won't fit: use 2-COLUMN layout, fewer items, or shorter text\n"
+        "- NEVER stack a tall visual + a tall text block + a footer vertically — use side-by-side\n\n"
         f"{theme_info}\n\n"
         "DESIGN PRINCIPLES:\n"
         "- Use built visuals AND images — whichever fits the content best\n"
@@ -286,12 +287,11 @@ def build_system_prompt(
         "- Titles always on top; avoid website chrome/navigation\n\n"
         "VERTICAL LAYOUT BUDGET (CRITICAL - prevents bottom overflow):\n"
         "- Available height after header (title ~100px + padding): ~950px max for body content\n"
-        "- When stacking items vertically, CALCULATE FIRST: N × item_height + (N-1) × gap ≤ available_height\n"
+        "- CALCULATE FIRST: N × item_height + (N-1) × gap ≤ available_height\n"
         "- SAFE LIMITS for vertical stacks:\n"
-        "  * 2 cards: max 400px each with 24px gap = 824px ✓\n"
-        "  * 3 cards: max 280px each with 16px gap = 872px ✓\n"
-        "  * 4+ cards: use 180-200px height OR switch to 2-column grid\n"
-        "- If content doesn't fit: use smaller cards, fewer items, or multi-column layout\n"
+        "  * 3 cards: max 280px each = 872px ✓\n"
+        "  * 4+ items: max 180px each OR switch to 2-column grid\n"
+        "- Multiple sections stacked (visual + text + stats): use side-by-side layout instead\n"
         "- NEVER let flex/grid children auto-grow beyond available space - set explicit max-heights\n\n"
         "CRITICAL CSS RULES (MUST FOLLOW):\n"
         "- ALL expandable/accordion panels MUST have `overflow: hidden` on BOTH the panel container AND the content-overlay/description wrapper to prevent content escaping bounds\n\n"
@@ -345,7 +345,7 @@ def build_system_prompt(
         "□ No gradient overlays, fog layers, or decorative elements blocking buttons\n"
         "□ ZERO instances of `user-select: none` anywhere — search your code and DELETE any\n"
         "□ No `clip-path` on containers that hold interactive elements\n"
-        "□ All content fits within 1920x1080 - nothing cut off at bottom\n"
+        "□ HEIGHT CHECK: Add up all vertical sections — total ≤ 950px after title. Nothing cut off at bottom.\n"
         "□ Each tab/panel has its own unique image that switches on click\n"
         "□ No Tailwind CDN or external CSS frameworks — all styles written in <style> tags\n"
         "□ All referenced fonts have <link> tags in <head> for loading (e.g. Google Fonts)\n"
@@ -490,7 +490,7 @@ def build_user_prompt(
         sections.append(f"PURPOSE: {component_purpose}")
     if is_full_slide:
         sections.append("FULL SLIDE: You control the entire canvas.")
-        sections.append("LAYOUT: Fill the 1920x1080 canvas. Content must fit without scrolling - nothing cut off at bottom.")
+        sections.append("LAYOUT: Fill the 1920×1080 canvas. Total content height MUST be ≤ 1080px (≤950px after title). Nothing below 1080px is visible.")
         sections.append("TYPE SCALE: Title 48-56px, body 14-18px unless content demands otherwise.")
     if slide_mode:
         sections.append(f"MOTION: {slide_mode}")
@@ -499,10 +499,10 @@ def build_user_prompt(
     is_title_slide = slide_context.get("slide_index", 0) == 0
     if is_title_slide:
         sections.append(
-            "⚠️ TITLE SLIDE: This is the OPENING slide. Design a visually striking title page that sets the tone for the deck.\n"
-            "  - Keep it SIMPLE: title + optional subtitle/tagline. No bullet points, no paragraphs, no content blocks\n"
-            "  - No tabs, no cards, no lists, no interactive elements, no explore/CTA buttons. Just the title page.\n"
-            "  - Optional: metadata row (presenter, date, org) if relevant"
+            "⚠️ TITLE SLIDE: This is the OPENING slide. Design a visually striking title page.\n"
+            "  - Keep it SIMPLE: title + optional subtitle/tagline + optional metadata (presenter, date, org)\n"
+            "  - ZERO buttons. No \"Launch\", \"Enter\", \"Initiate\", \"Start\", \"Explore\", or \"Begin\" buttons.\n"
+            "  - No tabs, cards, lists, bullet points, paragraphs, or interactive elements. Just the title page."
         )
 
     presentation_context = slide_context.get("presentation_context")
@@ -614,6 +614,6 @@ def build_user_prompt(
         sections.append("CONTENT:")
         sections.append(content)
 
-    sections.append("REMINDER: You can build diagrams, flows, charts, and infographics with HTML/CSS/SVG, and use images where they enhance the slide. Use both tools.")
+    sections.append("REMINDER: You can build diagrams, flows, charts, and infographics with HTML/CSS/SVG, and use images where they enhance the slide. Preferably, add images when showing a specific real-world subject (product, person, place). Not every slide needs a photo.")
     sections.append("OUTPUT: Complete HTML starting with <!DOCTYPE html>.")
     return "\n".join(sections)

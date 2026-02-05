@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wand2,
@@ -10,8 +10,7 @@ import {
   Check,
   Image as ImageIcon,
   ChevronDown,
-  Search,
-  Upload
+  Search
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -26,13 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import { SearchTab } from '@/components/media/SearchTab';
+import { MediaHub } from '@/components/media/MediaHub';
 
 interface ImageCardGridProps {
   images: VirtualElement[];
@@ -80,8 +73,6 @@ const ImageCard: React.FC<ImageCardProps> = ({
   const [objectFit, setObjectFit] = useState<ObjectFitType>(
     (element.computedStyle?.objectFit as ObjectFitType) || 'cover'
   );
-  const [isMediaDialogOpen, setIsMediaDialogOpen] = useState(false);
-  const [dialogSearchToken, setDialogSearchToken] = useState(0);
   const fuseInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -91,13 +82,6 @@ const ImageCard: React.FC<ImageCardProps> = ({
     ? element.label
     : getElementDisplayName(element, index);
   const hasImage = element.src && !element.src.includes('placeholder') && element.src.startsWith('http');
-
-  // Reset search token when dialog opens
-  useEffect(() => {
-    if (isMediaDialogOpen) {
-      setDialogSearchToken(prev => prev + 1);
-    }
-  }, [isMediaDialogOpen]);
 
   // Handle object-fit change
   const handleObjectFitChange = (fit: ObjectFitType) => {
@@ -109,10 +93,8 @@ const ImageCard: React.FC<ImageCardProps> = ({
     }
   };
 
-  // Handle image selection from dialog
+  // Handle image selection from MediaHub
   const handleImageSelect = useCallback((url: string) => {
-    // Close dialog immediately - force unmount by setting state in microtask
-    setIsMediaDialogOpen(false);
     setIsProcessing(true);
 
     // Dispatch processing event so iframe shows loading overlay too
@@ -120,23 +102,20 @@ const ImageCard: React.FC<ImageCardProps> = ({
       detail: { componentId, propName: element.id, isProcessing: true }
     }));
 
-    // Defer the actual update to next tick so dialog closes first
-    requestAnimationFrame(() => {
-      onImageUpdate(element.id, url);
-      onSave('Changed image');
+    onImageUpdate(element.id, url);
+    onSave('Changed image');
 
-      // Preload the image, then clear loading state
-      const img = new Image();
-      const done = () => {
-        setIsProcessing(false);
-        window.dispatchEvent(new CustomEvent('image:processing', {
-          detail: { componentId, propName: element.id, isProcessing: false }
-        }));
-      };
-      img.onload = done;
-      img.onerror = done;
-      img.src = url;
-    });
+    // Preload the image, then clear loading state
+    const img = new Image();
+    const done = () => {
+      setIsProcessing(false);
+      window.dispatchEvent(new CustomEvent('image:processing', {
+        detail: { componentId, propName: element.id, isProcessing: false }
+      }));
+    };
+    img.onload = done;
+    img.onerror = done;
+    img.src = url;
   }, [element.id, componentId, onImageUpdate, onSave]);
 
   // Handle file upload
@@ -330,49 +309,73 @@ const ImageCard: React.FC<ImageCardProps> = ({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Image or Placeholder */}
-        <div
-          onClick={() => setIsMediaDialogOpen(true)}
-          className={cn(
-            "relative w-full h-24 cursor-pointer group",
-            "bg-[repeating-conic-gradient(#f5f5f5_0_90deg,#fafafa_90deg_180deg)_0_0/10px_10px]"
-          )}
-        >
-          {isProcessing && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-20">
-              <Loader2 className="w-4 h-4 animate-spin text-white" />
-              <span className="text-white text-[9px] mt-0.5 font-medium">Processing...</span>
-            </div>
-          )}
+        {/* Image or Placeholder — wrapped in MediaHub popover trigger */}
+        <MediaHub
+          trigger={
+            <div
+              className={cn(
+                "relative w-full h-24 cursor-pointer group",
+                "bg-[repeating-conic-gradient(#f5f5f5_0_90deg,#fafafa_90deg_180deg)_0_0/10px_10px]"
+              )}
+            >
+              {isProcessing && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-20">
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span className="text-white text-[9px] mt-0.5 font-medium">Processing...</span>
+                </div>
+              )}
 
-          {hasImage ? (
-            <>
-              <img
-                src={element.src}
-                alt={displayName}
-                className="w-full h-full"
-                style={{ objectFit }}
-              />
-              <div className={cn(
-                "absolute inset-0 bg-black/0 transition-all duration-150 flex items-center justify-center",
-                isHovered && !isExpanded && "bg-black/35"
-              )}>
-                <span className={cn(
-                  "text-white text-[9px] font-medium opacity-0 transition-opacity flex items-center gap-1",
-                  isHovered && !isExpanded && "opacity-100"
-                )}>
-                  <Search className="w-2.5 h-2.5" />
-                  Browse
-                </span>
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full gap-0.5 text-muted-foreground group-hover:text-foreground transition-colors">
-              <ImageIcon className="w-4 h-4" />
-              <span className="text-[9px]">Click to select</span>
+              {hasImage ? (
+                <>
+                  <img
+                    src={element.src}
+                    alt={displayName}
+                    className="w-full h-full"
+                    style={{ objectFit }}
+                  />
+                  <div className={cn(
+                    "absolute inset-0 bg-black/0 transition-all duration-150 flex items-center justify-center",
+                    isHovered && !isExpanded && "bg-black/35"
+                  )}>
+                    <span className={cn(
+                      "text-white text-[9px] font-medium opacity-0 transition-opacity flex items-center gap-1",
+                      isHovered && !isExpanded && "opacity-100"
+                    )}>
+                      <Search className="w-2.5 h-2.5" />
+                      Browse
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full gap-0.5 text-muted-foreground group-hover:text-foreground transition-colors">
+                  <ImageIcon className="w-4 h-4" />
+                  <span className="text-[9px]">Click to select</span>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          }
+          onSelect={(url) => {
+            // Intercept generating/failed placeholders — show processing overlay
+            if (url === 'generating://ai-image') {
+              setIsProcessing(true);
+              window.dispatchEvent(new CustomEvent('image:processing', {
+                detail: { componentId, propName: element.id, isProcessing: true }
+              }));
+              return;
+            }
+            if (url === 'failed://ai-image') {
+              setIsProcessing(false);
+              window.dispatchEvent(new CustomEvent('image:processing', {
+                detail: { componentId, propName: element.id, isProcessing: false }
+              }));
+              return;
+            }
+            if (url && typeof url === 'string') {
+              handleImageSelect(url);
+            }
+          }}
+          defaultSearchTerm={element.alt && element.alt !== 'Image' ? element.alt : undefined}
+        />
 
         {/* Top bar with label and fit */}
         <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-1 py-0.5">
@@ -611,74 +614,6 @@ const ImageCard: React.FC<ImageCardProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Media Selection Dialog */}
-      {isMediaDialogOpen && (
-        <Dialog open onOpenChange={(open) => { if (!open) setIsMediaDialogOpen(false); }}>
-          <DialogContent
-            className="p-0 border-0 bg-transparent shadow-2xl w-full max-w-[95vw] sm:max-w-[480px] duration-0 data-[state=closed]:duration-0"
-            aria-describedby={undefined}
-          >
-            <DialogTitle className="sr-only">Select Image</DialogTitle>
-            <DialogDescription className="sr-only">
-              Search or upload an image for {displayName}
-            </DialogDescription>
-            <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 shadow-xl w-full flex flex-col max-h-[85vh]">
-              {/* Orange gradient top bar */}
-              <div className="h-[2px] bg-gradient-to-r from-[#FF4301] via-[#FF6B33] to-[#FF4301] shrink-0" />
-
-              {/* Header */}
-              <div className="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800 shrink-0">
-                <h2
-                  className="text-sm text-foreground"
-                  style={{
-                    fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-                    fontWeight: 700,
-                    letterSpacing: '-0.01em'
-                  }}
-                >
-                  Select Image
-                </h2>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {displayName}
-                </p>
-              </div>
-
-              {/* Upload option */}
-              <div className="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800 bg-muted/30 shrink-0">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border-[1.5px] border-dashed border-zinc-300 dark:border-zinc-600 hover:border-orange-400 hover:bg-orange-50/50 dark:hover:bg-orange-500/10 text-xs text-muted-foreground hover:text-orange-600 transition-all"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  Upload from device
-                </button>
-              </div>
-
-              {/* Search Tab */}
-              <div className="flex-1 overflow-hidden flex flex-col min-h-0" style={{ height: '400px' }}>
-                <div className="flex-1 overflow-y-auto p-3">
-                  <SearchTab
-                    onSelect={(url, type) => {
-                      if (url && typeof url === 'string') {
-                        handleImageSelect(url);
-                      }
-                    }}
-                    defaultSearchTerm={element.alt && element.alt !== 'Image' ? element.alt : undefined}
-                    autoSearchToken={dialogSearchToken}
-                  />
-                </div>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 };

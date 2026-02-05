@@ -1380,6 +1380,10 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                         </div>
                       }
                       onSelect={(url: string) => {
+                        // Intercept generating/failed placeholders — keep MediaHub open
+                        if (url === 'generating://ai-image' || url === 'failed://ai-image') {
+                          return;
+                        }
                         handleElementImage(activeSelectedElement.id, url);
                         saveComponentToHistory('Image updated');
                       }}

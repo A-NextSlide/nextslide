@@ -639,6 +639,10 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
           open={true}
           onClose={() => setIsMediaHubOpen(false)}
           onSelect={(url) => {
+            // Intercept generating/failed placeholders — keep MediaHub open
+            if (url === 'generating://ai-image' || url === 'failed://ai-image') {
+              return;
+            }
             handleMediaSelect(url);
             setIsMediaHubOpen(false);
           }}

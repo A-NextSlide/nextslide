@@ -79,6 +79,11 @@ export function useElementResize({
     e.preventDefault();
     e.stopPropagation();
 
+    // Refresh coordinator scale from live DOM (same fix as useElementDrag)
+    if (iframeRef.current) {
+      coordinator.update(iframeRef.current);
+    }
+
     // Prevent text selection and set cursor on body for smooth feedback
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
@@ -95,7 +100,7 @@ export function useElementResize({
     setIsResizing(true);
     setResizeDirection(direction);
     setResizeDelta({ width: 0, height: 0, x: 0, y: 0 });
-  }, [element]);
+  }, [element, coordinator, iframeRef]);
 
   // Calculate new bounds based on resize direction
   const calculateNewBounds = useCallback((

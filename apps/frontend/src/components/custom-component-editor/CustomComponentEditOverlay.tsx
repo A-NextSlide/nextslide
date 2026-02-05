@@ -12,7 +12,6 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import DOMPurify from 'dompurify';
 import { createPortal } from 'react-dom';
 
 import { VirtualElement, Bounds } from './types';
@@ -634,7 +633,7 @@ export function generateEditModeScript(componentId: string): string {
           var container = clone.querySelector(selector);
           if (container && container.children.length > 1) {
             console.log('[get-html] Resetting JS-rendered container:', selector, 'children:', container.children.length);
-            container.innerHTML = DOMPurify.sanitize('');
+            container.innerHTML = '';
           }
         } catch (e) { /* ignore invalid selectors */ }
       });
@@ -685,7 +684,7 @@ export function generateEditModeScript(componentId: string): string {
     if (e.data.type === 'update-element-html') {
       const el = document.querySelector(e.data.selector);
       if (el && e.data.html) {
-        el.innerHTML = DOMPurify.sanitize(e.data.html);
+        el.innerHTML = e.data.html;
       }
     }
 
@@ -1362,6 +1361,19 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       );
     }
   }, [iframeRef, containerWidth, containerHeight, scale]);
+
+  // Reconvert element bounds when scale changes so overlay positions stay in sync
+  // with the CSS wrapper's transform: scale(). Without this, bounds computed at
+  // one scale become stale when the component resizes.
+  useEffect(() => {
+    if (!coordinatorRef.current || virtualElements.length === 0) return;
+    const coord = coordinatorRef.current;
+    setVirtualElements(prev => prev.map(el => ({
+      ...el,
+      bounds: coord.iframeToParent(el.iframeBounds),
+    })));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scale]);
 
   // Track mouse position for auto-selecting closest element on first entry
   useEffect(() => {

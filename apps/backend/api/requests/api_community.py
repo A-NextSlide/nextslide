@@ -628,18 +628,38 @@ async def get_submission_status(
 # Showcase Endpoints
 # ============================================================================
 
-def _build_showcase_deck(deck: Dict[str, Any], has_upvoted: bool = False) -> ShowcaseDeckResponse:
+def _backfill_showcase_thumbnails(
+    supabase, decks: List[Dict[str, Any]]
+) -> Dict[str, str]:
+    """Batch-fetch fresh thumbnail URLs from source decks."""
+    uuids = [d.get('deck_uuid') for d in decks if d.get('deck_uuid')]
+    if not uuids:
+        return {}
+    try:
+        src = supabase.table('decks').select('uuid, thumbnail_url').in_('uuid', uuids).execute()
+        return {r['uuid']: r['thumbnail_url'] for r in (src.data or []) if r.get('thumbnail_url')}
+    except Exception:
+        return {}
+
+
+def _build_showcase_deck(
+    deck: Dict[str, Any],
+    has_upvoted: bool = False,
+    thumb_map: Optional[Dict[str, str]] = None,
+) -> ShowcaseDeckResponse:
     """Build a ShowcaseDeckResponse from a raw deck dict."""
+    du = deck.get('deck_uuid')
+    fresh_thumb = (thumb_map or {}).get(du) if du else None
     return ShowcaseDeckResponse(
         id=deck['id'],
-        deck_uuid=deck.get('deck_uuid'),
+        deck_uuid=du,
         title=deck['title'],
         description=deck.get('description'),
         category=deck['category'],
         tags=deck.get('tags', []),
         slide_count=deck.get('slide_count', 0),
         first_slide=deck.get('first_slide'),
-        thumbnail_url=deck.get('thumbnail_url') or _thumbnail_url_for(deck.get('deck_uuid')),
+        thumbnail_url=fresh_thumb or deck.get('thumbnail_url') or _thumbnail_url_for(du),
         author_name=deck.get('author_name'),
         remix_count=deck.get('remix_count', 0),
         view_count=deck.get('view_count', 0),
@@ -726,8 +746,9 @@ async def get_showcase(
             except Exception as e:
                 logger.warning(f"Failed to get upvote status: {e}")
 
+        thumb_map = _backfill_showcase_thumbnails(supabase, result.data or [])
         decks = [
-            _build_showcase_deck(deck, has_upvoted=deck['id'] in user_upvoted_ids)
+            _build_showcase_deck(deck, has_upvoted=deck['id'] in user_upvoted_ids, thumb_map=thumb_map)
             for deck in (result.data or [])
         ]
 
@@ -770,7 +791,7 @@ async def get_weekly_top(
         if not deck_upvote_counts:
             # Fallback: return top 5 by total upvote_count
             fallback = supabase.table('community_decks').select(
-                'id, title, description, category, tags, slide_count, first_slide, '
+                'id, deck_uuid, title, description, category, tags, slide_count, first_slide, '
                 'thumbnail_url, author_name, remix_count, view_count, upvote_count, '
                 'is_featured, approved_at, submitted_at'
             ).eq('status', 'approved').order('upvote_count', desc=True).limit(5).execute()
@@ -786,8 +807,9 @@ async def get_weekly_top(
                 except Exception:
                     pass
 
+            thumb_map = _backfill_showcase_thumbnails(supabase, fallback.data or [])
             return [
-                _build_showcase_deck(d, has_upvoted=d['id'] in user_upvoted_ids)
+                _build_showcase_deck(d, has_upvoted=d['id'] in user_upvoted_ids, thumb_map=thumb_map)
                 for d in (fallback.data or [])
             ]
 
@@ -796,7 +818,7 @@ async def get_weekly_top(
 
         # Fetch deck details
         decks_result = supabase.table('community_decks').select(
-            'id, title, description, category, tags, slide_count, first_slide, '
+            'id, deck_uuid, title, description, category, tags, slide_count, first_slide, '
             'thumbnail_url, author_name, remix_count, view_count, upvote_count, '
             'is_featured, approved_at, submitted_at'
         ).eq('status', 'approved').in_('id', top_ids).execute()
@@ -816,8 +838,9 @@ async def get_weekly_top(
         decks_map = {d['id']: d for d in (decks_result.data or [])}
         sorted_decks = [decks_map[did] for did in top_ids if did in decks_map]
 
+        thumb_map = _backfill_showcase_thumbnails(supabase, sorted_decks)
         return [
-            _build_showcase_deck(d, has_upvoted=d['id'] in user_upvoted_ids)
+            _build_showcase_deck(d, has_upvoted=d['id'] in user_upvoted_ids, thumb_map=thumb_map)
             for d in sorted_decks
         ]
 

@@ -69,6 +69,14 @@ export function useElementDrag({
     e.preventDefault();
     e.stopPropagation();
 
+    // Refresh coordinator scale from live DOM to prevent drift between
+    // the coordinator's cached scale and the CSS wrapper's actual scale.
+    // Without this, deltaToIframe divides by a stale scale, causing the
+    // iframe element to move faster/slower than the overlay.
+    if (iframeRef.current) {
+      coordinator.update(iframeRef.current);
+    }
+
     // Store starting state but DON'T start dragging yet
     // Wait for mouse to move beyond threshold
     dragStartRef.current = {
@@ -81,7 +89,7 @@ export function useElementDrag({
     // Enter "potential drag" state - drag will start if mouse moves enough
     setIsPotentialDrag(true);
     setDragOffset({ x: 0, y: 0 });
-  }, [element]);
+  }, [element, coordinator, iframeRef]);
 
   // Mouse move handler for potential drag (checking threshold)
   useEffect(() => {
