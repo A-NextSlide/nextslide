@@ -81,7 +81,7 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
     };
 
     const [activeTab, setActiveTab] = useState<MediaSource>('search');
-    const [searchToken, setSearchToken] = useState<number>(0);
+    const [searchToken, setSearchToken] = useState<number | null>(null);
     const [hasInteracted, setHasInteracted] = useState(false);
     const [preventClose, setPreventClose] = useState(false);
     const [hubSearchTerm, setHubSearchTerm] = useState(defaultSearchTerm || '');
@@ -270,7 +270,7 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                             e.stopPropagation();
                             if (e.key === 'Enter' && hubSearchTerm.trim()) {
                                 setActiveTab('search');
-                                setSearchToken(prev => prev + 1);
+                                setSearchToken(prev => (prev ?? 0) + 1);
                             }
                         }}
                         className={cn(
@@ -283,7 +283,7 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                     onClick={() => {
                         if (hubSearchTerm.trim()) {
                             setActiveTab('search');
-                            setSearchToken(prev => prev + 1);
+                            setSearchToken(prev => (prev ?? 0) + 1);
                         }
                     }}
                     className="flex items-center justify-center h-7 w-7 rounded-md border border-input bg-background hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0"

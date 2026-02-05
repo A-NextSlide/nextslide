@@ -33,6 +33,7 @@ export interface DetectedElement {
   src?: string;
   alt?: string;
   selector?: string;
+  label?: string;
 }
 
 interface CustomComponentEditOverlayProps {
@@ -1004,6 +1005,7 @@ function toDetectedElement(ve: VirtualElement): DetectedElement {
     src: ve.src,
     alt: ve.alt,
     selector: ve.selector,
+    label: ve.label,
   };
 }
 

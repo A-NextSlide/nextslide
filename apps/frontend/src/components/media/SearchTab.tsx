@@ -267,125 +267,120 @@ export const SearchTab: React.FC<SearchTabProps> = ({ onSelect, onLoadMore, defa
 
     return (
         <>
-            <div className="flex flex-col h-full">
-                {/* Results Grid */}
-                <div className="flex-1 relative overflow-hidden">
-                    {isLoading && displayedResults.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full gap-2">
-                            <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
-                            <p className="text-xs text-muted-foreground">Searching...</p>
-                        </div>
-                    ) : displayedResults.length > 0 ? (
-                        <div className="h-full flex flex-col">
-                            <div className="flex-1 overflow-y-auto image-picker-scroll">
-                                <div className="grid grid-cols-4 gap-1.5 pb-14">
-                                    {displayedResults.map((result, index) => (
-                                        <motion.div
-                                            key={`${result.id}-${result.link}-${index}`}
-                                            initial={{ opacity: 0, scale: 0.95 }}
-                                            animate={{ opacity: 1, scale: 1 }}
-                                            transition={{ duration: 0.15, delay: Math.min(index * 0.02, 0.3) }}
-                                            whileHover={{ scale: 1.04 }}
-                                            onClick={() => handleSelect(result)}
-                                            onMouseEnter={() => setHoveredImageId(result.id!)}
-                                            onMouseLeave={() => setHoveredImageId(null)}
-                                            className="relative cursor-pointer rounded overflow-hidden border border-transparent hover:border-primary/40 transition-colors"
-                                            style={{ height: '80px' }}
-                                        >
-                                            <img
-                                                src={result.src?.thumbnail || result.thumbnail || result.link}
-                                                alt={result.alt || result.title}
-                                                className="w-full h-full object-cover"
-                                                loading="lazy"
-                                                onError={(e) => {
-                                                    const target = e.target as HTMLImageElement;
-                                                    if (target.src !== result.link) {
-                                                        target.src = result.link;
-                                                    }
+            <div>
+                {isLoading && displayedResults.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-2">
+                        <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+                        <p className="text-xs text-muted-foreground">Searching...</p>
+                    </div>
+                ) : displayedResults.length > 0 ? (
+                    <>
+                        <div className="grid grid-cols-4 gap-1.5">
+                            {displayedResults.map((result, index) => (
+                                <motion.div
+                                    key={`${result.id}-${result.link}-${index}`}
+                                    initial={{ opacity: 0, scale: 0.95 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    transition={{ duration: 0.15, delay: Math.min(index * 0.02, 0.3) }}
+                                    whileHover={{ scale: 1.04 }}
+                                    onClick={() => handleSelect(result)}
+                                    onMouseEnter={() => setHoveredImageId(result.id!)}
+                                    onMouseLeave={() => setHoveredImageId(null)}
+                                    className="relative cursor-pointer rounded overflow-hidden border border-transparent hover:border-primary/40 transition-colors"
+                                    style={{ height: '80px' }}
+                                >
+                                    <img
+                                        src={result.src?.thumbnail || result.thumbnail || result.link}
+                                        alt={result.alt || result.title}
+                                        className="w-full h-full object-cover"
+                                        loading="lazy"
+                                        onError={(e) => {
+                                            const target = e.target as HTMLImageElement;
+                                            if (target.src !== result.link) {
+                                                target.src = result.link;
+                                            }
+                                        }}
+                                    />
+
+                                    {/* Hover preview icon */}
+                                    <AnimatePresence>
+                                        {hoveredImageId === result.id && (
+                                            <motion.div
+                                                initial={{ opacity: 0, scale: 0.8 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                exit={{ opacity: 0, scale: 0.8 }}
+                                                className="absolute top-1 right-1 bg-black/60 backdrop-blur-sm p-1 rounded-full cursor-pointer"
+                                                onMouseEnter={(e) => {
+                                                    if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current);
+
+                                                    const rect = e.currentTarget.getBoundingClientRect();
+                                                    const viewportHeight = window.innerHeight;
+                                                    const viewportWidth = window.innerWidth;
+                                                    const previewWidth = 250;
+                                                    const previewHeight = 250;
+
+                                                    let x = rect.right + 2;
+                                                    let y = rect.top - (previewHeight / 2) + (rect.height / 2);
+
+                                                    if (x + previewWidth > viewportWidth - 10) x = rect.left - previewWidth - 2;
+                                                    if (y + previewHeight > viewportHeight - 10) y = viewportHeight - previewHeight - 10;
+                                                    if (y < 10) y = 10;
+
+                                                    setPreviewPosition({ x, y });
+                                                    setPreviewImage(result);
                                                 }}
-                                            />
-
-                                            {/* Hover preview icon */}
-                                            <AnimatePresence>
-                                                {hoveredImageId === result.id && (
-                                                    <motion.div
-                                                        initial={{ opacity: 0, scale: 0.8 }}
-                                                        animate={{ opacity: 1, scale: 1 }}
-                                                        exit={{ opacity: 0, scale: 0.8 }}
-                                                        className="absolute top-1 right-1 bg-black/60 backdrop-blur-sm p-1 rounded-full cursor-pointer"
-                                                        onMouseEnter={(e) => {
-                                                            if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current);
-
-                                                            const rect = e.currentTarget.getBoundingClientRect();
-                                                            const viewportHeight = window.innerHeight;
-                                                            const viewportWidth = window.innerWidth;
-                                                            const previewWidth = 250;
-                                                            const previewHeight = 250;
-
-                                                            let x = rect.right + 2;
-                                                            let y = rect.top - (previewHeight / 2) + (rect.height / 2);
-
-                                                            if (x + previewWidth > viewportWidth - 10) x = rect.left - previewWidth - 2;
-                                                            if (y + previewHeight > viewportHeight - 10) y = viewportHeight - previewHeight - 10;
-                                                            if (y < 10) y = 10;
-
-                                                            setPreviewPosition({ x, y });
-                                                            setPreviewImage(result);
-                                                        }}
-                                                        onMouseMove={(e) => e.stopPropagation()}
-                                                        onMouseLeave={() => {
-                                                            setPreviewImage(null);
-                                                            if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current);
-                                                        }}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                                        </svg>
-                                                    </motion.div>
-                                                )}
-                                            </AnimatePresence>
-                                        </motion.div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Load More */}
-                            {hasMore && (
-                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background via-background to-transparent pt-6 pb-1.5 px-1 z-10">
-                                    <Button
-                                        onClick={handleLoadMore}
-                                        disabled={isLoadingMore}
-                                        variant="outline"
-                                        size="sm"
-                                        className="w-full h-7 text-xs bg-background/95 hover:bg-background border-border/50"
-                                    >
-                                        {isLoadingMore ? (
-                                            <>
-                                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                                                Loading...
-                                            </>
-                                        ) : (
-                                            <>
-                                                Load More
-                                                <span className="ml-1 opacity-60">
-                                                    ({allResults.length - displayedResults.length})
-                                                </span>
-                                            </>
+                                                onMouseMove={(e) => e.stopPropagation()}
+                                                onMouseLeave={() => {
+                                                    setPreviewImage(null);
+                                                    if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current);
+                                                }}
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                </svg>
+                                            </motion.div>
                                         )}
-                                    </Button>
-                                </div>
-                            )}
+                                    </AnimatePresence>
+                                </motion.div>
+                            ))}
                         </div>
-                    ) : (
-                        <div className="flex items-center justify-center h-full">
-                            <p className="text-xs text-muted-foreground text-center">
-                                Search for images to add to your slide.
-                            </p>
-                        </div>
-                    )}
-                </div>
+
+                        {/* Load More */}
+                        {hasMore && (
+                            <div className="pt-2 pb-1">
+                                <Button
+                                    onClick={handleLoadMore}
+                                    disabled={isLoadingMore}
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full h-7 text-xs"
+                                >
+                                    {isLoadingMore ? (
+                                        <>
+                                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                            Loading...
+                                        </>
+                                    ) : (
+                                        <>
+                                            Load More
+                                            <span className="ml-1 opacity-60">
+                                                ({allResults.length - displayedResults.length})
+                                            </span>
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <div className="flex items-center justify-center py-10">
+                        <p className="text-xs text-muted-foreground text-center">
+                            Search for images to add to your slide.
+                        </p>
+                    </div>
+                )}
             </div>
             
             {/* Preview Popup - Exact same implementation as recommended tab */}

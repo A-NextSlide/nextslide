@@ -1387,6 +1387,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                         handleElementImage(activeSelectedElement.id, url);
                         saveComponentToHistory('Image updated');
                       }}
+                      defaultSearchTerm={activeSelectedElement.alt && activeSelectedElement.alt !== 'Image' ? activeSelectedElement.alt : undefined}
                     />
                   )}
 

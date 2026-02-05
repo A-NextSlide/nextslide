@@ -2268,36 +2268,38 @@ img.ns-img-ready {
     DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] AI Edit request:', { type: element.type, id: element.id, instruction });
 
     // Create a descriptive label for the component chip in chat
-    // Generate user-friendly labels for the element (no technical jargon)
-    let label = 'Slide Element';
-    let friendlyType = 'element';
+    // Use the element's label (component name from layers panel) when available
+    const componentName = element.label || null;
+    let label = componentName || 'Slide Element';
+    let friendlyType = componentName || 'element';
 
-    if (element.type === 'text' && element.content) {
-      const preview = element.content.slice(0, 20);
-      label = `"${preview}${element.content.length > 20 ? '...' : ''}"`;
-      friendlyType = 'text';
-    } else if (element.type === 'image') {
-      label = element.alt || 'Image';
-      friendlyType = 'image';
-    } else if (element.type === 'container') {
-      // Use friendly names instead of HTML tags
-      const tagLower = (element.tagName || '').toLowerCase();
-      if (tagLower === 'section' || tagLower === 'article') friendlyType = 'section';
-      else if (tagLower === 'header') friendlyType = 'header';
-      else if (tagLower === 'footer') friendlyType = 'footer';
-      else if (tagLower === 'nav') friendlyType = 'navigation';
-      else if (tagLower === 'aside') friendlyType = 'sidebar';
-      else friendlyType = 'content block';
-      label = friendlyType.charAt(0).toUpperCase() + friendlyType.slice(1);
+    if (!componentName) {
+      if (element.type === 'text' && element.content) {
+        const preview = element.content.slice(0, 20);
+        label = `"${preview}${element.content.length > 20 ? '...' : ''}"`;
+        friendlyType = 'text';
+      } else if (element.type === 'image') {
+        label = element.alt || 'Image';
+        friendlyType = 'image';
+      } else if (element.type === 'container') {
+        const tagLower = (element.tagName || '').toLowerCase();
+        if (tagLower === 'section' || tagLower === 'article') friendlyType = 'section';
+        else if (tagLower === 'header') friendlyType = 'header';
+        else if (tagLower === 'footer') friendlyType = 'footer';
+        else if (tagLower === 'nav') friendlyType = 'navigation';
+        else if (tagLower === 'aside') friendlyType = 'sidebar';
+        else friendlyType = 'container';
+        label = friendlyType.charAt(0).toUpperCase() + friendlyType.slice(1);
+      }
     }
 
     // Build the prompt with clear targeting but user-friendly language
     let prompt = '';
 
     if (element.type === 'text' && element.content) {
-      prompt = `Edit this text on the slide: "${element.content.slice(0, 100)}${element.content.length > 100 ? '...' : ''}"\n\nChange: ${instruction}\n\n[Target: text element only]`;
+      prompt = `Edit this ${friendlyType} on the slide: "${element.content.slice(0, 100)}${element.content.length > 100 ? '...' : ''}"\n\nChange: ${instruction}\n\n[Target: this ${friendlyType} only]`;
     } else if (element.type === 'image') {
-      prompt = `Edit this image on the slide${element.alt ? ` (${element.alt})` : ''}.\n\nChange: ${instruction}\n\n[Target: image element only]`;
+      prompt = `Edit this ${friendlyType} on the slide${element.alt ? ` (${element.alt})` : ''}.\n\nChange: ${instruction}\n\n[Target: this ${friendlyType} only]`;
     } else if (element.type === 'container') {
       const contentPreview = element.content ? element.content.slice(0, 80).replace(/\s+/g, ' ').trim() : '';
       prompt = `Edit this ${friendlyType} on the slide${contentPreview ? `: "${contentPreview}..."` : ''}.\n\nChange: ${instruction}\n\n[Target: this ${friendlyType} only]`;
