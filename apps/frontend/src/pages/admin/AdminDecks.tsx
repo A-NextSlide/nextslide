@@ -271,6 +271,7 @@ const AdminDecks: React.FC = () => {
   const [batchCount, setBatchCount] = useState('5');
 
   // SEO state
+  const [seederExpanded, setSeederExpanded] = useState(false);
   const [seoExpanded, setSeoExpanded] = useState(false);
   const [seoPages, setSeoPages] = useState<{ slug: string; title: string; communityCategory: string; type: string; communityDeckCount: number }[]>([]);
   const [featuredDecks, setFeaturedDecks] = useState<SeoFeaturedDeck[]>([]);
@@ -425,15 +426,18 @@ const AdminDecks: React.FC = () => {
     };
   }, []);
 
-  // Fetch existing seed jobs on mount (persist across refresh)
+  // Fetch existing seed jobs on mount — only restore actively generating ones
   useEffect(() => {
     adminApi.seedJobs().then(({ jobs }) => {
       if (!jobs?.length) return;
-      const restored: SeedJob[] = jobs.map(j => ({
+      // Only restore jobs that are still generating/queued — skip completed/failed
+      const activeJobs = jobs.filter(j => j.status === 'generating' || j.status === 'queued');
+      if (!activeJobs.length) return;
+      const restored: SeedJob[] = activeJobs.map(j => ({
         deckId: j.deck_id,
         topic: j.name,
-        status: (['queued', 'generating'].includes(j.status) ? j.status as 'queued' | 'generating' : j.status === 'failed' ? 'failed' : 'completed') as SeedJob['status'],
-        progress: j.progress || (j.status === 'completed' ? 100 : 0),
+        status: j.status as 'queued' | 'generating',
+        progress: j.progress || 0,
         slideCount: j.slide_count,
         message: j.message,
         name: j.name,
@@ -445,8 +449,8 @@ const AdminDecks: React.FC = () => {
         const newJobs = restored.filter(j => !existingIds.has(j.deckId));
         return [...prev, ...newJobs];
       });
-      // Resume polling for any still-generating or queued jobs
-      restored.filter(j => j.status === 'generating' || j.status === 'queued').forEach(j => {
+      // Resume polling for the active jobs
+      restored.forEach(j => {
         if (!pollIntervalsRef.current[j.deckId]) {
           startPolling(j.deckId);
         }
@@ -1029,116 +1033,139 @@ const AdminDecks: React.FC = () => {
         </div>
 
         {/* ── SEEDER SECTION ── */}
-        <section className={cn(cardClass, 'p-4 space-y-3 overflow-visible')}>
-          <div className="flex items-center gap-2">
-            <Wand2 className="h-3.5 w-3.5 text-[#FF4301]" />
-            <h2 className={sectionHeading} style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Deck Seeder</h2>
-          </div>
-
-          {/* Input row */}
-          <div className="flex gap-2 items-end">
-            <div className="flex-1 space-y-1">
-              <textarea
-                placeholder="Describe the presentation you want to generate..."
-                value={seedPrompt}
-                onChange={(e) => setSeedPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleGenerate();
-                }}
-                rows={2}
-                className="w-full rounded-lg border border-[#eaeaea] dark:border-[#333] bg-white dark:bg-[#0a0a0a] px-3 py-2 text-sm resize-none placeholder:text-[#bbb] focus:outline-none focus:ring-1 focus:ring-[#FF4301]/40 focus:border-[#FF4301]/40"
-              />
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={handleRandomPrompt}
-                  className="text-[10px] text-[#999] hover:text-[#FF4301] transition-colors flex items-center gap-0.5"
-                >
-                  <Sparkles className="h-2.5 w-2.5" />
-                  Random prompt
-                </button>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <div className="flex gap-1.5">
-                <Select value={seedStyle} onValueChange={setSeedStyle}>
-                  <SelectTrigger className="w-[100px] h-8 text-[10px] border-[#eaeaea] dark:border-[#333]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STYLE_OPTIONS.map(s => (
-                      <SelectItem key={s.value} value={s.value} className="text-xs">{s.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={seedSlides} onValueChange={setSeedSlides}>
-                  <SelectTrigger className="w-[90px] h-8 text-[10px] border-[#eaeaea] dark:border-[#333]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[6, 7, 8, 10, 12].map(n => (
-                      <SelectItem key={n} value={String(n)} className="text-xs">{n} slides</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                onClick={handleGenerate}
-                disabled={isGenerating || !seedPrompt.trim()}
-                className="h-8 text-xs gap-1.5 bg-[#FF4301] hover:bg-[#e63c00] text-white"
-              >
-                {isGenerating ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Zap className="h-3.5 w-3.5" />
-                )}
-                Generate
-              </Button>
-            </div>
-          </div>
-
-          {/* Batch generation row */}
-          <div className="flex items-center gap-2 pt-1 border-t border-[#eaeaea] dark:border-[#333]">
-            <span className="text-[10px] text-[#888] uppercase tracking-wider font-medium">Batch</span>
-            <Select value={batchCount} onValueChange={setBatchCount}>
-              <SelectTrigger className="w-[65px] h-7 text-[10px] border-[#eaeaea] dark:border-[#333]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[3, 5, 8, 10, 15, 20].map(n => (
-                  <SelectItem key={n} value={String(n)} className="text-xs">{n}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="text-[10px] text-[#888]">random decks</span>
-            <Button
-              onClick={handleBatchGenerate}
-              disabled={isGenerating}
-              variant="outline"
-              className="h-7 text-[10px] gap-1.5 border-[#FF4301]/30 text-[#FF4301] hover:bg-[#FF4301]/5"
-            >
-              {isGenerating ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Zap className="h-3 w-3" />
+        <section className={cn(cardClass, 'overflow-visible')}>
+          <button
+            onClick={() => setSeederExpanded(prev => !prev)}
+            className="w-full flex items-center justify-between p-4 hover:bg-[#fafafa] dark:hover:bg-[#161616] transition-colors rounded-xl"
+          >
+            <div className="flex items-center gap-2">
+              <Wand2 className="h-3.5 w-3.5 text-[#FF4301]" />
+              <h2 className={sectionHeading} style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>Deck Seeder</h2>
+              {seedJobs.length > 0 && (
+                <span className="text-[10px] font-mono text-[#999]">{seedJobs.filter(j => j.status === 'generating' || j.status === 'queued').length} active</span>
               )}
-              Generate Batch
-            </Button>
-            <span className="text-[9px] text-[#bbb] ml-auto">All routed through Modal with fallback</span>
-          </div>
+            </div>
+            {seederExpanded ? <ChevronUp className="h-4 w-4 text-[#999]" /> : <ChevronDown className="h-4 w-4 text-[#999]" />}
+          </button>
 
-          {/* Active seed jobs */}
-          {seedJobs.length > 0 && (
-            <div className="space-y-2 pt-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Seed Jobs</h3>
-                <span className="text-[10px] font-mono text-[#999]">{seedJobs.length}</span>
+          {seederExpanded && (
+            <div className="p-4 pt-0 space-y-3">
+              {/* Input row */}
+              <div className="flex gap-2 items-end">
+                <div className="flex-1 space-y-1">
+                  <textarea
+                    placeholder="Describe the presentation you want to generate..."
+                    value={seedPrompt}
+                    onChange={(e) => setSeedPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleGenerate();
+                    }}
+                    rows={2}
+                    className="w-full rounded-lg border border-[#eaeaea] dark:border-[#333] bg-white dark:bg-[#0a0a0a] px-3 py-2 text-sm resize-none placeholder:text-[#bbb] focus:outline-none focus:ring-1 focus:ring-[#FF4301]/40 focus:border-[#FF4301]/40"
+                  />
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={handleRandomPrompt}
+                      className="text-[10px] text-[#999] hover:text-[#FF4301] transition-colors flex items-center gap-0.5"
+                    >
+                      <Sparkles className="h-2.5 w-2.5" />
+                      Random prompt
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex gap-1.5">
+                    <Select value={seedStyle} onValueChange={setSeedStyle}>
+                      <SelectTrigger className="w-[100px] h-8 text-[10px] border-[#eaeaea] dark:border-[#333]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STYLE_OPTIONS.map(s => (
+                          <SelectItem key={s.value} value={s.value} className="text-xs">{s.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={seedSlides} onValueChange={setSeedSlides}>
+                      <SelectTrigger className="w-[90px] h-8 text-[10px] border-[#eaeaea] dark:border-[#333]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[6, 7, 8, 10, 12].map(n => (
+                          <SelectItem key={n} value={String(n)} className="text-xs">{n} slides</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    onClick={handleGenerate}
+                    disabled={isGenerating || !seedPrompt.trim()}
+                    className="h-8 text-xs gap-1.5 bg-[#FF4301] hover:bg-[#e63c00] text-white"
+                  >
+                    {isGenerating ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Zap className="h-3.5 w-3.5" />
+                    )}
+                    Generate
+                  </Button>
+                </div>
               </div>
-              <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {seedJobs.map(job => (
-                  <SeedJobCard key={job.deckId} job={job} />
-                ))}
+
+              {/* Batch generation row */}
+              <div className="flex items-center gap-2 pt-1 border-t border-[#eaeaea] dark:border-[#333]">
+                <span className="text-[10px] text-[#888] uppercase tracking-wider font-medium">Batch</span>
+                <Select value={batchCount} onValueChange={setBatchCount}>
+                  <SelectTrigger className="w-[65px] h-7 text-[10px] border-[#eaeaea] dark:border-[#333]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[3, 5, 8, 10, 15, 20].map(n => (
+                      <SelectItem key={n} value={String(n)} className="text-xs">{n}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-[10px] text-[#888]">random decks</span>
+                <Button
+                  onClick={handleBatchGenerate}
+                  disabled={isGenerating}
+                  variant="outline"
+                  className="h-7 text-[10px] gap-1.5 border-[#FF4301]/30 text-[#FF4301] hover:bg-[#FF4301]/5"
+                >
+                  {isGenerating ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Zap className="h-3 w-3" />
+                  )}
+                  Generate Batch
+                </Button>
+                <span className="text-[9px] text-[#bbb] ml-auto">All routed through Modal with fallback</span>
               </div>
+
+              {/* Active seed jobs */}
+              {seedJobs.length > 0 && (
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Seed Jobs</h3>
+                    <span className="text-[10px] font-mono text-[#999]">{seedJobs.length}</span>
+                    <button
+                      onClick={() => {
+                        Object.values(pollIntervalsRef.current).forEach(clearInterval);
+                        pollIntervalsRef.current = {};
+                        setSeedJobs([]);
+                      }}
+                      className="text-[10px] text-[#bbb] hover:text-[#FF4301] transition-colors ml-auto"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                  <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {seedJobs.map(job => (
+                      <SeedJobCard key={job.deckId} job={job} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>

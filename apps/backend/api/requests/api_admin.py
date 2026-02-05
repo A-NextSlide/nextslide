@@ -4224,15 +4224,19 @@ async def admin_seed_jobs(
 ):
     """List recent admin seed jobs (still generating or completed in last 48h)."""
     supabase = get_supabase_client()
+    cutoff = (datetime.utcnow() - timedelta(hours=48)).isoformat()
 
     result = supabase.table("decks").select(
         "uuid, name, status, slide_count, slides, created_at"
     ).eq(
         "data->>source", "admin_seed"
+    ).gte(
+        "created_at", cutoff
     ).order(
         "created_at", desc=True
     ).limit(50).execute()
 
+    stuck_cutoff = (datetime.utcnow() - timedelta(minutes=30)).isoformat()
     jobs = []
     for deck in (result.data or []):
         raw_status = deck.get("status") or {}
@@ -4240,11 +4244,16 @@ async def admin_seed_jobs(
             status = {"state": raw_status}
         else:
             status = raw_status
+        state = status.get("state", "unknown")
+        # Auto-timeout jobs stuck generating for >30 minutes
+        if state in ("generating", "queued") and deck.get("created_at", "") < stuck_cutoff:
+            state = "failed"
+            status["error"] = "Timed out after 30 minutes"
         slides = deck.get("slides") or []
         jobs.append({
             "deck_id": deck["uuid"],
             "name": deck.get("name", ""),
-            "status": status.get("state", "unknown"),
+            "status": state,
             "message": status.get("message", ""),
             "progress": status.get("progress", 0),
             "slide_count": len(slides),

@@ -91,6 +91,14 @@ const Landing: React.FC = () => {
   const [isHeroInputFocused, setIsHeroInputFocused] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
 
+  // Force light mode on landing page
+  useEffect(() => {
+    const html = document.documentElement;
+    const wasDark = html.classList.contains('dark');
+    if (wasDark) html.classList.remove('dark');
+    return () => { if (wasDark) html.classList.add('dark'); };
+  }, []);
+
   // Preview state (Try Without Signup)
   const [previewData, setPreviewData] = useState<PreviewResult | null>(null);
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);

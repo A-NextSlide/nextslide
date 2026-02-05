@@ -26,9 +26,9 @@ def build_system_prompt(
     hero_font, body_font = _extract_fonts_from_typography(typography)
 
     logo_instruction = (
-        "- Logo: ALWAYS render at props.logoUrl. position:absolute; left:60px; bottom:30px; max-height:40px; pointer-events:none."
+        "- Logo: Render props.logoUrl as a SMALL brand mark (max-height:40px; width:auto; object-fit:contain). position:absolute; left:60px; bottom:30px; pointer-events:none. Never enlarge, center, or dominate — logo sizing rules override image sizing rules."
         if logo_url
-        else "- Logo: If props.logoUrl is provided, render it at position:absolute; left:60px; bottom:30px; max-height:40px; pointer-events:none."
+        else "- Logo: If props.logoUrl is provided, render SMALL (max-height:40px; width:auto; object-fit:contain). position:absolute; left:60px; bottom:30px; pointer-events:none. Never enlarge, center, or dominate."
     )
     element_positions = (
         "\n\nFIXED ELEMENT POSITIONS (MUST follow on EVERY slide for consistency across the deck):\n"
@@ -145,7 +145,7 @@ def build_system_prompt(
             "- NEVER let flex/grid children auto-grow beyond available space - set explicit max-heights\n\n"
             "FIXED ELEMENT POSITIONS (MUST follow on EVERY slide for consistency across the deck):\n"
             "- Title: top-left (position:absolute; left:80px; top:50px), 48-56px font\n"
-            "- Logo: bottom-left (position:absolute; left:60px; bottom:30px), max-height:40px, pointer-events:none\n"
+            "- Logo: bottom-left (position:absolute; left:60px; bottom:30px), max-height:40px; width:auto; object-fit:contain, pointer-events:none. Never enlarge, center, or dominate.\n"
             "- Page number: bottom-right (position:absolute; right:60px; bottom:30px), 13px, var(--text) at 40% opacity, pointer-events:none. Just the number (e.g. \"3\").\n"
             "- Source/footnote: bottom-right above page number if both present (right:60px; bottom:54px), 12px muted\n"
             "- These elements must be in IDENTICAL positions on every slide. Never move, center, enlarge, or omit them.\n\n"
@@ -166,13 +166,14 @@ def build_system_prompt(
             "**IMAGE RULES**:\n"
             "- Use <img src=\"placeholder\" alt=\"VISUAL SEARCH QUERY\"> — system auto-replaces with real images.\n"
             "- Each image needs UNIQUE alt text. Choose specific, descriptive queries for good search results.\n"
-            "- **SIZING (MUST FOLLOW TO PREVENT OVERFLOW)**:\n"
+            "- **SIZING (MUST FOLLOW TO PREVENT OVERFLOW)** — these rules apply to content images, NOT logos:\n"
             "  1. ALWAYS wrap images in a container with FIXED width AND height in PIXELS\n"
             "  2. Container MUST have: overflow:hidden; position:relative;\n"
             "  3. Image MUST have: width:100%; height:100%; object-fit:cover; position:absolute; top:0; left:0;\n"
             "  4. NEVER use width:auto or height:auto - images will expand and break the layout\n"
             "  5. NEVER let the image determine its container size - set container size FIRST\n"
             "  6. Example: <div style=\"width:400px;height:300px;overflow:hidden;position:relative;\"><img src=\"placeholder\" alt=\"aerial ocean waves turquoise\" style=\"width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0;\"></div>\n"
+            "  7. EXCEPTION: Logos use max-height:40px; width:auto; object-fit:contain — do NOT wrap logos in sized containers\n"
             "- NEVER let images extend beyond 1920x1080 slide bounds\n\n"
             "OUTPUT: Complete HTML/CSS starting with <!DOCTYPE html>"
         )
@@ -313,12 +314,13 @@ def build_system_prompt(
         "       { title: 'Ocean', image: 'placeholder', imageAlt: 'turquoise ocean waves aerial view' }\n"
         "     ]\n"
         "   - On tab click, update both text AND image: mainImage.src = items[i].image;\n"
-        "3. **SIZING (MUST FOLLOW TO PREVENT OVERFLOW)**:\n"
+        "3. **SIZING (MUST FOLLOW TO PREVENT OVERFLOW)** — these rules apply to content images, NOT logos:\n"
         "   - ALWAYS wrap images in a container with FIXED width AND height in PIXELS\n"
         "   - Container MUST have: overflow:hidden; position:relative;\n"
         "   - Image MUST have: width:100%; height:100%; position:absolute; top:0; left:0;\n"
         "   - NEVER use width:auto or height:auto - images WILL expand and break the slide layout\n"
-        "   - **object-fit**: Use `cover` for atmospheric/background, `contain` for logos/products/screenshots\n\n"
+        "   - **object-fit**: Use `cover` for atmospheric/background, `contain` for logos/products/screenshots\n"
+        "   - EXCEPTION: Logos use max-height:40px; width:auto; object-fit:contain — do NOT wrap logos in sized containers\n\n"
         "**INTERACTIVITY RULES (CRITICAL - ALL INTERACTIONS MUST WORK)**:\n"
         "1. EVERY interactive element MUST have a working handler that DOES something visible:\n"
         "   - Buttons: onclick must change content, toggle visibility, or update state\n"
