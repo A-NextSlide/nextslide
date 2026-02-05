@@ -552,52 +552,17 @@ export const CustomComponentRenderer: React.FC<{
   const isIframeComponent = compiledRender && typeof compiledRender === 'object' && (compiledRender as any).__isIframe;
   const iframeSrcDoc = isIframeComponent ? (compiledRender as any).srcDoc : null;
 
-  // For iframe components: freeze content wrapper dimensions during resize to prevent
-  // iframe viewport changes that cause content reflow/shifting. The backend injects
-  // body CSS at 1920x1080, and if the iframe viewport changes during resize, CSS that
-  // depends on viewport dimensions (vh, vw, percentage layouts) causes content to shift.
-  // By freezing the content wrapper at pre-resize dimensions, the iframe viewport stays
-  // constant and only the CSS scale transform changes.
-  const frozenContentDimsRef = useRef<{ width: number; height: number } | null>(null);
-  const containerWidthRef = useRef(containerWidth);
-  const containerHeightRef = useRef(containerHeight);
-  containerWidthRef.current = containerWidth;
-  containerHeightRef.current = containerHeight;
-
-  useEffect(() => {
-    if (!isIframeComponent) return;
-
-    const handleResizeStart = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail?.componentId === component.id) {
-        frozenContentDimsRef.current = {
-          width: containerWidthRef.current,
-          height: containerHeightRef.current
-        };
-      }
-    };
-
-    const handleResizeEnd = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail?.componentId === component.id) {
-        frozenContentDimsRef.current = null;
-      }
-    };
-
-    document.addEventListener('component:resizestart', handleResizeStart as EventListener);
-    document.addEventListener('component:resizeend', handleResizeEnd as EventListener);
-    return () => {
-      document.removeEventListener('component:resizestart', handleResizeStart as EventListener);
-      document.removeEventListener('component:resizeend', handleResizeEnd as EventListener);
-    };
-  }, [isIframeComponent, component.id]);
-
-  // During resize, use frozen dimensions to prevent iframe viewport changes
-  const effectiveContentWidth = (isIframeComponent && frozenContentDimsRef.current)
-    ? frozenContentDimsRef.current.width
+  // For iframe components: always use the DESIGN dimensions (DEFAULT_SLIDE_WIDTH x
+  // DEFAULT_SLIDE_HEIGHT) for the content wrapper, not the current component dimensions.
+  // The backend generates all custom component HTML at 1920x1080, and the CSS scale()
+  // transform handles mapping to the actual displayed component size. This prevents
+  // content reflow when the component is resized — only the scale changes, keeping the
+  // iframe viewport constant and the HTML layout stable.
+  const effectiveContentWidth = isIframeComponent
+    ? DEFAULT_SLIDE_WIDTH
     : containerWidth;
-  const effectiveContentHeight = (isIframeComponent && frozenContentDimsRef.current)
-    ? frozenContentDimsRef.current.height
+  const effectiveContentHeight = isIframeComponent
+    ? DEFAULT_SLIDE_HEIGHT
     : containerHeight;
 
   // Inject click handlers for placeholder images in edit mode

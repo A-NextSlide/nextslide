@@ -46,7 +46,19 @@ const INTERACTIVE_TAGS = new Set([
 ]);
 
 /**
- * Check if an element is semantically interactive
+ * Check if an element is semantically interactive (buttons, links, inputs)
+ * as detected by the iframe extraction script. These elements get the
+ * highest hit detection priority so they can be selected even when
+ * overlapping with plain text elements due to CSS transforms.
+ */
+function isSemanticInteractive(el: VirtualElement): boolean {
+  if (INTERACTIVE_TAGS.has(el.tagName?.toLowerCase())) return true;
+  if (el.isInteractive === true) return true;
+  return false;
+}
+
+/**
+ * Check if an element is interactive (text, buttons, links, etc.)
  */
 function isInteractiveElement(el: VirtualElement): boolean {
   // Text is always interactive
@@ -56,7 +68,7 @@ function isInteractiveElement(el: VirtualElement): boolean {
   if (INTERACTIVE_TAGS.has(el.tagName?.toLowerCase())) return true;
 
   // Check for isInteractive flag from iframe extraction
-  if ((el as any).isInteractive === true) return true;
+  if (el.isInteractive === true) return true;
 
   return false;
 }
@@ -75,23 +87,33 @@ function pointInBounds(point: { x: number; y: number }, bounds: Bounds): boolean
 
 /**
  * Sort elements by interaction priority
- * Order: Interactive elements first, then by type (text > image > container),
- * then by size (smaller on top for nested selection)
+ * Order: Semantic interactive (buttons/links) first, then other interactive (text),
+ * then by type (text > image > container), then by size (smaller on top)
+ *
+ * This ensures that buttons/links are selectable even when they visually overlap
+ * with plain text elements due to CSS transforms moving them out of normal flow.
  */
 function sortByInteractionPriority(elements: VirtualElement[]): VirtualElement[] {
   return [...elements].sort((a, b) => {
-    // Priority 1: Interactive elements ALWAYS on top
+    // Priority 1: Semantically interactive elements (buttons, links, inputs)
+    // get highest priority so they can be selected through overlapping text
+    const aSemantic = isSemanticInteractive(a);
+    const bSemantic = isSemanticInteractive(b);
+    if (aSemantic && !bSemantic) return -1;
+    if (!aSemantic && bSemantic) return 1;
+
+    // Priority 2: Interactive elements (text) over non-interactive (containers)
     const aInteractive = isInteractiveElement(a);
     const bInteractive = isInteractiveElement(b);
     if (aInteractive && !bInteractive) return -1;
     if (!aInteractive && bInteractive) return 1;
 
-    // Priority 2: Semantic type (text > image > container)
+    // Priority 3: Semantic type (text > image > container)
     const aTypePriority = TYPE_PRIORITY[a.type] || 0;
     const bTypePriority = TYPE_PRIORITY[b.type] || 0;
     if (aTypePriority !== bTypePriority) return bTypePriority - aTypePriority;
 
-    // Priority 3: Smaller elements on top (for nested selection)
+    // Priority 4: Smaller elements on top (for nested selection)
     const aArea = a.bounds.width * a.bounds.height;
     const bArea = b.bounds.width * b.bounds.height;
     return aArea - bArea;

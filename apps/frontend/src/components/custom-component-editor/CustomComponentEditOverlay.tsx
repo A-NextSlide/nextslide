@@ -488,7 +488,27 @@ export function generateEditModeScript(componentId: string): string {
     if (e.data.type === 'apply-style-mutation') {
       var el = document.querySelector(e.data.selector);
       if (el && e.data.styles) {
-        Object.keys(e.data.styles).forEach(function(key) {
+        var keys = Object.keys(e.data.styles);
+        var hasHeight = keys.indexOf('height') >= 0 || keys.indexOf('Height') >= 0;
+        var hasTransformFromMutator = keys.indexOf('transform') >= 0;
+        var mutatorTransformValue = hasTransformFromMutator
+          ? (e.data.styles.transform || e.data.styles.Transform || '')
+          : '';
+
+        // ALWAYS record position before applying styles when height changes,
+        // even when a transform is also being sent. Elements with existing
+        // transforms (from previous edits) still need compensation when
+        // flex/grid parents reflow due to height changes.
+        var rectBefore = null;
+        if (hasHeight) {
+          rectBefore = el.getBoundingClientRect();
+        }
+
+        // STEP 1: Apply all styles EXCEPT transform.
+        // This isolates layout-induced shifts (flex reflow) from intentional
+        // transform changes so we can measure the pure layout shift.
+        keys.forEach(function(key) {
+          if (key === 'transform' || key === 'Transform') return;
           // Convert camelCase to kebab-case for setProperty
           var cssKey = key.replace(/([A-Z])/g, '-$1').toLowerCase();
           var val = e.data.styles[key];
@@ -508,6 +528,43 @@ export function generateEditModeScript(componentId: string): string {
             el.style.setProperty('--ns-body-font', quoted);
           }
         });
+
+        // STEP 2: Detect layout-induced shift (measured BEFORE applying transform
+        // so we only capture shifts from height/width/flex changes, not from
+        // intentional transform changes like drag or corner resize).
+        var compensation = 0;
+        var prevComp = parseFloat(el.getAttribute('data-ns-resize-comp-y') || '0');
+        if (rectBefore) {
+          var rectAfterLayout = el.getBoundingClientRect();
+          var layoutShift = rectAfterLayout.top - rectBefore.top;
+          if (Math.abs(layoutShift) > 0.5) {
+            compensation = prevComp - layoutShift;
+            el.setAttribute('data-ns-resize-comp-y', String(compensation));
+          }
+        }
+
+        // STEP 3: Apply transform with compensation incorporated if needed.
+        if (hasTransformFromMutator) {
+          if (Math.abs(compensation) > 0.5) {
+            // Incorporate layout shift compensation into the mutator's transform
+            var translateMatch = mutatorTransformValue.match(/translate\\(([^,]+)(?:,\\s*([^)]+))?\\)/);
+            if (translateMatch) {
+              var tx = parseFloat(translateMatch[1]) || 0;
+              var ty = (parseFloat(translateMatch[2] || '0') || 0) + compensation;
+              el.style.setProperty('transform', 'translate(' + Math.round(tx) + 'px, ' + Math.round(ty) + 'px)', 'important');
+            } else {
+              // Fallback: apply mutator transform as-is
+              el.style.setProperty('transform', mutatorTransformValue, 'important');
+            }
+          } else {
+            // No layout shift — apply mutator's transform as-is and reset tracker
+            el.style.setProperty('transform', mutatorTransformValue, 'important');
+            el.removeAttribute('data-ns-resize-comp-y');
+          }
+        } else if (Math.abs(compensation) > 0.5) {
+          // No mutator transform — apply standalone compensation
+          el.style.setProperty('transform', 'translateY(' + Math.round(compensation) + 'px)', 'important');
+        }
       }
     }
 
@@ -598,9 +655,10 @@ export function generateEditModeScript(componentId: string): string {
         if (!newClass) el.removeAttribute('class');
       });
 
-      // Remove data-ns-id attributes
+      // Remove data-ns-id and resize compensation attributes
       clone.querySelectorAll('[data-ns-id]').forEach(function(el) {
         el.removeAttribute('data-ns-id');
+        el.removeAttribute('data-ns-resize-comp-y');
       });
 
       var html = clone.outerHTML;
@@ -1614,7 +1672,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
   }, [iframeRef, clearSelection, setEditingElement]);
 
-  // Handle Escape to clear selection while editing a custom component
+  // Handle Escape — go up one level in hierarchy, deselect at root
   useEffect(() => {
     if (!isEditing || !isSelected) return;
 
@@ -1628,14 +1686,28 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
       e.preventDefault();
       e.stopPropagation();
-      handleDeselect();
-      skipNextSelectionNotifyRef.current = true;
-      onElementSelect(null);
+
+      // If we have a selection path and we're not at root, go up one level
+      if (selectionPath.length > 1 && selectionPathIndex > 0) {
+        const parentIndex = selectionPathIndex - 1;
+        const parentId = selectionPath[parentIndex];
+        const parentElement = virtualElements.find(el => el.id === parentId);
+
+        applySelectionPath(selectionPath, selectionAnchorRef.current, parentIndex);
+        skipNextSelectionNotifyRef.current = true;
+        onElementSelect(parentElement ? toDetectedElement(parentElement) : null);
+      } else {
+        // At root level — fully deselect
+        handleDeselect();
+        skipNextSelectionNotifyRef.current = true;
+        onElementSelect(null);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isEditing, isSelected, editingTextId, handleDeselect, onElementSelect]);
+  }, [isEditing, isSelected, editingTextId, selectionPath, selectionPathIndex,
+      virtualElements, applySelectionPath, handleDeselect, onElementSelect]);
 
   // Handle element selection - single click selects (for drag), double-click edits (for text)
   const handleSelectElement = useCallback((elementId: string, cursorX?: number, cursorY?: number) => {
@@ -1968,54 +2040,46 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
   // HitDetectionLayer handlers - for the new Figma-style hit detection
   const handleHitLayerClick = useCallback((element: VirtualElement, point: { x: number; y: number }) => {
-    // The HitDetectionLayer already found the best element at this point using priority sorting
-    // (text > image > container, smaller on top). Use this element directly instead of
-    // recalculating with selectAtPoint, which would start at the root.
-
-    // If clicking the same element again, use selectAtPoint to cycle through nested elements
+    // Same element — keep it selected (no cycling, allows drag initiation)
     if (selectedElementId === element.id) {
-      const selected = selectAtPoint(point);
-      setEditingTextId(null);
-      setEditingElement(null);
-      if (selected) {
-        skipNextSelectionNotifyRef.current = true;
-        onElementSelect(toDetectedElement(selected), point.x, point.y);
-      }
-    } else {
-      // New element - select it directly using its selection path
-      const path = getSelectionPathForElement(element.id);
-      const pathIndex = path.length - 1; // Select the deepest (the clicked element itself)
-      applySelectionPath(path, point, pathIndex);
-      setEditingTextId(null);
-      setEditingElement(null);
-      skipNextSelectionNotifyRef.current = true;
-      onElementSelect(toDetectedElement(element), point.x, point.y);
+      return;
     }
 
-    // Notify iframe to clear any previous selection styling
+    // New element — select it directly at deepest level
+    const path = getSelectionPathForElement(element.id);
+    const pathIndex = path.length - 1;
+    applySelectionPath(path, point, pathIndex);
+    setEditingTextId(null);
+    setEditingElement(null);
+    skipNextSelectionNotifyRef.current = true;
+    onElementSelect(toDetectedElement(element), point.x, point.y);
+
+    // Clear iframe selection styling
     if (iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.postMessage({
         target: 'ns-custom-component-edit',
         type: 'deselect',
       }, '*');
     }
-  }, [selectedElementId, selectAtPoint, getSelectionPathForElement, applySelectionPath, onElementSelect, iframeRef, setEditingElement]);
+  }, [selectedElementId, getSelectionPathForElement, applySelectionPath, onElementSelect, iframeRef, setEditingElement]);
 
   const handleHitLayerDoubleClick = useCallback((element: VirtualElement, point: { x: number; y: number }) => {
-    // Use existing double-click logic
-    const selected = selectAtPoint(point, true);
-    if (selected?.type === 'text') {
-      handleStartTextEdit(selected);
+    // Double-click on text — enter inline editing
+    if (element.type === 'text') {
+      const path = getSelectionPathForElement(element.id);
+      applySelectionPath(path, point, path.length - 1);
+      handleStartTextEdit(element);
       return;
     }
-    if (selected) {
+
+    // Double-click on image — select it (triggers image replacement in settings panel)
+    if (element.type === 'image') {
+      const path = getSelectionPathForElement(element.id);
+      applySelectionPath(path, point, path.length - 1);
       skipNextSelectionNotifyRef.current = true;
-      onElementSelect(toDetectedElement(selected), point.x, point.y);
-    } else if (element.type === 'image') {
-      skipNextSelectionNotifyRef.current = true;
-      onElementSelect(toDetectedElement(element));
+      onElementSelect(toDetectedElement(element), point.x, point.y);
     }
-  }, [selectAtPoint, handleStartTextEdit, onElementSelect]);
+  }, [getSelectionPathForElement, applySelectionPath, handleStartTextEdit, onElementSelect]);
 
   const handleHitLayerBackgroundClick = useCallback((point: { x: number; y: number }) => {
     // Deselect when clicking on background

@@ -125,9 +125,9 @@ export const HitDetectionLayer = React.memo<HitDetectionLayerProps>(
 
         const point = { x: e.clientX, y: e.clientY };
 
-        // Exclude selected element so we can click "through" it to nested elements
-        const excludeIds = selectedElementId ? new Set([selectedElementId]) : undefined;
-        const { element } = hitTestAtPoint(point, excludeIds);
+        // Include all elements in hit testing — the selected element participates
+        // so clicking it again keeps it selected (for drag initiation)
+        const { element } = hitTestAtPoint(point);
 
         if (element) {
           // Clicked on an element - handle selection
@@ -141,7 +141,7 @@ export const HitDetectionLayer = React.memo<HitDetectionLayerProps>(
           onBackgroundDragStart(e);
         }
       },
-      [hitTestAtPoint, selectedElementId, onElementClick, onBackgroundDragStart]
+      [hitTestAtPoint, onElementClick, onBackgroundDragStart]
     );
 
     /**
@@ -195,7 +195,7 @@ export const HitDetectionLayer = React.memo<HitDetectionLayerProps>(
             width: iframeBounds.width,
             height: iframeBounds.height,
             pointerEvents: 'auto',
-            cursor: selectedElementId ? 'default' : 'crosshair',
+            cursor: 'default',
             // Below selection overlay (40000) but above background (1)
             zIndex: 30000,
           }}
@@ -207,7 +207,7 @@ export const HitDetectionLayer = React.memo<HitDetectionLayerProps>(
         />
 
         {/* Hover indicator - single element for visual feedback */}
-        {hoverBounds && !selectedElementId && !isBoxSelecting && (
+        {hoverBounds && !isBoxSelecting && (
           <div
             style={{
               position: 'absolute',
