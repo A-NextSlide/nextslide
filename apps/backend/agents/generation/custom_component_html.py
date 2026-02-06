@@ -576,6 +576,31 @@ class CustomComponentHtmlProcessor:
         inline_bg_pattern = r'(style=["\'][^"\']*background-image:\s*url\([\'"]?)([^\'")\s]+)([\'"]?\)[^"\']*["\'])'
         result = re.sub(inline_bg_pattern, replace_bg_url, result, flags=re.IGNORECASE)
 
+        # PHASE 4: Auto-init tab/selection functions so the initial image matches
+        # the active tab. The pipeline may assign a mismatched image to the <img>
+        # tag, so calling selectTab(0) (or equivalent) on load fixes the sync.
+        init_fn_pattern = re.compile(
+            r'\bfunction\s+(selectTab|switchTab|showTab|setActiveTab|changeTab|'
+            r'showSlide|selectItem|showItem|switchItem|setActive|activate)\s*\(',
+            re.IGNORECASE,
+        )
+        # Check if there's already an init call at the end of a script
+        already_init_pattern = re.compile(
+            r'(?:selectTab|switchTab|showTab|setActiveTab|changeTab|'
+            r'showSlide|selectItem|showItem|switchItem|setActive|activate)\s*\(\s*0\s*\)\s*;?\s*(?:</script>|$)',
+            re.IGNORECASE,
+        )
+        fn_match = init_fn_pattern.search(result)
+        if fn_match and not already_init_pattern.search(result):
+            fn_name = fn_match.group(1)
+            # Insert init call right before the closing </script> of the script that defines it
+            # Find the </script> after the function definition
+            script_end_after_fn = result.find('</script>', fn_match.end())
+            if script_end_after_fn > 0:
+                init_call = f'\n  // Auto-init: sync image with active tab\n  {fn_name}(0);\n'
+                result = result[:script_end_after_fn] + init_call + result[script_end_after_fn:]
+                logger.info("[IMAGE_INJECT] Added auto-init call: %s(0)", fn_name)
+
         logger.info(f"[IMAGE_INJECT] Finished with {images_injected} injections")
         return result
 
