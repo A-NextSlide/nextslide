@@ -71,6 +71,22 @@ def inject_theme_data(theme_dict: Dict[str, Any], context: SlideGenerationContex
                     theme_dict["brandInfo"]["logoUrlDark"] = str(logo_url_dark).strip()
                 logger.info(f"[THEME INJECT] Logo injected: {logo_url[:60]}...")
 
+    # INJECT BRAND NAME
+    brand_info = theme_dict.get("brandInfo", {})
+    if not brand_info.get("name"):
+        brand_name = (
+            _get_attr_or_key(style_prefs, "brandName")
+            or _get_attr_or_key(style_prefs, "brandDomain")
+        )
+        if not brand_name and isinstance(deck_theme, dict):
+            meta = deck_theme.get("metadata", {})
+            if isinstance(meta, dict):
+                brand_name = meta.get("brand_name") or meta.get("domain")
+        if brand_name:
+            theme_dict.setdefault("brandInfo", {})
+            theme_dict["brandInfo"]["name"] = brand_name
+            logger.info(f"[THEME INJECT] Brand name injected: {brand_name}")
+
     # INJECT FONTS
     typography = theme_dict.get("typography", {})
     if not typography.get("hero_title", {}).get("family") and not typography.get("hero_font"):
@@ -212,6 +228,13 @@ def build_custom_component_context(
     initial_idea, vibe_context = _extract_style_context(context)
     extracted_data, manual_charts = _extract_chart_payload(context.slide_outline)
 
+    # Resolve brand name from stylePreferences
+    style_prefs = _get_style_prefs(context)
+    brand_name = (
+        _get_attr_or_key(style_prefs, "brandName")
+        or _get_attr_or_key(style_prefs, "brandDomain")
+    )
+
     slide_context = {
         "title": _get_attr_or_key(context.slide_outline, "title"),
         "slide_index": context.slide_index,
@@ -222,6 +245,7 @@ def build_custom_component_context(
         "conversation_history": context.conversation_history,
         "initial_idea": initial_idea,
         "vibe_context": vibe_context,
+        "brand_name": brand_name,
         "deck_title": _get_attr_or_key(context.deck_outline, "title"),
         "deck_uuid": context.deck_uuid,
         "is_full_slide": layout.is_full_slide,

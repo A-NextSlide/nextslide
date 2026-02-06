@@ -56,6 +56,7 @@ const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics'));
 const AdminAgent = lazy(() => import('./pages/admin/AdminAgent'));
 const AdminGrowth = lazy(() => import('./pages/admin/AdminGrowth'));
 const AdminEmail = lazy(() => import('./pages/admin/AdminEmail'));
+const AdminPlayground = lazy(() => import('./pages/admin/AdminPlayground'));
 import AdminProtectedRoute from './components/AdminProtectedRoute';
 import TemporaryPasswordGate from './components/TemporaryPasswordGate';
 import SmartGallery from './pages/SmartGallery';
@@ -587,6 +588,16 @@ const AppContent = () => {
                   <AdminProtectedRoute>
                     <React.Suspense fallback={<AdminLoadingShell />}>
                       <AdminEmail />
+                    </React.Suspense>
+                  </AdminProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/playground"
+                element={
+                  <AdminProtectedRoute>
+                    <React.Suspense fallback={<AdminLoadingShell />}>
+                      <AdminPlayground />
                     </React.Suspense>
                   </AdminProtectedRoute>
                 }

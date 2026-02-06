@@ -329,6 +329,9 @@ Output complete HTML starting with <!DOCTYPE html>. No markdown, just HTML."""
             component_code = await self._call_gemini_vision(image_data_url, prompt)
 
             if component_code:
+                # Post-process: ensure original slide images are used
+                if image_urls:
+                    component_code = self._inject_original_images(component_code, image_urls)
                 return {
                     "id": str(uuid.uuid4()),
                     "title": f"Slide {slide_idx + 1}",
@@ -417,6 +420,47 @@ Output complete HTML starting with <!DOCTYPE html>. No markdown, just HTML."""
             logger.error(f"[VisionPPTX] Gemini vision error: {e}", exc_info=True)
 
         return None
+
+    @staticmethod
+    def _inject_original_images(html: str, image_urls: List[str]) -> str:
+        """Inject original PPTX images into AI-generated HTML.
+
+        AI sometimes generates placeholders instead of using the provided URLs.
+        This replaces any placeholder <img> src with the original uploaded URLs.
+        """
+        import re
+        from services.image.placeholder_detector import is_placeholder_src, is_bucket_url
+
+        if not image_urls:
+            return html
+
+        img_pattern = re.compile(r'<img([^>]*)>', re.IGNORECASE)
+        url_idx = 0
+
+        def replace_img(match):
+            nonlocal url_idx
+            attrs = match.group(1)
+            src_match = re.search(r'src=["\']([^"\']*)["\']', attrs, re.IGNORECASE)
+            current_src = src_match.group(1) if src_match else ''
+
+            if current_src and is_bucket_url(current_src):
+                return match.group(0)
+
+            if url_idx < len(image_urls) and (not current_src or is_placeholder_src(current_src)):
+                new_url = image_urls[url_idx]
+                url_idx += 1
+                if src_match:
+                    new_attrs = re.sub(r'src=["\'][^"\']*["\']', f'src="{new_url}"', attrs, count=1, flags=re.IGNORECASE)
+                else:
+                    new_attrs = f' src="{new_url}"' + attrs
+                return f'<img{new_attrs}>'
+
+            return match.group(0)
+
+        result = img_pattern.sub(replace_img, html)
+        if url_idx > 0:
+            logger.info(f"[VisionPPTX] Injected {url_idx} original slide images into HTML")
+        return result
 
     def _extract_code_from_response(self, response: str) -> str:
         """Extract HTML/CSS code from AI response."""

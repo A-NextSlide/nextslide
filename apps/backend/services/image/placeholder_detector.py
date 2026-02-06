@@ -54,6 +54,20 @@ def is_placeholder_src(src: str) -> bool:
     # Check for valid URL schemes
     valid_schemes = ('http://', 'https://', 'data:', 'blob:')
     if any(lowered.startswith(scheme) for scheme in valid_schemes):
+        # Localhost URLs are placeholders — AI sometimes generates these
+        if 'localhost' in lowered or '127.0.0.1' in lowered:
+            return True
+        # URLs with /undefined or /null in path are broken references
+        if '/undefined' in lowered or '/null' in lowered:
+            return True
+        # Placeholder image services — AI generates these instead of literal "placeholder"
+        placeholder_services = (
+            'placehold.co/', 'placeholder.com/', 'via.placeholder.com/',
+            'placekitten.com/', 'placebear.com/', 'dummyimage.com/',
+            'fakeimg.pl/', 'picsum.photos/', 'loremflickr.com/',
+        )
+        if any(svc in lowered for svc in placeholder_services):
+            return True
         return False
 
     # Anything else is considered a placeholder (local paths, etc.)
@@ -86,6 +100,10 @@ def needs_image_search(html: str) -> bool:
 
     # Check for obvious placeholders
     if 'placeholder' in html_lower:
+        return True
+
+    # Check for placeholder image services (AI generates these instead of "placeholder")
+    if 'placehold.co/' in html_lower or 'via.placeholder.com/' in html_lower or 'dummyimage.com/' in html_lower:
         return True
 
     # Check for template variables

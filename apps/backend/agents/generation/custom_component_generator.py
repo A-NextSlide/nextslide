@@ -13,7 +13,7 @@ import logging
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 
-from agents.ai.clients import get_client, invoke
+from agents.ai.clients import get_client, invoke, get_max_tokens_for_model
 from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_rate_limited
 from agents.config import (
     CUSTOM_COMPONENT_MODEL,
@@ -122,11 +122,15 @@ def _build_image_metadata(prefetched_images: Dict[str, str], logo_url: str = Non
         if query:
             label = query  # Query is usually more descriptive
 
+        # Determine image source mode from the original query prefix
+        image_mode = "ai" if query.lower().startswith("generate:") else "search"
+
         entry = {
             "url": value,
             "role": role,
             "label": label,
             "query": query,
+            "imageMode": image_mode,
         }
 
         # Add dimensions and compute aspect ratio if available
@@ -186,9 +190,13 @@ class CustomComponentGenerator:
     Optionally falls back to Claude Opus 4.5 if Gemini rate limits are hit.
     """
 
-    def __init__(self, model: str = CUSTOM_COMPONENT_MODEL):
+    # Overridable prompt builders — subclasses can swap these for custom prompts
+    _build_system_prompt = staticmethod(build_system_prompt)
+    _build_user_prompt = staticmethod(build_user_prompt)
+
+    def __init__(self, model: str = CUSTOM_COMPONENT_MODEL, temperature: float = CUSTOM_COMPONENT_TEMPERATURE):
         self.model = model
-        self.temperature = CUSTOM_COMPONENT_TEMPERATURE
+        self.temperature = temperature
         self.generation_timeout = 240.0
         self._html_processor = CustomComponentHtmlProcessor()
 
@@ -262,14 +270,24 @@ class CustomComponentGenerator:
                 logger.info("[CUSTOM_COMPONENT] Logo URL found: %s", logo_url[:60])
 
             slide_mode = slide_context.get("slide_mode") or "interactive"
-            system_prompt = build_system_prompt(
+            system_prompt = self._build_system_prompt(
                 colors,
                 typography,
                 design_philosophy,
                 logo_url,
                 slide_mode=slide_mode,
             )
-            user_prompt = build_user_prompt(
+            # Extract brand name for image search guidance
+            brand_info = theme.get("brandInfo", {})
+            brand_name = (
+                brand_info.get("name")
+                or brand_info.get("domain", "")
+                or colors.get("metadata", {}).get("brand_name", "")
+                or colors.get("metadata", {}).get("domain", "")
+                or (slide_context.get("brand_name") if slide_context else "")
+            )
+
+            user_prompt = self._build_user_prompt(
                 content=content,
                 slide_context=slide_context,
                 width=width,
@@ -281,6 +299,7 @@ class CustomComponentGenerator:
                 reference_images=reference_images,
                 logo_url=logo_url,
                 available_videos=available_videos,
+                brand_name=brand_name or None,
             )
 
             user_content, image_count = await build_multimodal_user_content(user_prompt, reference_images or [])
@@ -460,7 +479,8 @@ class CustomComponentGenerator:
         model: str,
         messages: List[Dict[str, Any]],
     ) -> Any:
-        logger.info("[CUSTOM_COMPONENT] Calling %s with temperature=%s", model, self.temperature)
+        max_tokens = get_max_tokens_for_model(model, default=32000)
+        logger.info("[CUSTOM_COMPONENT] Calling %s with temperature=%s, max_tokens=%d", model, self.temperature, max_tokens)
         return await asyncio.wait_for(
             loop.run_in_executor(
                 None,
@@ -469,7 +489,7 @@ class CustomComponentGenerator:
                 model,
                 messages,
                 None,
-                32000,
+                max_tokens,
                 self.temperature,
             ),
             timeout=self.generation_timeout,

@@ -97,6 +97,24 @@ MODELS = {
     "gpt-4o-mini": ("openai", "gpt-4o-mini"),
     "gpt-4.1": ("openai", "gpt-4.1-2025-04-14"),
     "gpt-4.1-mini": ("openai", "gpt-4.1-mini-2025-04-14"),
+    "gpt-5": ("openai", "gpt-5"),
+    "gpt-5-mini": ("openai", "gpt-5-mini"),
+    "gpt-5.2-codex": ("openai", "gpt-5.2-codex"),
+
+    "gpt-5.2": ("openai", "gpt-5.2"),
+
+    # Claude (additional)
+    "claude-opus-4-6": ("anthropic", "claude-opus-4-6"),
+
+    # xAI
+    "grok-4": ("xai", "grok-4"),
+    "grok-4-fast": ("xai", "grok-4-fast"),
+
+    # Mistral
+    "mistral-large-3": ("mistral", "mistral-large-2512"),
+
+    # DeepSeek (additional)
+    "deepseek-reasoner": ("deepseek", "deepseek-reasoner"),
 
     # Perplexity
     "perplexity-sonar": ("perplexity", "sonar"),
@@ -124,12 +142,21 @@ MODEL_MAX_TOKENS = {
     "gemini-3-flash-preview": 65536,
     "gpt-4o-mini": 16384,
     "gpt-4.1-2025-04-14": 32768,
+    "claude-opus-4-6": 128000,
+    "gpt-5": 32768,
+    "gpt-5-mini": 16384,
+    "gpt-5.2-codex": 32768,
+    "gpt-5.2": 32768,
+    "grok-4": 32768,
+    "grok-4-fast": 32768,
+    "mistral-large-2512": 32768,
+    "deepseek-reasoner": 64000,
 }
 
 DEFAULT_SLIDE_MAX_TOKENS = 10000
 
 # Models that need max_completion_tokens instead of max_tokens
-MAX_COMPLETION_TOKEN_MODELS = {"o3-mini", "o4-mini", "gpt-5"}
+MAX_COMPLETION_TOKEN_MODELS = {"o3-mini", "o4-mini", "gpt-5", "gpt-5-mini", "gpt-5.2-codex", "gpt-5.2"}
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODEL PRICING (USD per 1M tokens) - Updated Jan 2025
@@ -150,6 +177,18 @@ MODEL_PRICING = {
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "gpt-4.1-2025-04-14": {"input": 2.0, "output": 8.0},
     "gpt-4.1-mini-2025-04-14": {"input": 0.40, "output": 1.60},
+    "gpt-5": {"input": 2.0, "output": 8.0},
+    "gpt-5-mini": {"input": 0.40, "output": 1.60},
+    "gpt-5.2-codex": {"input": 3.0, "output": 15.0},
+    "gpt-5.2": {"input": 2.0, "output": 8.0},
+    "claude-opus-4-6": {"input": 5.0, "output": 25.0},
+    # xAI
+    "grok-4": {"input": 3.0, "output": 15.0},
+    "grok-4-fast": {"input": 0.60, "output": 3.0},
+    # Mistral
+    "mistral-large-2512": {"input": 0.50, "output": 1.50},
+    # DeepSeek
+    "deepseek-reasoner": {"input": 0.28, "output": 0.42},
     # Perplexity
     "sonar": {"input": 1.0, "output": 1.0},
     "sonar-pro": {"input": 3.0, "output": 15.0},
@@ -270,6 +309,20 @@ def _get_provider_config(provider: str) -> dict:
             "api_key_env": ["DEEPSEEK_API_KEY"],
             "base_url": "https://api.deepseek.com",
         },
+        "xai": {
+            "client_class": OpenAI,
+            "instructor_fn": getattr(instructor, "from_openai", lambda c, **kw: c),
+            "instructor_kwargs": {"mode": getattr(instructor.Mode, "TOOLS", None)} if hasattr(instructor, "Mode") else {},
+            "api_key_env": ["XAI_API_KEY"],
+            "base_url": "https://api.x.ai/v1",
+        },
+        "mistral": {
+            "client_class": OpenAI,
+            "instructor_fn": getattr(instructor, "from_openai", lambda c, **kw: c),
+            "instructor_kwargs": {"mode": getattr(instructor.Mode, "TOOLS", None)} if hasattr(instructor, "Mode") else {},
+            "api_key_env": ["MISTRAL_API_KEY"],
+            "base_url": "https://api.mistral.ai/v1",
+        },
         "groq": {
             "client_class": Groq,
             "instructor_fn": getattr(instructor, "from_groq", lambda c, **kw: c),
@@ -321,7 +374,7 @@ def get_client(model_name: str, wrap_with_instructor: bool = True):
         kwargs["base_url"] = config["base_url"]
 
     # Add timeout for HTTP clients
-    if provider in ["openai", "anthropic", "perplexity", "deepseek", "groq"]:
+    if provider in ["openai", "anthropic", "perplexity", "deepseek", "groq", "xai", "mistral"]:
         try:
             import httpx
             kwargs["timeout"] = httpx.Timeout(connect=60.0, read=180.0, write=30.0, pool=10.0)

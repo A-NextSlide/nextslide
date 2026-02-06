@@ -117,6 +117,9 @@ export interface VirtualElement {
   /** True if this image is from a JS array (tabs/carousel), not DOM */
   isJsArrayImage?: boolean;
 
+  /** Image source mode: 'ai' for AI-generated, 'search' for web search */
+  imageMode?: 'ai' | 'search';
+
   /** True if this element is semantically interactive (button, link, has onclick, etc.) */
   isInteractive?: boolean;
 }

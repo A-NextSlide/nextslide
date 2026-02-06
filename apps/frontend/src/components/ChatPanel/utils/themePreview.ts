@@ -30,7 +30,7 @@ export function getInitialThemePreview(outline?: { stylePreferences?: any } | nu
 
   const typography = sp.font ? {
     hero_title: { family: sp.font },
-    body_text: { family: sp.font }
+    body_text: { family: sp.bodyFont || sp.font }
   } : undefined;
 
   const logo = sp.logoUrl ? { url: sp.logoUrl, source: 'style_preferences' } : undefined;

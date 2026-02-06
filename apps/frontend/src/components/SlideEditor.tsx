@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
-import { useSearchParams, useParams, useLocation } from 'react-router-dom';
+import { useSearchParams, useParams, useLocation, useNavigate } from 'react-router-dom';
 import ChatPanel from './ChatPanel';
 import DeckPanel from './DeckPanel';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
@@ -314,6 +314,15 @@ const SlideEditorContent: React.FC = () => {
   const { toast } = useToast();
   const { isHistoryPanelOpen } = useVersionHistory();
   const { deckId } = useParams<{ deckId: string }>();
+  const navigateToApp = useNavigate();
+
+  // Guard: redirect to /app if deckId is invalid (prevents /deck/undefined)
+  useEffect(() => {
+    if (!deckId || deckId === 'undefined' || deckId === 'null' || deckId.length < 8) {
+      console.error('[SlideEditor] Invalid deckId, redirecting to /app:', deckId);
+      navigateToApp('/app', { replace: true });
+    }
+  }, [deckId, navigateToApp]);
 
   // Reset all stores when switching to a different deck (router reuses same component instance)
   const prevDeckIdRef = useRef<string | undefined>(deckId);

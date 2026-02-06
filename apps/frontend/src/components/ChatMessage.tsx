@@ -245,7 +245,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
   // Hide short AI messages that are just status phrases (these show in bubbles and are noise)
   // The actual status is shown via the amber text inline steps
-  if (type === 'ai' && !isLoading && !editAppliedData?.slideSnapshot) {
+  // BUT: never hide if isTyping/thinkingPhase — those are active thinking indicators
+  if (type === 'ai' && !isLoading && !editAppliedData?.slideSnapshot && !metadata?.isTyping && !metadata?.thinkingPhase) {
     const trimmed = safeMessage.trim();
     // Hide if it's a short status-like phrase (< 60 chars, no punctuation except period)
     const isStatusPhrase = trimmed.length > 0 && trimmed.length < 60 &&

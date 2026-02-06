@@ -267,6 +267,60 @@ def track_api_error(
     })
 
 
+def track_image_generated(
+    user_id: Optional[str],
+    model: str,
+    mode: str,
+    duration_ms: int,
+    aspect_ratio: Optional[str] = None,
+    deck_id: Optional[str] = None,
+) -> None:
+    """Track when an AI image is generated successfully"""
+    track_event(user_id, "image_generated", {
+        "model": model,
+        "mode": mode,
+        "duration_ms": duration_ms,
+        "aspect_ratio": aspect_ratio,
+        "deck_id": deck_id,
+    })
+
+
+def track_image_generation_failed(
+    user_id: Optional[str],
+    model: str,
+    mode: str,
+    error: str,
+    deck_id: Optional[str] = None,
+) -> None:
+    """Track when AI image generation fails"""
+    track_event(user_id, "image_generation_failed", {
+        "model": model,
+        "mode": mode,
+        "error": error,
+        "deck_id": deck_id,
+    })
+
+
+def track_image_pipeline_completed(
+    user_id: Optional[str],
+    deck_id: Optional[str],
+    ai_generated: int,
+    ai_failed: int,
+    searched: int,
+    total_images: int,
+    duration_ms: int,
+) -> None:
+    """Track image pipeline summary for a slide"""
+    track_event(user_id, "image_pipeline_completed", {
+        "deck_id": deck_id,
+        "ai_generated": ai_generated,
+        "ai_failed": ai_failed,
+        "searched": searched,
+        "total_images": total_images,
+        "duration_ms": duration_ms,
+    })
+
+
 def shutdown() -> None:
     """Flush and shutdown PostHog client"""
     posthog = _get_posthog()

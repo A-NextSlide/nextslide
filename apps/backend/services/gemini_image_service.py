@@ -37,42 +37,70 @@ class GeminiImageService:
         else:
             print("Warning: GOOGLE_API_KEY/GEMINI_API_KEY not set or google-genai SDK missing. Gemini image generation disabled.")
 
+    # Supported aspect ratios for Gemini image generation
+    VALID_ASPECT_RATIOS = frozenset({
+        "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
+    })
+
     async def generate_image(
         self,
         prompt: str,
         size: str = "1024x1024",
         transparent_background: bool = False,
         n: int = 1,
-        retry_count: int = 0
+        retry_count: int = 0,
+        aspect_ratio: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate an image via Gemini 2.5 Flash Image.
 
         Args:
             prompt: Natural language prompt
-            size: WxH string. Gemini outputs up to 1024x1024. We'll pass via prompt guidance only.
+            size: WxH string (legacy, unused — use aspect_ratio instead)
             transparent_background: If true, request PNG with transparent BG via prompt hint
             n: number of images (Gemini typically returns one; we loop if supported later)
+            aspect_ratio: Gemini aspect ratio string e.g. "16:9", "4:3", "1:1"
         Returns:
             Dict containing 'b64_json' and metadata similar to OpenAIImageService.
         """
         if not self.is_available:
             return {"error": "Gemini API not configured"}
 
-        # Do not modify the user's prompt
         effective_prompt = prompt
+
+        # Validate aspect ratio
+        if aspect_ratio and aspect_ratio not in self.VALID_ASPECT_RATIOS:
+            print(f"Warning: Invalid aspect ratio '{aspect_ratio}', defaulting to None")
+            aspect_ratio = None
+
+        # Encode aspect ratio in the prompt since ImageConfig is not available
+        # in google-genai SDK <=1.31. The model respects sizing instructions in prompt.
+        if aspect_ratio:
+            ratio_map = {
+                "16:9": "wide landscape (16:9 aspect ratio)",
+                "4:3": "standard landscape (4:3 aspect ratio)",
+                "3:2": "landscape (3:2 aspect ratio)",
+                "21:9": "ultrawide panoramic (21:9 aspect ratio)",
+                "1:1": "square (1:1 aspect ratio)",
+                "9:16": "tall portrait (9:16 aspect ratio)",
+                "3:4": "portrait (3:4 aspect ratio)",
+                "2:3": "tall portrait (2:3 aspect ratio)",
+                "5:4": "slightly wide (5:4 aspect ratio)",
+                "4:5": "slightly tall (4:5 aspect ratio)",
+            }
+            ratio_desc = ratio_map.get(aspect_ratio, f"{aspect_ratio} aspect ratio")
+            effective_prompt = f"Generate a {ratio_desc} image: {prompt}"
 
         # Note: google-genai is sync; wrap in thread to keep interface async
         try:
             def _invoke():
-                # The SDK returns candidates with parts; images are in inline_data
-                # Gemini 2.0+ requires response_modalities to generate images
                 from google.genai import types
+
                 response = self._client.models.generate_content(
                     model=self.model,
                     contents=effective_prompt,
                     config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE", "TEXT"]
-                    )
+                        response_modalities=["IMAGE"],
+                    ),
                 )
                 return response
 
@@ -120,7 +148,8 @@ class GeminiImageService:
 
         except Exception as e:
             if retry_count == 0 and "timeout" in str(e).lower():
-                return await self.generate_image(prompt, size, transparent_background, n, retry_count + 1)
+                return await self.generate_image(prompt, size, transparent_background, n, retry_count + 1, aspect_ratio)
+            print(f"[GeminiImageService] generate_image error (model={self.model}, ratio={aspect_ratio}): {e}")
             return {"error": str(e)}
 
     async def generate_supporting_image(
@@ -134,10 +163,10 @@ class GeminiImageService:
         Mirrors OpenAI helper to preserve existing call sites.
         """
         prompt = (
-            f"Create a clean, professional illustration of {subject}. "
+            f"DSLR photograph of {subject}. "
             f"Context: {context}. "
-            "Style: Modern, minimalist, suitable for a professional presentation. "
-            "Do not include any text or labels in the image. "
+            "Style: Clean, artistic, professional DSLR photography with cinematic lighting and shallow depth of field. "
+            "Do not include any text, words, labels, overlays, titles, captions, or watermarks on the image. "
         )
 
         if style_preferences:

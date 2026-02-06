@@ -131,7 +131,7 @@ const buildThemeFromOutline = (outline: any) => {
 
   const typography = {
     hero_title: { family: stylePrefs.font || 'Inter' },
-    body_text: { family: stylePrefs.font || 'Inter' }
+    body_text: { family: stylePrefs.bodyFont || stylePrefs.font || 'Inter' }
   };
 
   const themePayload = {

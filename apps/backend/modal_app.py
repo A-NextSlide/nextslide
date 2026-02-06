@@ -366,3 +366,58 @@ async def render_slide_thumbnail_remote(
         theme_data=theme_data,
         slide_index=slide_index,
     )
+
+
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("nextslide-env")],
+    timeout=300,
+    memory=2048,
+    cpu=1.0,
+)
+@modal.concurrent(max_inputs=40)
+async def generate_playground_slide_remote(
+    model_id: str,
+    theme: dict,
+    slide_content: str,
+    slide_title: str,
+    slide_index: int,
+    total_slides: int,
+    outline_title: str,
+    slide_mode: str = "interactive",
+    temperature: float = 0.8,
+    prompt: str = "",
+    outline_summary: str = "",
+) -> dict:
+    """Generate a single playground slide via PlaygroundComponentGenerator in a Modal container."""
+    from agents.generation.playground_component_generator import PlaygroundComponentGenerator
+
+    slide_context = {
+        "title": slide_title,
+        "slide_index": slide_index,
+        "total_slides": total_slides,
+        "slide_type": "content",
+        "slide_mode": slide_mode,
+        "deck_title": outline_title,
+        "is_full_slide": True,
+        "presentation_context": prompt,
+        "initial_idea": prompt,
+        "vibe_context": prompt,
+    }
+
+    generator = PlaygroundComponentGenerator(model=model_id)
+    generator.temperature = temperature
+    component = await generator.generate(
+        content=slide_content,
+        theme=theme,
+        slide_context=slide_context,
+        width=1920,
+        height=1080,
+        auto_prefetch=False,
+    )
+
+    html = None
+    if component and component.get("props", {}).get("render"):
+        html = component["props"]["render"]
+
+    return {"index": slide_index, "html": html}

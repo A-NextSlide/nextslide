@@ -101,15 +101,23 @@ const stripInjectedScripts = (html: string): string => {
   // Remove ns-image-processing-overlay styles and scripts
   result = result.replace(/<style>\s*\.ns-image-processing-overlay[\s\S]*?<\/style>\s*<script>[\s\S]*?ns-image-processing-overlay[\s\S]*?<\/script>/gi, '');
 
-  // Remove standalone scripts containing our markers
-  result = result.replace(/<script>[\s\S]*?ns-custom-component-edit[\s\S]*?<\/script>/gi, '');
-  result = result.replace(/<script>[\s\S]*?NEXTSLIDE EDIT MODE[\s\S]*?<\/script>/gi, '');
+  // Remove individual <script> blocks that contain our injected markers.
+  // CRITICAL: We split by </script> to process each block independently,
+  // preventing regex from crossing script boundaries and eating user JS.
+  const NS_MARKERS = [
+    'ns-custom-component-edit',
+    'NEXTSLIDE EDIT MODE',
+    'customcomponent:image-click',
+    'ns-slide-zoom',
+  ];
 
-  // Remove window.parent.postMessage image click handler scripts
-  result = result.replace(/<script>[\s\S]*?customcomponent:image-click[\s\S]*?<\/script>/gi, '');
-
-  // Remove ns-slide-zoom relay scripts
-  result = result.replace(/<script>[\s\S]*?ns-slide-zoom[\s\S]*?<\/script>/gi, '');
+  const scriptBlockRegex = /<script[^>]*>[\s\S]*?<\/script>/gi;
+  result = result.replace(scriptBlockRegex, (block) => {
+    for (const marker of NS_MARKERS) {
+      if (block.includes(marker)) return '';
+    }
+    return block;
+  });
 
   // Clean up multiple consecutive newlines
   result = result.replace(/\n{3,}/g, '\n\n');
@@ -958,17 +966,11 @@ body:not(.ns-overlay-mode) [role="tab"]::after {
     const stabilityScript = `
 <style>
 /* === NextSlide Image Stability Fix === */
-img { 
+img {
   visibility: hidden;
-  opacity: 0;
-  transition: opacity 160ms ease-out;
-  /* Override Tailwind preflight if present */
-  max-width: none !important;
-  max-height: none !important;
 }
-img.ns-img-ready { 
+img.ns-img-ready {
   visibility: visible;
-  opacity: 1;
 }
 </style>
 <script>
@@ -2443,7 +2445,7 @@ img.ns-img-ready {
                 display: 'block',
                 pointerEvents: isThumbnail ? 'none' : 'auto'
               }}
-              sandbox={shouldUseStaticHtml ? "allow-same-origin" : "allow-scripts allow-same-origin allow-popups allow-forms"}
+              sandbox={shouldUseStaticHtml ? "allow-same-origin" : "allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"}
               title="Custom Component"
               onLoad={() => {
                 // Iframe loaded successfully

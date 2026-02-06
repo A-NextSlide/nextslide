@@ -54,15 +54,60 @@ def build_system_prompt(
         "  - Quadrant/matrix layouts → 2x2 grids with labeled axes\n"
         "  - Icon grids & feature lists → CSS grid with SVG icons + text\n"
         "  - Progress & status → CSS progress bars, step indicators, checklists\n\n"
-        "2. IMAGES - great for grounding slides in the real world:\n"
-        "  Use <img src=\"placeholder\" alt=\"VISUAL SEARCH QUERY\">.\n"
-        "  - Each image needs UNIQUE alt text. ALWAYS use fixed-size container with overflow:hidden.\n"
-        "  - Use tastefully and creatively to enhance the slide's message.\n"
-        "  - Choose specific, descriptive alt text so the search returns high-quality results.\n"
-        "  - Be selective with images — prefer typography, color, and built components when they can convey the idea. Not every slide needs a photo.\n"
-        "  - For backgrounds, prefer CSS gradients or solid colors. Background images are fine when they add real atmosphere, but don't default to them.\n\n"
-        "Mix both tools freely. A slide can have a built SVG diagram AND a photograph.\n"
-        "Choose whichever best communicates the content for each part of the slide.\n"
+        "2. IMAGES — generate: is the DEFAULT, search: is the exception:\n"
+        "  ⚠️ Every <img> alt MUST start with \"search:\" or \"generate:\". Bare alts are BROKEN.\n\n"
+        "  ■ generate: — AI-generated image. DEFAULT CHOICE for most images.\n"
+        "    alt=\"generate:RATIO 15-30 word detailed prompt, no text no words no labels no overlays\"\n"
+        "    RATIO: 16:9 | 4:3 | 1:1 | 3:4 (match container shape)\n"
+        "    🚨 SIMPLICITY RULE: Keep images SIMPLE. One clear subject, clean composition, no clutter.\n"
+        "    - ONE subject per image. A single object, person, or scene — not a busy collage.\n"
+        "    - NEVER generate charts, graphs, diagrams, infographics, or data visualizations as images.\n"
+        "      Build those as HTML/CSS/SVG instead — they'll be sharper and editable.\n"
+        "    - NEVER generate text, titles, labels, overlays, watermarks, or captions on images.\n"
+        "      Exception: text naturally in the scene (signs, screens, product labels) is fine.\n"
+        "    - Describe the ACTUAL SUBJECT clearly (the real thing, not a metaphor)\n"
+        "    - Add a VISUAL STYLE and CAMERA/LIGHTING from these options:\n"
+        "      Styles: photorealistic, 3D render, studio photograph, macro photography, cross-section, cutaway\n"
+        "      Lighting: shallow depth of field, soft studio lighting, clean white background, editorial lighting, overhead flat lay\n"
+        "    - MATCH STYLE TO SUBJECT — pick the right visual language:\n"
+        "      Science/molecules/anatomy → simple ball-and-stick model or textbook illustration, clean white background\n"
+        "      Technology/products → premium product photography, dramatic rim lighting, textured surface (marble, concrete, fabric), cinematic depth of field\n"
+        "      Abstract concepts (innovation, growth, strategy) → bold flat vector illustration, limited color palette, geometric shapes\n"
+        "      Culture/lifestyle/wellness → moody cinematic photograph, rich tones, atmospheric lighting\n"
+        "      Nature/environment → dramatic landscape or macro photography, vivid color, single focal point\n"
+        "      Artistic/creative topics → ukiyo-e woodblock print style, or ink wash painting, or bold pop art\n"
+        "    GOOD: alt=\"generate:16:9 ball-and-stick molecular model of caffeine, clean white background, textbook illustration, no text no overlays\"\n"
+        "    GOOD: alt=\"generate:16:9 bold flat vector illustration of a rocket launching, limited color palette, geometric, no text no overlays\"\n"
+        "    GOOD: alt=\"generate:1:1 moody cinematic photograph of steaming ramen bowl, warm tones, shallow depth of field, no text no overlays\"\n"
+        "    GOOD: alt=\"generate:16:9 ukiyo-e woodblock print style ocean wave, bold lines, limited palette, no text no overlays\"\n"
+        "    BAD: alt=\"generate:16:9 abstract glowing DNA helix floating in cosmic void\" (chaotic AI slop)\n"
+        "    BAD: alt=\"generate:16:9 infographic showing DNA with labels and arrows\" (chart — build as HTML)\n\n"
+        "  ■ search: — web image search. Use when the slide references something SPECIFIC and REAL.\n"
+        "    alt=\"search: specific terms\" — write what you'd type into Google Images.\n"
+        "    Add 2-3 descriptors: editorial photo, press photo, product shot, close up, high resolution.\n"
+        "    USE search: FOR:\n"
+        "      - Company products & services mentioned in the slide (Tesla Model S, AWS Lambda, Slack app)\n"
+        "      - Real people (Elon Musk, Marie Curie)\n"
+        "      - Named places (Eiffel Tower, MIT campus, Apple Park)\n"
+        "      - Branded items, logos, specific software UI, real devices\n"
+        "      - Anything where a REAL photo would be more credible than an AI rendering\n"
+        "    🚨 RULE: If the presentation is ABOUT a company/brand, SEARCH for their products and services.\n"
+        "      A deck about Porsche → search: for Porsche cars. A deck about Slack → search: for Slack interface.\n"
+        "      AI-generated versions of real products look fake and hurt credibility.\n"
+        "    GOOD: alt=\"search: Porsche 911 GT3 RS studio press photo white background\"\n"
+        "    GOOD: alt=\"search: Slack desktop app interface screenshot\"\n"
+        "    GOOD: alt=\"search: Marie Curie portrait historical photograph\"\n"
+        "    Use generate: for generic/educational concepts that don't belong to a specific brand.\n\n"
+        "  Each image needs UNIQUE alt. Use fixed-size container with overflow:hidden.\n"
+        "  🎯 IMAGE RELEVANCE: Every image must directly relate to THIS slide's content. Read the slide title and\n"
+        "  bullet points — pick images that illustrate THAT specific topic, not generic stock filler.\n"
+        "  Not every slide needs a photo — prefer built components when they convey the idea.\n\n"
+        "🚨 CARD/CONTAINER IMAGE RULE: When a slide has cards, panels, tabs, or grid items, EVERY card MUST have its own image.\n"
+        "  - If you create 3 feature cards → each card gets an image. No empty card placeholders.\n"
+        "  - If you create tabs with content panels → each tab's panel gets its own image.\n"
+        "  - If you create a grid of items → every item gets an image.\n"
+        "  - NEVER create visual containers (cards, panels, tiles) without images in them.\n"
+        "Mix both tools freely. A slide can have a built SVG diagram AND a generated image.\n"
     )
 
     if has_palette:
@@ -80,7 +125,12 @@ def build_system_prompt(
             "  - ALWAYS apply: h1,h2,h3,.title {{ font-family: var(--font-heading); }}\n"
             "  - ALWAYS apply: p,.body-text {{ font-family: var(--font-body); }}\n"
             "  - NEVER hard-code font names directly in CSS rules - ALWAYS use var(--font-heading) or var(--font-body)\n"
-            "COLOR USE: Only use the CSS variables above (plus white/black for legibility).\n"
+            "🚨 COLOR USE — EXACT VALUES REQUIRED:\n"
+            "  - Copy the EXACT hex values above into your :root block. Do NOT change, approximate, or \"improve\" them.\n"
+            "  - WRONG: we gave --accent: #FF0000 and you write --accent: #EE1515  ← BROKEN, user's brand is lost\n"
+            "  - RIGHT: --accent: #FF0000  ← identical to what we provided\n"
+            "  - After :root, ONLY use var(--accent), var(--secondary), var(--text), var(--bg) (plus white/black for legibility).\n"
+            "  - This applies to ALL slides including the title slide. The title slide MUST use these exact colors.\n"
             f"{visual_component_guidance}"
             f"{element_positions}"
         ).format(
@@ -127,6 +177,7 @@ def build_system_prompt(
             f"{theme_info}\n\n"
             "DESIGN PRINCIPLES:\n"
             "- Use both built visuals (HTML/CSS/SVG diagrams, flowcharts, infographics) and images where each fits best\n"
+            "- When using cards, panels, or grid items — every container MUST have its own image\n"
             "- Bold, precise typography; clear hierarchy\n"
             "- Generous whitespace; balanced composition\n"
             "- Bespoke visuals/diagrams that explain the idea\n"
@@ -165,15 +216,20 @@ def build_system_prompt(
             "- NEVER use `user-select: none` on universal selectors (*) - it completely breaks text selection\n"
             "- ALL content containers must have `overflow: hidden` to prevent content escaping bounds\n\n"
             "**IMAGE RULES**:\n"
-            "- Use <img src=\"placeholder\" alt=\"VISUAL SEARCH QUERY\"> — system auto-replaces with real images.\n"
-            "- Each image needs UNIQUE alt text. Choose specific, descriptive queries for good search results.\n"
+            "- ⚠️ Every <img> alt MUST start with \"search:\" or \"generate:\". Bare alts are BROKEN.\n"
+            "- generate: — DEFAULT. ONE simple subject, clean composition, no text/charts/clutter. Build charts as HTML instead.\n"
+            "  Example: alt=\"generate:16:9 close-up of SpaceX rocket engine nozzle, dramatic studio lighting, shallow depth of field, clean background, no text no overlays\"\n"
+            "- search: — for company products/services, real people, named places, branded items. If the deck is ABOUT a company, search: for their products.\n"
+            "  Example: alt=\"search: Porsche 911 GT3 RS press photo studio lighting\"\n"
+            "- generate: for generic/educational concepts. search: for anything specific and real.\n"
+            "- Each image needs UNIQUE alt text.\n"
             "- **SIZING (MUST FOLLOW TO PREVENT OVERFLOW)** — these rules apply to content images, NOT logos:\n"
             "  1. ALWAYS wrap images in a container with FIXED width AND height in PIXELS\n"
             "  2. Container MUST have: overflow:hidden; position:relative;\n"
             "  3. Image MUST have: width:100%; height:100%; object-fit:cover; position:absolute; top:0; left:0;\n"
             "  4. NEVER use width:auto or height:auto - images will expand and break the layout\n"
             "  5. NEVER let the image determine its container size - set container size FIRST\n"
-            "  6. Example: <div style=\"width:400px;height:300px;overflow:hidden;position:relative;\"><img src=\"placeholder\" alt=\"aerial ocean waves turquoise\" style=\"width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0;\"></div>\n"
+            "  6. Example: <div style=\"width:400px;height:300px;overflow:hidden;position:relative;\"><img src=\"placeholder\" alt=\"generate:4:3 DSLR photograph of rolling hills at golden hour, warm earth tones, shallow depth of field, cinematic natural lighting, no text no words no labels no overlays\" style=\"width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0;\"></div>\n"
             "  7. EXCEPTION: Logos use max-height:40px; width:auto; object-fit:contain — do NOT wrap logos in sized containers\n"
             "- NEVER let images extend beyond 1920x1080 slide bounds\n\n"
             "OUTPUT: Complete HTML/CSS starting with <!DOCTYPE html>"
@@ -220,7 +276,12 @@ def build_system_prompt(
         "  * Store image URL/alt per item: items = [{title: 'X', image: 'placeholder', imageAlt: 'X visual'},...]\n"
         "  * On tab click: update BOTH the text content AND the displayed image\n"
         "  * Example: mainImage.src = items[index].image; mainImage.alt = items[index].imageAlt;\n"
-        "  * WRONG: One static image for all tabs. RIGHT: Each tab shows its own relevant image.\n\n"
+        "  * WRONG: One static image for all tabs. RIGHT: Each tab shows its own relevant image.\n"
+        "  * 🚨 CRITICAL: You MUST write `img.src = data.image;` — NEVER comment it out, NEVER skip it.\n"
+        "    This is PRODUCTION CODE running in a real environment. Do NOT write:\n"
+        "    // img.src = images[type];  ← BROKEN, image never changes\n"
+        "    // 'In a real environment, the src would be...'  ← THIS IS the real environment\n"
+        "    ALWAYS write the actual assignment: img.src = items[index].image;\n\n"
         "⚠️ CRITICAL HEIGHT CONSTRAINT ⚠️\n"
         "The slide is EXACTLY 1920×1080 pixels. Content below 1080px is INVISIBLE and BROKEN.\n"
         "- MAXIMUM usable height: ~950px after title/header\n"
@@ -304,22 +365,33 @@ def build_system_prompt(
         "  * Example: <link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap\" rel=\"stylesheet\">\n"
         "  * Without <link> tags, fonts silently fall back to ugly system defaults\n\n"
         "**IMAGE RULES**:\n"
-        "1. STATIC HTML IMAGES: <img src=\"placeholder\" alt=\"VISUAL SEARCH QUERY\">\n"
-        "   - System auto-replaces placeholder with real image from search.\n"
-        "   - Each image needs UNIQUE, specific alt text for good search results.\n"
-        "2. JAVASCRIPT ARRAYS (tabs, cards, sliders with multiple images):\n"
-        "   - EVERY item in your data array MUST have its own image property and imageAlt:\n"
-        "   - JS: const items = [\n"
-        "       { title: 'Mountains', image: 'placeholder', imageAlt: 'snow capped mountain peak sunrise' },\n"
-        "       { title: 'Ocean', image: 'placeholder', imageAlt: 'turquoise ocean waves aerial view' }\n"
-        "     ]\n"
-        "   - On tab click, update both text AND image: mainImage.src = items[i].image;\n"
+        "⚠️ Every <img> alt MUST start with \"search:\" or \"generate:\". Bare alts are BROKEN.\n"
+        "- generate: — DEFAULT. Describe the REAL subject + visual style + camera/lighting effect. Must look realistic and educational, never abstract.\n"
+        "- search: — for company products/services, real people, named places, branded items. If the deck is ABOUT a company, search: for their products.\n"
+        "- generate: for generic/educational concepts. search: for anything specific and real.\n"
+        "   🚨 NEVER use placeholder image services (placehold.co, via.placeholder.com, dummyimage.com, picsum.photos).\n"
+        "   NEVER use them in <img src>, JS .src assignments, template literals, or anywhere else.\n"
+        "   ALWAYS use the literal string \"placeholder\" as src — our pipeline replaces it with real images.\n"
+        "1. STATIC: <img src=\"placeholder\" alt=\"search: Tesla Model S sedan press photo studio lighting\">\n"
+        "2. JS ARRAYS (tabs, cards, sliders) — each item gets its OWN image + imageAlt:\n"
+        "   const items = [\n"
+        "     { title: 'Innovation', image: 'placeholder', imageAlt: 'generate:16:9 DSLR photograph of robotic arm assembling circuit board in factory, cinematic lighting, shallow depth of field, no text no words no labels no overlays' },\n"
+        "     { title: 'Factory', image: 'placeholder', imageAlt: 'search: Tesla Gigafactory interior assembly line editorial photo' }\n"
+        "   ]\n"
+        "   On tab click, update both text AND image: mainImage.src = items[i].image; mainImage.alt = items[i].imageAlt;\n"
+        "   🚨 img.src = MUST use the data property (data.image), NEVER a placeholder URL. This is production code.\n"
+        "   🚨 WRONG: img.src = `https://via.placeholder.com/600x400?text=${data.name}` — BROKEN!\n"
+        "   🚨 RIGHT: img.src = data.image; — uses the actual resolved image URL.\n"
+        "   ⚠️ The <img> that displays array images MUST have style=\"width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0;\" inside a fixed-size container with overflow:hidden.\n"
+        "   ⚠️ ICON/IMAGE RENDERING: When JS data has icon/image URL properties, render them as <img> tags:\n"
+        "   WRONG: <div>${item.icon}</div>  ← renders URL as visible text!\n"
+        "   RIGHT: <img src=\"${item.icon}\" style=\"width:100%;height:100%;object-fit:contain;\">  ← renders the image\n"
         "3. **SIZING (MUST FOLLOW TO PREVENT OVERFLOW)** — these rules apply to content images, NOT logos:\n"
         "   - ALWAYS wrap images in a container with FIXED width AND height in PIXELS\n"
         "   - Container MUST have: overflow:hidden; position:relative;\n"
-        "   - Image MUST have: width:100%; height:100%; position:absolute; top:0; left:0;\n"
+        "   - Image MUST have: width:100%; height:100%; object-fit:cover; position:absolute; top:0; left:0;\n"
         "   - NEVER use width:auto or height:auto - images WILL expand and break the slide layout\n"
-        "   - **object-fit**: Use `cover` for atmospheric/background, `contain` for logos/products/screenshots\n"
+        "   - **object-fit**: Use `cover` for atmospheric/background/generated, `contain` for logos/products/screenshots\n"
         "   - EXCEPTION: Logos use max-height:40px; width:auto; object-fit:contain — do NOT wrap logos in sized containers\n\n"
         "**INTERACTIVITY RULES (CRITICAL - ALL INTERACTIONS MUST WORK)**:\n"
         "1. EVERY interactive element MUST have a working handler that DOES something visible:\n"
@@ -347,9 +419,11 @@ def build_system_prompt(
         "□ No `clip-path` on containers that hold interactive elements\n"
         "□ HEIGHT CHECK: Add up all vertical sections — total ≤ 950px after title. Nothing cut off at bottom.\n"
         "□ Each tab/panel has its own unique image that switches on click\n"
+        "□ Every tab/button handler that switches images has img.src = data.image (NEVER commented out)\n"
         "□ No Tailwind CDN or external CSS frameworks — all styles written in <style> tags\n"
         "□ All referenced fonts have <link> tags in <head> for loading (e.g. Google Fonts)\n"
-        "□ No @import for images or non-CSS resources\n\n"
+        "□ No @import for images or non-CSS resources\n"
+        "□ Every card, panel, tab, and grid item has its own image — no empty visual containers\n\n"
         "OUTPUT: Complete interactive HTML/CSS/JS starting with <!DOCTYPE html>"
     )
 
@@ -474,6 +548,7 @@ def build_user_prompt(
     reference_images: Optional[List[str]] = None,
     logo_url: Optional[str] = None,
     available_videos: Optional[List[Dict[str, Any]]] = None,
+    brand_name: Optional[str] = None,
 ) -> str:
     """Build a minimal user prompt with relevant context."""
     slide_title = slide_context.get("title", "Slide")
@@ -500,6 +575,7 @@ def build_user_prompt(
     if is_title_slide:
         sections.append(
             "⚠️ TITLE SLIDE: This is the OPENING slide. Design a visually striking title page.\n"
+            "  - USE THE EXACT BRAND COLORS from :root — var(--accent), var(--bg), var(--text) must be prominent. Do NOT invent new colors.\n"
             "  - Keep it SIMPLE: title + optional subtitle/tagline + optional metadata (presenter, date, org)\n"
             "  - ZERO buttons. No \"Launch\", \"Enter\", \"Initiate\", \"Start\", \"Explore\", or \"Begin\" buttons.\n"
             "  - No tabs, cards, lists, bullet points, paragraphs, or interactive elements. Just the title page."
@@ -511,6 +587,13 @@ def build_user_prompt(
     context_parts = [p for p in [presentation_context, vibe_context, deck_title] if p]
     if context_parts:
         sections.append("CONTEXT: " + " | ".join(context_parts))
+
+    if brand_name:
+        sections.append(
+            f"BRAND: This presentation is about {brand_name}. "
+            f"Use search: for all images of {brand_name} products, services, UI, and branding. "
+            "AI-generated versions of real products look fake — always search for the real thing."
+        )
 
     extracted_data = slide_context.get("extracted_data") or slide_context.get("extractedData")
     manual_charts = slide_context.get("manual_charts") or slide_context.get("manualCharts")
@@ -575,29 +658,29 @@ def build_user_prompt(
             sections.append("\n".join(entries[:6]))
 
     if available_videos:
-        entries = []
-        for video in available_videos[:5]:
+        has_video = slide_context.get("has_assigned_video")
+        label = "AVAILABLE VIDEOS (MUST USE):" if has_video else "AVAILABLE VIDEOS:"
+        sections.append(label)
+        for video in available_videos[:3]:
             title = video.get("title") or "video"
-            url = video.get("embed_url") or video.get("url")
-            if url:
-                entries.append(f"{title} ({url})")
-            else:
-                entries.append(str(title))
-        if entries:
-            sections.append("AVAILABLE VIDEOS:")
-            sections.append("- " + ", ".join(entries))
-            if slide_context.get("has_assigned_video"):
-                sections.append(
-                    "VIDEO USE: A video has been assigned to this slide. Embed the first available video. "
-                    "Prefer embed_url for YouTube/Vimeo; otherwise use <video src='...'> with muted autoplay loop "
-                    "for background and controls for demos."
-                )
-            else:
-                sections.append(
-                    "VIDEO USE: If the request calls for a video, embed the first available video. "
-                    "Prefer embed_url for YouTube/Vimeo; otherwise use <video src='...'> with muted autoplay loop "
-                    "for background and controls for demos."
-                )
+            embed = video.get("embed_url")
+            url = video.get("url")
+            if embed:
+                sections.append(f"- {title}: embed with <iframe src=\"{embed}\" width=\"100%\" height=\"100%\" frameborder=\"0\" allowfullscreen></iframe>")
+            elif url:
+                sections.append(f"- {title}: embed with <video src=\"{url}\" autoplay muted loop playsinline style=\"width:100%;height:100%;object-fit:cover\"></video>")
+        if has_video:
+            sections.append(
+                "MANDATORY: You MUST embed the first video above into this slide. "
+                "Use an <iframe> for YouTube/Vimeo embed URLs, or <video> for direct URLs. "
+                "Give the video prominent placement (at least 40% of the slide area). "
+                "Do NOT replace it with an image placeholder."
+            )
+        else:
+            sections.append(
+                "A video is available. If the slide topic relates to the video, embed it using "
+                "the exact HTML snippet shown above. Give it prominent placement."
+            )
 
     # Skip base64 data URLs - they're too large for prompts (can be 50K+ chars)
     if logo_url and not logo_url.startswith("data:"):
@@ -609,11 +692,13 @@ def build_user_prompt(
         sections.append("CONVERSATION HISTORY (use explicit customization requests):")
         sections.append(formatted_history)
 
+    # Image alt reminder BEFORE content so it doesn't leak into the slide as visible text
+    sections.append("IMG ALTS: alt must start with search: or generate:. search: for company products/services/people/places. generate: for generic educational concepts. Never abstract.")
+
     if content:
         sections.append("NOTE: Ignore any webpage boilerplate in the content (nav, headers, terms).")
         sections.append("CONTENT:")
         sections.append(content)
 
-    sections.append("REMINDER: You can build diagrams, flows, charts, and infographics with HTML/CSS/SVG, and use images where they enhance the slide. Preferably, add images when showing a specific real-world subject (product, person, place). Not every slide needs a photo.")
-    sections.append("OUTPUT: Complete HTML starting with <!DOCTYPE html>.")
+    sections.append("OUTPUT: Complete HTML starting with <!DOCTYPE html>. Do NOT render any instructions as visible text.")
     return "\n".join(sections)

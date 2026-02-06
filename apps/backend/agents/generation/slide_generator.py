@@ -13,6 +13,7 @@ from agents.application.event_bus import get_event_bus, Events
 from models.slide_minimal import MinimalSlide
 from setup_logging_optimized import get_logger
 from agents.generation.custom_component_generator import CustomComponentGenerator
+from agents.config import CUSTOM_COMPONENT_NEXTGEN_TEMPERATURE
 from agents.generation.custom_component_enhancer import CustomComponentEnhancer
 from agents.generation.slide_post_processor import SlidePostProcessor
 from agents.config import ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN
@@ -35,7 +36,7 @@ class SlideGeneratorV2(ISlideGenerator):
         self.prompt_builder = SlidePromptBuilder()
         self.event_bus = get_event_bus()
         # Dedicated CustomComponent generator using Gemini 3 Pro
-        self.custom_component_generator = CustomComponentGenerator()
+        self.custom_component_generator = CustomComponentGenerator(temperature=CUSTOM_COMPONENT_NEXTGEN_TEMPERATURE)
         self.custom_component_enhancer = CustomComponentEnhancer(
             self.custom_component_generator,
             full_slide=True,
@@ -93,7 +94,7 @@ class SlideGeneratorV2(ISlideGenerator):
             if ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN:
                 # Create minimal slide structure directly from context (no AI call needed)
                 slide_data = {
-                    "id": f"slide-{context.slide_index + 1}",
+                    "id": getattr(context.slide_outline, 'id', None) or f"slide-{context.slide_index}",
                     "title": context.slide_outline.title or f"Slide {context.slide_index + 1}",
                     "order": context.slide_index,
                     "components": []

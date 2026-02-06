@@ -31,6 +31,7 @@ interface ImageSlotEditorProps {
   label: string;
   value: string | null | undefined;
   searchQuery?: string;
+  imageMode?: 'ai' | 'search';
   objectFit?: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
   componentId: string;
   onUpdate: (propName: string, value: string) => void;
@@ -52,6 +53,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
   label,
   value,
   searchQuery,
+  imageMode,
   objectFit = 'cover',
   componentId,
   onUpdate,
@@ -85,6 +87,11 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
   useEffect(() => {
     setLocalFit(objectFit);
   }, [objectFit]);
+
+  // Clean searchQuery of residual search:/generate: prefixes
+  const cleanQuery = (searchQuery || '')
+    .replace(/^(?:generate:\s*(?:\d+:\d+\s+)?|search:\s*)/i, '')
+    .trim() || undefined;
 
   // Check if value is a placeholder or empty
   const isPlaceholder = !value ||
@@ -386,10 +393,22 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
               <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
             </div>
           ) : isPlaceholder || imageError ? (
-            <div className="flex flex-col items-center justify-center h-full gap-0.5 text-muted-foreground hover:text-foreground transition-colors">
-              <ImageIcon className="w-4 h-4" />
-              <span className="text-[9px]">
-                {searchQuery && searchQuery !== 'image' ? `"${searchQuery}"` : 'Click to select'}
+            <div className="flex flex-col items-center justify-center h-full gap-0.5 text-muted-foreground hover:text-foreground transition-colors px-2">
+              <div className="flex items-center gap-1">
+                <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+                {imageMode && (
+                  <span className={cn(
+                    "text-[7px] font-bold uppercase px-1 py-px rounded shrink-0",
+                    imageMode === 'ai'
+                      ? "bg-purple-100 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400"
+                      : "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400"
+                  )}>
+                    {imageMode === 'ai' ? 'AI' : 'Search'}
+                  </span>
+                )}
+              </div>
+              <span className="text-[8px] text-center line-clamp-2 leading-tight">
+                {cleanQuery && cleanQuery !== 'image' ? cleanQuery : 'Click to select'}
               </span>
             </div>
           ) : (
@@ -646,8 +665,10 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
             handleMediaSelect(url);
             setIsMediaHubOpen(false);
           }}
-          defaultSearchTerm={searchQuery && searchQuery !== 'image' ? searchQuery : undefined}
-          autoSearch={!!(searchQuery && searchQuery !== 'image')}
+          defaultSearchTerm={imageMode !== 'ai' && cleanQuery && cleanQuery !== 'image' ? cleanQuery : undefined}
+          autoSearch={imageMode !== 'ai' && !!(cleanQuery && cleanQuery !== 'image')}
+          defaultTab={imageMode === 'ai' ? 'generate' : 'search'}
+          defaultGeneratePrompt={imageMode === 'ai' && cleanQuery && cleanQuery !== 'image' ? cleanQuery : undefined}
         />
       )}
     </div>

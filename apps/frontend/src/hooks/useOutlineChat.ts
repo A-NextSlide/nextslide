@@ -690,9 +690,10 @@ export const useOutlineChat = ({
                 const extraColors: string[] = (meaningfulAccents.length > 0 ? meaningfulAccents : meaningful).slice(0, 6);
                 if (extraColors.length > 0) palette.colors = extraColors;
                 const resolvedFont = (typeof sp.font === 'string' && sp.font.trim() && !sp.font.includes('var(')) ? sp.font : 'Inter';
+                const resolvedBodyFont = (typeof sp.bodyFont === 'string' && sp.bodyFont.trim() && !sp.bodyFont.includes('var(')) ? sp.bodyFont : resolvedFont;
                 const typography = {
                   hero_title: { family: resolvedFont },
-                  body_text: { family: resolvedFont }
+                  body_text: { family: resolvedBodyFont }
                 };
                 const themePayload = {
                   theme_name: sp.vibeContext ? `${String(sp.vibeContext).replace('.com', '').replace('www.', '').trim().replace(/\b\w/g, (c: string) => c.toUpperCase())} Brand Theme` : 'Brand Theme',

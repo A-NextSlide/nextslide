@@ -1637,7 +1637,10 @@ const DeckList: React.FC = () => {
     };
 
     const navigateToDeck = (targetDeckId: string) => {
-      if (!targetDeckId || navigatedDeckId === targetDeckId) {
+      if (!targetDeckId || targetDeckId === 'undefined' || targetDeckId === 'null' || targetDeckId.length < 8 || navigatedDeckId === targetDeckId) {
+        if (targetDeckId === 'undefined' || targetDeckId === 'null') {
+          console.error('[DeckList] Attempted to navigate to deck with invalid ID:', targetDeckId);
+        }
         return;
       }
 

@@ -378,9 +378,10 @@ def _check_chart_rendering(html: str) -> Tuple[List[str], List[str]]:
     # Check for Chart.js usage
     has_chartjs = 'Chart(' in html or 'new Chart' in html or 'chart.js' in html.lower()
     if has_chartjs:
-        # Must have a canvas element
+        # Must have a canvas element (static or dynamically created)
         has_canvas = '<canvas' in html.lower()
-        if not has_canvas:
+        has_dynamic_canvas = "createElement('canvas')" in html or 'createElement("canvas")' in html
+        if not has_canvas and not has_dynamic_canvas:
             issues.append("Chart.js used but no <canvas> element found. Charts won't render.")
 
         # Check for proper initialization timing
@@ -625,6 +626,15 @@ def verify_slide_code(html: str, user_request: str = "") -> VerificationResult:
     resource_issues, resource_warnings = _check_external_resources(html)
     issues.extend(resource_issues)
     warnings.extend(resource_warnings)
+
+    # Check for broken image-switching logic (alt changed without src)
+    img_switch_issues, img_switch_warnings = _check_image_src_switching(html)
+    issues.extend(img_switch_issues)
+    warnings.extend(img_switch_warnings)
+
+    # Check for slides with zero images
+    zero_img_warnings = _check_zero_images(html)
+    warnings.extend(zero_img_warnings)
 
     is_valid = len(issues) == 0
 
@@ -925,6 +935,161 @@ def _check_overlay_blocking(html: str) -> Tuple[List[str], List[str]]:
             )
 
     return issues, warnings
+
+
+def _check_image_src_switching(html: str) -> Tuple[List[str], List[str]]:
+    """
+    Check for broken image-switching logic in tab/button JS.
+
+    The #1 pattern: Gemini generates tab-switching code that changes img.alt
+    (or img.setAttribute('alt', ...)) but COMMENTS OUT or OMITS img.src assignment.
+    The images are correctly stored in JS data arrays, but never applied.
+    """
+    issues = []
+    warnings = []
+
+    script_pattern = r'<script[^>]*>(.*?)</script>'
+    scripts = re.findall(script_pattern, html, re.DOTALL | re.IGNORECASE)
+
+    for script in scripts:
+        if not script.strip():
+            continue
+
+        # --- Check 1: Commented-out img.src assignments ---
+        # Matches patterns like:
+        #   // img.src = images[type];
+        #   // imgEl.src = data.image;
+        #   /* mainImage.src = items[i].image; */
+        commented_src = re.findall(
+            r'(?://|/\*)\s*\w*\.src\s*=\s*[^;\n]+',
+            script
+        )
+        if commented_src:
+            issues.append(
+                f"Found {len(commented_src)} commented-out img.src assignment(s). "
+                "Image switching code is DISABLED — images won't change when tabs/buttons are clicked. "
+                "UNCOMMENT the .src assignment: img.src = data.image;"
+            )
+
+        # --- Check 2: .alt set without .src in the same function ---
+        # Find function bodies (named functions and arrows)
+        func_pattern = r'(?:function\s+\w+\s*\([^)]*\)|(?:const|let|var)\s+\w+\s*=\s*(?:\([^)]*\)|[^=])\s*=>)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}'
+        functions = re.findall(func_pattern, script, re.DOTALL)
+        # Also check DOMContentLoaded / event listener callbacks
+        callback_pattern = r'(?:addEventListener|onclick)\s*[=(]\s*(?:function\s*\([^)]*\)|[^{]*=>)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}'
+        functions.extend(re.findall(callback_pattern, script, re.DOTALL))
+
+        for func_body in functions:
+            # Look for .alt = (setting alt text on an element)
+            sets_alt = bool(re.search(r'\.\s*alt\s*=\s*(?!.*\.src\s*=)', func_body))
+            sets_src = bool(re.search(r'(?<!//\s)(?<!/\*\s)\.\s*src\s*=', func_body))
+
+            if not sets_alt:
+                continue
+
+            # Has alt assignment but no uncommented src assignment
+            if not sets_src:
+                # Check if this function also references image-like data
+                has_image_data = bool(re.search(
+                    r'\b(?:image|img|src|photo|picture|thumbnail)\b',
+                    func_body,
+                    re.IGNORECASE
+                ))
+                if has_image_data:
+                    issues.append(
+                        "A function sets img.alt but never sets img.src. "
+                        "Images won't actually change — only the alt text updates. "
+                        "Add: img.src = data.image; alongside every img.alt assignment."
+                    )
+                    break  # One issue per script block is enough
+
+        # --- Check 3: "In a real environment" comments near image code ---
+        # Gemini sometimes writes: "In a real environment, the src would be..."
+        real_env_pattern = re.search(
+            r'(?:real\s+environment|production|actual\s+app|real\s+app)[^.]*(?:src|image|url)',
+            script,
+            re.IGNORECASE
+        )
+        if real_env_pattern:
+            issues.append(
+                "Code contains a comment suggesting image switching is 'for a real environment'. "
+                "This IS the real environment — img.src MUST be set. Remove the comment and "
+                "uncomment/add the img.src = data.image assignment."
+            )
+
+        # --- Check 4: Placeholder service URLs in JS code ---
+        # Gemini uses via.placeholder.com, placehold.co as "fallback" in JS assignments
+        placeholder_svc_in_js = re.search(
+            r'(?:via\.placeholder\.com|placehold\.co|dummyimage\.com)',
+            script,
+            re.IGNORECASE
+        )
+        if placeholder_svc_in_js:
+            issues.append(
+                "JavaScript uses placeholder service URLs (via.placeholder.com, placehold.co). "
+                "Use data.image or the actual image property from the data array instead. "
+                "NEVER use placeholder URLs — they show broken images."
+            )
+
+        # --- Check 5: .src = placeholder URL while .alt = data reference (inverted) ---
+        # Pattern: img.src = `via.placeholder.com/...`; img.alt = data.image;
+        inverted_pattern = re.search(
+            r'\.src\s*=\s*[`"\']https?://(?:via\.placeholder|placehold\.co)',
+            script,
+            re.IGNORECASE
+        )
+        if inverted_pattern:
+            issues.append(
+                "img.src is set to a placeholder URL while the real image URL is likely in "
+                "a data property. Use: img.src = data.image; (the actual data value, not a placeholder)."
+            )
+
+    return issues, warnings
+
+
+def _check_zero_images(html: str) -> List[str]:
+    """Check if a slide with card/container layouts has zero images.
+
+    Flags slides that use cards, grids, or panels but don't include
+    any images in them. Pure diagram/chart slides without containers
+    are fine without images.
+    """
+    warnings = []
+
+    # Count <img> tags (exclude logos)
+    img_tags = re.findall(r'<img\b[^>]*>', html, re.IGNORECASE)
+    content_imgs = 0
+    for tag in img_tags:
+        tag_lower = tag.lower()
+        if 'logo' in tag_lower and ('max-height:40' in tag_lower or 'max-height: 40' in tag_lower):
+            continue
+        content_imgs += 1
+
+    bg_imgs = len(re.findall(r'background-image\s*:', html, re.IGNORECASE))
+
+    if content_imgs > 0 or bg_imgs > 0:
+        return warnings  # Has images, all good
+
+    # Only warn if the slide has card-like containers that should have images
+    has_cards = bool(re.search(
+        r'(?:display\s*:\s*(?:grid|flex)|class\s*=\s*["\'][^"\']*(?:card|grid|panel|tile))',
+        html,
+        re.IGNORECASE,
+    ))
+    has_data_arrays = bool(re.search(
+        r'\[\s*\{[^}]*(?:title|name|label)\s*:',
+        html,
+        re.IGNORECASE,
+    ))
+
+    if has_cards or has_data_arrays:
+        warnings.append(
+            "Slide has cards/containers but ZERO images. Each card, panel, or "
+            "grid item should have its own image. Add image properties to JS data "
+            "arrays and <img> tags to card templates."
+        )
+
+    return warnings
 
 
 def create_verification_context(result: VerificationResult, user_request: str = "") -> str:

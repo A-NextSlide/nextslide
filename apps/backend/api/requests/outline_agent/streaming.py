@@ -842,7 +842,22 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
             except Exception as exc:
                 logger.warning("[OutlineAgent] Reference scraping failed in background: %s", exc)
 
-        if video_task and video_task.done():
+        if video_task and not video_task.done():
+            # Wait up to 15s for video scraping to finish (Playwright can be slow)
+            try:
+                video_payload = await asyncio.wait_for(asyncio.shield(video_task), timeout=15.0)
+                if _merge_video_payload(video_payload):
+                    videos_collected = True
+                    yield sse_event({
+                        'type': 'status',
+                        'status': 'videos_found',
+                        'message': f"Found {len(video_payload['videos'])} video(s) from website",
+                    })
+            except asyncio.TimeoutError:
+                logger.warning("[OutlineAgent] Video scraping still running after 15s, continuing without videos for now")
+            except Exception as exc:
+                logger.warning("[OutlineAgent] Video scraping failed: %s", exc)
+        elif video_task and video_task.done():
             try:
                 video_payload = video_task.result()
                 if _merge_video_payload(video_payload):

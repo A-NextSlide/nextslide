@@ -450,3 +450,89 @@ async def generate_outline_via_modal(
         _log_modal_failure("generate_outline", exc)
         _log_dispatch("generate_outline", success=False)
         return None
+
+
+async def generate_playground_slide_via_modal(
+    model_id: str,
+    theme: dict,
+    slide_content: str,
+    slide_title: str,
+    slide_index: int,
+    total_slides: int,
+    outline_title: str,
+    slide_mode: str = "interactive",
+    temperature: float = 0.8,
+    prompt: str = "",
+    outline_summary: str = "",
+) -> dict:
+    """
+    Dispatch a single playground slide generation to Modal.
+
+    Returns {"index": int, "html": str|None}.
+    Falls back to local CustomComponentGenerator on error.
+    """
+    try:
+        import modal
+
+        fn = modal.Function.from_name("nextslide", "generate_playground_slide_remote")
+
+        logger.info(
+            "[modal_dispatch] Dispatching playground slide %d (%s) to Modal",
+            slide_index, model_id,
+        )
+
+        result = await _retry_modal_call(
+            fn.remote.aio,
+            model_id=model_id,
+            theme=theme,
+            slide_content=slide_content,
+            slide_title=slide_title,
+            slide_index=slide_index,
+            total_slides=total_slides,
+            outline_title=outline_title,
+            slide_mode=slide_mode,
+            temperature=temperature,
+            prompt=prompt,
+            outline_summary=outline_summary,
+        )
+
+        _log_dispatch("generate_playground_slide", success=True)
+        return result
+
+    except Exception as exc:
+        _log_modal_failure(f"generate_playground_slide (slide {slide_index}, {model_id})", exc)
+        _log_dispatch("generate_playground_slide", success=False)
+
+        # Local fallback
+        from agents.generation.playground_component_generator import PlaygroundComponentGenerator
+
+        try:
+            slide_context = {
+                "title": slide_title,
+                "slide_index": slide_index,
+                "total_slides": total_slides,
+                "slide_type": "content",
+                "slide_mode": slide_mode,
+                "deck_title": outline_title,
+                "is_full_slide": True,
+                "presentation_context": prompt,
+                "initial_idea": prompt,
+                "vibe_context": prompt,
+            }
+            generator = PlaygroundComponentGenerator(model=model_id)
+            generator.temperature = temperature
+            component = await generator.generate(
+                content=slide_content,
+                theme=theme,
+                slide_context=slide_context,
+                width=1920,
+                height=1080,
+                auto_prefetch=False,
+            )
+            html = None
+            if component and component.get("props", {}).get("render"):
+                html = component["props"]["render"]
+            return {"index": slide_index, "html": html}
+        except Exception as local_err:
+            logger.error("[modal_dispatch] Local fallback also failed for slide %d (%s): %s", slide_index, model_id, local_err)
+            return {"index": slide_index, "html": None}

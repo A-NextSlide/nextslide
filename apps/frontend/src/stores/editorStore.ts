@@ -663,18 +663,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         return; // Component not found
     }
 
-    // Prevent deletion of background components
+    // Prevent deletion of background components (only show toast for user-initiated actions)
     const isBackgroundComponent =
       componentToRemove.type === 'Background' ||
       (componentToRemove.id && componentToRemove.id.toLowerCase().includes('background'));
     if (isBackgroundComponent) {
-      toast({
-        title: 'Cannot Delete Background',
-        description: 'Background components cannot be removed',
-        duration: 2000,
-        // @ts-expect-error allow variant on toast props used elsewhere in app
-        variant: 'destructive'
-      });
+      if (!skipHistory) {
+        toast({
+          title: 'Cannot Delete Background',
+          description: 'Background components cannot be removed',
+          duration: 2000,
+          // @ts-expect-error allow variant on toast props used elsewhere in app
+          variant: 'destructive'
+        });
+      }
       return;
     }
 

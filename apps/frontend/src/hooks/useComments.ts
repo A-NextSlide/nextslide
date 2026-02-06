@@ -118,7 +118,7 @@ export function useCommentThreads(
     setError(null);
     try {
       const threads = await CommentsService.list(deckId, { slideId, status });
-      setRawThreads(threads || []);
+      setRawThreads((threads || []).filter(Boolean));
     } catch (err) {
       console.error('Failed to load comments:', err);
       setError(err instanceof Error ? err.message : 'Failed to load comments');
@@ -138,7 +138,7 @@ export function useCommentThreads(
     const handleRefresh = () => {
       CommentsService.list(deckId, { slideId, status })
         .then(threads => {
-          setRawThreads(threads || []);
+          setRawThreads((threads || []).filter(Boolean));
         })
         .catch(err => {
           console.error('Failed to refresh comments:', err);

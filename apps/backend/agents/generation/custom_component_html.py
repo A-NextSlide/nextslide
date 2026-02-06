@@ -313,10 +313,12 @@ class CustomComponentHtmlProcessor:
             cursor = 0
 
             # Pattern for image SOURCE properties (excluding alt/label properties)
-            # Pattern 1: Quoted values like image: 'placeholder' or image: "url"
-            src_pattern_quoted = r'(\b\w*(?:src|image|img|photo|picture|thumbnail|background)(?!Alt|Label|Text|Title|Name|Description|Caption)\w*\s*:\s*)(["\'])([^"\']*)\2'
-            # Pattern 2: Unquoted placeholder values like image: placeholder or image: null
-            src_pattern_unquoted = r'(\b\w*(?:src|image|img|photo|picture|thumbnail|background)(?!Alt|Label|Text|Title|Name|Description|Caption)\w*\s*:\s*)(placeholder|null|undefined|none)(\s*[,}\]])'
+            # Pattern 1: Quoted values — named image-like properties
+            src_pattern_quoted = r'(\b\w*(?:src|image|img|photo|picture|thumbnail|background|url|link|href|icon|avatar|cover|poster|banner|media|visual)(?!Alt|Label|Text|Title|Name|Description|Caption)\w*\s*:\s*)(["\'])([^"\']*)\2'
+            # Pattern 2: Unquoted placeholder values — named image-like properties
+            src_pattern_unquoted = r'(\b\w*(?:src|image|img|photo|picture|thumbnail|background|url|link|href|icon|avatar|cover|poster|banner|media|visual)(?!Alt|Label|Text|Title|Name|Description|Caption)\w*\s*:\s*)(placeholder|null|undefined|none)(\s*[,}\]])'
+            # Pattern 3: ANY property with a placeholder URL value (catch-all for unknown prop names)
+            placeholder_url_pattern = r'(\b\w+\s*:\s*)(["\'])((?:https?://)?(?:via\.)?placeholder(?:\.\w+)*(?:/[^"\']*)?)\2'
 
             for start, end, obj_text in objects:
                 if not _object_is_image_like(obj_text):
@@ -324,10 +326,39 @@ class CustomComponentHtmlProcessor:
                     cursor = end
                     continue
 
-                # Extract label/alt from this JS object for alt-aware image matching
+                # Build per-position label map from inner objects so that
+                # each array item gets its OWN alt-text label instead of all
+                # sharing the first one found in a wrapping function body.
                 obj_label = _extract_js_object_label(obj_text)
+                inner_label_map = []
+                if len(obj_text) > 50:
+                    def _collect_labels(text, offset, depth):
+                        if depth > 3 or len(text) < 10:
+                            return
+                        inner = _iter_js_objects(text[1:-1])
+                        for istart, iend, itext in inner:
+                            adj_s = istart + offset + 1
+                            adj_e = iend + offset + 1
+                            if _object_is_image_like(itext):
+                                ilabel = _extract_js_object_label(itext)
+                                if ilabel:
+                                    inner_label_map.append((adj_s, adj_e, ilabel))
+                            _collect_labels(itext, adj_s, depth + 1)
+                    _collect_labels(obj_text, 0, 0)
+                    # Sort smallest first so innermost objects match first
+                    inner_label_map.sort(key=lambda x: x[1] - x[0])
+                    if inner_label_map:
+                        logger.info("[IMAGE_INJECT] Found %d inner objects with labels in wrapped script", len(inner_label_map))
 
-                def replace_obj_src_quoted(match, _label=obj_label):
+                def _label_for_pos(pos, _inner=inner_label_map, _fallback=obj_label):
+                    """Find the label from the innermost object enclosing pos."""
+                    for s, e, lbl in _inner:
+                        if s <= pos < e:
+                            return lbl
+                    return _fallback
+
+                def replace_obj_src_quoted(match, _lfp=_label_for_pos):
+                    nonlocal images_injected
                     prefix = match.group(1)
                     quote = match.group(2)
                     current_src = match.group(3)
@@ -345,31 +376,63 @@ class CustomComponentHtmlProcessor:
                         (current_src.startswith('http') and not is_our_url(current_src))
                     )
                     if needs_replace:
+                        _label = _lfp(match.start())
                         url = find_url_for_query(_label) if _label else ""
                         if not url:
                             url = get_next_image()
                         if url:
+                            images_injected += 1
                             logger.info(f"[IMAGE_INJECT] JS object: '{current_src[:30]}' -> {url[:50]}... (label: '{_label[:30] if _label else ''}')")
                             return f"{prefix}{quote}{url}{quote}"
                     return match.group(0)
 
-                def replace_obj_src_unquoted(match, _label=obj_label):
+                def replace_obj_src_unquoted(match, _lfp=_label_for_pos):
+                    nonlocal images_injected
                     prefix = match.group(1)
                     current_src = match.group(2)
                     suffix = match.group(3)
 
                     # Try alt-aware matching first
+                    _label = _lfp(match.start())
                     url = find_url_for_query(_label) if _label else ""
                     if not url:
                         url = get_next_image()
                     if url:
+                        images_injected += 1
                         logger.info(f"[IMAGE_INJECT] JS object (unquoted): '{current_src}' -> {url[:50]}... (label: '{_label[:30] if _label else ''}')")
                         return f"{prefix}'{url}'{suffix}"
                     return match.group(0)
 
-                # First replace quoted values, then unquoted placeholders
+                def replace_placeholder_url(match, _lfp=_label_for_pos):
+                    """Catch-all: replace any property whose value is a placeholder URL."""
+                    nonlocal images_injected
+                    prefix = match.group(1)
+                    quote = match.group(2)
+                    current_src = match.group(3)
+
+                    # Skip alt/label/text/title/name/description/caption properties
+                    prop_name = prefix.strip().rstrip(':').strip().lower()
+                    skip_props = ('alt', 'label', 'text', 'title', 'name', 'description',
+                                  'caption', 'type', 'id', 'class', 'style', 'key',
+                                  'thumbalt', 'imgalt', 'imagealt', 'photoalt', 'bgalt')
+                    if prop_name in skip_props:
+                        return match.group(0)
+
+                    _label = _lfp(match.start())
+                    url = find_url_for_query(_label) if _label else ""
+                    if not url:
+                        url = get_next_image()
+                    if url:
+                        images_injected += 1
+                        logger.info(f"[IMAGE_INJECT] JS placeholder URL: '{current_src[:30]}' -> {url[:50]}... (prop: '{prop_name}', label: '{_label[:30] if _label else ''}')")
+                        return f"{prefix}{quote}{url}{quote}"
+                    return match.group(0)
+
+                # First replace named image properties, then catch-all placeholder URLs
                 new_obj = re.sub(src_pattern_quoted, replace_obj_src_quoted, obj_text, flags=re.IGNORECASE)
                 new_obj = re.sub(src_pattern_unquoted, replace_obj_src_unquoted, new_obj, flags=re.IGNORECASE)
+                # Catch-all: replace any remaining placeholder URLs missed by named patterns
+                new_obj = re.sub(placeholder_url_pattern, replace_placeholder_url, new_obj, flags=re.IGNORECASE)
                 parts.append(script_content[cursor:start])
                 parts.append(new_obj)
                 cursor = end
@@ -390,6 +453,7 @@ class CustomComponentHtmlProcessor:
         # PHASE 2: Replace all placeholder img src attributes in HTML
         # This is the simplified approach - find any placeholder src and replace it
         def replace_any_placeholder_img(match):
+            nonlocal images_injected
             full_tag = match.group(0)
 
             # Skip if already has our URL
@@ -436,6 +500,7 @@ class CustomComponentHtmlProcessor:
                 new_tag = full_tag.replace('<img', f'<img src="{url}"', 1)
 
             if new_tag != full_tag:
+                images_injected += 1
                 logger.info(f"[IMAGE_INJECT] Replaced placeholder img with {url[:50]}...")
             return new_tag
 

@@ -192,6 +192,7 @@ from api.requests.api_webpage import router as webpage_router
 from api.requests.api_pqa import router as pqa_router
 from api.requests.api_slack import router as slack_router
 from api.requests.api_tool_generate import router as tool_generate_router
+from api.requests.api_playground import router as playground_router
 from fastapi import Depends
 
 # Middleware imports removed - files were deleted
@@ -408,6 +409,8 @@ app.include_router(pqa_router, tags=["PQA Enterprise"])
 app.include_router(slack_router, tags=["Slack Integration"])
 # Tool page ephemeral slide generation (no auth required)
 app.include_router(tool_generate_router, tags=["Tool Generation"])
+# Admin playground (model comparison)
+app.include_router(playground_router)
 # Mount public API at /v1 (clean URLs for api.nextslide.ai) and /api/v1 (backward compatibility)
 app.include_router(public_api_v1_router, prefix="/v1", tags=["Public API v1"])
 app.include_router(public_api_v1_router, prefix="/api/v1", tags=["Public API v1"])

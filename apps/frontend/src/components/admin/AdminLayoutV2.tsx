@@ -18,6 +18,7 @@ import {
   TrendingUp,
   Type,
   Mail,
+  FlaskConical,
 } from 'lucide-react';
 
 interface AdminLayoutV2Props {
@@ -35,6 +36,7 @@ const navItems = [
   { title: 'Fonts', href: '/admin/fonts', icon: Type },
   { title: 'System', href: '/admin/services', icon: Server },
   { title: 'Costs', href: '/admin/costs', icon: DollarSign },
+  { title: 'Playground', href: '/admin/playground', icon: FlaskConical },
 ];
 
 const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {

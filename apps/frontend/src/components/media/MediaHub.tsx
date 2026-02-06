@@ -26,6 +26,10 @@ interface MediaHubProps {
     onSelect: OnMediaSelect;
     defaultSearchTerm?: string; // Pre-fill search when opening
     autoSearch?: boolean; // Auto-trigger search when opening with defaultSearchTerm
+    /** Which tab to open on. Defaults to 'search'. */
+    defaultTab?: MediaSource;
+    /** Pre-fill the AI generation prompt (used when imageMode is 'ai'). */
+    defaultGeneratePrompt?: string;
     /** Controlled mode — when provided, MediaHub renders as a floating panel instead of a popover. */
     open?: boolean;
     onClose?: () => void;
@@ -71,7 +75,7 @@ function loadRecentMedia(): RecentMedia[] {
 }
 
 // Wrap with forwardRef, using the correct element type (HTMLButtonElement)
-export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger, onSelect, defaultSearchTerm, autoSearch, open: controlledOpen, onClose }, ref) => {
+export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger, onSelect, defaultSearchTerm, autoSearch, defaultTab, defaultGeneratePrompt, open: controlledOpen, onClose }, ref) => {
     const isControlled = controlledOpen !== undefined;
     const [internalOpen, setInternalOpen] = useState(false);
     const isOpen = isControlled ? controlledOpen : internalOpen;
@@ -80,7 +84,7 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
         else setInternalOpen(v);
     };
 
-    const [activeTab, setActiveTab] = useState<MediaSource>('search');
+    const [activeTab, setActiveTab] = useState<MediaSource>(defaultTab || 'search');
     const [searchToken, setSearchToken] = useState<number | null>(null);
     const [hasInteracted, setHasInteracted] = useState(false);
     const [preventClose, setPreventClose] = useState(false);
@@ -95,12 +99,14 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
         if (isControlled && controlledOpen) {
             setRecentMedia(loadRecentMedia());
             setHubSearchTerm(defaultSearchTerm || '');
+            if (defaultTab) setActiveTab(defaultTab);
+            if (defaultGeneratePrompt) setGeneratePrompt(defaultGeneratePrompt);
             setTimeout(() => searchInputRef.current?.focus(), 50);
         }
-    }, [controlledOpen, defaultSearchTerm]);
-    
+    }, [controlledOpen, defaultSearchTerm, defaultTab, defaultGeneratePrompt]);
+
     // AI Generation state
-    const [generatePrompt, setGeneratePrompt] = useState('');
+    const [generatePrompt, setGeneratePrompt] = useState(defaultGeneratePrompt || '');
     const [isGenerating, setIsGenerating] = useState(false);
     const { activeSlide } = useActiveSlide();
     const { toast } = useToast();
@@ -473,6 +479,8 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                     if (defaultSearchTerm) {
                         setHubSearchTerm(defaultSearchTerm);
                     }
+                    if (defaultTab) setActiveTab(defaultTab);
+                    if (defaultGeneratePrompt) setGeneratePrompt(defaultGeneratePrompt);
                 }
             }}
         >

@@ -751,6 +751,9 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
     }));
   }, [jsArrayImages]);
 
+  // Read imageMetadata from component props to enrich images with mode info
+  const imageMetadata = (component.props as any).imageMetadata as Record<string, { url?: string; imageMode?: string }> | undefined;
+
   // Merge DOM-detected images with JS array images, avoiding duplicates
   const imageElements = useMemo(() => {
     const domImages = activeDetectedElements.filter((element) => element.type === 'image');
@@ -760,8 +763,25 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
     const uniqueJsImages = jsArrayImageElements.filter(img => !domImageUrls.has(img.src));
 
     // Combine DOM images first (currently visible), then JS array images
-    return [...domImages, ...uniqueJsImages];
-  }, [activeDetectedElements, jsArrayImageElements]);
+    const combined = [...domImages, ...uniqueJsImages];
+
+    // Enrich with imageMode from imageMetadata (match by URL)
+    if (imageMetadata) {
+      const urlToMode = new Map<string, 'ai' | 'search'>();
+      for (const entry of Object.values(imageMetadata)) {
+        if (entry?.url && entry?.imageMode) {
+          urlToMode.set(entry.url, entry.imageMode as 'ai' | 'search');
+        }
+      }
+      for (const img of combined) {
+        if (!img.imageMode && img.src && urlToMode.has(img.src)) {
+          img.imageMode = urlToMode.get(img.src);
+        }
+      }
+    }
+
+    return combined;
+  }, [activeDetectedElements, jsArrayImageElements, imageMetadata]);
 
   const htmlSyncRef = useRef<NodeJS.Timeout | null>(null);
   const scheduleHtmlSync = useCallback(() => {
@@ -1104,6 +1124,40 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
             onSave={saveChanges}
             onObjectFitChange={(fit) => {
               updateProp(imageFitKey, fit);
+              // Also update the actual rendered HTML so the slide reflects the change
+              const imageUrl = currentValue;
+              if (imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
+                const currentHtml = (component.props.render as string) || '';
+                // Find the img tag containing this URL and update its object-fit
+                const escapedUrl = imageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const imgRegex = new RegExp(
+                  `(<img[^>]*src=["']${escapedUrl}["'][^>]*style=["'])([^"']*)(["'])`,
+                  'i'
+                );
+                let updatedHtml = currentHtml;
+                const match = currentHtml.match(imgRegex);
+                if (match) {
+                  // Replace or add object-fit in existing style
+                  const oldStyle = match[2];
+                  const newStyle = oldStyle.replace(/object-fit\s*:\s*\w[-\w]*/g, '').replace(/;{2,}/g, ';').replace(/^;/, '');
+                  updatedHtml = currentHtml.replace(imgRegex, `$1object-fit:${fit}; ${newStyle}$3`);
+                } else {
+                  // Try reverse: style before src
+                  const imgRegex2 = new RegExp(
+                    `(<img[^>]*style=["'])([^"']*)(["'][^>]*src=["']${escapedUrl}["'])`,
+                    'i'
+                  );
+                  const match2 = currentHtml.match(imgRegex2);
+                  if (match2) {
+                    const oldStyle = match2[2];
+                    const newStyle = oldStyle.replace(/object-fit\s*:\s*\w[-\w]*/g, '').replace(/;{2,}/g, ';').replace(/^;/, '');
+                    updatedHtml = currentHtml.replace(imgRegex2, `$1object-fit:${fit}; ${newStyle}$3`);
+                  }
+                }
+                if (updatedHtml !== currentHtml) {
+                  handlePropChange('render', updatedHtml, false);
+                }
+              }
               saveChanges(imageFitKey, `${variable.label || variable.name} fit`);
             }}
           />
@@ -1157,7 +1211,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
     // Only process HTML documents
     if (!isHtmlDoc) return [];
 
-    const images: Array<{ alt: string; searchQuery: string; currentSrc: string; index: number }> = [];
+    const images: Array<{ alt: string; searchQuery: string; currentSrc: string; index: number; imageMode?: 'ai' | 'search' }> = [];
     const imgRegex = /<img[^>]*>/gi;
     let match;
     let index = 0;
@@ -1166,11 +1220,28 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
       const imgTag = match[0];
       const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
       const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
+      const modeMatch = imgTag.match(/data-image-mode=["'](ai|search)["']/i);
       const src = srcMatch?.[1] || '';
       const alt = altMatch?.[1] || `Image ${index + 1}`;
+      let imageMode = (modeMatch?.[1] as 'ai' | 'search') || undefined;
+
+      // Fall back to imageMetadata for mode if data-image-mode not in HTML
+      if (!imageMode && imageMetadata && src) {
+        for (const entry of Object.values(imageMetadata)) {
+          if (entry?.url === src && entry?.imageMode) {
+            imageMode = entry.imageMode as 'ai' | 'search';
+            break;
+          }
+        }
+      }
+
+      // Strip residual search:/generate: prefixes from alt
+      const cleanedAlt = alt
+        .replace(/^(?:generate:\s*(?:\d+:\d+\s+)?|search:\s*)/i, '')
+        .trim();
 
       // Convert alt to search query
-      const searchQuery = alt
+      const searchQuery = cleanedAlt
         .replace(/[^a-zA-Z0-9\s]/g, ' ')
         .trim()
         .toLowerCase() || 'image';
@@ -1182,6 +1253,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
         searchQuery,
         currentSrc: src.startsWith('http') || src.startsWith('data:') || src.startsWith('//') ? src : '',
         index,
+        imageMode,
       });
 
       index++;
@@ -1387,7 +1459,17 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                         handleElementImage(activeSelectedElement.id, url);
                         saveComponentToHistory('Image updated');
                       }}
-                      defaultSearchTerm={activeSelectedElement.alt && activeSelectedElement.alt !== 'Image' ? activeSelectedElement.alt : undefined}
+                      defaultSearchTerm={(() => {
+                        const cleaned = (activeSelectedElement.alt || '').replace(/^(?:generate:\s*(?:\d+:\d+\s+)?|search:\s*)/i, '').trim();
+                        if (activeSelectedElement.imageMode === 'ai') return undefined;
+                        return cleaned && cleaned !== 'Image' ? cleaned : undefined;
+                      })()}
+                      defaultTab={activeSelectedElement.imageMode === 'ai' ? 'generate' : 'search'}
+                      defaultGeneratePrompt={(() => {
+                        if (activeSelectedElement.imageMode !== 'ai') return undefined;
+                        const cleaned = (activeSelectedElement.alt || '').replace(/^(?:generate:\s*(?:\d+:\d+\s+)?|search:\s*)/i, '').trim();
+                        return cleaned && cleaned !== 'Image' ? cleaned : undefined;
+                      })()}
                     />
                   )}
 

@@ -83,6 +83,11 @@ const ImageCard: React.FC<ImageCardProps> = ({
     : getElementDisplayName(element, index);
   const hasImage = element.src && !element.src.includes('placeholder') && element.src.startsWith('http');
 
+  // Clean alt text of residual search:/generate: prefixes
+  const cleanAlt = (element.alt || '')
+    .replace(/^(?:generate:\s*(?:\d+:\d+\s+)?|search:\s*)/i, '')
+    .trim() || undefined;
+
   // Handle object-fit change
   const handleObjectFitChange = (fit: ObjectFitType) => {
     setObjectFit(fit);
@@ -347,9 +352,23 @@ const ImageCard: React.FC<ImageCardProps> = ({
                   </div>
                 </>
               ) : (
-                <div className="flex flex-col items-center justify-center h-full gap-0.5 text-muted-foreground group-hover:text-foreground transition-colors">
-                  <ImageIcon className="w-4 h-4" />
-                  <span className="text-[9px]">Click to select</span>
+                <div className="flex flex-col items-center justify-center h-full gap-0.5 text-muted-foreground group-hover:text-foreground transition-colors px-2">
+                  <div className="flex items-center gap-1">
+                    <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+                    {element.imageMode && (
+                      <span className={cn(
+                        "text-[7px] font-bold uppercase px-1 py-px rounded shrink-0",
+                        element.imageMode === 'ai'
+                          ? "bg-purple-100 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400"
+                          : "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400"
+                      )}>
+                        {element.imageMode === 'ai' ? 'AI' : 'Search'}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[8px] text-center line-clamp-2 leading-tight">
+                    {cleanAlt && cleanAlt !== 'Image' ? cleanAlt : 'Click to select'}
+                  </span>
                 </div>
               )}
             </div>
@@ -374,7 +393,9 @@ const ImageCard: React.FC<ImageCardProps> = ({
               handleImageSelect(url);
             }
           }}
-          defaultSearchTerm={element.alt && element.alt !== 'Image' ? element.alt : undefined}
+          defaultSearchTerm={element.imageMode !== 'ai' && cleanAlt && cleanAlt !== 'Image' ? cleanAlt : undefined}
+          defaultTab={element.imageMode === 'ai' ? 'generate' : 'search'}
+          defaultGeneratePrompt={element.imageMode === 'ai' && cleanAlt && cleanAlt !== 'Image' ? cleanAlt : undefined}
         />
 
         {/* Top bar with label and fit */}

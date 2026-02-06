@@ -294,6 +294,7 @@ export function generateEditModeScript(componentId: string): string {
       htmlContent: el.innerHTML,
       src: src,
       alt: el.alt || el.getAttribute('aria-label') || el.getAttribute('title') || '',
+      imageMode: el.getAttribute('data-image-mode') || undefined,
       selector: '[data-ns-id="' + el.dataset.nsId + '"]',
       // All elements can be dragged - styleMutator handles positioning strategy appropriately
       // For flex/grid items, only resize will take effect (position determined by layout)
@@ -573,70 +574,17 @@ export function generateEditModeScript(componentId: string): string {
       // Clone the document to avoid modifying the live DOM
       var clone = document.documentElement.cloneNode(true);
 
-      // Remove all injected edit mode elements
-      var toRemove = clone.querySelectorAll('#ns-edit-mode-styles, script');
+      // Remove all injected edit mode elements and scripts
+      var nsMarkers = ['ns-custom-component-edit', 'NEXTSLIDE EDIT MODE',
+                       'customcomponent:image-click', 'ns-slide-zoom',
+                       'ns-image-processing-overlay', 'ns-placeholder-wrapper'];
+      var toRemove = clone.querySelectorAll('#ns-edit-mode-styles, script, style');
       toRemove.forEach(function(el) {
-        // Only remove our injected scripts, not user scripts
-        if (el.id === 'ns-edit-mode-styles' ||
-            (el.textContent && el.textContent.includes('ns-custom-component-edit')) ||
-            (el.textContent && el.textContent.includes('NEXTSLIDE EDIT MODE'))) {
-          el.remove();
+        if (el.id === 'ns-edit-mode-styles') { el.remove(); return; }
+        var text = el.textContent || '';
+        for (var i = 0; i < nsMarkers.length; i++) {
+          if (text.includes(nsMarkers[i])) { el.remove(); return; }
         }
-      });
-
-      // FIX: Detect and reset containers populated by JavaScript to prevent duplication
-      // When HTML is extracted and reloaded, JS runs again and would duplicate content
-      var scripts = clone.querySelectorAll('script');
-      var containersToReset = [];
-      scripts.forEach(function(script) {
-        var code = script.textContent || '';
-        if (code.includes('ns-custom-component-edit') || code.includes('NEXTSLIDE EDIT MODE')) return;
-
-        // Detect patterns that indicate JS renders into a container
-        var selectorMatches = [];
-
-        // Pattern: getElementById/querySelector with innerHTML or appendChild
-        var idMatches = code.match(/(?:getElementById|querySelector)\s*\(\s*['"]([^'"]+)['"]\s*\)/g) || [];
-        idMatches.forEach(function(m) {
-          var id = m.match(/['"]([^'"]+)['"]/);
-          if (id && (code.includes('.innerHTML') || code.includes('.appendChild') || code.includes('.insertAdjacentHTML'))) {
-            var sel = id[1];
-            if (!sel.startsWith('#') && !sel.startsWith('.') && !sel.includes(' ')) {
-              sel = '#' + sel;
-            }
-            if (selectorMatches.indexOf(sel) === -1) selectorMatches.push(sel);
-          }
-        });
-
-        // Pattern: forEach/map with innerHTML (common in AI-generated code)
-        if ((code.includes('.forEach') || code.includes('.map')) && code.includes('innerHTML')) {
-          var varMatches = code.match(/(?:const|let|var)\s+\w+\s*=\s*document\.(?:getElementById|querySelector)\s*\(\s*['"]([^'"]+)['"]\s*\)/g) || [];
-          varMatches.forEach(function(m) {
-            var id = m.match(/['"]([^'"]+)['"]/);
-            if (id) {
-              var sel = id[1];
-              if (!sel.startsWith('#') && !sel.startsWith('.') && !sel.includes(' ')) {
-                sel = '#' + sel;
-              }
-              if (selectorMatches.indexOf(sel) === -1) selectorMatches.push(sel);
-            }
-          });
-        }
-
-        selectorMatches.forEach(function(sel) {
-          if (containersToReset.indexOf(sel) === -1) containersToReset.push(sel);
-        });
-      });
-
-      // Reset containers that have multiple children (indicates JS rendered content)
-      containersToReset.forEach(function(selector) {
-        try {
-          var container = clone.querySelector(selector);
-          if (container && container.children.length > 1) {
-            console.log('[get-html] Resetting JS-rendered container:', selector, 'children:', container.children.length);
-            container.innerHTML = '';
-          }
-        } catch (e) { /* ignore invalid selectors */ }
       });
 
       // Remove ns- classes from elements

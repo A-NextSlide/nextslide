@@ -296,6 +296,31 @@ def _object_is_image_like(obj_text: str) -> bool:
     return type_value in ("img", "image", "photo", "picture")
 
 
+def _iter_all_js_objects(text: str) -> List[Tuple[int, int, str]]:
+    """Find ALL JS objects at all nesting levels, leaf objects first.
+
+    Unlike _iter_js_objects which only returns top-level objects, this
+    recursively descends into each object to find nested ones (e.g., array
+    items inside a DOMContentLoaded callback body).  Objects are returned
+    smallest-first so that callers processing labels get the most specific
+    (innermost) object before its enclosing wrapper.
+    """
+    all_objs: List[Tuple[int, int, str]] = []
+
+    def _collect(txt: str, offset: int = 0, depth: int = 0):
+        if depth > 4 or len(txt) < 5:
+            return
+        for start, end, obj_text in _iter_js_objects(txt):
+            all_objs.append((start + offset, end + offset, obj_text))
+            if len(obj_text) > 20:
+                _collect(obj_text[1:-1], start + offset + 1, depth + 1)
+
+    _collect(text)
+    # Sort smallest first so leaf objects come before their parents
+    all_objs.sort(key=lambda x: x[1] - x[0])
+    return all_objs
+
+
 def _extract_js_object_label(obj_text: str) -> str:
     """Extract a label/alt text from a JS object.
 
@@ -360,10 +385,10 @@ def _extract_template_variable_alt_queries(html: str) -> List[str]:
 
     logger.debug("[IMAGE_EXTRACT] Looking for template alt properties: %s", alt_prop_names)
 
-    # Extract script content
+    # Extract script content — use recursive iteration to find array items
+    # inside wrapping functions (DOMContentLoaded, IIFEs, etc.)
     for script_content in re.findall(r'<script[^>]*>([\s\S]*?)</script>', html, re.IGNORECASE):
-        # Parse all JS objects in the script
-        for _, _, obj_text in _iter_js_objects(script_content):
+        for _, _, obj_text in _iter_all_js_objects(script_content):
             # Look for any of the alt property names in this object
             for prop_name in alt_prop_names:
                 value = _extract_js_object_alt_property(obj_text, prop_name)
@@ -389,7 +414,9 @@ def _extract_js_object_image_queries(html: str) -> List[str]:
     alt_prop_pattern = r'\b\w*(?:thumbAlt|imgAlt|imageAlt|photoAlt|pictureAlt|bgAlt|backgroundAlt)\w*\s*:'
 
     for script_content in re.findall(r'<script[^>]*>([\s\S]*?)</script>', html, re.IGNORECASE):
-        for _, _, obj_text in _iter_js_objects(script_content):
+        # Use recursive iteration to find array items inside wrapping
+        # functions (DOMContentLoaded, IIFEs, etc.) — not just top-level objects
+        for _, _, obj_text in _iter_all_js_objects(script_content):
             if not _object_is_image_like(obj_text):
                 continue
             # Check if object has either image properties or alt-related properties
@@ -675,19 +702,20 @@ async def _batch_enhance_image_queries_with_ai(
         for i, (prop_name, query) in enumerate(queries, 1):
             query_lines.append(f"{i}. prop=\"{prop_name}\" original=\"{query}\"")
 
-        prompt = f"""Generate specific Google Images search queries for these slide image placeholders.
+        prompt = f"""Generate Google Images search queries for these slide image placeholders.
 
-SLIDE CONTEXT: {slide_context[:600] if slide_context else 'Presentation slide'}
+SLIDE CONTEXT: {slide_context[:400] if slide_context else 'Presentation slide'}
 
 IMAGE PLACEHOLDERS TO RESOLVE:
 {chr(10).join(query_lines)}
 
 RULES:
-- Each query should be 2-5 words, specific and searchable
-- Use names, brands, products, or concepts from the SLIDE CONTEXT
-- For "background"/"bg" props: use the topic + "background" (e.g., "Tesla office background")
+- Each query should be 2-6 words, specific and searchable
+- Search for CLEAN PHOTOGRAPHS of real objects, products, people, or places
+- NEVER search for charts, graphs, diagrams, infographics, dashboards, or data visualizations
+- If the presentation is ABOUT a brand/company, search for THEIR actual products, services, offices
+- For "background"/"bg" props: search for a clean photo related to the topic (e.g., "Tesla factory interior")
 - For "hero"/"banner" props: use the main subject (e.g., "Tesla Model S")
-- For generic props like "main", "visual", "content": pick the most relevant visual subject
 - IGNORE the original query if it's generic (like "image", "photo", "bg", "main")
 - DO NOT repeat the same query for different props
 
@@ -766,17 +794,17 @@ async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> s
 
         if is_meaningless:
             # For meaningless queries, generate entirely from context
-            prompt = f"""Generate an image search query based ONLY on the slide context below.
+            prompt = f"""Generate an image search query based on the slide context below.
 The original prop name was "{query}" which is meaningless - IGNORE IT COMPLETELY.
 
-SLIDE CONTEXT: {slide_context[:600] if slide_context else 'Presentation slide'}
+SLIDE CONTEXT: {slide_context[:400] if slide_context else 'Presentation slide'}
 
 YOUR TASK:
-1. Identify the MAIN SUBJECT of this presentation (person, game, product, company, concept, etc.)
-2. Generate a search query that would find a RELEVANT, HIGH-QUALITY image for this slide
-3. Focus on the specific topic, characters, people, or concepts mentioned
+1. Identify the MAIN SUBJECT of this slide (product, person, place, object, etc.)
+2. Search for a CLEAN PHOTOGRAPH — never a chart, graph, diagram, or infographic
+3. If the presentation is about a brand/company, search for their actual products or services
 
-OUTPUT: A 2-5 word image search query that captures the main visual subject.
+OUTPUT: A 2-6 word image search query for a clean photograph.
 Return ONLY the search query, nothing else."""
         else:
             # For meaningful queries, refine without adding extraneous terms
@@ -799,11 +827,11 @@ Return ONLY the simplified search query (3-5 words max)."""
                 prompt = f"""Refine this image search query.
 
 ORIGINAL QUERY: {query}
-SLIDE CONTEXT: {slide_context[:300] if slide_context else 'Presentation slide'}
+SLIDE CONTEXT: {slide_context[:600] if slide_context else 'Presentation slide'}
 
 RULES:
 1. Keep the EXACT subject from the original query
-2. DO NOT add unrelated terms or other image descriptions from context
+2. If the presentation is about a brand/company, tie the query to their products or services
 3. Only add context if it clarifies the SAME subject (e.g., brand name for a product)
 4. Make it a searchable 3-6 word phrase
 

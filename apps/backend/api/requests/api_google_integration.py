@@ -2280,6 +2280,10 @@ Output ONLY a complete HTML document starting with <!DOCTYPE html>. No markdown 
             if response and response.text:
                 html_code = _extract_html_from_vision_response(response.text)
                 if html_code:
+                    # Post-process: ensure original slide images are used
+                    # AI sometimes generates placeholders instead of using provided URLs
+                    if image_urls:
+                        html_code = _inject_original_slide_images(html_code, image_urls)
                     logger.info(f"[GoogleSlidesVisionImport] ✓ Slide {slide_idx + 1}: AI generated HTML ({len(html_code)} chars)")
                     return {
                         "id": str(uuid.uuid4()),
@@ -2376,6 +2380,58 @@ Output ONLY a complete HTML document starting with <!DOCTYPE html>. No markdown 
             }
         }
     }
+
+
+def _inject_original_slide_images(html: str, image_urls: List[Dict[str, Any]]) -> str:
+    """Inject original slide images into AI-generated HTML.
+
+    The AI sometimes generates placeholder src values instead of using the
+    provided storage URLs. This post-processes the HTML to ensure original
+    slide images are used: find <img> tags with placeholder/missing src
+    and replace them with the uploaded image URLs in order.
+    """
+    from services.image.placeholder_detector import is_placeholder_src, is_bucket_url
+
+    # Collect our storage URLs (already uploaded from original slide)
+    available_urls = [img['url'] for img in image_urls if img.get('url')]
+    if not available_urls:
+        return html
+
+    # Find all img tags and check if they have valid src
+    img_pattern = re.compile(r'<img([^>]*)>', re.IGNORECASE)
+    url_idx = 0
+
+    def replace_img(match):
+        nonlocal url_idx
+        attrs = match.group(1)
+
+        # Extract current src
+        src_match = re.search(r'src=["\']([^"\']*)["\']', attrs, re.IGNORECASE)
+        if not src_match:
+            src_match = re.search(r'src=([^\s"\'>]+)', attrs, re.IGNORECASE)
+
+        current_src = src_match.group(1) if src_match else ''
+
+        # If src is already a valid bucket URL, keep it
+        if current_src and is_bucket_url(current_src):
+            return match.group(0)
+
+        # If src is a placeholder or invalid, replace with next available image
+        if url_idx < len(available_urls) and (not current_src or is_placeholder_src(current_src)):
+            new_url = available_urls[url_idx]
+            url_idx += 1
+            if src_match:
+                new_attrs = re.sub(r'src=["\'][^"\']*["\']', f'src="{new_url}"', attrs, count=1, flags=re.IGNORECASE)
+            else:
+                new_attrs = f' src="{new_url}"' + attrs
+            return f'<img{new_attrs}>'
+
+        return match.group(0)
+
+    result = img_pattern.sub(replace_img, html)
+    if url_idx > 0:
+        logger.info(f"[GoogleSlidesVisionImport] Injected {url_idx} original slide images into HTML")
+    return result
 
 
 def _extract_html_from_vision_response(response: str) -> Optional[str]:

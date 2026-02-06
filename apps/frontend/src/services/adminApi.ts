@@ -1507,6 +1507,43 @@ class AdminApi {
     const qs = params.toString();
     return this.request(`/admin/email/sends${qs ? `?${qs}` : ''}`);
   }
+
+  // ==================== Playground ====================
+
+  async getPlaygroundModels(): Promise<PlaygroundModelInfo[]> {
+    const res = await this.request<{ models: PlaygroundModelInfo[] }>('/admin/playground/models');
+    return res.models;
+  }
+
+  async savePlaygroundRun(data: SavePlaygroundRunRequest): Promise<{ id: string; created_at: string }> {
+    return this.request('/admin/playground/runs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async upsertPlaygroundModelResult(
+    runId: string,
+    modelId: string,
+    data: UpsertPlaygroundModelResultRequest
+  ): Promise<{ success: boolean }> {
+    return this.request(`/admin/playground/runs/${runId}/models/${encodeURIComponent(modelId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async listPlaygroundRuns(page = 1, limit = 20): Promise<ListPlaygroundRunsResponse> {
+    return this.request(`/admin/playground/runs?page=${page}&limit=${limit}`);
+  }
+
+  async getPlaygroundRun(runId: string): Promise<PlaygroundRunDetail> {
+    return this.request(`/admin/playground/runs/${runId}`);
+  }
+
+  async deletePlaygroundRun(runId: string): Promise<{ success: boolean }> {
+    return this.request(`/admin/playground/runs/${runId}`, { method: 'DELETE' });
+  }
 }
 
 export interface Brand {
@@ -1787,6 +1824,100 @@ export interface SeoCommunityDeck {
 }
 
 export const adminApi = new AdminApi();
+
+// Playground types
+export interface PlaygroundModelInfo {
+  id: string;
+  name: string;
+  provider: string;
+}
+
+export interface SavePlaygroundRunRequest {
+  prompt: string;
+  temperature: number;
+  slide_mode: string;
+  slide_count: number;
+  outline: Record<string, any>;
+  theme: Record<string, any>;
+  theme_summary?: Record<string, any> | null;
+  model_ids: string[];
+  total_elapsed_seconds?: number | null;
+  label?: string | null;
+  model_results: Array<{
+    model_id: string;
+    model_name: string;
+    status: string;
+    slide_htmls: (string | null)[];
+    elapsed_seconds?: number | null;
+    error?: string | null;
+  }>;
+}
+
+export interface UpsertPlaygroundModelResultRequest {
+  model_name: string;
+  status: string;
+  slide_htmls: (string | null)[];
+  elapsed_seconds?: number | null;
+  error?: string | null;
+}
+
+export interface PlaygroundModelResultSummary {
+  run_id: string;
+  model_id: string;
+  model_name: string;
+  status: string;
+  elapsed_seconds: number | null;
+  error: string | null;
+}
+
+export interface PlaygroundRunSummary {
+  id: string;
+  prompt: string;
+  temperature: number;
+  slide_mode: string;
+  slide_count: number;
+  model_ids: string[];
+  total_elapsed_seconds: number | null;
+  label: string | null;
+  theme_summary: Record<string, any> | null;
+  created_at: string;
+  model_results: PlaygroundModelResultSummary[];
+}
+
+export interface PlaygroundModelResultFull {
+  id: string;
+  run_id: string;
+  model_id: string;
+  model_name: string;
+  status: string;
+  slide_htmls: (string | null)[];
+  elapsed_seconds: number | null;
+  error: string | null;
+}
+
+export interface PlaygroundRunDetail {
+  id: string;
+  user_id: string;
+  prompt: string;
+  temperature: number;
+  slide_mode: string;
+  slide_count: number;
+  outline: Record<string, any>;
+  theme: Record<string, any>;
+  theme_summary: Record<string, any> | null;
+  model_ids: string[];
+  total_elapsed_seconds: number | null;
+  label: string | null;
+  created_at: string;
+  model_results: PlaygroundModelResultFull[];
+}
+
+export interface ListPlaygroundRunsResponse {
+  runs: PlaygroundRunSummary[];
+  total: number;
+  page: number;
+  total_pages: number;
+}
 
 // Email Control Center types
 export interface EmailTemplate {

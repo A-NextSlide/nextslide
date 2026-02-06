@@ -18,6 +18,7 @@ GEMINI_IMAGE = "gemini-2.5-flash-image"
 
 # Claude Models
 CLAUDE_OPUS = "claude-opus-4-5"
+CLAUDE_OPUS_46 = "claude-opus-4-6"
 CLAUDE_SONNET = "claude-sonnet-4-5"
 CLAUDE_HAIKU = "claude-haiku-4-5"
 
@@ -29,8 +30,23 @@ CLAUDE_HAIKU_ID = "claude-haiku-4-5-20251001"
 # OpenAI Models
 GPT_4O_MINI = "gpt-4o-mini"
 GPT_4_1 = "gpt-4.1"
+GPT_5 = "gpt-5"
+GPT_5_MINI = "gpt-5-mini"
+GPT_5_2 = "gpt-5.2"
+GPT_5_2_CODEX = "gpt-5.2-codex"
 OPENAI_IMAGE = "gpt-image-1"
 OPENAI_EMBEDDINGS = "text-embedding-3-small"
+
+# xAI Models
+GROK_4 = "grok-4"
+GROK_4_FAST = "grok-4-fast"
+
+# Mistral Models
+MISTRAL_LARGE_3 = "mistral-large-3"
+
+# DeepSeek Models
+DEEPSEEK_CHAT = "deepseek-chat"
+DEEPSEEK_REASONER = "deepseek-reasoner"
 
 # Perplexity Models
 PERPLEXITY_SONAR = "perplexity-sonar"
@@ -200,6 +216,7 @@ CUSTOM_COMPONENT_FALLBACK_MODEL = (
 CUSTOM_COMPONENT_EDIT_MODEL = GEMINI_3_FLASH
 CUSTOM_COMPONENT_SIMPLE_MODEL = MODEL_EASY
 CUSTOM_COMPONENT_TEMPERATURE = 0.8
+CUSTOM_COMPONENT_NEXTGEN_TEMPERATURE = 0.8
 
 # Editing Quality Control
 EDIT_QUALITY_THRESHOLD = 3.0
@@ -252,6 +269,9 @@ IMAGE_GENERATION_ENABLED = False
 AUTO_APPLY_PENDING_IMAGES = False
 IMAGE_TRANSPARENT_DEFAULT_FULL = False
 IMAGE_TRANSPARENT_DEFAULT_SUPPORTING = True
+
+# AI image generation for custom component images (generate: prefix in alt text)
+CUSTOM_COMPONENT_AI_IMAGE_GEN = os.getenv('CUSTOM_COMPONENT_AI_IMAGE_GEN', 'true').lower() == 'true'
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PERFORMANCE & LIMITS

@@ -604,11 +604,9 @@ class SerpAPIService:
 
             photos.append(processed_photo)
 
-        # Sort: preferred sources first, then non-blocked, then blocked
-        photos.sort(key=lambda p: (
-            not p.get('is_preferred_source', False),  # Preferred first
-            p.get('is_blocked_source', False),  # Non-blocked before blocked
-        ))
+        # Use Google's natural ranking order (most relevant first).
+        # Only push blocked sources to the end since they'll fail to download.
+        photos.sort(key=lambda p: p.get('is_blocked_source', False))
 
         return {
             'photos': photos,

@@ -115,13 +115,18 @@ export function DeckStoreInitializer({
       const deckIndex = pathParts.findIndex(part => part === 'deck');
 
       if (deckIndex !== -1 && deckIndex + 1 < pathParts.length) {
-        return pathParts[deckIndex + 1];
+        const id = pathParts[deckIndex + 1];
+        // Guard against invalid deck IDs (e.g. "undefined", "null", very short strings)
+        if (!id || id === 'undefined' || id === 'null' || id.length < 8) return null;
+        return id;
       }
 
       // Fallback to editor for backwards compatibility
       const editorIndex = pathParts.findIndex(part => part === 'editor');
       if (editorIndex !== -1 && editorIndex + 1 < pathParts.length) {
-        return pathParts[editorIndex + 1];
+        const id = pathParts[editorIndex + 1];
+        if (!id || id === 'undefined' || id === 'null' || id.length < 8) return null;
+        return id;
       }
 
       return null; // Return null instead of undefined

@@ -238,21 +238,20 @@ class SlidePromptBuilder:
                 )
 
         if context.available_videos:
-            sections.append("AVAILABLE VIDEOS:")
+            sections.append("AVAILABLE VIDEOS (MUST USE):")
+            for v in context.available_videos[:3]:
+                title = v.get('title') or 'video'
+                embed = v.get('embed_url')
+                url = v.get('url')
+                if embed:
+                    sections.append(f"- {title}: embed with <iframe src=\"{embed}\" width=\"100%\" height=\"100%\" frameborder=\"0\" allowfullscreen></iframe>")
+                elif url:
+                    sections.append(f"- {title}: embed with <video src=\"{url}\" autoplay muted loop playsinline style=\"width:100%;height:100%;object-fit:cover\"></video>")
             sections.append(
-                "- "
-                + ", ".join(
-                    (
-                        f"{(v.get('title') or 'video')} ({v.get('embed_url') or v.get('url')})"
-                        if (v.get("embed_url") or v.get("url"))
-                        else (v.get("title") or "video")
-                    )
-                    for v in context.available_videos[:5]
-                )
-            )
-            sections.append(
-                "VIDEO USE: A video has been assigned to this slide. Embed the first available video "
-                "(Video component or <video>/<iframe> inside a CustomComponent)."
+                "MANDATORY: You MUST embed the first video above into this slide. "
+                "Use an <iframe> for YouTube/Vimeo embed URLs, or <video> for direct URLs. "
+                "Give the video prominent placement (at least 40% of the slide area). "
+                "Do NOT replace it with an image placeholder."
             )
 
         return "\n".join(sections)
