@@ -114,18 +114,18 @@ const CATEGORY_OPTIONS = [
 
 // Prompt text mapped to each hero display_order — aligned with InteractiveHero PROMPTS
 const HERO_PROMPTS: Record<number, { badge: string; text: string }> = {
-  0: { badge: 'Science', text: 'A tour of our solar system from Mercury to the Kuiper Belt' },
-  1: { badge: 'Startup', text: 'Series B fundraising playbook for a company scaling past $10M ARR' },
-  2: { badge: 'AI / ML', text: 'Machine learning crash course that makes AI feel simple' },
-  3: { badge: 'History', text: 'World War II: a visual timeline of the global conflict' },
-  4: { badge: 'Marketing', text: 'Brand positioning strategy for a crowded market' },
-  5: { badge: 'Sales', text: 'Enterprise sales playbook for closing six-figure deals' },
-  6: { badge: 'Finance', text: 'Cryptocurrency market analysis covering DeFi and Layer 2' },
-  7: { badge: 'Creative', text: 'Photography masterclass on composition and visual storytelling' },
-  8: { badge: 'History', text: 'Ancient Egypt: pyramids, pharaohs, and the Nile civilization' },
-  9: { badge: 'Education', text: 'Music theory crash course from scales to chord progressions' },
-  10: { badge: 'Business', text: 'Digital transformation roadmap from legacy to cloud-native' },
-  11: { badge: 'Health', text: 'The science of nutrition: macros, micros, and metabolic health' },
+  0: { badge: 'Physics', text: 'Inside a black hole — what actually happens past the event horizon' },
+  1: { badge: 'Psych', text: 'Your brain on doom scrolling — the neuroscience of infinite feeds' },
+  2: { badge: 'Startup', text: 'From garage to $40 billion — the Stripe story nobody tells' },
+  3: { badge: 'Pitch', text: 'Nexus AI — the Series B pitch deck that raised $50M' },
+  4: { badge: 'Tech', text: "How Spotify's algorithm knows what you want to hear before you do" },
+  5: { badge: 'Design', text: 'The 7 invisible design tricks Apple uses to make you spend more' },
+  6: { badge: 'Culture', text: 'What your city looks like at 3 AM — the hidden night shift economy' },
+  7: { badge: 'History', text: 'Mount Tambora 1816 — the eruption that deleted summer' },
+  8: { badge: 'Nature', text: '3,000 feet underwater — life that evolved in permanent darkness' },
+  9: { badge: 'Neuro', text: 'The 100-millisecond judgement — how your brain reads a face' },
+  10: { badge: 'Science', text: "Why your phone needs Einstein's relativity to find coffee" },
+  11: { badge: 'Art', text: 'The hidden geometry in every masterpiece from Da Vinci to Beyoncé' },
 };
 
 const RANDOM_PROMPTS = [

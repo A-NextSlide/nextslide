@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Sparkles, Rocket, TrendingUp, Microscope, Coffee, Timer, FlaskConical, BookOpen, Handshake, Globe, Wifi, Megaphone, MousePointer2, X, Maximize2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles, Microscope, Brain, FlaskConical, Eye, Globe, Wifi, MousePointer2, X, Maximize2, Music, Waves, Zap, Paintbrush, Flame, Presentation } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ShowcaseDeck } from '@/services/showcaseService';
 import MiniSlide from '@/components/deck/MiniSlide';
@@ -25,100 +25,100 @@ interface InteractiveHeroProps {
 
 const PROMPTS = [
     {
-        id: 'solar-system',
-        badge: 'Science',
-        icon: Microscope,
-        text: "A tour of our solar system from Mercury to the Kuiper Belt",
+        id: 'black-hole',
+        badge: 'Physics',
+        icon: FlaskConical,
+        text: "Inside a black hole — what actually happens past the event horizon",
         theme: 'light' as const,
         deckIndex: 0
     },
     {
-        id: 'series-b',
-        badge: 'Startup',
-        icon: Rocket,
-        text: "Series B fundraising playbook for a company scaling past $10M ARR",
+        id: 'doom-scrolling',
+        badge: 'Psych',
+        icon: Brain,
+        text: "Your brain on doom scrolling — the neuroscience of infinite feeds",
         theme: 'light' as const,
+        deckIndex: 1
+    },
+    {
+        id: 'stripe-story',
+        badge: 'Startup',
+        icon: Zap,
+        text: "From garage to $40 billion — the Stripe story nobody tells",
+        theme: 'orange' as const,
         deckIndex: 2
     },
     {
-        id: 'machine-learning',
-        badge: 'AI / ML',
-        icon: FlaskConical,
-        text: "Machine learning crash course that makes AI feel simple",
+        id: 'nexus-pitch',
+        badge: 'Pitch',
+        icon: Presentation,
+        text: "Nexus AI — the Series B pitch deck that raised $50M",
+        theme: 'orange' as const,
+        deckIndex: 3
+    },
+    {
+        id: 'spotify-algorithm',
+        badge: 'Tech',
+        icon: Music,
+        text: "How Spotify's algorithm knows what you want to hear before you do",
+        theme: 'light' as const,
+        deckIndex: 4
+    },
+    {
+        id: 'apple-design',
+        badge: 'Design',
+        icon: Eye,
+        text: "The 7 invisible design tricks Apple uses to make you spend more",
+        theme: 'light' as const,
+        deckIndex: 5
+    },
+    {
+        id: 'night-city',
+        badge: 'Culture',
+        icon: Globe,
+        text: "What your city looks like at 3 AM — the hidden night shift economy",
+        theme: 'light' as const,
+        deckIndex: 6
+    },
+    {
+        id: 'tambora',
+        badge: 'History',
+        icon: Flame,
+        text: "Mount Tambora 1816 — the eruption that deleted summer",
         theme: 'light' as const,
         deckIndex: 7
     },
     {
-        id: 'ww2',
-        badge: 'History',
-        icon: BookOpen,
-        text: "World War II: a visual timeline of the global conflict",
+        id: 'deep-ocean',
+        badge: 'Nature',
+        icon: Waves,
+        text: "3,000 feet underwater — life that evolved in permanent darkness",
         theme: 'light' as const,
         deckIndex: 8
     },
     {
-        id: 'brand',
-        badge: 'Marketing',
-        icon: Megaphone,
-        text: "Brand positioning strategy for a crowded market",
+        id: 'face-reading',
+        badge: 'Neuro',
+        icon: Microscope,
+        text: "The 100-millisecond judgement — how your brain reads a face",
         theme: 'light' as const,
         deckIndex: 9
     },
     {
-        id: 'sales',
-        badge: 'Sales',
-        icon: Handshake,
-        text: "Enterprise sales playbook for closing six-figure deals",
-        theme: 'orange' as const,
-        deckIndex: 11
-    },
-    {
-        id: 'crypto',
-        badge: 'Finance',
-        icon: TrendingUp,
-        text: "Cryptocurrency market analysis covering DeFi and Layer 2",
-        theme: 'light' as const,
-        deckIndex: 13
-    },
-    {
-        id: 'photography',
-        badge: 'Creative',
-        icon: Sparkles,
-        text: "Photography masterclass on composition and visual storytelling",
-        theme: 'light' as const,
-        deckIndex: 17
-    },
-    {
-        id: 'egypt',
-        badge: 'History',
-        icon: Globe,
-        text: "Ancient Egypt: pyramids, pharaohs, and the Nile civilization",
-        theme: 'light' as const,
-        deckIndex: 18
-    },
-    {
-        id: 'music',
-        badge: 'Education',
-        icon: Coffee,
-        text: "Music theory crash course from scales to chord progressions",
-        theme: 'light' as const,
-        deckIndex: 19
-    },
-    {
-        id: 'digital-transform',
-        badge: 'Business',
+        id: 'gps-einstein',
+        badge: 'Science',
         icon: Wifi,
-        text: "Digital transformation roadmap from legacy to cloud-native",
+        text: "Why your phone needs Einstein's relativity to find coffee",
         theme: 'light' as const,
-        deckIndex: 21
+        deckIndex: 10
     },
     {
-        id: 'nutrition',
-        badge: 'Health',
-        icon: Timer,
-        text: "The science of nutrition: macros, micros, and metabolic health",
+        id: 'hidden-geometry',
+        badge: 'Art',
+        icon: Paintbrush,
+        text: "The hidden geometry in every masterpiece from Da Vinci to Beyoncé",
         theme: 'light' as const,
-        deckIndex: 29
+        deckIndex: 11
     }
 ];
 
