@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Sparkles, Microscope, Brain, FlaskConical, Eye, Globe, Wifi, MousePointer2, X, Maximize2, Music, Waves, Zap, Paintbrush, Flame, Presentation } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -141,9 +141,13 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
         ? decks[activePrompt.deckIndex % decks.length]
         : null;
 
-    // Reset selected slide when deck changes
+    // Ref for the thumbnail scroll container
+    const thumbnailsRef = useRef<HTMLDivElement>(null);
+
+    // Reset selected slide and scroll thumbnails to top when deck changes
     useEffect(() => {
         setSelectedSlideIndex(0);
+        thumbnailsRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     }, [activeIndex]);
 
     const handleNext = () => {
@@ -324,7 +328,7 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
                             </div>
 
                             {/* Scrollable Thumbnails List */}
-                            <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                            <div ref={thumbnailsRef} className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
                                 {activeDeck?.slides ? (
                                     activeDeck.slides.map((slide, i) => (
                                         <div

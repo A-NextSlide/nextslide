@@ -1786,6 +1786,12 @@ export interface AgentConfirmResponse {
   error?: string;
 }
 
+export interface SeedSlideData {
+  index: number;
+  title: string;
+  html: string | null;
+}
+
 export interface SeedStatusResponse {
   deck_id: string;
   name: string;
@@ -1795,6 +1801,7 @@ export interface SeedStatusResponse {
   slide_count: number;
   error?: string;
   created_at: string;
+  slides?: SeedSlideData[];
 }
 
 export interface SeoFeaturedDeck {

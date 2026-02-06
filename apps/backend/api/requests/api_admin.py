@@ -3953,6 +3953,9 @@ async def _admin_generate_deck(
                     })
                 except Exception:
                     pass
+                # All slides generated — don't wait for a completion event that may never come
+                if slides_generated >= num_slides:
+                    break
             elif utype in ("deck_complete", "composition_complete", "complete"):
                 break
 
@@ -4230,6 +4233,24 @@ async def admin_seed_status(
         status = {"state": "unknown"}
     slides = deck.get("slides") or []
 
+    # Extract per-slide data (title + html) for frontend thumbnails
+    slide_data = []
+    for i, slide in enumerate(slides):
+        title = slide.get("title", f"Slide {i + 1}")
+        html = None
+        components = slide.get("components") or []
+        if not components:
+            content = slide.get("content")
+            if isinstance(content, dict):
+                components = content.get("components") or []
+        for c in components:
+            if isinstance(c, dict) and c.get("type") == "CustomComponent":
+                render = (c.get("props") or {}).get("render")
+                if render:
+                    html = render
+                    break
+        slide_data.append({"index": i, "title": title, "html": html})
+
     return {
         "deck_id": deck.get("uuid", deck_uuid),
         "name": deck.get("name", ""),
@@ -4239,6 +4260,7 @@ async def admin_seed_status(
         "slide_count": len(slides),
         "error": status.get("error"),
         "created_at": deck.get("created_at", ""),
+        "slides": slide_data,
     }
 
 
@@ -4592,8 +4614,8 @@ async def admin_seed_reseed_all(
             "source": "community",
         })
 
-    # Throttled launcher: max 5 concurrent generation tasks
-    _RESEED_CONCURRENCY = 5
+    # Throttled launcher: max concurrent generation tasks (Modal handles parallelism)
+    _RESEED_CONCURRENCY = 50
 
     # Launch the batch runner as a background task
     asyncio.create_task(_run_reseed_batch(

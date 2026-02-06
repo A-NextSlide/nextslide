@@ -59,9 +59,12 @@ import {
   GripVertical,
   X,
   RefreshCw,
+  Maximize2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
-import { adminApi, DeckSummary, SeedStatusResponse, SeoFeaturedDeck, SeoCommunityDeck } from '@/services/adminApi';
+import { adminApi, DeckSummary, SeedStatusResponse, SeedSlideData, SeoFeaturedDeck, SeoCommunityDeck } from '@/services/adminApi';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import DeckPreviewModal from '@/components/admin/DeckPreviewModal';
@@ -226,6 +229,37 @@ const RANDOM_PROMPTS = [
 ];
 
 // ---------------------------------------------------------------------------
+// Image placeholder handler (injected into slide iframes)
+// ---------------------------------------------------------------------------
+const IFRAME_IMAGE_HANDLER = `
+<style>
+img[src="placeholder"], img[src=""], img:not([src]) {
+  background: linear-gradient(135deg, rgba(255,67,1,0.12) 0%, rgba(30,41,59,0.25) 100%);
+  min-height: 80px;
+  border-radius: 8px;
+  display: block;
+}
+</style>
+<script>
+document.addEventListener('error', function(e) {
+  if (e.target.tagName === 'IMG') {
+    e.target.style.background = 'linear-gradient(135deg, rgba(255,67,1,0.12), rgba(30,41,59,0.25))';
+    e.target.style.minHeight = '80px';
+    e.target.style.borderRadius = '8px';
+    e.target.style.display = 'block';
+    e.target.removeAttribute('src');
+  }
+}, true);
+</script>`;
+
+function injectImageHandler(html: string): string {
+  if (!html) return html;
+  if (html.includes('</head>')) return html.replace('</head>', IFRAME_IMAGE_HANDLER + '</head>');
+  if (html.includes('</body>')) return html.replace('</body>', IFRAME_IMAGE_HANDLER + '</body>');
+  return html + IFRAME_IMAGE_HANDLER;
+}
+
+// ---------------------------------------------------------------------------
 // Seed Job Type
 // ---------------------------------------------------------------------------
 interface SeedJob {
@@ -239,6 +273,8 @@ interface SeedJob {
   error?: string;
   pushedTo?: ('featured' | 'community')[];
   shareUrl?: string;
+  slides: SeedSlideData[];
+  createdAt?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +305,8 @@ const AdminDecks: React.FC = () => {
   const [isCleaning, setIsCleaning] = useState(false);
   const [pushCategory, setPushCategory] = useState('business');
   const [batchCount, setBatchCount] = useState('5');
+  const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
+  const [presentingJob, setPresentingJob] = useState<{ job: SeedJob; slideIdx: number } | null>(null);
 
   // SEO state
   const [seederExpanded, setSeederExpanded] = useState(false);
@@ -284,6 +322,10 @@ const AdminDecks: React.FC = () => {
   const [heroPoolCollapsed, setHeroPoolCollapsed] = useState(false);
   const [reseedingUuids, setReseedingUuids] = useState<Set<string>>(new Set());
   const [isReseedingAll, setIsReseedingAll] = useState(false);
+  const [expandedHero, setExpandedHero] = useState<Set<string>>(new Set());
+  const [heroSlides, setHeroSlides] = useState<Map<string, SeedSlideData[]>>(new Map());
+  const [loadingHeroSlides, setLoadingHeroSlides] = useState<Set<string>>(new Set());
+  const [presentingHero, setPresentingHero] = useState<{ uuid: string; title: string; slides: SeedSlideData[]; slideIdx: number } | null>(null);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
   const isFetchingRef = useRef(false);
@@ -370,9 +412,12 @@ const AdminDecks: React.FC = () => {
         message: 'Starting...',
         name: seedPrompt.trim().slice(0, 60),
         pushedTo: [],
+        slides: [],
+        createdAt: new Date().toISOString(),
       };
 
       setSeedJobs(prev => [newJob, ...prev]);
+      setExpandedJobs(prev => new Set(prev).add(result.deck_id));
       setSeedPrompt('');
       startPolling(result.deck_id);
     } catch (e: any) {
@@ -397,6 +442,8 @@ const AdminDecks: React.FC = () => {
                   message: status.message,
                   name: status.name || j.name,
                   error: status.error,
+                  slides: status.slides || j.slides,
+                  createdAt: status.created_at || j.createdAt,
                 }
               : j
           )
@@ -443,6 +490,8 @@ const AdminDecks: React.FC = () => {
         name: j.name,
         error: j.error,
         pushedTo: [],
+        slides: j.slides || [],
+        createdAt: j.created_at,
       }));
       setSeedJobs(prev => {
         const existingIds = new Set(prev.map(j => j.deckId));
@@ -493,9 +542,16 @@ const AdminDecks: React.FC = () => {
         message: 'Queued...',
         name: d.topic.slice(0, 60),
         pushedTo: [],
+        slides: [],
+        createdAt: new Date().toISOString(),
       }));
 
       setSeedJobs(prev => [...newJobs, ...prev]);
+      setExpandedJobs(prev => {
+        const next = new Set(prev);
+        newJobs.forEach(j => next.add(j.deckId));
+        return next;
+      });
       newJobs.forEach(j => startPolling(j.deckId));
       toast({ title: 'Batch started', description: `Generating ${result.count} decks in parallel` });
     } catch (e: any) {
@@ -676,6 +732,37 @@ const AdminDecks: React.FC = () => {
     setDragOverFeatured(null);
   };
 
+  const toggleExpandHero = async (uuid: string) => {
+    setExpandedHero(prev => {
+      const next = new Set(prev);
+      if (next.has(uuid)) next.delete(uuid);
+      else next.add(uuid);
+      return next;
+    });
+    // Lazy-load slides if not already loaded
+    if (!heroSlides.has(uuid) && !loadingHeroSlides.has(uuid)) {
+      setLoadingHeroSlides(prev => new Set(prev).add(uuid));
+      try {
+        const status = await adminApi.seedStatus(uuid);
+        setHeroSlides(prev => new Map(prev).set(uuid, status.slides || []));
+      } catch { /* ignore */ }
+      finally {
+        setLoadingHeroSlides(prev => { const s = new Set(prev); s.delete(uuid); return s; });
+      }
+    }
+  };
+
+  const expandAllHero = () => {
+    setExpandedHero(new Set(featuredDecks.map(d => d.uuid)));
+    // Lazy-load all
+    featuredDecks.forEach(d => {
+      if (!heroSlides.has(d.uuid) && !loadingHeroSlides.has(d.uuid)) {
+        toggleExpandHero(d.uuid);
+      }
+    });
+  };
+  const collapseAllHero = () => setExpandedHero(new Set());
+
   const handleReseed = async (uuid: string, source: 'featured' | 'community') => {
     setReseedingUuids(prev => new Set(prev).add(uuid));
     try {
@@ -690,8 +777,11 @@ const AdminDecks: React.FC = () => {
         message: `Reseeding ${source}...`,
         name: result.title,
         pushedTo: [],
+        slides: [],
+        createdAt: new Date().toISOString(),
       };
       setSeedJobs(prev => [newJob, ...prev]);
+      setExpandedJobs(prev => new Set(prev).add(result.new_deck_id));
       startPolling(result.new_deck_id);
       toast({ title: 'Reseed started', description: `Regenerating "${result.title}"` });
     } catch (e: any) {
@@ -715,6 +805,8 @@ const AdminDecks: React.FC = () => {
         message: `Reseeding ${d.source}...`,
         name: d.title,
         pushedTo: [],
+        slides: [],
+        createdAt: new Date().toISOString(),
       }));
       setSeedJobs(prev => [...newJobs, ...prev]);
       newJobs.forEach(j => startPolling(j.deckId));
@@ -725,6 +817,37 @@ const AdminDecks: React.FC = () => {
       setIsReseedingAll(false);
     }
   };
+
+  // ── Seed job expand / collapse / present ──
+  const toggleExpandJob = async (deckId: string) => {
+    setExpandedJobs(prev => {
+      const next = new Set(prev);
+      if (next.has(deckId)) next.delete(deckId);
+      else next.add(deckId);
+      return next;
+    });
+    // Lazy-load slides for completed jobs that don't have slide data
+    const job = seedJobs.find(j => j.deckId === deckId);
+    if (job && (job.status === 'completed' || job.status === 'failed') && job.slides.length === 0) {
+      try {
+        const status = await adminApi.seedStatus(deckId);
+        setSeedJobs(prev =>
+          prev.map(j =>
+            j.deckId === deckId ? { ...j, slides: status.slides || [] } : j
+          )
+        );
+      } catch { /* ignore */ }
+    }
+  };
+
+  const expandAllJobs = () => setExpandedJobs(new Set(seedJobs.map(j => j.deckId)));
+  const collapseAllJobs = () => setExpandedJobs(new Set());
+
+  const openSeedPresentation = (job: SeedJob, slideIdx: number) => {
+    setPresentingJob({ job, slideIdx });
+  };
+
+  const closeSeedPresentation = () => setPresentingJob(null);
 
   // ── Gallery handlers ──
   const handleDeleteDeck = async () => {
@@ -746,117 +869,217 @@ const AdminDecks: React.FC = () => {
     setPreviewModalOpen(true);
   };
 
-  // ── Seed Job Card ──
-  const SeedJobCard: React.FC<{ job: SeedJob }> = ({ job }) => {
+  // ── Seed Job Row (playground-style collapsible) ──
+  const SeedJobRow: React.FC<{ job: SeedJob }> = ({ job }) => {
     const isComplete = job.status === 'completed';
     const isFailed = job.status === 'failed';
     const isRunning = job.status === 'generating' || job.status === 'queued';
+    const expanded = expandedJobs.has(job.deckId);
+    const slidesReady = job.slides.filter(s => s.html != null).length;
+    const totalSlides = job.slides.length || job.slideCount;
+    const progress = totalSlides > 0 ? slidesReady / totalSlides : (job.progress / 100);
 
     return (
-      <div className={cn(cardClass, 'p-3 space-y-2.5 relative overflow-hidden')}>
-        {/* Progress bar background */}
-        {isRunning && (
-          <div
-            className="absolute inset-x-0 bottom-0 h-1 bg-[#FF4301]/20"
-          >
-            <div
-              className="h-full bg-[#FF4301] transition-all duration-500 ease-out"
-              style={{ width: `${job.progress}%` }}
-            />
+      <div className="bg-white dark:bg-[#111]">
+        {/* Collapsed row */}
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-[#fafafa] dark:hover:bg-[#161616] transition-colors group"
+          onClick={() => toggleExpandJob(job.deckId)}
+        >
+          {/* Status dot */}
+          <span className={cn(
+            'w-1.5 h-1.5 rounded-full flex-shrink-0',
+            isRunning && 'animate-pulse bg-[#FF4301]',
+            isComplete && 'bg-emerald-500',
+            isFailed && 'bg-red-500',
+            !isRunning && !isComplete && !isFailed && 'bg-[#ccc]',
+          )} />
+
+          {/* Name */}
+          <span className="text-[11px] font-medium text-black dark:text-white truncate flex-1 min-w-0">
+            {job.name}
+          </span>
+
+          {/* Progress bar */}
+          <div className="flex-shrink-0 w-[160px] hidden sm:block">
+            {(isRunning || isComplete) ? (
+              <div className="h-1 bg-[#eee] dark:bg-[#333] rounded-full overflow-hidden">
+                <div
+                  className={cn(
+                    'h-full rounded-full transition-all duration-500',
+                    isComplete ? 'bg-emerald-500' : 'bg-[#FF4301]',
+                  )}
+                  style={{ width: `${Math.min(progress * 100, 100)}%` }}
+                />
+              </div>
+            ) : isFailed ? (
+              <div className="h-1 bg-red-200 dark:bg-red-900/40 rounded-full" />
+            ) : null}
           </div>
-        )}
 
-        {/* Header */}
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-xs font-medium leading-snug line-clamp-2 flex-1">{job.name}</p>
-          {isComplete && <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0 mt-0.5" />}
-          {isFailed && <XCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />}
-          {isRunning && <Loader2 className="h-4 w-4 text-[#FF4301] animate-spin flex-shrink-0 mt-0.5" />}
+          {/* Status / count */}
+          <div className="flex items-center gap-1.5 flex-shrink-0 min-w-[70px] justify-end">
+            {isRunning && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] text-[#999] tabular-nums">
+                <Loader2 className="h-2.5 w-2.5 animate-spin text-[#FF4301]" />
+                {slidesReady}/{totalSlides || '?'}
+              </span>
+            )}
+            {isComplete && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="h-2.5 w-2.5" />
+                {job.slideCount}
+              </span>
+            )}
+            {isFailed && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] text-red-500">
+                <XCircle className="h-2.5 w-2.5" />
+                Error
+              </span>
+            )}
+          </div>
+
+          {/* Stage message */}
+          <span className="text-[9px] text-[#999] truncate max-w-[140px] hidden md:inline font-mono">
+            {job.message}
+          </span>
+
+          {/* Actions */}
+          <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+            {isComplete && (
+              <button
+                onClick={(e) => { e.stopPropagation(); window.open(`/deck/${job.deckId}`, '_blank'); }}
+                className="p-1 rounded hover:bg-[#eee] dark:hover:bg-[#333] transition-colors text-[#999] hover:text-[#666] dark:hover:text-[#ccc]"
+                title="Open deck"
+              >
+                <ExternalLink className="h-2.5 w-2.5" />
+              </button>
+            )}
+            {slidesReady > 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); openSeedPresentation(job, 0); }}
+                className="p-1 rounded hover:bg-[#eee] dark:hover:bg-[#333] transition-colors text-[#999] hover:text-[#FF4301]"
+                title="Present"
+              >
+                <Maximize2 className="h-2.5 w-2.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Chevron */}
+          <span className="text-[#ccc] dark:text-[#444] flex-shrink-0">
+            {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          </span>
         </div>
 
-        {/* Status line */}
-        <div className="flex items-center gap-2">
-          {isRunning && (
-            <span className="text-[10px] text-[#888] font-mono">{job.message}</span>
-          )}
-          {isComplete && (
-            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-              {job.slideCount} slides ready
-            </span>
-          )}
-          {isFailed && (
-            <span className="text-[10px] text-red-500 font-mono truncate">{job.error || 'Generation failed'}</span>
-          )}
-        </div>
+        {/* Expanded: slide strip + actions */}
+        {expanded && (
+          <div className="px-3 pb-2.5 pt-0.5 space-y-2">
+            {/* Error */}
+            {isFailed && job.error && (
+              <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800/40 rounded p-1.5">
+                <p className="text-[9px] text-red-500 break-words line-clamp-2">{job.error}</p>
+              </div>
+            )}
 
-        {/* Actions for completed jobs */}
-        {isComplete && (
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 text-[10px] px-2 gap-1"
-              asChild
-            >
-              <Link to={`/deck/${job.deckId}`} target="_blank">
-                <ExternalLink className="h-3 w-3" />
-                Open
-              </Link>
-            </Button>
+            {/* Slide strip */}
+            {(job.slides.length > 0 || isRunning) ? (
+              <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                {job.slides.map((slide, idx) => (
+                  <SeedSlideThumbnail
+                    key={`${job.deckId}-${idx}`}
+                    html={slide.html}
+                    title={slide.title}
+                    index={idx}
+                    onClick={() => slide.html && openSeedPresentation(job, idx)}
+                  />
+                ))}
+                {/* Pending slot placeholders */}
+                {isRunning && job.slides.length === 0 && totalSlides > 0 && (
+                  Array.from({ length: totalSlides }, (_, i) => (
+                    <SeedSlideThumbnail
+                      key={`pending-${i}`}
+                      html={null}
+                      title={null}
+                      index={i}
+                      onClick={() => {}}
+                    />
+                  ))
+                )}
+              </div>
+            ) : isRunning ? (
+              <div className="flex items-center justify-center py-3">
+                <Loader2 className="h-3 w-3 animate-spin text-[#FF4301]" />
+              </div>
+            ) : null}
 
-            {/* Push to Featured */}
-            <Button
-              size="sm"
-              variant={job.pushedTo?.includes('featured') ? 'secondary' : 'outline'}
-              className="h-6 text-[10px] px-2 gap-1"
-              disabled={job.pushedTo?.includes('featured')}
-              onClick={() => handlePushFeatured(job)}
-            >
-              <Star className="h-3 w-3" />
-              {job.pushedTo?.includes('featured') ? 'Featured' : 'Feature'}
-            </Button>
-
-            {/* Push to Community */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            {/* Actions for completed jobs */}
+            {isComplete && (
+              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                 <Button
                   size="sm"
-                  variant={job.pushedTo?.includes('community') ? 'secondary' : 'outline'}
+                  variant="outline"
                   className="h-6 text-[10px] px-2 gap-1"
-                  disabled={job.pushedTo?.includes('community')}
+                  asChild
                 >
-                  <Users className="h-3 w-3" />
-                  {job.pushedTo?.includes('community') ? 'Published' : 'Community'}
+                  <Link to={`/deck/${job.deckId}`} target="_blank">
+                    <ExternalLink className="h-3 w-3" />
+                    Open
+                  </Link>
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="min-w-[180px]">
-                {CATEGORY_OPTIONS.map(cat => (
-                  <DropdownMenuItem
-                    key={cat.value}
-                    onClick={() => handlePushCommunity(job, cat.value)}
-                    className="text-xs flex flex-col items-start gap-0"
-                  >
-                    <span>{cat.label}</span>
-                    {'seo' in cat && cat.seo && (
-                      <span className="text-[9px] text-[#999] font-mono">{cat.seo}</span>
-                    )}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
 
-            {/* Share link */}
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 text-[10px] px-1.5"
-              onClick={() => handleCreateShare(job)}
-            >
-              <LinkIcon className="h-3 w-3" />
-            </Button>
+                <Button
+                  size="sm"
+                  variant={job.pushedTo?.includes('featured') ? 'secondary' : 'outline'}
+                  className="h-6 text-[10px] px-2 gap-1"
+                  disabled={job.pushedTo?.includes('featured')}
+                  onClick={() => handlePushFeatured(job)}
+                >
+                  <Star className="h-3 w-3" />
+                  {job.pushedTo?.includes('featured') ? 'Featured' : 'Feature'}
+                </Button>
 
-            {job.shareUrl && (
-              <span className="text-[9px] text-[#999] font-mono truncate max-w-[100px]">{job.shareUrl}</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={job.pushedTo?.includes('community') ? 'secondary' : 'outline'}
+                      className="h-6 text-[10px] px-2 gap-1"
+                      disabled={job.pushedTo?.includes('community')}
+                    >
+                      <Users className="h-3 w-3" />
+                      {job.pushedTo?.includes('community') ? 'Published' : 'Community'}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="min-w-[180px]">
+                    {CATEGORY_OPTIONS.map(cat => (
+                      <DropdownMenuItem
+                        key={cat.value}
+                        onClick={() => handlePushCommunity(job, cat.value)}
+                        className="text-xs flex flex-col items-start gap-0"
+                      >
+                        <span>{cat.label}</span>
+                        {'seo' in cat && cat.seo && (
+                          <span className="text-[9px] text-[#999] font-mono">{cat.seo}</span>
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 text-[10px] px-1.5"
+                  onClick={() => handleCreateShare(job)}
+                >
+                  <LinkIcon className="h-3 w-3" />
+                </Button>
+
+                {job.shareUrl && (
+                  <span className="text-[9px] text-[#999] font-mono truncate max-w-[100px]">{job.shareUrl}</span>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -1033,10 +1256,10 @@ const AdminDecks: React.FC = () => {
         </div>
 
         {/* ── SEEDER SECTION ── */}
-        <section className={cn(cardClass, 'overflow-visible')}>
+        <section>
           <button
             onClick={() => setSeederExpanded(prev => !prev)}
-            className="w-full flex items-center justify-between p-4 hover:bg-[#fafafa] dark:hover:bg-[#161616] transition-colors rounded-xl"
+            className="w-full flex items-center justify-between py-1.5 hover:opacity-80 transition-opacity"
           >
             <div className="flex items-center gap-2">
               <Wand2 className="h-3.5 w-3.5 text-[#FF4301]" />
@@ -1045,11 +1268,11 @@ const AdminDecks: React.FC = () => {
                 <span className="text-[10px] font-mono text-[#999]">{seedJobs.filter(j => j.status === 'generating' || j.status === 'queued').length} active</span>
               )}
             </div>
-            {seederExpanded ? <ChevronUp className="h-4 w-4 text-[#999]" /> : <ChevronDown className="h-4 w-4 text-[#999]" />}
+            {seederExpanded ? <ChevronUp className="h-3.5 w-3.5 text-[#999]" /> : <ChevronDown className="h-3.5 w-3.5 text-[#999]" />}
           </button>
 
           {seederExpanded && (
-            <div className="p-4 pt-0 space-y-3">
+            <div className="space-y-3 pt-2">
               {/* Input row */}
               <div className="flex gap-2 items-end">
                 <div className="flex-1 space-y-1">
@@ -1144,24 +1367,42 @@ const AdminDecks: React.FC = () => {
 
               {/* Active seed jobs */}
               {seedJobs.length > 0 && (
-                <div className="space-y-2 pt-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Seed Jobs</h3>
-                    <span className="text-[10px] font-mono text-[#999]">{seedJobs.length}</span>
-                    <button
-                      onClick={() => {
-                        Object.values(pollIntervalsRef.current).forEach(clearInterval);
-                        pollIntervalsRef.current = {};
-                        setSeedJobs([]);
-                      }}
-                      className="text-[10px] text-[#bbb] hover:text-[#FF4301] transition-colors ml-auto"
-                    >
-                      Clear all
-                    </button>
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Seed Jobs</h3>
+                      <span className="text-[10px] font-mono text-[#999]">{seedJobs.length}</span>
+                      {seedJobs.some(j => j.status === 'generating' || j.status === 'queued') && (
+                        <span className="text-[10px] text-[#FF4301] tabular-nums">
+                          {seedJobs.filter(j => j.status === 'generating' || j.status === 'queued').length} active
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={expandAllJobs} className="text-[9px] text-[#999] hover:text-[#666] dark:hover:text-[#ccc] transition-colors">
+                        Expand all
+                      </button>
+                      <span className="text-[#ddd] dark:text-[#444]">·</span>
+                      <button onClick={collapseAllJobs} className="text-[9px] text-[#999] hover:text-[#666] dark:hover:text-[#ccc] transition-colors">
+                        Collapse
+                      </button>
+                      <span className="text-[#ddd] dark:text-[#444]">·</span>
+                      <button
+                        onClick={() => {
+                          Object.values(pollIntervalsRef.current).forEach(clearInterval);
+                          pollIntervalsRef.current = {};
+                          setSeedJobs([]);
+                          setExpandedJobs(new Set());
+                        }}
+                        className="text-[9px] text-[#999] hover:text-[#FF4301] transition-colors"
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
-                  <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  <div className="border border-[#eaeaea] dark:border-[#333] rounded-lg overflow-hidden divide-y divide-[#eaeaea] dark:divide-[#333]">
                     {seedJobs.map(job => (
-                      <SeedJobCard key={job.deckId} job={job} />
+                      <SeedJobRow key={job.deckId} job={job} />
                     ))}
                   </div>
                 </div>
@@ -1171,10 +1412,10 @@ const AdminDecks: React.FC = () => {
         </section>
 
         {/* ── SEO LANDING PAGES SECTION ── */}
-        <section className={cn(cardClass, 'overflow-visible')}>
+        <section>
           <button
             onClick={handleToggleSeo}
-            className="w-full flex items-center justify-between p-4 hover:bg-[#fafafa] dark:hover:bg-[#161616] transition-colors rounded-xl"
+            className="w-full flex items-center justify-between py-1.5 hover:opacity-80 transition-opacity"
           >
             <div className="flex items-center gap-2">
               <Globe className="h-3.5 w-3.5 text-[#FF4301]" />
@@ -1183,11 +1424,11 @@ const AdminDecks: React.FC = () => {
                 <span className="text-[10px] font-mono text-[#999]">{featuredDecks.length} featured · {Object.values(categoryCounts).reduce((a, b) => a + b, 0)} community</span>
               )}
             </div>
-            {seoExpanded ? <ChevronUp className="h-4 w-4 text-[#999]" /> : <ChevronDown className="h-4 w-4 text-[#999]" />}
+            {seoExpanded ? <ChevronUp className="h-3.5 w-3.5 text-[#999]" /> : <ChevronDown className="h-3.5 w-3.5 text-[#999]" />}
           </button>
 
           {seoExpanded && (
-            <div className="px-4 pb-4 space-y-5">
+            <div className="space-y-5 pt-2">
               {seoLoading ? (
                 <div className="flex items-center gap-2 py-4 justify-center text-[#999]">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1223,7 +1464,7 @@ const AdminDecks: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* ── Featured Decks (Hero Pool) — collapsible, draggable cards ── */}
+                  {/* ── Featured Decks (Hero Pool) — collapsible list ── */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <button
@@ -1235,18 +1476,31 @@ const AdminDecks: React.FC = () => {
                         <span className="text-[10px] font-mono text-[#999]">{featuredDecks.length} decks</span>
                         {heroPoolCollapsed ? <ChevronDown className="h-3 w-3 text-[#999]" /> : <ChevronUp className="h-3 w-3 text-[#999]" />}
                       </button>
-                      {featuredDecks.length > 0 && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-6 text-[9px] px-2 gap-1 border-[#FF4301]/30 text-[#FF4301] hover:bg-[#FF4301]/5"
-                          disabled={isReseedingAll}
-                          onClick={handleReseedAll}
-                        >
-                          {isReseedingAll ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <RefreshCw className="h-2.5 w-2.5" />}
-                          Reseed All
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {!heroPoolCollapsed && featuredDecks.length > 0 && (
+                          <div className="flex items-center gap-1 mr-2">
+                            <button onClick={expandAllHero} className="text-[9px] text-[#999] hover:text-[#666] dark:hover:text-[#ccc] transition-colors">
+                              Expand all
+                            </button>
+                            <span className="text-[#ddd] dark:text-[#444]">·</span>
+                            <button onClick={collapseAllHero} className="text-[9px] text-[#999] hover:text-[#666] dark:hover:text-[#ccc] transition-colors">
+                              Collapse
+                            </button>
+                          </div>
+                        )}
+                        {featuredDecks.length > 0 && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-[9px] px-2 gap-1 border-[#FF4301]/30 text-[#FF4301] hover:bg-[#FF4301]/5"
+                            disabled={isReseedingAll}
+                            onClick={handleReseedAll}
+                          >
+                            {isReseedingAll ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <RefreshCw className="h-2.5 w-2.5" />}
+                            Reseed All
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     {!heroPoolCollapsed && (
                       <>
@@ -1257,101 +1511,130 @@ const AdminDecks: React.FC = () => {
                             <p className="text-[10px] text-[#bbb] mt-0.5">Generate decks above and push to featured</p>
                           </div>
                         ) : (
-                          <>
-                            <p className="text-[10px] text-[#999] mb-2 mt-1">
-                              Drag to reorder. Each slot maps to a prompt in the InteractiveHero carousel.
-                            </p>
-                            <div className="space-y-1.5">
-                              {featuredDecks.map((d, idx) => {
-                                const prompt = HERO_PROMPTS[d.display_order] || HERO_PROMPTS[idx];
-                                const isReseeding = reseedingUuids.has(d.uuid);
+                          <div className="border border-[#eaeaea] dark:border-[#333] rounded-lg overflow-hidden divide-y divide-[#eaeaea] dark:divide-[#333]">
+                            {featuredDecks.map((d, idx) => {
+                              const prompt = HERO_PROMPTS[d.display_order] || HERO_PROMPTS[idx];
+                              const isReseeding = reseedingUuids.has(d.uuid);
+                              const isExpanded = expandedHero.has(d.uuid);
+                              const slides = heroSlides.get(d.uuid) || [];
+                              const isLoadingSlides = loadingHeroSlides.has(d.uuid);
 
-                                return (
+                              return (
+                                <div
+                                  key={d.uuid}
+                                  className="bg-white dark:bg-[#111]"
+                                  draggable
+                                  onDragStart={() => handleDragStartFeatured(d.uuid)}
+                                  onDragOver={(e) => handleDragOverFeatured(e, d.uuid)}
+                                  onDrop={() => handleDropFeatured(d.uuid)}
+                                  onDragEnd={handleDragEndFeatured}
+                                >
+                                  {/* Collapsed row */}
                                   <div
-                                    key={d.uuid}
-                                    draggable
-                                    onDragStart={() => handleDragStartFeatured(d.uuid)}
-                                    onDragOver={(e) => handleDragOverFeatured(e, d.uuid)}
-                                    onDrop={() => handleDropFeatured(d.uuid)}
-                                    onDragEnd={handleDragEndFeatured}
                                     className={cn(
-                                      'flex items-center gap-3 p-2 rounded-xl border transition-all cursor-grab active:cursor-grabbing',
-                                      draggedFeatured === d.uuid
-                                        ? 'opacity-40 border-[#FF4301]/40'
-                                        : dragOverFeatured === d.uuid
-                                          ? 'border-[#FF4301] bg-[#FF4301]/5 shadow-sm'
-                                          : 'border-[#eaeaea] dark:border-[#333] hover:border-[#ccc] dark:hover:border-[#555]',
+                                      'flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-[#fafafa] dark:hover:bg-[#161616] transition-colors group',
+                                      draggedFeatured === d.uuid && 'opacity-40',
+                                      dragOverFeatured === d.uuid && 'bg-[#FF4301]/5',
                                     )}
+                                    onClick={() => toggleExpandHero(d.uuid)}
                                   >
-                                    {/* Drag handle + position */}
-                                    <div className="flex flex-col items-center gap-0.5 flex-shrink-0 w-6">
-                                      <GripVertical className="h-3.5 w-3.5 text-[#bbb]" />
-                                      <span className="text-[9px] font-mono font-bold text-[#FF4301]">{d.display_order}</span>
-                                    </div>
+                                    {/* Drag handle */}
+                                    <GripVertical className="h-3 w-3 text-[#ccc] dark:text-[#555] flex-shrink-0 cursor-grab active:cursor-grabbing" />
 
-                                    {/* Slide thumbnail (PNG) */}
-                                    <div className="w-20 aspect-video rounded-lg overflow-hidden flex-shrink-0 ring-1 ring-black/[0.06] dark:ring-white/[0.08] bg-zinc-800 relative">
-                                      <img
-                                        src={thumbnailUrl(d.uuid)}
-                                        alt=""
-                                        className="absolute inset-0 w-full h-full object-cover"
-                                        draggable={false}
-                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                      />
-                                    </div>
+                                    {/* Slot badge */}
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold text-[#FF4301] bg-[#FF4301]/10 flex-shrink-0 tabular-nums">
+                                      #{d.display_order}
+                                    </span>
 
-                                    {/* Info */}
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-[11px] font-semibold truncate leading-tight">{d.name}</p>
-                                      {prompt && (
-                                        <div className="flex items-center gap-1.5 mt-0.5">
-                                          <span className="inline-flex items-center px-1.5 py-0 rounded text-[8px] font-bold uppercase tracking-wide bg-[#FF4301]/10 text-[#FF4301]">
-                                            {prompt.badge}
-                                          </span>
-                                          <p className="text-[10px] text-[#888] truncate italic">"{prompt.text}"</p>
-                                        </div>
-                                      )}
-                                      {d.slide_count > 0 && (
-                                        <span className="text-[9px] text-[#aaa] mt-0.5 block">{d.slide_count} slides</span>
-                                      )}
-                                    </div>
+                                    {/* Name */}
+                                    <span className="text-[11px] font-medium text-black dark:text-white truncate flex-1 min-w-0">
+                                      {d.name}
+                                    </span>
 
-                                    {/* Actions */}
-                                    <div className="flex items-center gap-1 flex-shrink-0">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0 text-[#999] hover:text-[#FF4301]"
+                                    {/* Prompt badge */}
+                                    {prompt && (
+                                      <span className="hidden lg:inline text-[9px] text-[#999] truncate max-w-[200px]">
+                                        {prompt.badge}
+                                      </span>
+                                    )}
+
+                                    {/* Slide count */}
+                                    <span className="text-[10px] text-[#999] tabular-nums flex-shrink-0">
+                                      {d.slide_count} slides
+                                    </span>
+
+                                    {/* Actions on hover */}
+                                    <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleReseed(d.uuid, 'featured'); }}
                                         disabled={isReseeding}
-                                        onClick={() => handleReseed(d.uuid, 'featured')}
-                                        title="Reseed this deck"
+                                        className="p-1 rounded hover:bg-[#eee] dark:hover:bg-[#333] transition-colors text-[#999] hover:text-[#FF4301]"
+                                        title="Reseed"
                                       >
-                                        {isReseeding ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0 text-[#999] hover:text-foreground"
-                                        asChild
+                                        {isReseeding ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <RefreshCw className="h-2.5 w-2.5" />}
+                                      </button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); window.open(`/deck/${d.uuid}`, '_blank'); }}
+                                        className="p-1 rounded hover:bg-[#eee] dark:hover:bg-[#333] transition-colors text-[#999] hover:text-[#666] dark:hover:text-[#ccc]"
+                                        title="Open"
                                       >
-                                        <Link to={`/deck/${d.uuid}`} target="_blank" onClick={(e) => e.stopPropagation()}>
-                                          <ExternalLink className="h-3 w-3" />
-                                        </Link>
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0 text-[#999] hover:text-red-500"
-                                        onClick={() => handleRemoveFeatured(d.uuid)}
+                                        <ExternalLink className="h-2.5 w-2.5" />
+                                      </button>
+                                      {slides.length > 0 && (
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); setPresentingHero({ uuid: d.uuid, title: d.name, slides, slideIdx: 0 }); }}
+                                          className="p-1 rounded hover:bg-[#eee] dark:hover:bg-[#333] transition-colors text-[#999] hover:text-[#FF4301]"
+                                          title="Present"
+                                        >
+                                          <Maximize2 className="h-2.5 w-2.5" />
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleRemoveFeatured(d.uuid); }}
+                                        className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors text-[#ccc] dark:text-[#555] hover:text-red-500"
+                                        title="Remove"
                                       >
-                                        <X className="h-3 w-3" />
-                                      </Button>
+                                        <X className="h-2.5 w-2.5" />
+                                      </button>
                                     </div>
+
+                                    {/* Chevron */}
+                                    <span className="text-[#ccc] dark:text-[#444] flex-shrink-0">
+                                      {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                    </span>
                                   </div>
-                                );
-                              })}
-                            </div>
-                          </>
+
+                                  {/* Expanded: slide thumbnails */}
+                                  {isExpanded && (
+                                    <div className="px-3 pb-2.5 pt-0.5">
+                                      {prompt && (
+                                        <p className="text-[9px] text-[#888] italic mb-1.5 truncate">"{prompt.text}"</p>
+                                      )}
+                                      {isLoadingSlides ? (
+                                        <div className="flex items-center justify-center py-3">
+                                          <Loader2 className="h-3 w-3 animate-spin text-[#FF4301]" />
+                                        </div>
+                                      ) : slides.length > 0 ? (
+                                        <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                                          {slides.map((slide, sIdx) => (
+                                            <SeedSlideThumbnail
+                                              key={`${d.uuid}-${sIdx}`}
+                                              html={slide.html}
+                                              title={slide.title}
+                                              index={sIdx}
+                                              onClick={() => slide.html && setPresentingHero({ uuid: d.uuid, title: d.name, slides, slideIdx: sIdx })}
+                                            />
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="text-[9px] text-[#bbb] py-2 text-center">No slide data available</p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         )}
                       </>
                     )}
@@ -1565,7 +1848,221 @@ const AdminDecks: React.FC = () => {
           onNavigate={setPreviewDeckIndex}
         />
       </div>
+
+      {/* Seed Presentation Overlay */}
+      {presentingJob && (
+        <SeedPresentationOverlay
+          slides={presentingJob.job.slides}
+          title={presentingJob.job.name}
+          currentIndex={presentingJob.slideIdx}
+          onChangeIndex={(idx) => setPresentingJob(prev => prev ? { ...prev, slideIdx: idx } : null)}
+          onClose={closeSeedPresentation}
+        />
+      )}
+      {presentingHero && (
+        <SeedPresentationOverlay
+          slides={presentingHero.slides}
+          title={presentingHero.title}
+          currentIndex={presentingHero.slideIdx}
+          onChangeIndex={(idx) => setPresentingHero(prev => prev ? { ...prev, slideIdx: idx } : null)}
+          onClose={() => setPresentingHero(null)}
+        />
+      )}
     </AdminLayoutV2>
+  );
+};
+
+// ── Seed Slide Thumbnail ──────────────────────────────────────────────────────
+const SeedSlideThumbnail: React.FC<{
+  html: string | null;
+  title: string | null;
+  index: number;
+  onClick: () => void;
+}> = React.memo(({ html, title, index, onClick }) => {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !html) return;
+    const doc = iframe.contentDocument;
+    if (!doc) return;
+    doc.open();
+    doc.write(injectImageHandler(html));
+    doc.close();
+  }, [html]);
+
+  return (
+    <button onClick={onClick} className="flex-shrink-0 group" disabled={!html}>
+      <div className={cn(
+        'w-[200px] h-[112px] rounded overflow-hidden border border-[#eaeaea] dark:border-[#333] transition-all relative bg-[#0f172a]',
+        html && 'cursor-pointer group-hover:border-[#FF4301]/50',
+      )}>
+        {html ? (
+          <iframe
+            ref={iframeRef}
+            className="pointer-events-none border-0 absolute top-0 left-0"
+            style={{ width: 1920, height: 1080, transform: 'scale(0.1042)', transformOrigin: 'top left' }}
+            tabIndex={-1}
+            sandbox="allow-same-origin allow-scripts"
+            title={`Slide ${index + 1}`}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="w-3 h-3 rounded-full border border-[#334155] border-t-[#FF4301] animate-spin" />
+          </div>
+        )}
+      </div>
+      {title && (
+        <p className="text-[8px] text-[#999] truncate w-[200px] mt-0.5 text-left">
+          {index + 1}. {title}
+        </p>
+      )}
+    </button>
+  );
+});
+
+// ── Seed Full Slide (for presentation overlay) ────────────────────────────────
+const SeedFullSlide: React.FC<{ html: string | null; index: number }> = ({ html, index }) => {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect();
+      setScale(Math.min(width / 1920, height / 1080));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !html) return;
+    const doc = iframe.contentDocument;
+    if (!doc) return;
+    doc.open();
+    doc.write(injectImageHandler(html));
+    doc.close();
+  }, [html]);
+
+  if (!html) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-[#0f172a]">
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-5 w-5 text-[#FF4301] animate-spin" />
+          <span className="text-white/30 text-xs">Slide {index + 1} not ready</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={containerRef} className="w-full h-full overflow-hidden">
+      <iframe
+        ref={iframeRef}
+        className="border-0"
+        style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: 'top left' }}
+        tabIndex={-1}
+        sandbox="allow-same-origin allow-scripts"
+        title={`Slide ${index + 1}`}
+      />
+    </div>
+  );
+};
+
+// ── Seed Presentation Overlay ─────────────────────────────────────────────────
+const SeedPresentationOverlay: React.FC<{
+  slides: SeedSlideData[];
+  title: string;
+  currentIndex: number;
+  onChangeIndex: (idx: number) => void;
+  onClose: () => void;
+}> = ({ slides, title, currentIndex, onChangeIndex, onClose }) => {
+  const total = slides.length;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight' || e.key === ' ') onChangeIndex(Math.min(currentIndex + 1, total - 1));
+      if (e.key === 'ArrowLeft') onChangeIndex(Math.max(currentIndex - 1, 0));
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [currentIndex, total, onClose, onChangeIndex]);
+
+  if (!total) return null;
+
+  const currentSlide = slides[currentIndex];
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 py-1.5 bg-black/90 border-b border-white/10 z-10">
+        <div className="flex items-center gap-2">
+          <span className="text-white/60 text-[11px] font-medium truncate max-w-[300px]">{title}</span>
+          {currentSlide?.title && (
+            <>
+              <span className="text-white/20 text-[10px]">|</span>
+              <span className="text-white/30 text-[10px] truncate max-w-[300px]">{currentSlide.title}</span>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-white/40 text-[10px] tabular-nums">{currentIndex + 1}/{total}</span>
+          <button onClick={onClose} className="p-0.5 rounded hover:bg-white/10 transition-colors text-white/50 hover:text-white">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Slide */}
+      <div className="flex-1 flex items-center justify-center p-2 bg-black min-h-0">
+        <div className="relative w-full h-full max-w-[1280px]" style={{ aspectRatio: '16/9', maxHeight: 'calc(100vh - 80px)' }}>
+          <div className="absolute inset-0 rounded-lg overflow-hidden shadow-2xl shadow-black/60">
+            <SeedFullSlide html={currentSlide?.html || null} index={currentIndex} />
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom nav */}
+      <div className="flex items-center justify-between px-4 py-1.5 bg-black/90 border-t border-white/10">
+        <button
+          onClick={() => onChangeIndex(Math.max(0, currentIndex - 1))}
+          disabled={currentIndex === 0}
+          className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-20"
+        >
+          <ChevronLeft className="h-3 w-3" />
+          Prev
+        </button>
+
+        <div className="flex items-center gap-0.5 max-w-[400px] overflow-x-auto">
+          {slides.map((_, idx) => (
+            <button
+              key={idx}
+              onClick={() => onChangeIndex(idx)}
+              className={cn(
+                'rounded-full transition-all flex-shrink-0',
+                idx === currentIndex ? 'w-4 h-1 bg-[#FF4301]' : 'w-1 h-1 bg-white/15 hover:bg-white/30',
+              )}
+            />
+          ))}
+        </div>
+
+        <button
+          onClick={() => onChangeIndex(Math.min(total - 1, currentIndex + 1))}
+          disabled={currentIndex === total - 1}
+          className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] text-white/50 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-20"
+        >
+          Next
+          <ChevronRight className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
   );
 };
 
