@@ -176,9 +176,10 @@ async def process_custom_component_images(
                     if final_url:
                         old_img = match.group(0)
                         if "src=" in attrs:
+                            _url = final_url  # capture for lambda
                             new_attrs = re.sub(
                                 r'src=["\'][^"\']*["\']',
-                                f'src=\"{final_url}\"',
+                                lambda m: f'src="{_url}"',
                                 attrs,
                                 flags=re.IGNORECASE,
                             )

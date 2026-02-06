@@ -65,6 +65,7 @@ async def compose_deck_remote(
     prefetch_images: bool,
     enable_visual_analysis: Optional[bool],
     user_id: Optional[str],
+    temperature: Optional[float] = None,
 ):
     """Run compose_deck_stream inside a Modal container."""
     from models.requests import DeckOutline
@@ -84,6 +85,7 @@ async def compose_deck_remote(
         prefetch_images=prefetch_images,
         enable_visual_analysis=enable_visual_analysis,
         user_id=user_id,
+        temperature=temperature,
     ):
         yield event
 

@@ -3678,6 +3678,7 @@ async def _admin_generate_deck(
     num_slides: int,
     style: Optional[str],
     reseed_info: Optional[Dict[str, Any]] = None,
+    temperature: Optional[float] = None,
 ):
     """Background task: full outline -> compose pipeline for admin seed decks.
 
@@ -3797,6 +3798,7 @@ async def _admin_generate_deck(
             delay_between_slides=DELAY_BETWEEN_SLIDES,
             async_images=False,
             user_id=user_id,
+            temperature=temperature,
         ):
             utype = update.get("type", "")
             if utype == "slide_generated":
@@ -3964,7 +3966,8 @@ async def admin_seed_generate(
         "slide_count": 0,
     }).execute()
 
-    asyncio.create_task(_admin_generate_deck(deck_uuid, user_id, body.topic, body.slides, body.style))
+    from agents.config import SEED_TEMPERATURE
+    asyncio.create_task(_admin_generate_deck(deck_uuid, user_id, body.topic, body.slides, body.style, temperature=SEED_TEMPERATURE))
 
     return {"deck_id": deck_uuid, "status": "generating", "message": "Deck generation started"}
 
@@ -3977,6 +3980,7 @@ async def admin_seed_batch_generate(
     """Start generating multiple seed decks in parallel. Returns list of deck_ids for polling."""
     import asyncio
     import uuid as uuid_module
+    from agents.config import SEED_TEMPERATURE
 
     user_id = admin["id"]
     supabase = get_supabase_client()
@@ -3996,7 +4000,7 @@ async def admin_seed_batch_generate(
             "slide_count": 0,
         }).execute()
 
-        asyncio.create_task(_admin_generate_deck(deck_uuid, user_id, prompt, body.slides, body.style))
+        asyncio.create_task(_admin_generate_deck(deck_uuid, user_id, prompt, body.slides, body.style, temperature=SEED_TEMPERATURE))
 
         results.append({
             "deck_id": deck_uuid,
@@ -4319,9 +4323,11 @@ async def admin_seed_reseed(
         "slide_count": 0,
     }).execute()
 
+    from agents.config import SEED_TEMPERATURE
     asyncio.create_task(_admin_generate_deck(
         new_uuid, user_id, title, body.slides or 10, body.style,
         reseed_info=reseed_info,
+        temperature=SEED_TEMPERATURE,
     ))
 
     return {"new_deck_id": new_uuid, "old_deck_uuid": body.deck_uuid, "title": title, "status": "generating"}
@@ -4460,10 +4466,12 @@ async def _run_reseed_batch(work_items, user_id, num_slides, style, concurrency)
                     return
 
             try:
+                from agents.config import SEED_TEMPERATURE
                 await _admin_generate_deck(
                     deck_uuid, user_id, item["title"],
                     num_slides, style,
                     reseed_info=item["reseed_info"],
+                    temperature=SEED_TEMPERATURE,
                 )
                 completed += 1
             except Exception as gen_err:

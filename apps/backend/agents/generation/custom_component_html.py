@@ -490,11 +490,11 @@ class CustomComponentHtmlProcessor:
             if not url:
                 return full_tag
 
-            # Replace the src attribute
-            new_tag = re.sub(r'src=(["\'])[^"\']*\1', f'src="{url}"', full_tag, count=1, flags=re.IGNORECASE)
+            # Replace the src attribute (use lambda to avoid backslash escapes in URLs)
+            new_tag = re.sub(r'src=(["\'])[^"\']*\1', lambda m: f'src="{url}"', full_tag, count=1, flags=re.IGNORECASE)
             if new_tag == full_tag:
                 # Try unquoted src
-                new_tag = re.sub(r'src=[^\s>]+', f'src="{url}"', full_tag, count=1, flags=re.IGNORECASE)
+                new_tag = re.sub(r'src=[^\s>]+', lambda m: f'src="{url}"', full_tag, count=1, flags=re.IGNORECASE)
             if new_tag == full_tag:
                 # No src at all - add one
                 new_tag = full_tag.replace('<img', f'<img src="{url}"', 1)

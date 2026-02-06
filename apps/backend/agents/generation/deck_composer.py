@@ -19,7 +19,8 @@ async def compose_deck_stream(
     async_images: bool = True,
     prefetch_images: bool = False,
     enable_visual_analysis: bool = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    temperature: Optional[float] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """
     Route deck composition to Modal (serverless) or local execution.
@@ -40,6 +41,7 @@ async def compose_deck_stream(
             prefetch_images=prefetch_images,
             enable_visual_analysis=enable_visual_analysis,
             user_id=user_id,
+            temperature=temperature,
         ):
             yield event
     else:
@@ -53,6 +55,7 @@ async def compose_deck_stream(
             prefetch_images=prefetch_images,
             enable_visual_analysis=enable_visual_analysis,
             user_id=user_id,
+            temperature=temperature,
         ):
             yield event
 
@@ -66,7 +69,8 @@ async def _compose_deck_stream_local(
     async_images: bool = True,
     prefetch_images: bool = False,
     enable_visual_analysis: bool = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    temperature: Optional[float] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """
     Stream deck composition locally using DeckComposerV2.
@@ -74,6 +78,19 @@ async def _compose_deck_stream_local(
     logger.info(f"[compose_deck_stream] deck={deck_uuid} slides={len(deck_outline.slides)} parallel={max_parallel} async_images={async_images}")
 
     composer = create_deck_composer(registry)
+
+    # Override temperature on the CustomComponent generator if provided
+    if temperature is not None:
+        try:
+            sg = composer.slide_generator
+            base = getattr(sg, 'base_generator', sg)
+            if hasattr(base, 'custom_component_generator'):
+                base.custom_component_generator.temperature = temperature
+                logger.info(f"[compose_deck_stream] Temperature override: {temperature}")
+            if hasattr(base, 'custom_component_enhancer') and hasattr(base.custom_component_enhancer, 'generator'):
+                base.custom_component_enhancer.generator.temperature = temperature
+        except Exception as e:
+            logger.warning(f"[compose_deck_stream] Could not set temperature: {e}")
 
     # Start AI image orchestrator to listen for slide.generated and apply images async
     _ai_orch = None

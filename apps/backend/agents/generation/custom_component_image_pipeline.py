@@ -1206,9 +1206,10 @@ async def resolve_remaining_placeholders(html_content: str) -> str:
                 bucket_url = await _search_fallback_image(alt_text, storage)
 
                 if bucket_url and any(domain in bucket_url for domain in BUCKET_DOMAINS):
+                    _burl = bucket_url  # capture for lambda
                     new_img_tag = re.sub(
                         r'src\s*=\s*["\']?placeholder(?:\?[^"\'>\s]*)?["\']?',
-                        f'src="{bucket_url}"',
+                        lambda m: f'src="{_burl}"',
                         img_tag,
                         flags=re.IGNORECASE
                     )
@@ -1231,12 +1232,13 @@ async def resolve_remaining_placeholders(html_content: str) -> str:
                 bucket_url = await _search_fallback_image(label, storage)
 
                 if bucket_url and any(domain in bucket_url for domain in BUCKET_DOMAINS):
+                    _burl = bucket_url  # capture for lambda
                     pattern_quoted = rf'(\b{re.escape(prop_name)}\s*:\s*)(["\'])placeholder(?:\?[^"\']*)?(\2)'
-                    new_obj_text = re.sub(pattern_quoted, rf'\1\2{bucket_url}\3', obj_text, flags=re.IGNORECASE)
+                    new_obj_text = re.sub(pattern_quoted, lambda m: f'{m.group(1)}{m.group(2)}{_burl}{m.group(3)}', obj_text, flags=re.IGNORECASE)
 
                     if new_obj_text == obj_text:
                         pattern_unquoted = rf'(\b{re.escape(prop_name)}\s*:\s*)placeholder(\s*[,}}\]])'
-                        new_obj_text = re.sub(pattern_unquoted, rf'\1"{bucket_url}"\2', obj_text, flags=re.IGNORECASE)
+                        new_obj_text = re.sub(pattern_unquoted, lambda m: f'{m.group(1)}"{_burl}"{m.group(2)}', obj_text, flags=re.IGNORECASE)
 
                     if new_obj_text != obj_text:
                         html_content = html_content.replace(obj_text, new_obj_text)
@@ -1273,14 +1275,16 @@ async def resolve_remaining_placeholders(html_content: str) -> str:
                     if alt_text:
                         bucket_url = await _search_fallback_image(alt_text, storage)
                         if bucket_url and any(domain in bucket_url for domain in BUCKET_DOMAINS):
-                            new_tag = re.sub(placeholder_svc_pattern, f'src="{bucket_url}"', img_tag, count=1, flags=re.IGNORECASE)
+                            _burl = bucket_url  # capture for lambda
+                            new_tag = re.sub(placeholder_svc_pattern, lambda m: f'src="{_burl}"', img_tag, count=1, flags=re.IGNORECASE)
                             html_content = html_content.replace(img_tag, new_tag)
                             logger.info("[PLACEHOLDER_CLEANUP] Replaced placeholder-service URL -> %s", bucket_url[:80])
                             continue
                 # Fallback: replace with transparent pixel
+                _tpx = transparent_pixel  # capture for lambda
                 html_content = re.sub(
                     re.escape(m.group(0)),
-                    f'src="{transparent_pixel}"',
+                    lambda m: f'src="{_tpx}"',
                     html_content,
                     count=1
                 )

@@ -135,6 +135,7 @@ async def compose_deck_stream_via_modal(
     prefetch_images: bool,
     enable_visual_analysis: Optional[bool],
     user_id: Optional[str],
+    temperature: Optional[float] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """
     Proxy compose_deck_stream through a Modal container.
@@ -167,6 +168,7 @@ async def compose_deck_stream_via_modal(
             prefetch_images=prefetch_images,
             enable_visual_analysis=enable_visual_analysis,
             user_id=user_id,
+            temperature=temperature,
         )
         ait = remote_gen.__aiter__()
         try:
@@ -204,6 +206,7 @@ async def compose_deck_stream_via_modal(
             prefetch_images=prefetch_images,
             enable_visual_analysis=enable_visual_analysis,
             user_id=user_id,
+            temperature=temperature,
         ):
             yield event
 
