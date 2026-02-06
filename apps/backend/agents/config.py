@@ -264,7 +264,7 @@ USE_HYBRID_RESEARCH_MODE = True
 USE_AGENT_THEMER = os.getenv('USE_AGENT_THEMER', 'true').lower() == 'true'
 USE_AGENTS_MD = os.getenv('USE_AGENTS_MD', 'true').lower() == 'true'
 USE_OUTLINE_AGENTS_MD = os.getenv('USE_OUTLINE_AGENTS_MD', 'true').lower() == 'true'
-USE_MODAL = os.getenv('USE_MODAL', 'false').lower() == 'true'
+USE_MODAL = os.getenv('USE_MODAL', 'true').lower() == 'true'
 
 IMAGE_GENERATION_ENABLED = False
 AUTO_APPLY_PENDING_IMAGES = False
