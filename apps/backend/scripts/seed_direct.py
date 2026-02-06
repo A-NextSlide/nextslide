@@ -2,9 +2,9 @@
 """
 Direct SEO deck generation on Modal — bypasses HTTP API entirely.
 
-Calls the internal outline generator + deck composer directly inside Modal
-containers. No rate limits, no polling, no fix_stuck. Each deck generates
-fully with CustomComponent HTML before moving to the next.
+Uses Modal fan-out: a lightweight orchestrator dispatches each deck to its
+own container via generate_one_deck.remote.aio(). True distributed parallelism
+instead of asyncio.gather inside one container.
 
 Usage:
     cd apps/backend
@@ -37,22 +37,126 @@ image = (
 
 USER_ID = "942ccba7-5346-4f99-8189-82284dafb255"
 PARALLEL_SLIDES = 4   # slides within one deck
-PARALLEL_DECKS = 25   # concurrent deck generations
+BATCH_SIZE = 50       # decks per fan-out batch (each in own container)
+INTER_BATCH_DELAY = 10  # seconds between batches
 
 
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("nextslide-env")],
-    timeout=7200,   # 2 hours max
-    memory=8192,
+    timeout=900,
+    memory=2048,
     cpu=2.0,
+)
+async def generate_one_deck(pres: dict, pres_idx: int, total: int) -> dict:
+    """Generate a single deck end-to-end in its own Modal container.
+
+    Returns {"deck_uuid": str, "success": True} or {"error": str, "success": False}.
+    """
+    import sys
+    import json
+    import time
+    import uuid
+    import logging
+
+    logging.basicConfig(level=logging.WARNING)
+    sys.path.insert(0, "/app")
+
+    topic = pres["topic"]
+    label = topic[:55]
+    slide_count = pres.get("slides", 10)
+    instructions = pres.get("additional_instructions", "")
+    deck_uuid = str(uuid.uuid4())
+    start = time.time()
+
+    try:
+        # Load component registry
+        schemas_path = "/app/schemas/typebox_schemas_latest.json"
+        with open(schemas_path) as f:
+            schemas = json.load(f)
+        from models.registry import ComponentRegistry, set_global_registry
+        registry = ComponentRegistry(schemas)
+        set_global_registry(registry)
+
+        # Phase 1: Generate outline
+        from services.outline import OutlineGenerator, OutlineOptions
+        outline_gen = OutlineGenerator(registry)
+
+        style_ctx = instructions if instructions else None
+        options = OutlineOptions(
+            prompt=topic,
+            slide_count=slide_count,
+            style_context=style_ctx,
+            async_images=False,
+            files=[],
+        )
+        outline_result = await outline_gen.generate(options)
+
+        if not outline_result or not outline_result.slides:
+            print(f"  [{pres_idx+1:3d}/{total}] OUTLINE FAILED: {label}")
+            return {"error": "outline failed", "success": False}
+
+        # Build DeckOutline model
+        from models.requests import DeckOutline
+        deck_outline = DeckOutline.model_validate({
+            "id": deck_uuid,
+            "title": outline_result.title,
+            "slides": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "title": s.title,
+                    "content": s.content or "",
+                    "taggedMedia": [],
+                }
+                for s in outline_result.slides
+            ],
+        })
+        print(f"  [{pres_idx+1:3d}/{total}] Outline: {len(outline_result.slides)} slides ({time.time()-start:.0f}s) {label}")
+
+        # Phase 2: Compose deck (theme + slides + CustomComponent)
+        from agents.generation.deck_composer import _compose_deck_stream_local
+        final_event = None
+        async for event in _compose_deck_stream_local(
+            deck_outline=deck_outline,
+            registry=registry,
+            deck_uuid=deck_uuid,
+            max_parallel=PARALLEL_SLIDES,
+            delay_between_slides=0.5,
+            async_images=False,
+            prefetch_images=False,
+            enable_visual_analysis=True,
+            user_id=USER_ID,
+        ):
+            evt_type = event.get("type", "")
+            if evt_type == "deck_complete":
+                final_event = event
+
+        if not final_event:
+            print(f"  [{pres_idx+1:3d}/{total}] COMPOSE FAILED: {label}")
+            return {"error": "compose failed", "success": False}
+
+        elapsed = time.time() - start
+        print(f"  [{pres_idx+1:3d}/{total}] DONE:    {deck_uuid[:8]}... ({elapsed:.0f}s) {label}")
+        return {"deck_uuid": deck_uuid, "success": True}
+
+    except Exception as e:
+        elapsed = time.time() - start
+        print(f"  [{pres_idx+1:3d}/{total}] ERROR:   ({elapsed:.0f}s) {label} — {str(e)[:80]}")
+        return {"error": str(e)[:200], "success": False}
+
+
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("nextslide-env")],
+    timeout=7200,   # 2 hours max for full orchestration
+    memory=1024,
+    cpu=1.0,
 )
 async def seed_all(populate_only: bool = False, cleanup: bool = False):
     """Generate all missing SEO decks directly (no HTTP API)."""
     import os
     import re
     import sys
-    import json
     import time
     import uuid
     import random
@@ -74,15 +178,6 @@ async def seed_all(populate_only: bool = False, cleanup: bool = False):
     all_pres = [p for batch in ALL_BATCHES for p in batch]
     total = len(all_pres)
     print(f"Loaded {total} presentation definitions")
-
-    # ── Load component registry ────────────────────────────────────
-    schemas_path = "/app/schemas/typebox_schemas_latest.json"
-    with open(schemas_path) as f:
-        schemas = json.load(f)
-    from models.registry import ComponentRegistry, set_global_registry
-    registry = ComponentRegistry(schemas)
-    set_global_registry(registry)
-    print(f"Registry loaded ({len(schemas)} schemas)")
 
     # ── Category helpers ───────────────────────────────────────────
     VALID_CATS = {"business", "education", "marketing", "creative", "technology", "personal"}
@@ -184,109 +279,42 @@ async def seed_all(populate_only: bool = False, cleanup: bool = False):
     print(f"    Good decks: {len(matched)}/{total}")
     print(f"    Missing:    {len(missing)}")
 
-    # ── Direct generation ──────────────────────────────────────────
+    # ── Direct generation (fan-out: each deck in its own container) ─
     if not populate_only and missing:
-        from services.outline import OutlineGenerator, OutlineOptions
-        from agents.generation.deck_composer import _compose_deck_stream_local
-
-        outline_gen = OutlineGenerator(registry)
-
-        async def generate_one(pres_idx: int) -> str | None:
-            """Generate a single deck end-to-end. Returns deck_uuid or None."""
-            pres = all_pres[pres_idx]
-            topic = pres["topic"]
-            label = topic[:55]
-            slide_count = pres.get("slides", 10)
-            instructions = pres.get("additional_instructions", "")
-
-            deck_uuid = str(uuid.uuid4())
-            start = time.time()
-
-            try:
-                # Phase 1: Generate outline
-                style_ctx = instructions if instructions else None
-                options = OutlineOptions(
-                    prompt=topic,
-                    slide_count=slide_count,
-                    style_context=style_ctx,
-                    async_images=False,
-                    files=[],
-                )
-                outline_result = await outline_gen.generate(options)
-
-                if not outline_result or not outline_result.slides:
-                    print(f"  [{pres_idx+1:3d}/{total}] OUTLINE FAILED: {label}")
-                    return None
-
-                # Build DeckOutline model
-                from models.requests import DeckOutline
-                deck_outline = DeckOutline.model_validate({
-                    "id": deck_uuid,
-                    "title": outline_result.title,
-                    "slides": [
-                        {
-                            "id": str(uuid.uuid4()),
-                            "title": s.title,
-                            "content": s.content or "",
-                            "taggedMedia": [],
-                        }
-                        for s in outline_result.slides
-                    ],
-                })
-                print(f"  [{pres_idx+1:3d}/{total}] Outline: {len(outline_result.slides)} slides ({time.time()-start:.0f}s) {label}")
-
-                # Phase 2: Compose deck (theme + slides + CustomComponent)
-                final_event = None
-                async for event in _compose_deck_stream_local(
-                    deck_outline=deck_outline,
-                    registry=registry,
-                    deck_uuid=deck_uuid,
-                    max_parallel=PARALLEL_SLIDES,
-                    delay_between_slides=0.5,
-                    async_images=False,
-                    prefetch_images=False,
-                    enable_visual_analysis=True,
-                    user_id=USER_ID,
-                ):
-                    evt_type = event.get("type", "")
-                    if evt_type == "deck_complete":
-                        final_event = event
-
-                if not final_event:
-                    print(f"  [{pres_idx+1:3d}/{total}] COMPOSE FAILED: {label}")
-                    return None
-
-                elapsed = time.time() - start
-                print(f"  [{pres_idx+1:3d}/{total}] DONE:    {deck_uuid[:8]}... ({elapsed:.0f}s) {label}")
-                return deck_uuid
-
-            except Exception as e:
-                elapsed = time.time() - start
-                print(f"  [{pres_idx+1:3d}/{total}] ERROR:   ({elapsed:.0f}s) {label} — {str(e)[:80]}")
-                return None
-
-        # ── Generate in batches ────────────────────────────────────
-        total_batches = (len(missing) + PARALLEL_DECKS - 1) // PARALLEL_DECKS
-        print(f"\n[2] Generating {len(missing)} decks ({PARALLEL_DECKS} concurrent, {PARALLEL_SLIDES} slides parallel)...")
+        total_batches = (len(missing) + BATCH_SIZE - 1) // BATCH_SIZE
+        print(f"\n[2] Generating {len(missing)} decks (fan-out, {BATCH_SIZE}/batch, each in own container)...")
         print("=" * 70)
 
         gen_start = time.time()
-        for batch_start in range(0, len(missing), PARALLEL_DECKS):
-            batch = missing[batch_start:batch_start + PARALLEL_DECKS]
-            batch_num = batch_start // PARALLEL_DECKS + 1
+        for batch_start in range(0, len(missing), BATCH_SIZE):
+            batch = missing[batch_start:batch_start + BATCH_SIZE]
+            batch_num = batch_start // BATCH_SIZE + 1
             print(f"\n--- Batch {batch_num}/{total_batches} ({len(batch)} decks) ---")
 
-            tasks = [generate_one(idx) for idx in batch]
+            # Fan out: each deck gets its own Modal container
+            tasks = [
+                generate_one_deck.remote.aio(all_pres[idx], idx, total)
+                for idx in batch
+            ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             for idx, result in zip(batch, results):
-                if isinstance(result, str) and result:
-                    matched[idx] = result
-                elif isinstance(result, Exception):
+                if isinstance(result, Exception):
                     print(f"  [{idx+1:3d}/{total}] EXCEPTION: {str(result)[:80]}")
+                elif isinstance(result, dict) and result.get("success"):
+                    matched[idx] = result["deck_uuid"]
+                elif isinstance(result, dict):
+                    pass  # already logged in worker container
 
-            ok = sum(1 for r in results if isinstance(r, str) and r)
+            ok = sum(
+                1 for r in results
+                if isinstance(r, dict) and r.get("success")
+            )
             print(f"    Batch {batch_num}: {ok}/{len(batch)} succeeded")
+
+            # Brief pause between batches to let Modal's pool stabilize
+            if batch_start + BATCH_SIZE < len(missing):
+                await asyncio.sleep(INTER_BATCH_DELAY)
 
         elapsed = time.time() - gen_start
         print(f"\n{'=' * 70}")

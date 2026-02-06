@@ -19,6 +19,7 @@ import {
   Type,
   Mail,
   FlaskConical,
+  Sprout,
 } from 'lucide-react';
 
 interface AdminLayoutV2Props {
@@ -36,6 +37,7 @@ const navItems = [
   { title: 'Fonts', href: '/admin/fonts', icon: Type },
   { title: 'System', href: '/admin/services', icon: Server },
   { title: 'Costs', href: '/admin/costs', icon: DollarSign },
+  { title: 'Seed', href: '/admin/seed', icon: Sprout },
   { title: 'Playground', href: '/admin/playground', icon: FlaskConical },
 ];
 
