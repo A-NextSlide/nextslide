@@ -1,6 +1,7 @@
 """Helper utilities for CustomComponent generation."""
 
 import asyncio
+import hashlib
 import re
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -440,6 +441,18 @@ def _extract_js_object_image_queries(html: str) -> List[str]:
     return queries
 
 
+def _make_image_prop_key(query: str) -> str:
+    """Build a unique prop key from an image query.
+
+    Uses a readable prefix (first 30 chars) plus a short content hash so
+    that queries sharing a long prefix (e.g. all starting with
+    'generate:4:3 vintage 1920s rubber hose...') still get distinct keys.
+    """
+    slug = query.replace(' ', '_').replace('-', '_')[:30]
+    suffix = hashlib.md5(query.encode()).hexdigest()[:8]
+    return f"alt_{slug}_{suffix}"
+
+
 def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
     """Extract image prop names and their search queries from generated HTML."""
     results: List[Tuple[str, str]] = []
@@ -449,7 +462,7 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
     # This finds the actual values in the JS arrays
     template_alt_queries = _extract_template_variable_alt_queries(html)
     for query in template_alt_queries:
-        key = f"alt_{query.replace(' ', '_').replace('-', '_')[:30]}"
+        key = _make_image_prop_key(query)
         if query.lower() not in seen_props:
             results.append((key, query))
             seen_props.add(query.lower())
@@ -457,7 +470,7 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
 
     js_image_queries = _extract_js_object_image_queries(html)
     for query in js_image_queries:
-        key = f"alt_{query.replace(' ', '_').replace('-', '_')[:30]}"
+        key = _make_image_prop_key(query)
         if query.lower() not in seen_props:
             results.append((key, query))
             seen_props.add(query.lower())
@@ -528,7 +541,7 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
                     logger.debug("[IMAGE_EXTRACT] Skipping template variable alt: %s", alt[:50])
                     continue
                 if alt and alt.lower() not in seen_props:
-                    prop_key = f"alt_{alt.replace(' ', '_').replace('-', '_')[:30]}"
+                    prop_key = _make_image_prop_key(alt)
                     results.append((prop_key, alt))
                     seen_props.add(alt.lower())
                     logger.info("[IMAGE_EXTRACT] Found placeholder img with alt: '%s' -> key '%s'", alt[:60], prop_key)
@@ -553,7 +566,7 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
         if alt.startswith("${") or alt.startswith("{") or "${" in alt:
             continue
         if alt and alt.lower() not in seen_props:
-            results.append((f"alt_{alt.replace(' ', '_').replace('-', '_')[:30]}", alt))
+            results.append((_make_image_prop_key(alt), alt))
             seen_props.add(alt.lower())
             logger.debug("[IMAGE_EXTRACT] External URL alt text queued: %s", alt)
 
