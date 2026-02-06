@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDeckStore } from '@/stores/deckStore';
+import { API_CONFIG } from '@/config/environment';
 import { trackMediaSelected } from '@/services/analytics';
 import { COLORS } from '@/utils/colors';
 
@@ -209,7 +210,7 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                 }
             } catch {}
 
-            const response = await fetch('/api/images/generate', {
+            const response = await fetch(`${API_CONFIG.BASE_URL}/images/generate`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -224,10 +225,15 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
             });
 
             if (!response.ok) {
-                throw new Error('Failed to generate image');
+                const errorText = await response.text().catch(() => '');
+                throw new Error(errorText || 'Failed to generate image');
             }
 
-            const { url, revised_prompt } = await response.json();
+            const responseText = await response.text();
+            if (!responseText) {
+                throw new Error('Empty response from server');
+            }
+            const { url, revised_prompt } = JSON.parse(responseText);
             if (!url || typeof url !== 'string') {
                 throw new Error('Invalid response: missing url');
             }

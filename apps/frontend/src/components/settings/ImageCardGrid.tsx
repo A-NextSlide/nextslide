@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
+import { API_CONFIG } from '@/config/environment';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wand2,
@@ -154,7 +155,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
     }));
 
     try {
-      const resp = await fetch('/api/images/edit', {
+      const resp = await fetch(`${API_CONFIG.BASE_URL}/images/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -207,7 +208,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
     }));
 
     try {
-      const resp = await fetch('/api/images/fuse', {
+      const resp = await fetch(`${API_CONFIG.BASE_URL}/images/fuse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

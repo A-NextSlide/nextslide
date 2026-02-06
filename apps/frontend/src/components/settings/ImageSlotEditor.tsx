@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { API_CONFIG } from '@/config/environment';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -173,7 +174,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
       detail: { componentId, propName, isProcessing: true }
     }));
     try {
-      const resp = await fetch('/api/images/edit', {
+      const resp = await fetch(`${API_CONFIG.BASE_URL}/images/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -265,7 +266,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
       detail: { componentId, propName, isProcessing: true }
     }));
     try {
-      const resp = await fetch('/api/images/fuse', {
+      const resp = await fetch(`${API_CONFIG.BASE_URL}/images/fuse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

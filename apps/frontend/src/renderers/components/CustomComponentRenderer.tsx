@@ -18,6 +18,7 @@ import { useCustomComponentImageAutoApply } from './custom/useCustomComponentIma
 import { useCustomComponentImageProxy } from './custom/useCustomComponentImageProxy';
 import { extractFontFamiliesFromHtml, injectIframeFonts } from './custom/iframeFonts';
 import { FontLoadingService } from '@/services/FontLoadingService';
+import { API_CONFIG } from '@/config/environment';
 import { useThumbnailRenderMode } from '@/context/ThumbnailRenderContext';
 import { MediaHub } from '@/components/media/MediaHub';
 
@@ -2082,7 +2083,7 @@ img.ns-img-ready {
       const payload: any = { instructions, transparentBackground: imageTransparentBg, aspectRatio };
       if (imageBase64) payload.imageBase64 = imageBase64;
       else if (imageUrl) payload.imageUrl = imageUrl;
-      const resp = await fetch('/api/images/edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const resp = await fetch(`${API_CONFIG.BASE_URL}/images/edit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const text = await resp.text();
       if (!resp.ok) {
         let detail = text;
@@ -2117,7 +2118,7 @@ img.ns-img-ready {
     setShowAiChatBubble(false);
     setImageAiProcessing(true);
     try {
-      const resp = await fetch('/api/images/fuse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, images: imgs, size }) });
+      const resp = await fetch(`${API_CONFIG.BASE_URL}/images/fuse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, images: imgs, size }) });
       const text = await resp.text();
       if (!resp.ok) {
         let detail = text;

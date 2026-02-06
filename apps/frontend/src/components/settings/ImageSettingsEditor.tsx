@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
+import { API_CONFIG } from '@/config/environment';
 import { Label } from '@/components/ui/label';
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -361,7 +362,7 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
       };
       if (imageBase64) payload.imageBase64 = imageBase64;
       else if (imageUrl) payload.imageUrl = imageUrl;
-      const resp = await fetch('/api/images/edit', {
+      const resp = await fetch(`${API_CONFIG.BASE_URL}/images/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -415,7 +416,7 @@ const ImageSettingsEditor: React.FC<ImageSettingsEditorProps> = ({
     setIsProcessingAi(true);
     handlePropChange('isProcessing', true, true);
     try {
-      const resp = await fetch('/api/images/fuse', {
+      const resp = await fetch(`${API_CONFIG.BASE_URL}/images/fuse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, images: imgs, size })

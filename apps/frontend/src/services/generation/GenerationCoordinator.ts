@@ -446,6 +446,8 @@ export class GenerationCoordinator extends EventTarget {
               useInteractionStore.getState().setDeckStatus({ state: 'completed' });
               if (typeof window !== 'undefined') {
                 (window as any).__deckStatus = 'idle';
+                // Timestamp so edit-mode entry can skip loadDeck shortly after generation
+                (window as any).__generationCompletedTs = Date.now();
 
                 // Dispatch deck_finalized event for components to react
                 window.dispatchEvent(new CustomEvent('deck_finalized', {
@@ -642,6 +644,7 @@ export class GenerationCoordinator extends EventTarget {
       useInteractionStore.getState().setDeckStatus({ state: 'idle' });
       if (typeof window !== 'undefined') {
         (window as any).__deckStatus = 'idle';
+        (window as any).__generationCompletedTs = Date.now();
       }
     }
 

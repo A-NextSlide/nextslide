@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { createPortal } from 'react-dom';
 import { Switch } from '@/components/ui/switch';
 import { useDeckStore } from '@/stores/deckStore';
+import { API_CONFIG } from '@/config/environment';
 
 interface ImageOption {
   id: string;
@@ -356,7 +357,7 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
           description: "Uploading to our servers for reliability",
         });
 
-        const response = await fetch('/api/media/proxy', {
+        const response = await fetch(`${API_CONFIG.BASE_URL}/media/proxy`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -461,7 +462,7 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
           ?.props || {}
       };
 
-      const response = await fetch('/api/images/generate', {
+      const response = await fetch(`${API_CONFIG.BASE_URL}/images/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -476,10 +477,15 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate image');
+        const errorText = await response.text().catch(() => '');
+        throw new Error(errorText || 'Failed to generate image');
       }
 
-      const { url, revised_prompt } = await response.json();
+      const responseText = await response.text();
+      if (!responseText) {
+        throw new Error('Empty response from server');
+      }
+      const { url, revised_prompt } = JSON.parse(responseText);
       if (!url || typeof url !== 'string') {
         throw new Error('Invalid response: missing url');
       }

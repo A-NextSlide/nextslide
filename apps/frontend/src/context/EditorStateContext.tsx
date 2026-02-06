@@ -137,6 +137,15 @@ export const EditorStateProvider = ({
           // Check for AI edit currently in progress (started but not yet completed)
           const agentEditInProgress = typeof window !== 'undefined' && (window as any).__agentEditInProgress === true;
 
+          // Check if deck is currently generating or was recently generated
+          // loadDeck would fetch stale backend data and overwrite the local slides
+          const deckStatus = typeof window !== 'undefined' ? (window as any).__deckStatus : null;
+          const statusState = typeof deckStatus === 'string' ? deckStatus : deckStatus?.state;
+          const isDeckGenerating = statusState === 'generating' || statusState === 'creating' || statusState === 'pending';
+          const generationCompletedTs = typeof window !== 'undefined' ? (window as any).__generationCompletedTs || 0 : 0;
+          const timeSinceGeneration = Date.now() - generationCompletedTs;
+          const hasRecentGeneration = generationCompletedTs > 0 && timeSinceGeneration < 10000;
+
           if (hasRecentAgentEdit) {
             console.log('[EditorStateContext] Skipping loadDeck - recent AI agent edit detected', {
               timeSinceAgentEdit,
@@ -150,7 +159,18 @@ export const EditorStateProvider = ({
             (window as any).__enteredEditModeDuringAgentEdit = true;
           }
 
-          if (currentId && typeof deckStore.loadDeck === 'function' && !hasPendingLocalChanges && !hasRecentAgentEdit && !agentEditInProgress) {
+          if (isDeckGenerating) {
+            console.log('[EditorStateContext] Skipping loadDeck - deck is currently generating');
+          }
+
+          if (hasRecentGeneration) {
+            console.log('[EditorStateContext] Skipping loadDeck - deck was recently generated', {
+              timeSinceGeneration,
+              threshold: 10000
+            });
+          }
+
+          if (currentId && typeof deckStore.loadDeck === 'function' && !hasPendingLocalChanges && !hasRecentAgentEdit && !agentEditInProgress && !isDeckGenerating && !hasRecentGeneration) {
             await deckStore.loadDeck();
           }
         } catch {}

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { DeckStatus, CompleteDeckData } from '@/types/DeckTypes';
 import { SlideImageUpdater } from '@/utils/slideImageUpdater';
 import { useDeckStore } from '@/stores/deckStore';
+import { API_CONFIG } from '@/config/environment';
 
 type UseSlideImageAutomationArgs = {
   deckData: CompleteDeckData;
@@ -141,7 +142,7 @@ export const useSlideImageAutomation = ({ deckData, deckStatus }: UseSlideImageA
         const prompt = generatePromptForSlide(title);
         const deckTheme = (deckData as any)?.theme || (deckData as any)?.data?.theme || (deckData as any)?.workspaceTheme || undefined;
 
-        const resp = await fetch('/api/images/generate', {
+        const resp = await fetch(`${API_CONFIG.BASE_URL}/images/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
