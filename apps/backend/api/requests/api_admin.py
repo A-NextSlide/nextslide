@@ -3707,7 +3707,12 @@ async def _admin_generate_deck(
             "Keep text minimal — max 3-4 bullet points or one short paragraph per slide. "
             "Favour large imagery, full-bleed backgrounds, icon grids, and dramatic whitespace. "
             "Use clean sans-serif fonts. Each slide should convey ONE clear idea with a powerful visual. "
-            "Make it look like a premium design agency produced it."
+            "Make it look like a premium design agency produced it. "
+            "INTERACTIVITY: If the topic requests interactive elements (tabs, flip cards, "
+            "quizzes, timelines, sliders, accordions, calculators, before/after comparisons), "
+            "implement those EXACT interaction types in HTML/CSS/JS. "
+            "VARIETY: Mix layouts across slides — hero images, split layouts, card grids, "
+            "diagrams, and interactive panels. No two consecutive slides should look the same."
         )
         enhanced_topic = topic + design_directive
 
