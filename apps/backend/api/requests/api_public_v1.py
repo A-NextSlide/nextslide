@@ -449,7 +449,7 @@ async def generate_deck_background(
                 bg_color = colors.get("background", "#FFFFFF")
                 text_color = colors.get("text", "#1a1a1a")
                 accent_color = colors.get("accent", "#6366f1")
-                heading_font = fonts.get("heading", "Montserrat")
+                heading_font = fonts.get("heading", "Inter")
                 body_font = fonts.get("body", "Inter")
                 logo_url = brand.get("logo")
             else:
@@ -457,8 +457,8 @@ async def generate_deck_background(
                 bg_color = brand.get("primary_color", "#FFFFFF")
                 text_color = "#1A1A1A"
                 accent_color = brand.get("secondary_color", "#2563EB")
-                heading_font = brand.get("font_family", "Montserrat")
-                body_font = brand.get("font_family", "Poppins")
+                heading_font = brand.get("font_family", "Inter")
+                body_font = brand.get("font_family", "Inter")
                 logo_url = brand.get("logo_url")
 
             # Add to stylePreferences (this is how normal generation flow works)

@@ -461,6 +461,26 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     return () => document.removeEventListener('keydown', handleCommentsShortcut, true);
   }, []);
 
+  // Prevent iframes from stealing focus in view mode — keyboard shortcuts like 'e'
+  // fire on the parent document, but iframes create a separate browsing context that
+  // swallows keydown events. Pull focus back whenever an iframe grabs it.
+  React.useEffect(() => {
+    if (isMobileView) return;
+    const handleWindowBlur = () => {
+      // When the window loses focus, check if it went to an iframe inside the slide
+      // (document.activeElement will be the <iframe>). In view mode, yank focus back.
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        if (active?.tagName === 'IFRAME' && !isEditingMode) {
+          (active as HTMLElement).blur();
+          document.body.focus();
+        }
+      });
+    };
+    window.addEventListener('blur', handleWindowBlur);
+    return () => window.removeEventListener('blur', handleWindowBlur);
+  }, [isEditingMode, isMobileView]);
+
   // Add keyboard shortcut 'e' to toggle edit mode
   React.useEffect(() => {
     if (isMobileView) return;

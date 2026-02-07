@@ -503,7 +503,7 @@ class ThemeAgent:
             "text": "#1A1A1A",
             "accent": None,
             "accent2": None,
-            "fonts": {"hero": "Montserrat", "body": "Open Sans"},
+            "fonts": {"hero": "Inter", "body": "Inter"},
             "logo_url": None,
             "videos": [],  # List of video dicts from the brand's website
             "source": "default"
@@ -1608,8 +1608,8 @@ Use iconic colors for the inspiration (Sonic=blue/red, Star Wars=black/gold, etc
                     "accent2": theme_data.get("accent2"),
                     "colors": theme_data.get("colors", []),
                     "fonts": {
-                        "hero": hero_font or "Montserrat",
-                        "body": body_font or "Open Sans"
+                        "hero": hero_font or "Inter",
+                        "body": body_font or "Inter"
                     },
                     "source": "ai_contextual"
                 }

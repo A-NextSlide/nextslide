@@ -74,11 +74,11 @@ Return ONLY the exact font name, nothing else."""
         if matched and matched.lower() != normalized_hero:
             return matched
 
-        return font_service.match_font_name('Open Sans', is_hero=False, include_remote=True) or 'Open Sans'
+        return font_service.match_font_name('Inter', is_hero=False, include_remote=True) or 'Inter'
 
     except Exception as e:
         logger.error(f"[ThemeExecutor] AI font selection error: {e}")
-        return 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
+        return 'Inter' if hero_font != 'Inter' else 'Poppins'
 
 
 async def _select_brand_fonts_ai(brand_name: str, brand_domain: Optional[str] = None) -> Dict[str, str]:
@@ -111,16 +111,17 @@ async def _select_brand_fonts_ai(brand_name: str, brand_domain: Optional[str] = 
         return {'hero': hero_font, 'body': body_font}
 
     except Exception as e:
-        logger.error(f"[ThemeExecutor] FontIntelligence error: {e}, using fallback")
-        FALLBACK_PAIRS = [
-            ('Poppins', 'Inter'),
-            ('Playfair Display', 'Lato'),
-            ('Raleway', 'Nunito'),
-            ('DM Sans', 'Work Sans'),
-            ('Space Grotesk', 'Source Sans Pro'),
-        ]
-        fallback = random.choice(FALLBACK_PAIRS)
-        return {'hero': fallback[0], 'body': fallback[1]}
+        logger.error(f"[ThemeExecutor] FontIntelligence error: {e}, using registry fallback")
+        try:
+            from services.enhanced_font_service import EnhancedFontService
+            font_svc = EnhancedFontService()
+            pair = font_svc.select_font_pair(
+                deck_title=brand_name,
+                vibe='professional'
+            )
+            return {'hero': pair['hero'], 'body': pair['body']}
+        except Exception:
+            return {'hero': 'Poppins', 'body': 'Inter'}
 
 
 # ── Color-intent helpers ──────────────────────────────────────────────────────
@@ -641,23 +642,22 @@ async def execute_theme_update(
 
                 if is_fun_topic:
                     variety_seed = str(outline_id)
-                    seed_hash = int(hashlib.md5(variety_seed.encode()).hexdigest(), 16)
-
-                    playful_combos = [
-                        {'hero': 'Bebas Neue', 'body': 'Nunito'},
-                        {'hero': 'Fredoka', 'body': 'Quicksand'},
-                        {'hero': 'Righteous', 'body': 'Poppins'},
-                        {'hero': 'Bungee', 'body': 'Asap'},
-                        {'hero': 'Bangers', 'body': 'Rubik'},
-                        {'hero': 'Titan One', 'body': 'Cabin'},
-                        {'hero': 'Pacifico', 'body': 'Comfortaa'},
-                        {'hero': 'Press Start 2P', 'body': 'Space Mono'}
-                    ]
-
-                    selected = playful_combos[seed_hash % len(playful_combos)]
-                    font_family = selected['hero']
-                    body_font_preset = selected['body']
-                    logger.info(f"[ThemeExecutor] Fun topic detected! Using playful fonts: {font_family} / {body_font_preset}")
+                    try:
+                        from services.enhanced_font_service import EnhancedFontService
+                        font_svc = EnhancedFontService()
+                        pair = font_svc.select_font_pair(
+                            deck_title=title,
+                            vibe='creative',
+                            content_keywords=['fun', 'playful'],
+                            variety_seed=variety_seed
+                        )
+                        font_family = pair['hero']
+                        body_font_preset = pair['body']
+                    except Exception as e:
+                        logger.warning(f"[ThemeExecutor] Font service error for playful: {e}")
+                        font_family = 'Poppins'
+                        body_font_preset = 'Nunito'
+                    logger.info(f"[ThemeExecutor] Fun topic detected! Using fonts: {font_family} / {body_font_preset}")
 
                     style_preferences['font'] = font_family
                     style_preferences['bodyFont'] = body_font_preset
@@ -669,15 +669,18 @@ async def execute_theme_update(
                     font_family = None  # Skip general handling below
 
             if not font_family and 'font' not in style_preferences:
-                professional_combos = [
-                    {'hero': 'Poppins', 'body': 'Inter'},
-                    {'hero': 'Montserrat', 'body': 'Open Sans'},
-                    {'hero': 'Raleway', 'body': 'Lato'},
-                    {'hero': 'DM Sans', 'body': 'Work Sans'},
-                    {'hero': 'Space Grotesk', 'body': 'Source Sans Pro'},
-                    {'hero': 'Outfit', 'body': 'Nunito'},
-                ]
-                selected = random.choice(professional_combos)
+                try:
+                    from services.enhanced_font_service import EnhancedFontService
+                    font_svc = EnhancedFontService()
+                    pair = font_svc.select_font_pair(
+                        deck_title=title or 'presentation',
+                        vibe='professional',
+                        variety_seed=str(outline_id) if outline_id else None
+                    )
+                    selected = {'hero': pair['hero'], 'body': pair['body']}
+                except Exception as e:
+                    logger.warning(f"[ThemeExecutor] Font service error for professional: {e}")
+                    selected = {'hero': 'Poppins', 'body': 'Inter'}
                 style_preferences['font'] = selected['hero']
                 style_preferences['bodyFont'] = selected['body']
                 theme_updates['typography'] = {
@@ -685,7 +688,7 @@ async def execute_theme_update(
                     'body_text': {'family': selected['body']}
                 }
                 messages.append(f"Applied fonts: {selected['hero']} / {selected['body']}")
-                logger.info(f"[ThemeExecutor] No font specified, using professional fonts: {selected['hero']} / {selected['body']}")
+                logger.info(f"[ThemeExecutor] Using fonts from registry: {selected['hero']} / {selected['body']}")
 
         if font_family:
             body_font = await _ai_select_body_font(font_family, 'presentation')

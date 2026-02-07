@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Sparkles, Microscope, Brain, FlaskConical, Eye, Globe, Wifi, MousePointer2, X, Maximize2, Music, Waves, Zap, Paintbrush, Flame, Presentation } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles, Microscope, Brain, FlaskConical, Eye, Globe, Wifi, MousePointer2, X, Maximize2, Music, Waves, Zap, Paintbrush, Leaf, Presentation, Gamepad2, Landmark, Ship } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ShowcaseDeck } from '@/services/showcaseService';
 import MiniSlide from '@/components/deck/MiniSlide';
@@ -44,15 +44,15 @@ const PROMPTS = [
         id: 'stripe-story',
         badge: 'Startup',
         icon: Zap,
-        text: "From garage to $40 billion — the Stripe story nobody tells",
+        text: "Stripe: Increasing the GDP of the Internet",
         theme: 'orange' as const,
         deckIndex: 2
     },
     {
-        id: 'nexus-pitch',
-        badge: 'Pitch',
+        id: 'google-earnings',
+        badge: 'Finance',
         icon: Presentation,
-        text: "Nexus AI — the Series B pitch deck that raised $50M",
+        text: "Alphabet (Google) quarterly earnings breakdown — revenue, margins, AI capex",
         theme: 'orange' as const,
         deckIndex: 3
     },
@@ -73,34 +73,34 @@ const PROMPTS = [
         deckIndex: 5
     },
     {
-        id: 'night-city',
-        badge: 'Culture',
-        icon: Globe,
-        text: "What your city looks like at 3 AM — the hidden night shift economy",
+        id: 'ps2-hacking',
+        badge: 'Gaming',
+        icon: Gamepad2,
+        text: "Crash's Impossible Code — the PlayStation tricks that shouldn't have worked",
         theme: 'light' as const,
         deckIndex: 6
     },
     {
-        id: 'tambora',
-        badge: 'History',
-        icon: Flame,
-        text: "Mount Tambora 1816 — the eruption that deleted summer",
+        id: 'photosynthesis',
+        badge: 'Biology',
+        icon: Leaf,
+        text: "Photosynthesis — the 3-billion-year-old chemical reaction keeping everything alive",
         theme: 'light' as const,
         deckIndex: 7
     },
     {
         id: 'deep-ocean',
         badge: 'Nature',
-        icon: Waves,
-        text: "3,000 feet underwater — life that evolved in permanent darkness",
+        icon: Ship,
+        text: "Into the Abyss — deep ocean exploration beneath 3,000 feet of darkness",
         theme: 'light' as const,
         deckIndex: 8
     },
     {
-        id: 'face-reading',
-        badge: 'Neuro',
-        icon: Microscope,
-        text: "The 100-millisecond judgement — how your brain reads a face",
+        id: 'banking-2026',
+        badge: 'Business',
+        icon: Landmark,
+        text: "The state of global banking in 2026 — rates, margins, and the capital squeeze",
         theme: 'light' as const,
         deckIndex: 9
     },

@@ -67,8 +67,8 @@ class ThemeAdapter:
         # Typography
         body = typography.get('body_text', {}) or typography.get('body', {}) or {}
         hero = typography.get('hero_title', {}) or typography.get('heading', {}) or {}
-        body_family = body.get('family') or 'Poppins'
-        hero_family = hero.get('family') or 'Montserrat'
+        body_family = body.get('family') or 'Inter'
+        hero_family = hero.get('family') or 'Inter'
 
         def _to_weight(value: Any, default: int) -> int:
             try:
@@ -134,8 +134,8 @@ class ThemeAdapter:
         page_bg = theme_panel.get('page', {}).get('backgroundColor', '#FFFFFF')
         paragraph_typo = theme_panel.get('typography', {}).get('paragraph', {})
         heading_typo = theme_panel.get('typography', {}).get('heading', {})
-        body_family = paragraph_typo.get('fontFamily', 'Poppins')
-        hero_family = heading_typo.get('fontFamily', 'Montserrat')
+        body_family = paragraph_typo.get('fontFamily', 'Inter')
+        hero_family = heading_typo.get('fontFamily', 'Inter')
         text_color = paragraph_typo.get('color', '#1A1A1A')
         # Read from flat structure (3-color theme)
         accent1 = theme_panel.get('accent1', '#2563EB')

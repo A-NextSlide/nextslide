@@ -374,12 +374,13 @@ export const ComponentRenderer: React.FC<Props> = memo(({
     boxSizing: 'border-box',
     border: debug ? '1px dashed #aaa' : 'none', // Only show border if explicit debug prop
     color: textColor,
-    // In edit mode: CustomComponent needs pointerEvents: none so clicks reach wrapper for selection
-    // In non-edit mode: CustomComponent can be interactive
-    // Other interactive components (TextBlock, TiptapTextBlock, Table, Video) keep auto for their editing needs
-    pointerEvents: isEditing && componentType === 'CustomComponent'
+    // CustomComponent: always 'none' so clicks reach the wrapper for selection (edit mode)
+    // and double-click reaches the wrapper to enter edit mode (view mode).
+    // Interactivity inside iframes is handled once selected via the edit mode overlay.
+    // Other interactive components (TextBlock, TiptapTextBlock, Table, Video) keep auto for their editing needs.
+    pointerEvents: componentType === 'CustomComponent'
       ? 'none'
-      : ['CustomComponent', 'TextBlock', 'TiptapTextBlock', 'Table', 'Video', 'Background'].includes(componentType)
+      : ['TextBlock', 'TiptapTextBlock', 'Table', 'Video', 'Background'].includes(componentType)
         ? 'auto'
         : 'none',
   };

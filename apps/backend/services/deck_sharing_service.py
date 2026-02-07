@@ -373,6 +373,84 @@ class DeckSharingService:
             logger.error(f"Error checking deck access: {str(e)}")
             return False
 
+    def _get_deck_title(self, deck_uuid: str) -> str:
+        """Fetch deck title for invite emails."""
+        try:
+            deck_response = (
+                self.supabase.table('decks')
+                .select('name')
+                .eq('uuid', deck_uuid)
+                .single()
+                .execute()
+            )
+            if deck_response.data:
+                return deck_response.data.get('name') or 'Untitled Deck'
+        except Exception as e:
+            logger.warning(f"Could not fetch deck title for {deck_uuid}: {e}")
+        return 'Untitled Deck'
+
+    def _build_collaborator_share_url(self, short_code: str) -> str:
+        """Build a full edit URL for collaborator invites."""
+        base_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+        return f"{base_url}/e/{short_code}"
+
+    def _send_collaborator_invitation(
+        self,
+        email_normalized: str,
+        deck_uuid: str,
+        share_short_code: str,
+        collaborator_exists: bool
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Send invitation email.
+
+        For existing users: send branded collaborator invite email.
+        For new users: try Supabase invite email first; fallback to branded invite.
+        """
+        invitation_sent = False
+        invitation_error: Optional[str] = None
+        deck_title = self._get_deck_title(deck_uuid)
+        share_url = self._build_collaborator_share_url(share_short_code)
+
+        if collaborator_exists:
+            try:
+                from services.email_service import send_collaborator_invite_email
+                invitation_sent = send_collaborator_invite_email(email_normalized, deck_title, share_url)
+                if not invitation_sent:
+                    invitation_error = "Failed to send collaborator invite email"
+            except Exception as e:
+                invitation_error = str(e)
+                logger.warning(f"Could not send collaborator invite email to existing user {email_normalized}: {e}")
+            return invitation_sent, invitation_error
+
+        service_key = os.getenv("SUPABASE_SERVICE_KEY")
+        if service_key:
+            try:
+                from supabase import create_client
+                admin_client = create_client(os.getenv("SUPABASE_URL"), service_key)
+                admin_client.auth.admin.invite_user_by_email(email_normalized)
+                invitation_sent = True
+            except Exception as e:
+                invitation_error = str(e)
+                logger.warning(f"Could not send invitation email via Supabase to {email_normalized}: {invitation_error}")
+        else:
+            logger.warning("SUPABASE_SERVICE_KEY not set - skipping Supabase invite email")
+
+        if not invitation_sent:
+            try:
+                from services.email_service import send_collaborator_invite_email
+                invitation_sent = send_collaborator_invite_email(email_normalized, deck_title, share_url)
+                if invitation_sent:
+                    invitation_error = None
+                elif not invitation_error:
+                    invitation_error = "Failed to send collaborator invite email"
+            except Exception as e:
+                if not invitation_error:
+                    invitation_error = str(e)
+                logger.warning(f"Resend fallback failed for {email_normalized}: {e}")
+
+        return invitation_sent, invitation_error
+
     def add_collaborator(
         self,
         deck_uuid: str,
@@ -382,7 +460,8 @@ class DeckSharingService:
     ) -> Dict[str, Any]:
         """
         Add a collaborator to a deck using their email.
-        This creates an edit share link and sends an invitation email if user doesn't exist.
+        This creates an edit share link and sends an invitation email.
+        If the collaborator already exists, the operation is idempotent and resend-friendly.
         
         Args:
             deck_uuid: The deck UUID
@@ -409,7 +488,11 @@ class DeckSharingService:
                 logger.warning(f"User lookup failed for {email_normalized}: {e}")
 
             # Duplicate check (active or invited and not revoked)
-            dup_query = self.supabase.table("deck_collaborators").select("id,status").eq("deck_uuid", deck_uuid)
+            dup_query = (
+                self.supabase.table("deck_collaborators")
+                .select("id,status,user_id,email,share_link_id,permissions")
+                .eq("deck_uuid", deck_uuid)
+            )
             if user_id:
                 dup_query = dup_query.eq("user_id", user_id)
             else:
@@ -417,8 +500,72 @@ class DeckSharingService:
             dup_query = dup_query.neq("status", "revoked")
             dup = dup_query.execute()
             if dup.data and len(dup.data) > 0:
-                # Signal duplicate to API layer
-                raise DuplicateCollaboratorError("Collaborator already exists for this deck")
+                existing = dup.data[0]
+                collaborator_exists = bool(existing.get("user_id"))
+                share_link: Optional[Dict[str, Any]] = None
+
+                existing_share_link_id = existing.get("share_link_id")
+                if existing_share_link_id:
+                    try:
+                        existing_share = (
+                            self.supabase.table("deck_shares")
+                            .select("id,short_code,expires_at,is_active,access_count,last_accessed_at")
+                            .eq("id", existing_share_link_id)
+                            .execute()
+                        )
+                        if existing_share.data and len(existing_share.data) > 0:
+                            row = existing_share.data[0]
+                            if row.get("is_active", True):
+                                share_link = {
+                                    "id": row.get("id"),
+                                    "short_code": row.get("short_code"),
+                                    "share_type": "edit",
+                                    "expires_at": row.get("expires_at"),
+                                    "access_count": row.get("access_count", 0),
+                                    "last_accessed_at": row.get("last_accessed_at"),
+                                    "is_active": row.get("is_active", True),
+                                }
+                    except Exception as e:
+                        logger.warning(f"Failed to load existing collaborator share link: {e}")
+
+                # Ensure we can always return a working share link
+                if not share_link or not share_link.get("short_code"):
+                    share_link = self.create_share_link(
+                        deck_uuid=deck_uuid,
+                        user_id=owner_id,
+                        share_type='edit',
+                        metadata={
+                            'collaborator_email': email_normalized,
+                            'permissions': permissions,
+                            'invitation_reinitiated_at': datetime.utcnow().isoformat()
+                        }
+                    )
+                    try:
+                        self.supabase.table("deck_collaborators").update({
+                            "share_link_id": share_link.get("id"),
+                            "updated_at": datetime.utcnow().isoformat(),
+                            "permissions": permissions or existing.get("permissions") or ['view', 'edit'],
+                        }).eq("id", existing.get("id")).execute()
+                    except Exception as e:
+                        logger.warning(f"Failed to update existing collaborator row with share link: {e}")
+
+                invitation_sent, invitation_error = self._send_collaborator_invitation(
+                    email_normalized=email_normalized,
+                    deck_uuid=deck_uuid,
+                    share_short_code=share_link["short_code"],
+                    collaborator_exists=collaborator_exists,
+                )
+
+                share_link['access_count'] = share_link.get('access_count', 0)
+                share_link['last_accessed_at'] = share_link.get('last_accessed_at')
+                share_link['is_active'] = share_link.get('is_active', True)
+                share_link['invitation_sent'] = invitation_sent
+                share_link['invitation_error'] = invitation_error
+                share_link['collaborator_exists'] = collaborator_exists
+                share_link['user_id'] = existing.get("user_id")
+                share_link['collaborator_email'] = email_normalized
+                share_link['already_exists'] = True
+                return share_link
 
             # Create an edit share link to provide FE with fallback when email delivery isn't set up
             share_link = self.create_share_link(
@@ -454,48 +601,13 @@ class DeckSharingService:
             except Exception as e:
                 logger.warning(f"Failed to create deck_collaborators row: {e}")
 
-            # Try to send invitation email for non-users (Best-effort)
-            invitation_sent = False
-            invitation_error: Optional[str] = None
             collaborator_exists = bool(user_id)
-            if not collaborator_exists:
-                service_key = os.getenv("SUPABASE_SERVICE_KEY")
-                if service_key:
-                    try:
-                        from supabase import create_client
-                        admin_client = create_client(os.getenv("SUPABASE_URL"), service_key)
-                        # Kick off invite; Supabase will email the user
-                        admin_client.auth.admin.invite_user_by_email(email_normalized)
-                        invitation_sent = True
-                    except Exception as e:
-                        invitation_error = str(e)
-                        logger.warning(f"Could not send invitation email via Supabase: {invitation_error}")
-                        # Fallback: use Resend if configured
-                        try:
-                            # Fetch deck name for nicer email
-                            deck_response = self.supabase.table('decks').select('name').eq('uuid', deck_uuid).single().execute()
-                            deck_title = deck_response.data.get('name', 'Untitled Deck') if deck_response.data else 'Untitled Deck'
-                            base_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-                            share_url = f"{base_url}/e/{share_link['short_code']}"
-                            from services.email_service import send_collaborator_invite_email
-                            if send_collaborator_invite_email(email_normalized, deck_title, share_url):
-                                invitation_sent = True
-                                invitation_error = None
-                        except Exception as e2:
-                            logger.warning(f"Resend fallback failed: {e2}")
-                else:
-                    logger.warning("SUPABASE_SERVICE_KEY not set - cannot send invitation emails")
-                    # Try Resend only path as fallback
-                    try:
-                        deck_response = self.supabase.table('decks').select('name').eq('uuid', deck_uuid).single().execute()
-                        deck_title = deck_response.data.get('name', 'Untitled Deck') if deck_response.data else 'Untitled Deck'
-                        base_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-                        share_url = f"{base_url}/e/{share_link['short_code']}"
-                        from services.email_service import send_collaborator_invite_email
-                        if send_collaborator_invite_email(email_normalized, deck_title, share_url):
-                            invitation_sent = True
-                    except Exception as e3:
-                        logger.warning(f"Resend-only invite failed: {e3}")
+            invitation_sent, invitation_error = self._send_collaborator_invitation(
+                email_normalized=email_normalized,
+                deck_uuid=deck_uuid,
+                share_short_code=share_link["short_code"],
+                collaborator_exists=collaborator_exists,
+            )
 
             # Enrich share link for FE expectations
             share_link['access_count'] = 0

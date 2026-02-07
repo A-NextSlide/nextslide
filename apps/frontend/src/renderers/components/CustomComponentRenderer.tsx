@@ -2403,10 +2403,10 @@ img.ns-img-ready {
           boxSizing: 'border-box',
           width: baseStyles.width || '100%', // Revert to 100% to fill the parent slot
           height: baseStyles.height || '100%',
-          // CRITICAL: In edit mode, disable pointer events so clicks pass through
-          // to the parent ComponentRenderer wrapper for selection
-          // UNLESS it is selected, then we allow interaction
-          pointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none'
+          // Disable pointer events so clicks pass through to the parent ComponentRenderer
+          // wrapper for selection (edit mode) or to enter edit mode (view mode via dblclick).
+          // Only enable when selected in edit mode so user can interact with iframe content.
+          pointerEvents: effectiveIsEditMode && isSelected ? 'auto' : 'none'
         }}
       >
         {/* Content wrapper that applies the scale */}
@@ -2422,7 +2422,9 @@ img.ns-img-ready {
             transform: isThumbnail ? 'none' : `scale(${scale})`,
             transformOrigin: 'top left',
             boxSizing: 'border-box',
-            pointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none'
+            // In edit mode: 'none' when unselected (clicks go to ComponentRenderer overlay), 'auto' when selected (interact with iframe)
+            // In view mode: 'none' so double-clicks pass through to ComponentRenderer wrapper → enters edit mode
+            pointerEvents: effectiveIsEditMode && isSelected ? 'auto' : 'none'
           }}
         >
           {/* IFRAME RENDERING - Simple 100% fill, HTML handles responsive layout */}
@@ -2444,7 +2446,9 @@ img.ns-img-ready {
                 border: 'none',
                 backgroundColor: 'transparent',
                 display: 'block',
-                pointerEvents: isThumbnail ? 'none' : 'auto'
+                // 'none' in view mode and when unselected in edit mode so clicks pass to parent
+                // 'auto' only when selected in edit mode (interact with iframe content)
+                pointerEvents: effectiveIsEditMode && isSelected ? 'auto' : 'none'
               }}
               sandbox={shouldUseStaticHtml ? "allow-same-origin" : "allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"}
               title="Custom Component"
@@ -2479,7 +2483,7 @@ img.ns-img-ready {
 
           {/* Non-iframe content */}
           {!isIframeComponent && (
-            <div style={{ width: '100%', height: '100%', pointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none' }}>
+            <div style={{ width: '100%', height: '100%', pointerEvents: effectiveIsEditMode && isSelected ? 'auto' : 'none' }}>
               {content}
             </div>
           )}

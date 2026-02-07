@@ -119,14 +119,14 @@ const CATEGORY_OPTIONS = [
 const HERO_PROMPTS: Record<number, { badge: string; text: string }> = {
   0: { badge: 'Physics', text: 'Inside a black hole — what actually happens past the event horizon' },
   1: { badge: 'Psych', text: 'Your brain on doom scrolling — the neuroscience of infinite feeds' },
-  2: { badge: 'Startup', text: 'From garage to $40 billion — the Stripe story nobody tells' },
-  3: { badge: 'Pitch', text: 'Nexus AI — the Series B pitch deck that raised $50M' },
+  2: { badge: 'Startup', text: 'Stripe: Increasing the GDP of the Internet' },
+  3: { badge: 'Finance', text: 'Alphabet (Google) quarterly earnings breakdown — revenue, margins, AI capex' },
   4: { badge: 'Tech', text: "How Spotify's algorithm knows what you want to hear before you do" },
   5: { badge: 'Design', text: 'The 7 invisible design tricks Apple uses to make you spend more' },
-  6: { badge: 'Culture', text: 'What your city looks like at 3 AM — the hidden night shift economy' },
-  7: { badge: 'History', text: 'Mount Tambora 1816 — the eruption that deleted summer' },
-  8: { badge: 'Nature', text: '3,000 feet underwater — life that evolved in permanent darkness' },
-  9: { badge: 'Neuro', text: 'The 100-millisecond judgement — how your brain reads a face' },
+  6: { badge: 'Gaming', text: "Crash's Impossible Code — the PlayStation tricks that shouldn't have worked" },
+  7: { badge: 'Biology', text: 'Photosynthesis — the 3-billion-year-old chemical reaction keeping everything alive' },
+  8: { badge: 'Nature', text: 'Into the Abyss — deep ocean exploration beneath 3,000 feet of darkness' },
+  9: { badge: 'Business', text: 'The state of global banking in 2026 — rates, margins, and the capital squeeze' },
   10: { badge: 'Science', text: "Why your phone needs Einstein's relativity to find coffee" },
   11: { badge: 'Art', text: 'The hidden geometry in every masterpiece from Da Vinci to Beyoncé' },
 };
@@ -326,6 +326,13 @@ const AdminDecks: React.FC = () => {
   const [heroSlides, setHeroSlides] = useState<Map<string, SeedSlideData[]>>(new Map());
   const [loadingHeroSlides, setLoadingHeroSlides] = useState<Set<string>>(new Set());
   const [presentingHero, setPresentingHero] = useState<{ uuid: string; title: string; slides: SeedSlideData[]; slideIdx: number } | null>(null);
+
+  // Seed prompts state (editable)
+  const [seedPromptsLoaded, setSeedPromptsLoaded] = useState(false);
+  const [heroSeedPrompts, setHeroSeedPrompts] = useState<{ slot: number; prompt: string; category: string }[]>([]);
+  const [communitySeedPrompts, setCommunitySeedPrompts] = useState<{ index: number; prompt: string; category: string }[]>([]);
+  const [seedPromptsCollapsed, setSeedPromptsCollapsed] = useState(false);
+  const [reseedProgress, setReseedProgress] = useState<{ current: number; total: number; jobs: { deckId: string; title: string; source: string; status: string }[] } | null>(null);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
   const isFetchingRef = useRef(false);
@@ -645,10 +652,23 @@ const AdminDecks: React.FC = () => {
     }
   };
 
+  const loadSeedPrompts = async () => {
+    if (seedPromptsLoaded) return;
+    try {
+      const data = await adminApi.getSeedPrompts();
+      setHeroSeedPrompts(data.hero);
+      setCommunitySeedPrompts(data.community);
+      setSeedPromptsLoaded(true);
+    } catch {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to load seed prompts' });
+    }
+  };
+
   const handleToggleSeo = () => {
     const next = !seoExpanded;
     setSeoExpanded(next);
     if (next && seoPages.length === 0) loadSeoData();
+    if (next) loadSeedPrompts();
   };
 
   const handleViewCommunity = async (category: string) => {
@@ -794,7 +814,27 @@ const AdminDecks: React.FC = () => {
   const handleReseedAll = async () => {
     setIsReseedingAll(true);
     try {
-      const result = await adminApi.seedReseedAll(parseInt(seedSlides), seedStyle);
+      // Build prompt overrides from editable state
+      const heroOverrides: Record<number, string> = {};
+      heroSeedPrompts.forEach(hp => { heroOverrides[hp.slot] = hp.prompt; });
+      const communityOverrides = communitySeedPrompts.map(cp => ({ prompt: cp.prompt, category: cp.category }));
+
+      const result = await adminApi.seedReseedAll(
+        parseInt(seedSlides),
+        seedStyle,
+        heroOverrides,
+        communityOverrides,
+      );
+
+      // Track progress for sequential display
+      const progressJobs = result.decks.map(d => ({
+        deckId: d.new_deck_id,
+        title: d.title,
+        source: d.source,
+        status: 'generating',
+      }));
+      setReseedProgress({ current: 0, total: result.count, jobs: progressJobs });
+
       // Add all to seed jobs for polling
       const newJobs: SeedJob[] = result.decks.map(d => ({
         deckId: d.new_deck_id,
@@ -802,7 +842,7 @@ const AdminDecks: React.FC = () => {
         status: 'generating' as const,
         progress: 0,
         slideCount: 0,
-        message: `Reseeding ${d.source}...`,
+        message: `Queued (${d.source})...`,
         name: d.title,
         pushedTo: [],
         slides: [],
@@ -1464,7 +1504,158 @@ const AdminDecks: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* ── Featured Decks (Hero Pool) — collapsible list ── */}
+                  {/* ── Seed Prompts — editable hero + community prompts ── */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <button
+                        onClick={() => setSeedPromptsCollapsed(!seedPromptsCollapsed)}
+                        className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+                      >
+                        <Sparkles className="h-3 w-3 text-[#FF4301]" />
+                        <h3 className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301]">Seed Prompts</h3>
+                        <span className="text-[10px] font-mono text-[#999]">{heroSeedPrompts.length} hero · {communitySeedPrompts.length} community</span>
+                        {seedPromptsCollapsed ? <ChevronDown className="h-3 w-3 text-[#999]" /> : <ChevronUp className="h-3 w-3 text-[#999]" />}
+                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-[9px] px-2 gap-1 border-[#FF4301]/30 text-[#FF4301] hover:bg-[#FF4301]/5"
+                          disabled={isReseedingAll || heroSeedPrompts.length === 0}
+                          onClick={handleReseedAll}
+                        >
+                          {isReseedingAll ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <RefreshCw className="h-2.5 w-2.5" />}
+                          Reseed All ({heroSeedPrompts.length + communitySeedPrompts.length})
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Reseed progress bar */}
+                    {reseedProgress && (
+                      <div className="mb-3 p-2.5 rounded-lg border border-[#FF4301]/20 bg-[#FF4301]/5">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-medium text-[#FF4301]">
+                            Reseeding {reseedProgress.total} decks sequentially...
+                          </span>
+                          <button
+                            onClick={() => setReseedProgress(null)}
+                            className="text-[9px] text-[#999] hover:text-[#666]"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                        <div className="w-full h-1.5 bg-[#eee] dark:bg-[#333] rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-[#FF4301] rounded-full transition-all duration-500"
+                            style={{
+                              width: `${Math.max(2, (seedJobs.filter(j =>
+                                reseedProgress.jobs.some(rj => rj.deckId === j.deckId) &&
+                                (j.status === 'completed' || j.status === 'failed')
+                              ).length / reseedProgress.total) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-[9px] text-[#999]">
+                            {seedJobs.filter(j =>
+                              reseedProgress.jobs.some(rj => rj.deckId === j.deckId) && j.status === 'completed'
+                            ).length} done
+                          </span>
+                          <span className="text-[9px] text-[#999]">
+                            {seedJobs.filter(j =>
+                              reseedProgress.jobs.some(rj => rj.deckId === j.deckId) && j.status === 'generating'
+                            ).length} in progress
+                          </span>
+                          <span className="text-[9px] text-red-400">
+                            {seedJobs.filter(j =>
+                              reseedProgress.jobs.some(rj => rj.deckId === j.deckId) && j.status === 'failed'
+                            ).length} failed
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {!seedPromptsCollapsed && seedPromptsLoaded && (
+                      <div className="space-y-4">
+                        {/* Hero prompts */}
+                        <div>
+                          <h4 className="text-[9px] font-bold uppercase tracking-wider text-[#999] mb-1.5 flex items-center gap-1.5">
+                            <Star className="h-2.5 w-2.5" /> Hero Carousel (12 slots)
+                          </h4>
+                          <div className="space-y-1.5">
+                            {heroSeedPrompts.map((hp, i) => (
+                              <div key={hp.slot} className="border border-[#eaeaea] dark:border-[#333] rounded-lg p-2.5 bg-white dark:bg-[#111]">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold text-[#FF4301] bg-[#FF4301]/10 tabular-nums flex-shrink-0">
+                                    H{hp.slot}
+                                  </span>
+                                  <Badge variant="outline" className="text-[8px] px-1 py-0 h-3.5 border-[#ddd] dark:border-[#444]">
+                                    {hp.category}
+                                  </Badge>
+                                  <span className="text-[9px] text-[#999] truncate flex-1">
+                                    {hp.prompt.split('DESIGN:')[0].trim().slice(0, 80)}...
+                                  </span>
+                                </div>
+                                <textarea
+                                  value={hp.prompt}
+                                  onChange={(e) => {
+                                    const updated = [...heroSeedPrompts];
+                                    updated[i] = { ...hp, prompt: e.target.value };
+                                    setHeroSeedPrompts(updated);
+                                  }}
+                                  rows={3}
+                                  className="w-full text-[10px] leading-relaxed p-2 rounded border border-[#eaeaea] dark:border-[#333] bg-[#fafafa] dark:bg-[#0a0a0a] text-black dark:text-white resize-y focus:outline-none focus:border-[#FF4301]/40 focus:ring-1 focus:ring-[#FF4301]/20"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Community prompts */}
+                        <div>
+                          <h4 className="text-[9px] font-bold uppercase tracking-wider text-[#999] mb-1.5 flex items-center gap-1.5">
+                            <Users className="h-2.5 w-2.5" /> Community Decks (11 curated)
+                          </h4>
+                          <div className="space-y-1.5">
+                            {communitySeedPrompts.map((cp, i) => (
+                              <div key={cp.index} className="border border-[#eaeaea] dark:border-[#333] rounded-lg p-2.5 bg-white dark:bg-[#111]">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold text-blue-600 bg-blue-500/10 tabular-nums flex-shrink-0">
+                                    C{cp.index}
+                                  </span>
+                                  <Badge variant="outline" className="text-[8px] px-1 py-0 h-3.5 border-[#ddd] dark:border-[#444]">
+                                    {cp.category}
+                                  </Badge>
+                                  <span className="text-[9px] text-[#999] truncate flex-1">
+                                    {cp.prompt.split('DESIGN:')[0].trim().slice(0, 80)}...
+                                  </span>
+                                </div>
+                                <textarea
+                                  value={cp.prompt}
+                                  onChange={(e) => {
+                                    const updated = [...communitySeedPrompts];
+                                    updated[i] = { ...cp, prompt: e.target.value };
+                                    setCommunitySeedPrompts(updated);
+                                  }}
+                                  rows={3}
+                                  className="w-full text-[10px] leading-relaxed p-2 rounded border border-[#eaeaea] dark:border-[#333] bg-[#fafafa] dark:bg-[#0a0a0a] text-black dark:text-white resize-y focus:outline-none focus:border-[#FF4301]/40 focus:ring-1 focus:ring-[#FF4301]/20"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {!seedPromptsCollapsed && !seedPromptsLoaded && (
+                      <div className="flex items-center gap-2 py-4 justify-center text-[#999]">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="text-xs">Loading seed prompts...</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Existing Featured Decks (Hero Pool) — collapsible list ── */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <button
@@ -1472,43 +1663,27 @@ const AdminDecks: React.FC = () => {
                         className="flex items-center gap-2 hover:opacity-80 transition-opacity"
                       >
                         <Star className="h-3 w-3 text-[#FF4301]" />
-                        <h3 className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301]">Hero Pool</h3>
+                        <h3 className="text-[10px] font-bold uppercase tracking-wider text-[#FF4301]">Current Hero Pool</h3>
                         <span className="text-[10px] font-mono text-[#999]">{featuredDecks.length} decks</span>
                         {heroPoolCollapsed ? <ChevronDown className="h-3 w-3 text-[#999]" /> : <ChevronUp className="h-3 w-3 text-[#999]" />}
                       </button>
-                      <div className="flex items-center gap-1.5">
-                        {!heroPoolCollapsed && featuredDecks.length > 0 && (
-                          <div className="flex items-center gap-1 mr-2">
-                            <button onClick={expandAllHero} className="text-[9px] text-[#999] hover:text-[#666] dark:hover:text-[#ccc] transition-colors">
-                              Expand all
-                            </button>
-                            <span className="text-[#ddd] dark:text-[#444]">·</span>
-                            <button onClick={collapseAllHero} className="text-[9px] text-[#999] hover:text-[#666] dark:hover:text-[#ccc] transition-colors">
-                              Collapse
-                            </button>
-                          </div>
-                        )}
-                        {featuredDecks.length > 0 && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 text-[9px] px-2 gap-1 border-[#FF4301]/30 text-[#FF4301] hover:bg-[#FF4301]/5"
-                            disabled={isReseedingAll}
-                            onClick={handleReseedAll}
-                          >
-                            {isReseedingAll ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <RefreshCw className="h-2.5 w-2.5" />}
-                            Reseed All
-                          </Button>
-                        )}
-                      </div>
+                      {!heroPoolCollapsed && featuredDecks.length > 0 && (
+                        <div className="flex items-center gap-1 mr-2">
+                          <button onClick={expandAllHero} className="text-[9px] text-[#999] hover:text-[#666] dark:hover:text-[#ccc] transition-colors">
+                            Expand all
+                          </button>
+                          <span className="text-[#ddd] dark:text-[#444]">·</span>
+                          <button onClick={collapseAllHero} className="text-[9px] text-[#999] hover:text-[#666] dark:hover:text-[#ccc] transition-colors">
+                            Collapse
+                          </button>
+                        </div>
+                      )}
                     </div>
                     {!heroPoolCollapsed && (
                       <>
                         {featuredDecks.length === 0 ? (
-                          <div className="py-6 text-center border border-dashed border-[#ddd] dark:border-[#444] rounded-xl mt-1.5">
-                            <Presentation className="h-6 w-6 mx-auto mb-1.5 text-[#ccc]" />
-                            <p className="text-xs text-[#999]">No featured decks yet</p>
-                            <p className="text-[10px] text-[#bbb] mt-0.5">Generate decks above and push to featured</p>
+                          <div className="py-4 text-center border border-dashed border-[#ddd] dark:border-[#444] rounded-xl mt-1.5">
+                            <p className="text-[10px] text-[#bbb]">No featured decks — hit "Reseed All" above to generate</p>
                           </div>
                         ) : (
                           <div className="border border-[#eaeaea] dark:border-[#333] rounded-lg overflow-hidden divide-y divide-[#eaeaea] dark:divide-[#333]">
@@ -1529,7 +1704,6 @@ const AdminDecks: React.FC = () => {
                                   onDrop={() => handleDropFeatured(d.uuid)}
                                   onDragEnd={handleDragEndFeatured}
                                 >
-                                  {/* Collapsed row */}
                                   <div
                                     className={cn(
                                       'flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-[#fafafa] dark:hover:bg-[#161616] transition-colors group',
@@ -1538,32 +1712,21 @@ const AdminDecks: React.FC = () => {
                                     )}
                                     onClick={() => toggleExpandHero(d.uuid)}
                                   >
-                                    {/* Drag handle */}
                                     <GripVertical className="h-3 w-3 text-[#ccc] dark:text-[#555] flex-shrink-0 cursor-grab active:cursor-grabbing" />
-
-                                    {/* Slot badge */}
                                     <span className="px-1.5 py-0.5 rounded text-[9px] font-bold text-[#FF4301] bg-[#FF4301]/10 flex-shrink-0 tabular-nums">
                                       #{d.display_order}
                                     </span>
-
-                                    {/* Name */}
                                     <span className="text-[11px] font-medium text-black dark:text-white truncate flex-1 min-w-0">
                                       {d.name}
                                     </span>
-
-                                    {/* Prompt badge */}
                                     {prompt && (
                                       <span className="hidden lg:inline text-[9px] text-[#999] truncate max-w-[200px]">
                                         {prompt.badge}
                                       </span>
                                     )}
-
-                                    {/* Slide count */}
                                     <span className="text-[10px] text-[#999] tabular-nums flex-shrink-0">
                                       {d.slide_count} slides
                                     </span>
-
-                                    {/* Actions on hover */}
                                     <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                       <button
                                         onClick={(e) => { e.stopPropagation(); handleReseed(d.uuid, 'featured'); }}
@@ -1597,14 +1760,10 @@ const AdminDecks: React.FC = () => {
                                         <X className="h-2.5 w-2.5" />
                                       </button>
                                     </div>
-
-                                    {/* Chevron */}
                                     <span className="text-[#ccc] dark:text-[#444] flex-shrink-0">
                                       {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                                     </span>
                                   </div>
-
-                                  {/* Expanded: slide thumbnails */}
                                   {isExpanded && (
                                     <div className="px-3 pb-2.5 pt-0.5">
                                       {prompt && (
@@ -1660,7 +1819,6 @@ const AdminDecks: React.FC = () => {
                         <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                           {communityDecksForCategory.map(d => (
                               <div key={d.id} className="flex items-center gap-2.5 p-2 rounded-xl border border-[#eaeaea] dark:border-[#333] hover:border-[#ccc] dark:hover:border-[#555] transition-colors">
-                                {/* Thumbnail (PNG) */}
                                 <div className="w-20 aspect-video rounded-lg overflow-hidden flex-shrink-0 ring-1 ring-black/[0.06] dark:ring-white/[0.08] bg-zinc-800 relative">
                                   <img
                                     src={thumbnailUrl(d.deck_uuid)}
@@ -1670,8 +1828,6 @@ const AdminDecks: React.FC = () => {
                                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                   />
                                 </div>
-
-                                {/* Info */}
                                 <div className="min-w-0 flex-1">
                                   <p className="text-[11px] font-semibold truncate leading-tight">{d.title}</p>
                                   <div className="flex items-center gap-2 text-[10px] text-[#999] mt-0.5">
@@ -1680,19 +1836,7 @@ const AdminDecks: React.FC = () => {
                                     {d.author_name && <span className="truncate max-w-[80px]">{d.author_name}</span>}
                                   </div>
                                 </div>
-
-                                {/* Actions */}
                                 <div className="flex items-center gap-1 flex-shrink-0">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 w-6 p-0 text-[#999] hover:text-[#FF4301]"
-                                    disabled={reseedingUuids.has(d.deck_uuid)}
-                                    onClick={() => handleReseed(d.deck_uuid, 'community')}
-                                    title="Reseed this deck"
-                                  >
-                                    {reseedingUuids.has(d.deck_uuid) ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                                  </Button>
                                   <Button
                                     variant="ghost"
                                     size="sm"

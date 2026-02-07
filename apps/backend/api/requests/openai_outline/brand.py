@@ -49,7 +49,7 @@ async def _ai_extract_brand(title: str) -> Optional[Dict[str, str]]:
 
 async def _select_brand_appropriate_fonts(brand_name: str, brand_domain: Optional[str] = None) -> Dict[str, str]:
     """Return neutral defaults when brand fonts are unavailable."""
-    return {"hero": "Montserrat", "body": "Open Sans"}
+    return {"hero": "Inter", "body": "Inter"}
 
 
 async def _hydrate_style_preferences(

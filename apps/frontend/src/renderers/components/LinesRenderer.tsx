@@ -631,7 +631,7 @@ export const renderLines: RendererFunction = ({ component, containerRef, isSelec
               y1={relativeStart.y}
               x2={relativeControlPoints?.[0]?.x ?? (relativeStart.x + relativeEnd.x) / 2}
               y2={relativeEnd.y}
-              stroke="#FF007B"
+              stroke="#FF4301"
               strokeWidth={1}
               strokeDasharray="2,2"
               opacity={0.3}
@@ -643,7 +643,7 @@ export const renderLines: RendererFunction = ({ component, containerRef, isSelec
               y1={(relativeStart.y + relativeEnd.y) / 2 - 15}
               x2={relativeStart.x}
               y2={(relativeStart.y + relativeEnd.y) / 2 + 15}
-              stroke="#FF007B"
+              stroke="#FF4301"
               strokeWidth={1}
               opacity={0.2}
               style={{ pointerEvents: 'none' }}
@@ -653,7 +653,7 @@ export const renderLines: RendererFunction = ({ component, containerRef, isSelec
               y1={(relativeStart.y + relativeEnd.y) / 2 - 15}
               x2={relativeEnd.x}
               y2={(relativeStart.y + relativeEnd.y) / 2 + 15}
-              stroke="#FF007B"
+              stroke="#FF4301"
               strokeWidth={1}
               opacity={0.2}
               style={{ pointerEvents: 'none' }}
@@ -664,7 +664,7 @@ export const renderLines: RendererFunction = ({ component, containerRef, isSelec
               cy={(relativeStart.y + relativeEnd.y) / 2}
               r={12}
               fill="transparent"
-              stroke="#FF007B"
+              stroke="#FF4301"
               strokeWidth={1}
               strokeOpacity={0.5}
               style={{ pointerEvents: 'none' }}
@@ -673,10 +673,11 @@ export const renderLines: RendererFunction = ({ component, containerRef, isSelec
             <circle
             cx={relativeControlPoints?.[0]?.x ?? (relativeStart.x + relativeEnd.x) / 2}
             cy={(relativeStart.y + relativeEnd.y) / 2}
-            r={8}
-            fill="white"
-            stroke="#FF007B"
-            strokeWidth={2.5}
+            r={7}
+            fill="rgba(255,255,255,0.85)"
+            stroke="#FF4301"
+            strokeWidth={1.5}
+            strokeOpacity={0.7}
             style={{ 
               cursor: 'move', 
               pointerEvents: 'all' 
@@ -736,49 +737,51 @@ export const renderLines: RendererFunction = ({ component, containerRef, isSelec
             <circle
               cx={relativeStart.x}
               cy={relativeStart.y}
-              r={12}
+              r={11}
               fill="transparent"
-              stroke="#FF007B"
-              strokeWidth={1}
-              strokeOpacity={0.5}
+              stroke="#FF4301"
+              strokeWidth={0.5}
+              strokeOpacity={0.35}
               style={{ pointerEvents: 'none' }}
             />
             <circle
               cx={relativeStart.x}
               cy={relativeStart.y}
-              r={8}
-              fill="white"
-              stroke="#FF007B"
-              strokeWidth={2.5}
-              style={{ 
-                cursor: isDragging && draggedEndpoint === 'start' ? 'grabbing' : 'move', 
-                pointerEvents: 'all' 
+              r={7}
+              fill="rgba(255,255,255,0.85)"
+              stroke="#FF4301"
+              strokeWidth={1.5}
+              strokeOpacity={0.7}
+              style={{
+                cursor: isDragging && draggedEndpoint === 'start' ? 'grabbing' : 'move',
+                pointerEvents: 'all'
               }}
               data-endpoint="start"
               onMouseDown={handleStartMouseDown}
             />
-            
+
             {/* End point handle with outer ring for visibility */}
             <circle
               cx={relativeEnd.x}
               cy={relativeEnd.y}
-              r={12}
+              r={11}
               fill="transparent"
-              stroke="#FF007B"
-              strokeWidth={1}
-              strokeOpacity={0.5}
+              stroke="#FF4301"
+              strokeWidth={0.5}
+              strokeOpacity={0.35}
               style={{ pointerEvents: 'none' }}
             />
             <circle
               cx={relativeEnd.x}
               cy={relativeEnd.y}
-              r={8}
-              fill="white"
-              stroke="#FF007B"
-              strokeWidth={2.5}
-              style={{ 
-                cursor: isDragging && draggedEndpoint === 'end' ? 'grabbing' : 'move', 
-                pointerEvents: 'all' 
+              r={7}
+              fill="rgba(255,255,255,0.85)"
+              stroke="#FF4301"
+              strokeWidth={1.5}
+              strokeOpacity={0.7}
+              style={{
+                cursor: isDragging && draggedEndpoint === 'end' ? 'grabbing' : 'move',
+                pointerEvents: 'all'
               }}
               data-endpoint="end"
               onMouseDown={handleEndMouseDown}

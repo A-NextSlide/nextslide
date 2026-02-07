@@ -3620,9 +3620,19 @@ async def export_share_viewers(
 
 # ==================== Admin Deck Seeder ====================
 
+
+def _clean_deck_name(prompt: str, max_len: int = 100) -> str:
+    """Strip DESIGN/Mood/INTERACTIVE directives to get a clean short title."""
+    name = prompt
+    for marker in ("DESIGN:", "Mood:", "INTERACTIVE:"):
+        if marker in name:
+            name = name.split(marker)[0]
+    return name.strip().rstrip(".")[:max_len]
+
+
 # Full generation prompts for each hero carousel slot.
-# Each includes specific DESIGN color directives so we never fall back to a
-# generic "blue/dark" palette.  Keyed by display_order (0-11).
+# Keyed by display_order (0-11). Slot 0 has explicit DESIGN directives;
+# all others use Mood descriptors and let the theme generator pick colors/fonts.
 HERO_SLOT_PROMPTS: Dict[int, str] = {
     # ── 0  HOOK: awe + physics ──
     0: (
@@ -3639,114 +3649,97 @@ HERO_SLOT_PROMPTS: Dict[int, str] = {
         "Your brain on doom scrolling — the neuroscience of infinite feeds. Dopamine loops, "
         "variable-ratio reinforcement, the attention economy, what happens to your prefrontal cortex "
         "after 3 hours on TikTok, and why the 'one more scroll' feeling is engineered. "
-        "DESIGN: Screen-glow blue (#60A5FA) bleeding into dopamine pink (#F472B6) on dark backgrounds. "
-        "Notification-bubble motifs, brain scan imagery, glitch-art textures. Unsettling but beautiful. "
-        "INTERACTIVE: Build an interactive attention tracker — click through a mock feed and watch "
-        "a live dopamine meter spike. Add a quiz: 'Can you guess which design pattern is manipulating you?'"
+        "Every slide must have a stunning, creative interactive visualization — something unexpected "
+        "and beautiful that makes the data feel alive. Surprise me."
     ),
-    # ── 2  ASPIRATIONAL: startup energy ──
+    # ── 2  ASPIRATIONAL: startup energy — stripe.com aesthetic ──
     2: (
         "From garage to $40 billion — how Stripe was built by two brothers who dropped out of college, "
         "convinced Peter Thiel in a 10-minute demo, and quietly became the backbone of internet payments. "
         "Cover the 7-line integration that changed everything, the developer-first playbook, and how "
         "they built in Dublin while competing with banks. "
-        "DESIGN: Warm amber (#F59E0B) to burnt orange (#EA580C) gradient on cream (#FFFBEB). "
-        "Garage-era photography, code snippets as design elements, timeline-driven narrative. "
-        "INTERACTIVE: Build a startup timeline — click each year to see the key decision and revenue milestone. "
-        "Add a flip-card grid: front shows the obstacle, back reveals how they solved it."
+        "DESIGN: Replicate the stripe.com aesthetic — deep indigo/dark navy (#0A2540) backgrounds with "
+        "vibrant gradient meshes in purple-blue-teal-green, clean sans-serif typography, generous whitespace, "
+        "and subtle glassmorphism. Use smooth CSS gradient animations and layered mesh blobs like Stripe's "
+        "homepage. Code snippets should look like real Stripe API calls with syntax highlighting. "
+        "INTERACTIVE: Build interactive code demos, animated payment flow diagrams, and revenue growth "
+        "charts with smooth transitions. Make it feel like browsing stripe.com/docs meets a keynote."
     ),
-    # ── 3  PRODUCT DEMO: pitch deck showcase ──
+    # ── 3  TRADITIONAL: Google quarterly financial breakdown ──
     3: (
-        "Nexus AI — Series B pitch deck for an AI-powered workflow automation platform that just hit "
-        "$18M ARR. The problem: enterprises waste 40%% of employee time on repetitive tasks. The product: "
-        "an AI agent that plugs into Slack, Jira, and Salesforce to automate workflows in plain English. "
-        "Traction: 320 enterprise customers, 94%% retention, $56K ACV, tripled revenue in 12 months. "
-        "The ask: $50M at $400M valuation to expand into Europe and launch the self-serve tier. "
-        "DESIGN: Jet black (#09090B) backgrounds with razor-sharp white text and one electric accent — "
-        "bold orange (#FF4301). Big hero numbers that dominate each slide, dramatic spacing, zero clutter. "
-        "Think Sequoia deck meets Y Combinator demo day. Confident, clean, no filler. "
-        "INTERACTIVE: Build a tabbed dashboard — one tab per key metric (ARR, NRR, CAC payback, runway). "
-        "Add a market-size calculator: drag sliders for TAM assumptions and watch the opportunity update live."
+        "Alphabet (Google) latest quarterly earnings breakdown — revenue by segment (Search, YouTube, Cloud, "
+        "Other Bets), operating margins, AI capex surge, headcount changes, and what Wall Street missed. "
+        "Use real publicly available numbers. Dense charts, data tables, margin waterfalls, and "
+        "year-over-year comparisons. This is a serious financial analysis, not a hype deck. "
+        "Every slide must have a stunning, precise data visualization — clean, information-dense. "
+        "Make the numbers tell a story."
     ),
     # ── 4  TECH: everyone uses Spotify ──
     4: (
         "How Spotify's algorithm knows what you want to hear before you do — collaborative filtering, "
         "audio fingerprinting, NLP on lyrics, the Discover Weekly pipeline, and the echo chamber problem. "
-        "DESIGN: Spotify green (#1DB954) accents on matte black. Soundwave visualizations, "
-        "audio spectrum gradients from green to purple. Clean, dark, data-rich. "
-        "INTERACTIVE: Build a mock recommendation engine — input your mood and get a playlist. "
-        "Add a flowchart showing how a single song recommendation travels through Spotify's ML pipeline."
+        "Every slide must have a stunning, creative interactive visualization — something unexpected "
+        "and beautiful that makes the algorithm feel alive. Surprise me."
     ),
     # ── 5  MARKETING: persuasion psychology ──
     5: (
         "The 7 invisible design tricks Apple uses to make you spend more — from the unboxing ritual "
         "to store architecture, pricing decoys, the Diderot effect, typography choices that signal premium, "
         "and the calculated friction in their upgrade cycle. "
-        "DESIGN: Minimalist white (#FAFAFA) with surgical black text and one accent: Apple silver (#A1A1AA). "
-        "Product photography, clean helvetica-style type, massive whitespace. Apple-level polish. "
-        "INTERACTIVE: Build a pricing comparison — toggle features to see how decoy pricing nudges your choice. "
-        "Add a before/after slider showing packaging design with and without psychological triggers."
+        "Every slide must have a stunning, creative interactive visualization — something unexpected "
+        "and beautiful that makes the psychology feel alive. Surprise me."
     ),
-    # ── 6  CULTURE: atmospheric + visual ──
+    # ── 6  GAMING: PS2 hacking nostalgia ──
     6: (
-        "What your city looks like at 3 AM — a visual essay on the night shift economy. "
-        "Bakers starting at midnight, ER nurses on hour 11, long-haul truckers, data center techs, "
-        "street cleaners, and the invisible workforce that keeps the world running while you sleep. "
-        "DESIGN: Deep midnight blue (#1E293B) with neon amber (#FBBF24) streetlight glow and "
-        "cyan (#22D3EE) shop-sign accents. Cinematic night photography, atmospheric grain. "
-        "INTERACTIVE: Build a 24-hour clock — click each hour to reveal who's working and what they're doing. "
-        "Add a city map with glowing dots that show activity hotspots at different hours."
+        "How hackers cracked the PS2 wide open to play Banjo-Kazooie and homebrew games — "
+        "mod chips soldered to the motherboard, the swap magic disc trick, FreeMcBoot exploits, "
+        "memory card hacks, the OPL network loading era, and the cat-and-mouse war between Sony's "
+        "anti-piracy team and the homebrew scene that just wanted to run Linux on a game console. "
+        "Every slide must have a stunning, creative interactive visualization — something unexpected "
+        "and beautiful that makes the hacking feel alive. Surprise me."
     ),
-    # ── 7  HISTORY: dramatic storytelling ──
+    # ── 7  EDUCATION: photosynthesis deep dive ──
     7: (
-        "Mount Tambora 1816 — the eruption that deleted summer from the calendar. "
-        "The explosion 4x bigger than Krakatoa, ash clouds that circled the globe, crop failures "
-        "from New England to China, famine and migration, and how Mary Shelley wrote Frankenstein "
-        "because she was trapped indoors by endless rain. "
-        "DESIGN: Volcanic orange (#C2410C) and ash grey (#78716C) on smoke-dark backgrounds. "
-        "Atmospheric landscape painting style, grain textures, dramatic chiaroscuro lighting. "
-        "INTERACTIVE: Build an eruption timeline — click each month of 1816 to see the global chain reaction. "
-        "Add a world map showing temperature drops and crop failure zones spreading outward from Indonesia."
+        "Photosynthesis — the 3-billion-year-old chemical reaction keeping every living thing alive. "
+        "Light-dependent reactions in the thylakoid membrane, the Calvin cycle turning CO2 into sugar, "
+        "chlorophyll absorbing red and blue while reflecting green, C3 vs C4 vs CAM plants, "
+        "why leaves change color in autumn, and how artificial photosynthesis could solve clean energy. "
+        "Every slide must have a stunning, creative interactive visualization — something unexpected "
+        "and beautiful that makes the biology feel alive. Surprise me."
     ),
     # ── 8  NATURE: deep ocean spectacle ──
     8: (
         "3,000 feet underwater — life that evolved in permanent darkness. Bioluminescent hunters, "
         "the anglerfish's nightmare lure, giant squid camera-shy for centuries, hydrothermal vent "
         "ecosystems that don't need sunlight, and pressure that would crush a submarine like a soda can. "
-        "DESIGN: Abyssal black with bioluminescent cyan (#06B6D4) and deep-sea magenta (#D946EF) glows. "
-        "Ethereal, alien, like discovering another planet. Creature photography, minimal text. "
-        "INTERACTIVE: Build a depth slider — drag from surface to 11,000m and watch creatures appear "
-        "at their depth zone. Add clickable creature cards that flip to reveal survival adaptations."
+        "Every slide must have a stunning, creative interactive visualization — something unexpected "
+        "and beautiful that makes the deep ocean feel alive. Surprise me."
     ),
-    # ── 9  NEURO: psychology + faces ──
+    # ── 9  TRADITIONAL: banking industry deep research ──
     9: (
-        "The 100-millisecond judgement — how your brain reads a stranger's face before you think a single "
-        "thought. The amygdala's snap verdict, what facial symmetry signals, why you trust some voices "
-        "instantly, the halo effect that locks it in, and how to hack first impressions in your favour. "
-        "DESIGN: Clean editorial — warm charcoal (#292524) with amber (#D97706) accent on ivory (#FFFBEB). "
-        "Black-and-white portrait photography with one warm highlight. Generous whitespace, sharp type. "
-        "INTERACTIVE: Build a face-reading demo — hover over facial regions to see what your brain "
-        "evaluates. Add a 'first impression audit' quiz with reveal-on-click psychology breakdowns."
+        "The state of global banking in 2026 — interest rate impacts on net interest margins, "
+        "the Basel III endgame rules reshaping capital requirements, digital banking adoption rates "
+        "by region, JPMorgan vs Goldman vs regional banks performance comparison, fintech disruption "
+        "metrics, credit card delinquency trends, and CRE loan exposure risks. "
+        "Use real publicly available data. Dense analysis with data tables, comparison charts, "
+        "trend lines, and risk heat maps. This is a serious research brief, not a marketing deck. "
+        "Every slide must have a stunning, precise data visualization that makes the analysis compelling."
     ),
     # ── 10  SCIENCE: clever hook ──
     10: (
         "Why your phone needs Einstein to find the nearest coffee — the insane engineering inside GPS. "
         "31 satellites with atomic clocks accurate to nanoseconds, relativity corrections that matter, "
         "trilateration math, and how your phone does all this in milliseconds. "
-        "DESIGN: Blueprint navy (#1E3A5F) with precise white linework and satellite gold (#EAB308) accents. "
-        "Technical diagrams, orbital path illustrations, engineering-schematic aesthetic. "
-        "INTERACTIVE: Build a satellite trilateration demo — drag 3 satellites to see how their signal "
-        "circles intersect to find your position. Add a relativity calculator showing GPS drift without Einstein."
+        "Every slide must have a stunning, creative interactive visualization — something unexpected "
+        "and beautiful that makes the engineering feel alive. Surprise me."
     ),
     # ── 11  ART: beauty + hidden patterns ──
     11: (
         "The hidden geometry in every masterpiece from Da Vinci to Beyoncé's music videos — golden ratio, "
         "rule of thirds, fibonacci spirals in architecture, why certain album covers feel 'right', "
         "and the mathematical patterns your eye follows without knowing. "
-        "DESIGN: Gallery white (#FAFAF9) with golden ratio gold (#B8860B) overlay lines and "
-        "subtle Renaissance warmth (#D4A574). Elegant, museum-catalogue aesthetic. Large artwork imagery. "
-        "INTERACTIVE: Build an overlay tool — toggle golden ratio / rule of thirds / fibonacci spiral "
-        "on famous artworks. Add a composition quiz: 'Which geometric principle makes this image work?'"
+        "Every slide must have a stunning, creative interactive visualization — something unexpected "
+        "and beautiful that makes the hidden geometry feel alive. Surprise me."
     ),
 }
 
@@ -3758,13 +3751,131 @@ HERO_SLOT_CATEGORIES: Dict[int, str] = {
     3: "business",
     4: "technology",
     5: "marketing",
-    6: "creative",
+    6: "technology",
     7: "education",
     8: "education",
-    9: "personal",
+    9: "business",
     10: "technology",
     11: "creative",
 }
+
+# Slots that use traditional/static slide mode (data-heavy, no interactivity)
+HERO_SLOT_STATIC: set = {3, 9}
+
+# 11 curated community-seed prompts with full DESIGN + INTERACTIVE directives.
+# Keyed by index (0-10). Each covers a different viral/school/work topic.
+COMMUNITY_SEED_PROMPTS: List[Dict[str, str]] = [
+    {
+        "category": "technology",
+        "prompt": (
+            "How hackers reverse-engineered the PS2 to run homebrew games — mod chips, disc swap tricks, "
+            "FreeMcBoot exploits, and the cat-and-mouse war between Sony and the scene. "
+            "Every slide must have a stunning, creative interactive visualization — something unexpected "
+            "and beautiful that makes the hacking feel alive. Surprise me."
+        ),
+    },
+    {
+        "category": "education",
+        "prompt": (
+            "The evolution of video games: from Pong to photorealism in 50 years — pixel art, sprite scaling, "
+            "Mode 7, polygon counts doubling every 2 years, shader revolutions, and ray tracing in real-time. "
+            "Every slide must have a stunning, creative interactive visualization — something unexpected "
+            "and beautiful that makes the evolution feel alive. Surprise me."
+        ),
+    },
+    {
+        "category": "creative",
+        "prompt": (
+            "Breaking Bad: the chemistry and cinematography that made it legendary — color theory in every scene, "
+            "the teal-and-orange palette, POV shots from inside objects, the deliberate pacing that builds dread, "
+            "and how Vince Gilligan turned a chemistry teacher into Shakespeare. "
+            "Every slide must have a stunning, creative interactive visualization — something unexpected "
+            "and beautiful that makes the cinematography feel alive. Surprise me."
+        ),
+    },
+    {
+        "category": "creative",
+        "prompt": (
+            "How the MCU planned 23 movies like a chess grandmaster — Kevin Feige's 10-year roadmap, "
+            "post-credit scene strategy, the Infinity Stone scavenger hunt, character introduction sequencing, "
+            "and why the Thanos snap worked because of 18 films of buildup. "
+            "Every slide must have a stunning, creative interactive visualization — something unexpected "
+            "and beautiful that makes the cinematic universe feel alive. Surprise me."
+        ),
+    },
+    {
+        "category": "education",
+        "prompt": (
+            "CRISPR: the gene-editing breakthrough that could cure cancer — how bacterial immune systems became "
+            "humanity's most precise scalpel. Guide RNA targeting, Cas9 cutting, HDR repair, sickle cell trials "
+            "already working, and the ethics of editing human embryos. "
+            "Every slide must have a stunning, creative interactive visualization — something unexpected "
+            "and beautiful that makes the science feel alive. Surprise me."
+        ),
+    },
+    {
+        "category": "education",
+        "prompt": (
+            "The fall of Rome — the real reasons the greatest empire collapsed. Not just barbarians: lead poisoning, "
+            "currency debasement, plague of Cyprian, over-expansion, the army going freelance, and climate cooling "
+            "that starved the frontiers. "
+            "Every slide must have a stunning, creative interactive visualization — something unexpected "
+            "and beautiful that makes the collapse feel alive. Surprise me."
+        ),
+    },
+    {
+        "category": "business",
+        "prompt": (
+            "How Notion went from near-death to a $10B tool-building empire — the pivot that saved them, "
+            "the block-based architecture bet, community-led growth, template marketplace flywheel, "
+            "and why they won against Google Docs, Confluence, and Airtable combined. "
+            "Every slide must have a stunning, creative interactive visualization — something unexpected "
+            "and beautiful that makes the growth story feel alive. Surprise me."
+        ),
+    },
+    {
+        "category": "personal",
+        "prompt": (
+            "Salary negotiation psychology: the science-backed tricks that can get you 20%% more — "
+            "anchoring bias, the first-number advantage, BATNA leverage, calibrated questions from FBI "
+            "negotiators, and why women who negotiate the same way as men get penalized (and the workaround). "
+            "Every slide must have a stunning, creative interactive visualization — something unexpected "
+            "and beautiful that makes the psychology feel alive. Surprise me."
+        ),
+    },
+    {
+        "category": "creative",
+        "prompt": (
+            "Why Studio Ghibli films feel different — the philosophy Pixar can't replicate. Ma (negative space), "
+            "mono no aware (the beauty of impermanence), hand-drawn wind and water, Miyazaki's refusal to "
+            "storyboard traditionally, and scenes of characters just… existing. No villain, no rush. "
+            "Every slide must have a stunning, creative interactive visualization — something unexpected "
+            "and beautiful that makes the philosophy feel alive. Surprise me."
+        ),
+    },
+    {
+        "category": "technology",
+        "prompt": (
+            "How TikTok's algorithm cracked the code Facebook and YouTube couldn't — the For You page architecture, "
+            "interest graphs vs social graphs, watch-time signals over likes, cold-start solutions for new users, "
+            "and why it makes every other recommendation engine look like a search bar. "
+            "Every slide must have a stunning, creative interactive visualization — something unexpected "
+            "and beautiful that makes the algorithm feel alive. Surprise me."
+        ),
+    },
+    {
+        "category": "education",
+        "prompt": (
+            "James Webb Space Telescope: the discoveries rewriting astronomy textbooks — galaxies that formed "
+            "too early for current models, atmospheric composition of exoplanets, the deepest infrared image ever, "
+            "and why a $10 billion origami sunshield at L2 is the greatest engineering flex in history. "
+            "Every slide must have a stunning, creative interactive visualization — something unexpected "
+            "and beautiful that makes the discoveries feel alive. Surprise me."
+        ),
+    },
+]
+
+COMMUNITY_SEED_CATEGORIES = [p["category"] for p in COMMUNITY_SEED_PROMPTS]
 
 
 class SeedGenerateRequest(BaseModel):
@@ -3826,6 +3937,8 @@ async def _admin_generate_deck(
     style: Optional[str],
     reseed_info: Optional[Dict[str, Any]] = None,
     temperature: Optional[float] = None,
+    max_parallel_slides: Optional[int] = None,
+    slide_mode: Optional[str] = None,
 ):
     """Background task: full outline -> compose pipeline for admin seed decks.
 
@@ -3916,10 +4029,13 @@ async def _admin_generate_deck(
             )
 
         # Pass the full enhanced topic so slide composition retains design direction
-        deck_outline.stylePreferences = StylePreferencesItem(
+        style_kwargs = dict(
             initialIdea=enhanced_topic,
             vibeContext=f"{style} — {topic}" if style else topic,
         )
+        if slide_mode:
+            style_kwargs["slideMode"] = slide_mode
+        deck_outline.stylePreferences = StylePreferencesItem(**style_kwargs)
 
         deck_data = build_initial_deck_payload(deck_outline, deck_uuid)
         deck_data["data"] = deck_data.get("data", {})
@@ -3927,14 +4043,15 @@ async def _admin_generate_deck(
         upload_deck(deck_data, deck_uuid, user_id)
 
         _safe_supabase_update(deck_uuid, {
-            "status": {"state": "generating", "message": "Composing slides via Modal..." if USE_MODAL else "Composing slides..."}
+            "status": {"state": "generating", "message": "Composing slides..."}
         })
 
-        # Phase 2: Compose slides — compose_deck_stream auto-routes to Modal when USE_MODAL=true
+        # Phase 2: Compose slides — routes through Modal when USE_MODAL=true
         slides_generated = 0
+        _slide_parallelism = max_parallel_slides or MAX_PARALLEL_SLIDES
         async for update in compose_deck_stream(
             deck_outline, registry, deck_uuid,
-            max_parallel=MAX_PARALLEL_SLIDES,
+            max_parallel=_slide_parallelism,
             delay_between_slides=DELAY_BETWEEN_SLIDES,
             async_images=False,
             user_id=user_id,
@@ -3953,20 +4070,26 @@ async def _admin_generate_deck(
                     })
                 except Exception:
                     pass
-                # All slides generated — don't wait for a completion event that may never come
                 if slides_generated >= num_slides:
                     break
             elif utype in ("deck_complete", "composition_complete", "complete"):
                 break
 
+        # Verify slides actually have components (not empty outlines)
         final_count = slides_generated
+        composed_count = 0
         try:
             sb = _get_fresh_supabase()
             data_result = sb.table("decks").select("slides").eq("uuid", deck_uuid).single().execute()
             if data_result.data:
-                final_count = len(data_result.data.get("slides") or [])
+                all_slides = data_result.data.get("slides") or []
+                final_count = len(all_slides)
+                composed_count = sum(1 for s in all_slides if s.get("components") and len(s["components"]) > 0)
         except Exception:
             pass
+
+        if composed_count < num_slides:
+            logger.warning(f"[admin_seed] {deck_uuid}: only {composed_count}/{num_slides} slides have components — marking partial")
 
         # Auto-create public share link for all seed decks
         try:
@@ -3977,6 +4100,7 @@ async def _admin_generate_deck(
         _safe_supabase_update(deck_uuid, {
             "status": {"state": "completed"},
             "slide_count": final_count,
+            "composed_count": composed_count,
         })
 
         # Render thumbnail PNG for the new deck
@@ -3988,13 +4112,12 @@ async def _admin_generate_deck(
             logger.warning(f"[admin_seed] Thumbnail render failed for {deck_uuid}: {thumb_err}")
 
         # If this is a reseed, swap UUID in featured/community tables
-        if reseed_info:
+        if reseed_info and reseed_info.get("old_uuid"):
             try:
                 sb = _get_fresh_supabase()
                 old_uuid = reseed_info["old_uuid"]
                 source = reseed_info.get("source", "")
-                # Strip DESIGN directives to get a clean short name for the DB
-                deck_name = (topic.split("DESIGN:")[0].strip().rstrip(".") if "DESIGN:" in topic else topic)[:100]
+                deck_name = _clean_deck_name(topic)
 
                 # Fetch slides from the newly generated deck
                 deck_row = sb.table("decks").select("slides, description").eq("uuid", deck_uuid).maybe_single().execute()
@@ -4025,6 +4148,8 @@ async def _admin_generate_deck(
                         thumbnail = f"{os.environ.get('SUPABASE_URL', '')}/storage/v1/object/public/thumbnails/thumbnails/{deck_uuid}_s0.png"
                         # Remove old community entry for the previous deck if any
                         sb.table("community_decks").delete().eq("deck_uuid", old_uuid).execute()
+                        from datetime import datetime as _dt
+                        _now = _dt.utcnow().isoformat()
                         sb.table("community_decks").upsert({
                             "id": str(uuid_module.uuid4()),
                             "deck_uuid": deck_uuid,
@@ -4036,10 +4161,12 @@ async def _admin_generate_deck(
                             "is_featured": True,
                             "slide_count": final_count,
                             "first_slide": slides_data[0] if slides_data else None,
+                            "slides_snapshot": slides_data,
                             "author_name": "NextSlide",
                             "view_count": 0,
                             "remix_count": 0,
                             "thumbnail_url": thumbnail,
+                            "approved_at": _now,
                         }, on_conflict="deck_uuid").execute()
                         logger.info(f"[admin_seed] Injected into leaderboard: {deck_uuid} (cat={community_category})")
                     except Exception as lb_err:
@@ -4050,6 +4177,8 @@ async def _admin_generate_deck(
                     sb.table("community_decks").delete().eq("deck_uuid", old_uuid).execute()
                     import uuid as uuid_module
                     thumbnail = f"{os.environ.get('SUPABASE_URL', '')}/storage/v1/object/public/thumbnails/thumbnails/{deck_uuid}_s0.png"
+                    from datetime import datetime as _dt
+                    _now = _dt.utcnow().isoformat()
                     sb.table("community_decks").insert({
                         "id": str(uuid_module.uuid4()),
                         "deck_uuid": deck_uuid,
@@ -4060,10 +4189,12 @@ async def _admin_generate_deck(
                         "status": "approved",
                         "slide_count": final_count,
                         "first_slide": slides_data[0] if slides_data else None,
+                        "slides_snapshot": slides_data,
                         "author_name": "NextSlide",
                         "view_count": 0,
                         "remix_count": 0,
                         "thumbnail_url": thumbnail,
+                        "approved_at": _now,
                     }).execute()
                     logger.info(f"[admin_seed] Reseed swap: community {old_uuid} -> {deck_uuid} (cat={category}, {len(slides_data)} slides)")
             except Exception as swap_err:
@@ -4111,6 +4242,30 @@ async def _ensure_public_share(supabase, deck_uuid: str, user_id: str) -> Option
             return code
 
     return None
+
+
+@router.get("/seed/prompts")
+async def admin_seed_prompts(
+    admin: Dict[str, Any] = Depends(verify_admin_role),
+):
+    """Return the default hero + community seed prompts for editing in the admin UI."""
+    hero = [
+        {
+            "slot": slot,
+            "prompt": prompt,
+            "category": HERO_SLOT_CATEGORIES.get(slot, "education"),
+        }
+        for slot, prompt in sorted(HERO_SLOT_PROMPTS.items())
+    ]
+    community = [
+        {
+            "index": idx,
+            "prompt": item["prompt"],
+            "category": item["category"],
+        }
+        for idx, item in enumerate(COMMUNITY_SEED_PROMPTS)
+    ]
+    return {"hero": hero, "community": community}
 
 
 @router.post("/seed/generate")
@@ -4299,6 +4454,8 @@ async def admin_seed_push_featured(
         import uuid as uuid_module
         community_category = HERO_SLOT_CATEGORIES.get(body.display_order, "technology")
         thumbnail = f"{os.environ.get('SUPABASE_URL', '')}/storage/v1/object/public/thumbnails/thumbnails/{body.deck_uuid}_s0.png"
+        from datetime import datetime as _dt
+        _now = _dt.utcnow().isoformat()
         supabase.table("community_decks").upsert({
             "id": str(uuid_module.uuid4()),
             "deck_uuid": body.deck_uuid,
@@ -4310,10 +4467,12 @@ async def admin_seed_push_featured(
             "is_featured": True,
             "slide_count": len(slides),
             "first_slide": slides[0] if slides else None,
+            "slides_snapshot": slides,
             "author_name": "NextSlide",
             "view_count": 0,
             "remix_count": 0,
             "thumbnail_url": thumbnail,
+            "approved_at": _now,
         }, on_conflict="deck_uuid").execute()
     except Exception as lb_err:
         logger.warning(f"[admin_seed] Leaderboard injection on push-featured failed: {lb_err}")
@@ -4491,8 +4650,10 @@ class SeedReseedRequest(BaseModel):
 
 
 class SeedReseedAllRequest(BaseModel):
-    slides: Optional[int] = 10
+    slides: Optional[int] = 8
     style: Optional[str] = "creative"
+    hero_prompts: Optional[Dict[int, str]] = None  # slot -> prompt override
+    community_prompts: Optional[List[Dict[str, str]]] = None  # [{prompt, category}]
 
 
 @router.post("/seed/reseed")
@@ -4528,8 +4689,7 @@ async def admin_seed_reseed(
     else:
         raise HTTPException(status_code=400, detail="source must be 'featured' or 'community'")
 
-    # For the deck row name, extract just the first sentence (before DESIGN:)
-    deck_display_name = title.split("DESIGN:")[0].strip().rstrip(".") if "DESIGN:" in title else title
+    deck_display_name = _clean_deck_name(title)
     new_uuid = str(uuid_module.uuid4())
     supabase.table("decks").insert({
         "uuid": new_uuid,
@@ -4543,10 +4703,13 @@ async def admin_seed_reseed(
     }).execute()
 
     from agents.config import SEED_TEMPERATURE
+    # Use static mode for traditional slots
+    _slide_mode = "static" if (body.source == "featured" and reseed_info.get("display_order") in HERO_SLOT_STATIC) else None
     asyncio.create_task(_admin_generate_deck(
         new_uuid, user_id, title, body.slides or 10, body.style,
         reseed_info=reseed_info,
         temperature=SEED_TEMPERATURE,
+        slide_mode=_slide_mode,
     ))
 
     return {"new_deck_id": new_uuid, "old_deck_uuid": body.deck_uuid, "title": title, "status": "generating"}
@@ -4557,77 +4720,113 @@ async def admin_seed_reseed_all(
     body: SeedReseedAllRequest,
     admin: Dict[str, Any] = Depends(verify_admin_role),
 ):
-    """Reseed ALL featured and community decks with throttled concurrency."""
+    """Reseed with curated prompts: 12 hero + 11 community = 23 decks, processed 1 at a time.
+
+    Old community seed decks are deleted and replaced. Featured decks are swapped in-place.
+    Accepts optional prompt overrides via hero_prompts and community_prompts in the request body.
+    """
     import asyncio
     import uuid as uuid_module
     from services.supabase import reset_supabase_client
 
-    # Force a fresh client to avoid stale connection from previous runs
     reset_supabase_client()
     supabase = get_supabase_client()
     user_id = admin["id"]
 
-    # Gather all featured decks
-    featured = supabase.table("featured_decks").select(
-        "uuid, name, display_order"
-    ).eq("is_active", True).order("display_order").execute()
+    # ── Resolve hero prompts (12 slots) ──
+    hero_prompts = dict(HERO_SLOT_PROMPTS)  # copy defaults
+    if body.hero_prompts:
+        for slot, prompt in body.hero_prompts.items():
+            if prompt and prompt.strip():
+                hero_prompts[slot] = prompt.strip()
 
-    # Gather all community decks
-    community = supabase.table("community_decks").select(
-        "deck_uuid, title, category"
+    # ── Resolve community prompts (11 default, or overrides) ──
+    community_prompts = [
+        {"prompt": p["prompt"], "category": p["category"]}
+        for p in COMMUNITY_SEED_PROMPTS
+    ]
+    if body.community_prompts:
+        community_prompts = [
+            {"prompt": p.get("prompt", "").strip(), "category": p.get("category", "business")}
+            for p in body.community_prompts
+            if p.get("prompt", "").strip()
+        ]
+
+    # ── Delete old community seed decks ──
+    old_community = supabase.table("community_decks").select(
+        "deck_uuid"
     ).eq("status", "approved").execute()
+    old_community_uuids = [d["deck_uuid"] for d in (old_community.data or [])]
+    if old_community_uuids:
+        for uuid_val in old_community_uuids:
+            try:
+                supabase.table("community_decks").delete().eq("deck_uuid", uuid_val).execute()
+            except Exception as e:
+                logger.warning(f"[admin_seed] Could not delete old community deck {uuid_val}: {e}")
 
-    # Build work items (deck rows are created just-in-time inside each task)
+    # ── Delete old featured decks ──
+    old_featured = supabase.table("featured_decks").select(
+        "uuid"
+    ).eq("is_active", True).execute()
+    old_featured_uuids = [d["uuid"] for d in (old_featured.data or [])]
+    if old_featured_uuids:
+        for uuid_val in old_featured_uuids:
+            try:
+                supabase.table("featured_decks").delete().eq("uuid", uuid_val).execute()
+            except Exception as e:
+                logger.warning(f"[admin_seed] Could not delete old featured deck {uuid_val}: {e}")
+
+    # ── Build work items ──
     work_items = []
 
-    for d in (featured.data or []):
+    # Hero decks (12)
+    for slot in sorted(hero_prompts.keys()):
         new_uuid = str(uuid_module.uuid4())
-        display_order = d.get("display_order", 0)
-        # Use the rich hero slot prompt (with DESIGN/color directives)
-        title = HERO_SLOT_PROMPTS.get(display_order, d.get("name", "presentation"))
+        prompt = hero_prompts[slot]
+        category = HERO_SLOT_CATEGORIES.get(slot, "education")
         reseed_info = {
-            "old_uuid": d["uuid"],
             "source": "featured",
-            "display_order": display_order,
+            "display_order": slot,
+            "category": category,
         }
         work_items.append({
             "new_uuid": new_uuid,
-            "title": title,
+            "title": prompt,
             "reseed_info": reseed_info,
-            "old_uuid": d["uuid"],
             "source": "featured",
+            "display_order": slot,
+            "category": category,
+            "slide_mode": "static" if slot in HERO_SLOT_STATIC else None,
         })
 
-    for d in (community.data or []):
+    # Community decks (11)
+    for idx, cp in enumerate(community_prompts):
         new_uuid = str(uuid_module.uuid4())
-        title = d.get("title", "presentation")
         reseed_info = {
-            "old_uuid": d["deck_uuid"],
             "source": "community",
-            "category": d.get("category", "business"),
+            "category": cp["category"],
+            "index": idx,
         }
         work_items.append({
             "new_uuid": new_uuid,
-            "title": title,
+            "title": cp["prompt"],
             "reseed_info": reseed_info,
-            "old_uuid": d["deck_uuid"],
             "source": "community",
+            "category": cp["category"],
         })
 
-    # Throttled launcher: max concurrent generation tasks (Modal handles parallelism)
-    _RESEED_CONCURRENCY = 50
+    _RESEED_CONCURRENCY = 10
 
-    # Launch the batch runner as a background task
     asyncio.create_task(_run_reseed_batch(
-        work_items, user_id, body.slides or 10, body.style, _RESEED_CONCURRENCY,
+        work_items, user_id, body.slides or 8, body.style, _RESEED_CONCURRENCY,
     ))
 
     results = [
         {
             "new_deck_id": item["new_uuid"],
-            "old_uuid": item["old_uuid"],
-            "title": item["title"],
+            "title": _clean_deck_name(item["title"]),
             "source": item["source"],
+            "category": item.get("category", ""),
         }
         for item in work_items
     ]
@@ -4635,12 +4834,12 @@ async def admin_seed_reseed_all(
     return {
         "count": len(results),
         "decks": results,
-        "message": f"Reseeding {len(results)} decks ({len(featured.data or [])} featured, {len(community.data or [])} community) — max {_RESEED_CONCURRENCY} concurrent",
+        "message": f"Reseeding {len(results)} decks (12 hero, {len(community_prompts)} community) — {_RESEED_CONCURRENCY} at a time",
     }
 
 
 async def _run_reseed_batch(work_items, user_id, num_slides, style, concurrency):
-    """Process reseed items sequentially in batches, creating deck rows just-in-time."""
+    """Process reseed items with bounded parallelism, creating deck rows just-in-time."""
     import asyncio
 
     semaphore = asyncio.Semaphore(concurrency)
@@ -4653,10 +4852,8 @@ async def _run_reseed_batch(work_items, user_id, num_slides, style, concurrency)
         async with semaphore:
             deck_uuid = item["new_uuid"]
             full_prompt = item["title"]
-            # For DB row name, strip DESIGN directives to get a clean short title
-            deck_name = full_prompt.split("DESIGN:")[0].strip().rstrip(".") if "DESIGN:" in full_prompt else full_prompt
+            deck_name = _clean_deck_name(full_prompt)
             try:
-                # Create deck row just-in-time (fresh client per insert)
                 sb = get_supabase_client()
                 sb.table("decks").insert({
                     "uuid": deck_uuid,
@@ -4664,12 +4861,11 @@ async def _run_reseed_batch(work_items, user_id, num_slides, style, concurrency)
                     "name": deck_name[:100],
                     "slides": [],
                     "size": {"width": 1920, "height": 1080},
-                    "status": {"state": "generating", "message": "Starting generation..."},
-                    "data": {"source": "admin_seed", "reseed_of": item["old_uuid"]},
+                    "status": {"state": "generating", "message": f"Queued ({completed + failed + 1}/{total})..."},
+                    "data": {"source": "admin_seed"},
                     "slide_count": 0,
                 }).execute()
             except Exception:
-                # Retry with reset
                 try:
                     from services.supabase import reset_supabase_client
                     reset_supabase_client()
@@ -4680,8 +4876,8 @@ async def _run_reseed_batch(work_items, user_id, num_slides, style, concurrency)
                         "name": deck_name[:100],
                         "slides": [],
                         "size": {"width": 1920, "height": 1080},
-                        "status": {"state": "generating", "message": "Starting generation..."},
-                        "data": {"source": "admin_seed", "reseed_of": item["old_uuid"]},
+                        "status": {"state": "generating", "message": f"Queued ({completed + failed + 1}/{total})..."},
+                        "data": {"source": "admin_seed"},
                         "slide_count": 0,
                     }).execute()
                 except Exception as e2:
@@ -4691,20 +4887,66 @@ async def _run_reseed_batch(work_items, user_id, num_slides, style, concurrency)
 
             try:
                 from agents.config import SEED_TEMPERATURE
+                # Throttle per-deck slide parallelism during batch reseed:
+                # 10 decks x 3 slides = 30 concurrent AI calls (vs 10 x 20 = 200)
                 await _admin_generate_deck(
                     deck_uuid, user_id, full_prompt,
                     num_slides, style,
                     reseed_info=item["reseed_info"],
                     temperature=SEED_TEMPERATURE,
+                    max_parallel_slides=3,
+                    slide_mode=item.get("slide_mode"),
                 )
+
+                # Push to featured or community after successful generation
+                sb = get_supabase_client()
+                if item["source"] == "featured":
+                    # Fetch generated slides so the scroller can read them directly
+                    deck_row = sb.table("decks").select("slides, description").eq("uuid", deck_uuid).maybe_single().execute()
+                    slides_data = []
+                    deck_description = ""
+                    if deck_row and getattr(deck_row, "data", None):
+                        slides_data = deck_row.data.get("slides") or []
+                        deck_description = deck_row.data.get("description") or ""
+                    sb.table("featured_decks").insert({
+                        "uuid": deck_uuid,
+                        "name": deck_name[:100],
+                        "description": deck_description,
+                        "slides": slides_data,
+                        "slide_count": len(slides_data),
+                        "display_order": item.get("display_order", 0),
+                        "is_active": True,
+                    }).execute()
+                elif item["source"] == "community":
+                    # Create a share link first
+                    import secrets, string
+                    short_code = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8))
+                    try:
+                        sb.table("shared_presentations").insert({
+                            "deck_uuid": deck_uuid,
+                            "short_code": short_code,
+                            "user_id": user_id,
+                        }).execute()
+                    except Exception:
+                        pass  # share link is nice-to-have
+                    sb.table("community_decks").insert({
+                        "deck_uuid": deck_uuid,
+                        "title": deck_name[:100],
+                        "description": deck_name[:200],
+                        "category": item.get("category", "business"),
+                        "tags": [],
+                        "user_id": user_id,
+                        "status": "approved",
+                        "vote_count": 0,
+                    }).execute()
+
                 completed += 1
+                logger.info(f"[admin_seed] Reseed {completed}/{total} done: {deck_name[:60]}")
             except Exception as gen_err:
                 failed += 1
                 logger.error(f"[admin_seed] Reseed {deck_uuid} failed: {gen_err}")
 
-            if (completed + failed) % 10 == 0:
-                logger.info(f"[admin_seed] Reseed progress: {completed} done, {failed} failed, {total - completed - failed} remaining")
-
+    # Run up to `concurrency` tasks in parallel via the semaphore
     tasks = [asyncio.create_task(_process_one(item)) for item in work_items]
     await asyncio.gather(*tasks, return_exceptions=True)
     logger.info(f"[admin_seed] Reseed batch COMPLETE: {completed} succeeded, {failed} failed out of {total}")

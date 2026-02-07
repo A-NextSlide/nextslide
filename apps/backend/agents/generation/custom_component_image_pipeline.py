@@ -496,6 +496,7 @@ async def resolve_images(
             html = html_processor.inject_prefetched_images(html, prefetched_images)
         html = _inject_image_mode_attrs(html)
         html = _clean_alt_text_in_html(html)
+        html = _fix_icon_url_interpolations(html)
         return html, prefetched_images
 
     image_props = _extract_image_props_from_html(html)
@@ -505,6 +506,7 @@ async def resolve_images(
             logger.info(f"[IMAGE_PIPELINE]   - {prop}: {query[:50]}...")
     if not image_props:
         logger.warning("[IMAGE_PIPELINE] No image props found in HTML - skipping image resolution")
+        html = _fix_icon_url_interpolations(html)
         return html, prefetched_images
 
     brand_info = theme.get("brandInfo", {}) if isinstance(theme, dict) else {}
@@ -684,6 +686,9 @@ async def resolve_images(
 
     # Clean up alt text: strip generate:/search: prefixes and stray URLs
     html = _clean_alt_text_in_html(html)
+
+    # Fix JS template literals that render image URLs as text instead of <img> tags
+    html = _fix_icon_url_interpolations(html)
 
     # ── PostHog pipeline summary ─────────────────────────────────────────
     _searched_count = len([p for p, _ in search_remaining]) if search_remaining else 0
@@ -1177,6 +1182,35 @@ def _find_js_placeholder_images(html_content: str) -> List[Tuple[str, str, str]]
                 logger.info("[JS_PLACEHOLDER] Found JS placeholder: %s: 'placeholder' with label: '%s'", prop_name, label[:50])
 
     return placeholders
+
+
+def _fix_icon_url_interpolations(html: str) -> str:
+    """Fix JS template literals that render image URLs as text instead of <img> tags.
+
+    AI sometimes generates code like:
+        btn.innerHTML = `<div class="btn-icon">${item.icon}</div>`
+    where item.icon is an image URL. This renders the URL as visible text.
+
+    Fix: convert to <img src="${item.icon}" ...> when the property name
+    suggests it's an image (icon, image, img, thumbnail, photo, avatar, logo, picture).
+    """
+    # Match: >${someVar.imageProperty}</  — URL interpolation used as text content
+    IMAGE_PROPS = r'(?:icon|image|img|thumbnail|photo|avatar|logo|picture|src|cover|banner|poster|thumb)'
+    # Pattern: >  ${...imageProperty}  </   (between HTML tags, as text content)
+    pattern = re.compile(
+        r'(>)\s*(\$\{[^}]*\.' + IMAGE_PROPS + r'\s*\})\s*(</)',
+        re.IGNORECASE,
+    )
+
+    def _replace(m):
+        interpolation = m.group(2)
+        return f'{m.group(1)}<img src="{interpolation}" style="width:100%;height:100%;object-fit:contain;" alt="">{m.group(3)}'
+
+    new_html = pattern.sub(_replace, html)
+    if new_html != html:
+        count = len(pattern.findall(html))
+        logger.info(f"[IMAGE_PIPELINE] Fixed {count} icon/image URL interpolations rendered as text")
+    return new_html
 
 
 async def resolve_remaining_placeholders(html_content: str) -> str:

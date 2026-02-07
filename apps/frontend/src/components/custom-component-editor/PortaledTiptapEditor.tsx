@@ -48,7 +48,7 @@ interface PortaledTiptapEditorProps {
 }
 
 // Selection color for the editor border
-const SELECTION_COLOR = '#FF007B';
+const SELECTION_COLOR = '#FF4301';
 const BRAND_ORANGE = '#FF4301';
 
 // Common font families grouped by category

@@ -9,6 +9,32 @@ logger = get_logger(__name__)
 
 _font_service = None
 
+# System fonts that are always available on user devices (matches frontend Essentials category).
+# These should NEVER be fuzzy-matched to registry fonts — pass them through as-is.
+_SYSTEM_FONTS = {
+    "arial", "helvetica", "times new roman", "georgia", "verdana", "tahoma",
+    "trebuchet ms", "courier new", "impact", "comic sans ms", "lucida console",
+    "lucida sans unicode", "palatino linotype", "book antiqua", "garamond",
+    "century gothic", "franklin gothic medium", "candara", "calibri", "cambria",
+    "consolas", "segoe ui", "optima", "futura", "gill sans", "rockwell",
+    "copperplate", "didot", "baskerville", "bodoni mt", "perpetua",
+    "calisto mt", "goudy old style", "system-ui",
+}
+
+
+def _is_known_renderable_font(font_name: str) -> bool:
+    """Check if a font is a known system or Google Font that can be rendered without registry lookup."""
+    key = font_name.strip().lower()
+    if key in _SYSTEM_FONTS:
+        return True
+    try:
+        from services.web_font_service import GOOGLE_FONTS
+        if key in GOOGLE_FONTS:
+            return True
+    except ImportError:
+        pass
+    return False
+
 
 def _get_font_service():
     global _font_service
@@ -23,7 +49,19 @@ def _get_font_service():
 
 
 def get_fallback_font_if_unavailable(font_name: str, *, is_hero: bool = False) -> str:
-    """Return a similar available font if requested font is missing."""
+    """Return a similar available font if requested font is missing.
+
+    System fonts and Google Fonts are passed through directly since they're
+    always renderable in the browser — no need to fuzzy-match them to registry fonts.
+    """
+    if not font_name or not font_name.strip():
+        return "Inter"
+
+    # Pass through known system/Google fonts without fuzzy-matching
+    if _is_known_renderable_font(font_name):
+        logger.debug(f"[FONT FALLBACK] '{font_name}' is a known renderable font, passing through")
+        return font_name
+
     try:
         font_service = _get_font_service()
         if font_service:
@@ -56,8 +94,8 @@ def enforce_theme_fonts(slide_data: Dict[str, Any], theme: Any) -> None:
         typography = {}
         color_palette = {}
 
-    hero_font = typography.get("hero_title", {}).get("family", "Montserrat")
-    body_font = typography.get("body_text", {}).get("family", "Poppins")
+    hero_font = typography.get("hero_title", {}).get("family", "Inter")
+    body_font = typography.get("body_text", {}).get("family", "Inter")
 
     def normalize_font_name(font_name: str) -> str:
         if not font_name:
@@ -200,7 +238,7 @@ def enforce_theme_consistency(slide_data: Dict[str, Any], theme: Any) -> None:
             or "#FF5722"
         )
 
-        hero_font = (typography.get("hero_title", {}) or {}).get("family", "Montserrat")
+        hero_font = (typography.get("hero_title", {}) or {}).get("family", "Inter")
 
         allowed_text_colors = set(c for c in [primary_text, "#FFFFFF", "#000000"] if isinstance(c, str))
         allowed_fill_colors = set(c for c in [accent_1, accent_2, primary_bg, primary_text] if isinstance(c, str))

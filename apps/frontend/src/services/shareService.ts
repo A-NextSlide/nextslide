@@ -356,7 +356,7 @@ class ShareService {
       if (!response.ok) {
         return {
           success: false,
-          error: data.message || data.error || 'Failed to add collaborator'
+          error: data.message || data.error || data.detail || 'Failed to add collaborator'
         };
       }
 
@@ -565,9 +565,11 @@ class ShareService {
 
   async getSharedDecks(filter: 'shared' | 'all' = 'shared'): Promise<ApiResponse<any[]>> {
     try {
-      // Use /api/auth/decks so the vite proxy rule for /api/auth catches it and rewrites to /auth/decks
+      // Auth routes are mounted at /auth/* in production (without /api prefix).
+      // In development we keep /api/auth/* so Vite proxy forwards correctly.
       const base = API_ENDPOINTS.BASE_URL.replace(/\/$/, '');
-      const url = `${base}/auth/decks?filter=${encodeURIComponent(filter)}`;
+      const authBase = import.meta.env.DEV ? base : base.replace(/\/api$/, '');
+      const url = `${authBase}/auth/decks?filter=${encodeURIComponent(filter)}`;
       
       console.log('[ShareService] Fetching shared decks:', {
         url,

@@ -289,8 +289,8 @@ def _theme_agent_to_slide_theme(agent_result: Dict[str, Any]) -> Dict[str, Any]:
             "colors": colors,
         },
         "typography": {
-            "heading": fonts.get("hero", "Montserrat"),
-            "body": fonts.get("body", "Open Sans"),
+            "heading": fonts.get("hero", "Inter"),
+            "body": fonts.get("body", "Inter"),
         },
         "design_philosophy": "Cohesive, professional slides with clear hierarchy.",
         "logo_url": agent_result.get("logo_url"),
@@ -389,8 +389,8 @@ async def generate_preview(
         "secondary_color": palette.get("accent_2", "#FFB81D"),
         "background_color": palette.get("primary_background", "#0f172a"),
         "text_color": palette.get("primary_text", "#ffffff"),
-        "heading_font": typo.get("heading", "Montserrat"),
-        "body_font": typo.get("body", "Open Sans"),
+        "heading_font": typo.get("heading", "Inter"),
+        "body_font": typo.get("body", "Inter"),
         "design_philosophy": slide_theme.get("design_philosophy", ""),
     }
 

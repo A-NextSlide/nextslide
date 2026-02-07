@@ -528,7 +528,7 @@ class FontIntelligence:
 
     def _get_safe_body_font(self, exclude: str) -> str:
         """Get a safe body font that's different from the excluded one"""
-        safe_body_fonts = ['Inter', 'Lato', 'Source Sans Pro', 'Work Sans', 'Nunito', 'Open Sans']
+        safe_body_fonts = ['Inter', 'Lato', 'Work Sans', 'Nunito', 'Open Sans', 'Poppins']
         for font in safe_body_fonts:
             if font.lower() != exclude.lower():
                 return font

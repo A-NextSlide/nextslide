@@ -266,8 +266,8 @@ async def stream_theme_from_outline(
 
                 # If no fonts set, use neutral defaults
                 if not brand_fonts:
-                    hero_font = 'Montserrat'
-                    body_font = 'Open Sans'
+                    hero_font = 'Inter'
+                    body_font = 'Inter'
                     logger.info("[THEME API] Using default fonts: %s/%s", hero_font, body_font)
 
                 brand_domain = getattr(style_prefs, 'brandDomain', None)
@@ -641,8 +641,8 @@ async def theme_from_outline_json(
 
                 # If no fonts set, use neutral defaults
                 if not brand_fonts:
-                    hero_font = 'Montserrat'
-                    body_font = 'Open Sans'
+                    hero_font = 'Inter'
+                    body_font = 'Inter'
                     logger.info("[THEME JSON] Using default fonts: %s/%s", hero_font, body_font)
 
                 # Ensure hero and body are different

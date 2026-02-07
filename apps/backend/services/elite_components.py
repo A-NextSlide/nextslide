@@ -41,7 +41,7 @@ function render({ props, state, updateState }, instanceId) {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      fontFamily: props.fontFamily || 'Montserrat',
+      fontFamily: props.fontFamily || 'Inter',
     }
   }, [
     React.createElement('div', {
@@ -101,7 +101,7 @@ function render({ props }, instanceId) {
       dominantBaseline: 'middle',
       fill: `url(#${gradientId})`,
       fontSize: props.fontSize || '72px',
-      fontFamily: props.fontFamily || 'Montserrat',
+      fontFamily: props.fontFamily || 'Inter',
       fontWeight: props.fontWeight || '700',
       letterSpacing: '-0.02em'
     }, props.text || 'Gradient Text')
@@ -143,7 +143,7 @@ function render({ props, state, updateState }, instanceId) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: props.align || 'center',
-      fontFamily: props.fontFamily || 'Montserrat',
+      fontFamily: props.fontFamily || 'Inter',
       fontSize: props.fontSize || '48px',
       fontWeight: props.fontWeight || '400',
       color: props.color || '#000',
@@ -242,7 +242,7 @@ function render({ props }, instanceId) {
         style: {
           fontSize: fontSize + 'px',
           color: textColor,
-                              fontFamily: 'Montserrat',
+                              fontFamily: 'Inter',
           fontWeight: '500',
           textAlign: 'center',
           lineHeight: lineHeight,

@@ -1125,9 +1125,22 @@ class EnhancedFontService:
         body_fonts = self._filter_available_fonts(body_fonts)
         
         if not hero_fonts or not body_fonts:
-            # Fallback to safe defaults
-            logger.warning(f"⚠️  No available fonts found after filtering! Using fallback fonts.")
-            return {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
+            # Fallback: pick first available from registry instead of hardcoding
+            logger.warning(f"⚠️  No available fonts found after filtering! Using registry fallback.")
+            fallback_hero = 'Inter'
+            fallback_body = 'Inter'
+            for fid, data in self.all_fonts.items():
+                name = data.get('name', '')
+                if not name:
+                    continue
+                has_file = data.get('source') == 'google' or self.get_font_path(fid)
+                if fallback_hero == 'Inter' and has_file:
+                    fallback_hero = name
+                elif fallback_body == 'Inter' and name != fallback_hero and has_file:
+                    fallback_body = name
+                if fallback_hero != 'Inter' and fallback_body != 'Inter':
+                    break
+            return {'hero': fallback_hero, 'body': fallback_body, 'source': 'fallback'}
         
         # Use variety_seed for deterministic rotation through top candidates
         if variety_seed:
@@ -1161,10 +1174,17 @@ class EnhancedFontService:
                     logger.info(f"✅ Using alternative hero font: {hero_name}")
                     break
             else:
-                # All failed, use hardcoded fallback
-                logger.warning("⚠️  All hero fonts invalid! Using Bebas Neue fallback")
-                selected_hero = {'id': 'bebas-neue', 'name': 'Bebas Neue', 'category': 'bold'}
-                hero_name = 'Bebas Neue'
+                # All hero fonts invalid — pick first valid from registry
+                logger.warning("⚠️  All hero fonts invalid! Using registry fallback")
+                for fid, data in self.all_fonts.items():
+                    name = data.get('name', '')
+                    if name and name.lower() not in invalid_fonts:
+                        selected_hero = {'id': fid, 'name': name, 'category': data.get('category', 'sans')}
+                        hero_name = name
+                        break
+                else:
+                    selected_hero = {'id': 'inter', 'name': 'Inter', 'category': 'sans'}
+                    hero_name = 'Inter'
         
         # If body font is invalid, try alternatives or fallback
         if body_name.lower() in invalid_fonts:
@@ -1177,10 +1197,17 @@ class EnhancedFontService:
                     logger.info(f"✅ Using alternative body font: {body_name}")
                     break
             else:
-                # All failed, use hardcoded fallback
-                logger.warning("⚠️  All body fonts invalid! Using Poppins fallback")
-                selected_body = {'id': 'poppins', 'name': 'Poppins', 'category': 'sans-serif'}
-                body_name = 'Poppins'
+                # All body fonts invalid — pick first valid from registry
+                logger.warning("⚠️  All body fonts invalid! Using registry fallback")
+                for fid, data in self.all_fonts.items():
+                    name = data.get('name', '')
+                    if name and name.lower() not in invalid_fonts and name != hero_name:
+                        selected_body = {'id': fid, 'name': name, 'category': data.get('category', 'sans')}
+                        body_name = name
+                        break
+                else:
+                    selected_body = {'id': 'inter', 'name': 'Inter', 'category': 'sans'}
+                    body_name = 'Inter'
         
         # Ensure hero and body are different
         if hero_name == body_name and len(body_fonts) > 1:

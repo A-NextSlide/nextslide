@@ -252,64 +252,57 @@ const MultiSelectionBoundingBox: React.FC<MultiSelectionBoundingBoxProps> = ({
         top: `${yPercent}%`,
         width: `${widthPercent}%`,
         height: `${heightPercent}%`,
-        border: '2px solid #FF007B',
-        borderRadius: '4px',
+        border: '1px dashed rgba(255, 67, 1, 0.6)',
+        borderRadius: '3px',
         zIndex: 1000,
         cursor: isEditing ? 'move' : 'default',
         pointerEvents: isEditing ? 'auto' : 'none',
-        backgroundColor: 'rgba(255, 0, 123, 0.05)', // Very subtle fill to ensure clicks are captured
-        transformOrigin: 'top left' // Ensure consistent transform origin
+        backgroundColor: 'rgba(255, 67, 1, 0.04)',
+        transformOrigin: 'top left'
       }}
       onMouseDown={handleDragStart}
     >
-      {/* Corner handles for visual feedback - positioned with transform to ensure they stay at corners */}
-      <div 
-        className="absolute w-2 h-2 bg-[#FF007B] rounded-full" 
-        style={{ 
-          top: '-4px', 
-          left: '-4px',
-          transform: 'translate(0, 0)',
-          pointerEvents: 'auto',
-          cursor: 'move'
-        }} 
-        onMouseDown={handleDragStart}
-      />
-      <div 
-        className="absolute w-2 h-2 bg-[#FF007B] rounded-full" 
-        style={{ 
-          top: '-4px', 
-          right: '-4px',
-          transform: 'translate(0, 0)',
-          pointerEvents: 'auto',
-          cursor: 'move'
-        }} 
-        onMouseDown={handleDragStart}
-      />
-      <div 
-        className="absolute w-2 h-2 bg-[#FF007B] rounded-full" 
-        style={{ 
-          bottom: '-4px', 
-          left: '-4px',
-          transform: 'translate(0, 0)',
-          pointerEvents: 'auto',
-          cursor: 'move'
-        }} 
-        onMouseDown={handleDragStart}
-      />
-      <div 
-        className="absolute w-2 h-2 bg-[#FF007B] rounded-full" 
-        style={{ 
-          bottom: '-4px', 
-          right: '-4px',
-          transform: 'translate(0, 0)',
-          pointerEvents: 'auto',
-          cursor: 'move'
-        }} 
-        onMouseDown={handleDragStart}
-      />
-      
+      {/* Corner dots */}
+      {[
+        { top: '-3px', left: '-3px' },
+        { top: '-3px', right: '-3px' },
+        { bottom: '-3px', left: '-3px' },
+        { bottom: '-3px', right: '-3px' },
+      ].map((pos, i) => (
+        <div
+          key={i}
+          className="absolute"
+          style={{
+            width: '7px',
+            height: '7px',
+            borderRadius: '2px',
+            backgroundColor: 'rgba(255, 67, 1, 0.55)',
+            backdropFilter: 'blur(2px)',
+            boxShadow: '0 0 0 0.5px rgba(255,255,255,0.5) inset, 0 1px 3px rgba(0,0,0,0.12)',
+            pointerEvents: 'auto',
+            cursor: 'move',
+            ...pos
+          }}
+          onMouseDown={handleDragStart}
+        />
+      ))}
+
       {/* Selection count badge */}
-      <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-[#FF007B] text-white text-xs px-2 py-0.5 rounded pointer-events-none">
+      <div
+        className="absolute -translate-x-1/2 pointer-events-none"
+        style={{
+          top: '-22px',
+          left: '50%',
+          backgroundColor: '#FF4301',
+          color: 'white',
+          fontSize: '10px',
+          fontWeight: 500,
+          padding: '1px 7px',
+          borderRadius: '4px',
+          letterSpacing: '0.02em',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        }}
+      >
         {selectedComponents.length} selected
       </div>
     </div>

@@ -1402,11 +1402,28 @@ class AdminApi {
     });
   }
 
-  async seedReseedAll(slides = 10, style = 'creative'): Promise<{ count: number; decks: { new_deck_id: string; old_uuid: string; title: string; source: string }[]; message: string }> {
+  async seedReseedAll(
+    slides = 8,
+    style = 'creative',
+    heroPrompts?: Record<number, string>,
+    communityPrompts?: { prompt: string; category: string }[],
+  ): Promise<{ count: number; decks: { new_deck_id: string; title: string; source: string; category: string }[]; message: string }> {
     return this.request('/admin/seed/reseed-all', {
       method: 'POST',
-      body: JSON.stringify({ slides, style }),
+      body: JSON.stringify({
+        slides,
+        style,
+        hero_prompts: heroPrompts,
+        community_prompts: communityPrompts,
+      }),
     });
+  }
+
+  async getSeedPrompts(): Promise<{
+    hero: { slot: number; prompt: string; category: string }[];
+    community: { index: number; prompt: string; category: string }[];
+  }> {
+    return this.request('/admin/seed/prompts');
   }
 
   // ==================== Email Control Center ====================

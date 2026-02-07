@@ -321,9 +321,9 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
       {/* Default selection border (hidden during text editing or when hideSelectionUI) */}
       {isSelected && !isTextEditing && !hideSelectionUI && (
         <div
-          className={`absolute inset-0 border rounded-[1px] ${isMultiSelected ? 'border-[#FF007B] border-dashed' : 'border-[#FF007B]'}`}
+          className={`absolute inset-0 rounded-[2px] ${isMultiSelected ? 'border border-dashed border-[#FF4301]/60' : 'border border-[#FF4301]'}`}
           style={{
-            boxShadow: isMultiSelected ? 'none' : '0 0 0 1px rgba(255, 0, 123, 0.3)',
+            boxShadow: isMultiSelected ? 'none' : '0 0 0 0.5px rgba(255, 67, 1, 0.1)',
             zIndex: 10,
             pointerEvents: 'none',
             background: 'transparent'
@@ -370,28 +370,36 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
       {/* Rotation handle - only shown if rotatable, not multi-selected, and not hiding selection UI */}
       {isSelected && isRotatable && !isMultiSelected && !isTextEditing && !hideSelectionUI && (
         <>
-          {/* First render the line extending up from the border */}
-          <div 
-            className="absolute top-0 left-1/2 w-px h-4 bg-[#FF007B] pointer-events-none"
-            style={{ 
+          {/* Line extending up from the border */}
+          <div
+            className="absolute top-0 left-1/2 pointer-events-none"
+            style={{
+              width: '0.5px',
+              height: '14px',
+              background: 'rgba(255, 67, 1, 0.6)',
               transform: 'translate(-50%, -100%)',
               zIndex: 40
             }}
           />
-          
-          {/* Render knob higher above the line (-8px as specified) */}
-          <div 
-            data-rotation-handle="true" // ADDED DATA ATTRIBUTE
-            className="absolute w-3 h-3 border-2 border-[#FF007B] rounded-full cursor-grab"
-            style={{ 
+
+          {/* Rotation knob */}
+          <div
+            data-rotation-handle="true"
+            className="absolute cursor-grab"
+            style={{
+              width: '10px',
+              height: '10px',
               top: '-8px',
               left: '50%',
               transform: 'translate(-50%, -100%)',
               zIndex: 40,
-              backgroundColor: 'white'
+              backgroundColor: 'rgba(255, 67, 1, 0.55)',
+              border: 'none',
+              borderRadius: '50%',
+              backdropFilter: 'blur(2px)',
+              boxShadow: '0 0 0 0.5px rgba(255,255,255,0.5) inset, 0 1px 3px rgba(0,0,0,0.12)'
             }}
             onMouseDown={(e) => {
-
               handleRotationStart(e);
             }}
           />
@@ -402,48 +410,52 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
       {isSelected && onResize && isResizable && !isMultiSelected && !isTextEditing && !hideSelectionUI && (
         <>
           {/* Corner handles (NW, NE, SE, SW) */}
-          <div 
-            className="absolute top-0 left-0 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-nw-resize" 
-            style={{ transform: 'translate(-50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
-            onMouseDown={(e) => handleResizeStart(e, 'nw')}
-          />
-          <div 
-            className="absolute top-0 right-0 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-ne-resize" 
-            style={{ transform: 'translate(50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
-            onMouseDown={(e) => handleResizeStart(e, 'ne')}
-          />
-          <div 
-            className="absolute bottom-0 right-0 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-se-resize" 
-            style={{ transform: 'translate(50%, 50%)', zIndex: 40, backgroundColor: 'white' }}
-            onMouseDown={(e) => handleResizeStart(e, 'se')}
-          />
-          <div 
-            className="absolute bottom-0 left-0 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-sw-resize" 
-            style={{ transform: 'translate(-50%, 50%)', zIndex: 40, backgroundColor: 'white' }}
-            onMouseDown={(e) => handleResizeStart(e, 'sw')}
-          />
-          
-          {/* Middle handles (N, E, S, W) */}
-          <div 
-            className="absolute top-0 left-1/2 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-n-resize" 
-            style={{ transform: 'translate(-50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
-            onMouseDown={(e) => handleResizeStart(e, 'n')}
-          />
-          <div 
-            className="absolute top-1/2 right-0 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-e-resize" 
-            style={{ transform: 'translate(50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
-            onMouseDown={(e) => handleResizeStart(e, 'e')}
-          />
-          <div 
-            className="absolute bottom-0 left-1/2 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-s-resize" 
-            style={{ transform: 'translate(-50%, 50%)', zIndex: 40, backgroundColor: 'white' }}
-            onMouseDown={(e) => handleResizeStart(e, 's')}
-          />
-          <div 
-            className="absolute top-1/2 left-0 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-w-resize" 
-            style={{ transform: 'translate(-50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
-            onMouseDown={(e) => handleResizeStart(e, 'w')}
-          />
+          {(['nw', 'ne', 'se', 'sw'] as const).map(dir => (
+            <div
+              key={dir}
+              className={`absolute cursor-${dir}-resize`}
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '2px',
+                border: 'none',
+                backgroundColor: 'rgba(255, 67, 1, 0.55)',
+                backdropFilter: 'blur(2px)',
+                boxShadow: '0 0 0 0.5px rgba(255,255,255,0.5) inset, 0 1px 3px rgba(0,0,0,0.12)',
+                zIndex: 40,
+                ...(dir.includes('n') ? { top: 0 } : { bottom: 0 }),
+                ...(dir.includes('w') ? { left: 0 } : { right: 0 }),
+                transform: `translate(${dir.includes('w') ? '-50%' : '50%'}, ${dir.includes('n') ? '-50%' : '50%'})`
+              }}
+              onMouseDown={(e) => handleResizeStart(e, dir)}
+            />
+          ))}
+
+          {/* Edge handles (N, E, S, W) */}
+          {([
+            { dir: 'n', pos: { top: 0, left: '50%' }, transform: 'translate(-50%, -50%)', w: '12px', h: '4px' },
+            { dir: 'e', pos: { top: '50%', right: 0 }, transform: 'translate(50%, -50%)', w: '4px', h: '12px' },
+            { dir: 's', pos: { bottom: 0, left: '50%' }, transform: 'translate(-50%, 50%)', w: '12px', h: '4px' },
+            { dir: 'w', pos: { top: '50%', left: 0 }, transform: 'translate(-50%, -50%)', w: '4px', h: '12px' },
+          ] as const).map(({ dir, pos, transform, w, h }) => (
+            <div
+              key={dir}
+              className={`absolute cursor-${dir}-resize`}
+              style={{
+                width: w,
+                height: h,
+                borderRadius: '2px',
+                border: 'none',
+                backgroundColor: 'rgba(255, 67, 1, 0.55)',
+                backdropFilter: 'blur(2px)',
+                boxShadow: '0 0 0 0.5px rgba(255,255,255,0.5) inset, 0 1px 3px rgba(0,0,0,0.12)',
+                zIndex: 40,
+                ...pos,
+                transform
+              }}
+              onMouseDown={(e) => handleResizeStart(e, dir)}
+            />
+          ))}
         </>
       )}
     </div>

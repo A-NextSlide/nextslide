@@ -287,6 +287,16 @@ async def get_community_deck(deck_id: str):
         if not thumb_url:
             thumb_url = _thumbnail_url_for(deck.get('deck_uuid'))
 
+        # Resolve slides: prefer snapshot, fall back to source deck
+        slides = deck.get('slides_snapshot') or []
+        if not slides and deck.get('deck_uuid'):
+            try:
+                src = supabase.table('decks').select('slides').eq('uuid', deck['deck_uuid']).execute()
+                if src.data and src.data[0].get('slides'):
+                    slides = src.data[0]['slides']
+            except Exception:
+                pass
+
         return CommunityDeckDetailResponse(
             id=deck['id'],
             deck_uuid=deck.get('deck_uuid'),
@@ -302,7 +312,7 @@ async def get_community_deck(deck_id: str):
             view_count=deck.get('view_count', 0) + 1,
             approved_at=deck.get('approved_at'),
             submitted_at=deck.get('submitted_at'),
-            slides=deck.get('slides_snapshot') or [],
+            slides=slides,
             theme=deck.get('theme_snapshot'),
         )
 

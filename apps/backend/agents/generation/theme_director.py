@@ -161,11 +161,11 @@ class ThemeDirector:
             },
             "typography": {
                 "hero_title": {
-                    "family": agent_result.get("fonts", {}).get("hero", "Montserrat"),
+                    "family": agent_result.get("fonts", {}).get("hero", "Inter"),
                     "weight": "700"
                 },
                 "body_text": {
-                    "family": agent_result.get("fonts", {}).get("body", "Open Sans"),
+                    "family": agent_result.get("fonts", {}).get("body", "Inter"),
                     "weight": "400"
                 },
             },

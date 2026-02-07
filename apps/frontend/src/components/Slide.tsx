@@ -19,6 +19,7 @@ import { usePresentationStore } from '@/stores/presentationStore';
 import { useEditorStateSafe } from '@/context/EditorStateContext';
 import LockedSlideOverlay from '@/components/deck/LockedSlideOverlay';
 import RemoteSelections from '@/components/deck/RemoteSelections';
+import { useSlideFonts } from '@/hooks/useSlideFonts';
 
 interface SlideProps {
   slide: SlideData;
@@ -66,6 +67,17 @@ const SlideContent: React.FC<SlideProps> = ({
   const [isVisible, setIsVisible] = useState(false);
   const isDraggingRef = useRef(false);
   const isPresenting = usePresentationStore(state => state.isPresenting);
+
+  // Ensure slide fonts are loaded before revealing content to prevent FOUT
+  const { fontsReady } = useSlideFonts(slide);
+  const [fontsRevealed, setFontsRevealed] = useState(false);
+  useEffect(() => {
+    if (fontsReady && !fontsRevealed) {
+      // Small delay so the browser paints with the correct font before we fade in
+      const raf = requestAnimationFrame(() => setFontsRevealed(true));
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [fontsReady, fontsRevealed]);
 
   // Enable remote layout sync only when viewing (not editing) and not a thumbnail
   // This avoids background DOM writes fighting with local interactions while editing
@@ -352,6 +364,9 @@ const SlideContent: React.FC<SlideProps> = ({
         zIndex: isVisible ? 10 : 0,
         pointerEvents: isVisible ? 'auto' : 'none',
         cursor: 'inherit', // Inherit cursor from parent
+        // Hide content until fonts are loaded to prevent FOUT (flash of unstyled text)
+        opacity: fontsRevealed ? 1 : 0,
+        transition: 'opacity 150ms ease-out',
         // Mobile: isolate paint and block zoom gestures to prevent reflow crashes
         ...(BROWSER.isMobile ? {
           touchAction: 'pan-x pan-y',

@@ -52,7 +52,7 @@ class TextRenderMixin:
                 font_size = int(round(float(raw_size) * 96 / 72))
             else:
                 font_size = self._parse_font_size(raw_size)
-        font_family = props.get('fontFamily', 'Montserrat')
+        font_family = props.get('fontFamily', 'Inter')
         font_weight = str(props.get('fontWeight', '400'))
         # Prefer first segment's color if provided (TiptapTextBlock texts[])
         seg_color = None

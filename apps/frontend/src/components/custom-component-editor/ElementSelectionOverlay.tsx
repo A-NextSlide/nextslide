@@ -2,7 +2,7 @@
  * ElementSelectionOverlay - Selection UI for elements inside custom components
  *
  * Provides the same visual feedback as slide-level selection:
- * - Pink (#FF007B) border
+ * - Brand (#FF4301) border
  * - 8 resize handles (4 corners + 4 edges)
  * - Cursor feedback
  *
@@ -31,8 +31,8 @@ interface ElementSelectionOverlayProps {
   overlayRef: React.RefObject<HTMLDivElement>;
 }
 
-// Pink selection color - same as slide level
-const SELECTION_COLOR = '#FF007B';
+// Brand selection color
+const SELECTION_COLOR = '#FF4301';
 
 /**
  * ElementSelectionOverlay - Memoized for performance

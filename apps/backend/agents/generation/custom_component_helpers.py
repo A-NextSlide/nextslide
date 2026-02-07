@@ -1293,6 +1293,6 @@ def _term_to_prop_name(term: str) -> str:
 
 
 def _extract_fonts_from_typography(typography: Dict[str, Any]) -> Tuple[str, str]:
-    hero_font = (typography.get('hero_title') or {}).get('family') or typography.get('hero_font') or 'Montserrat'
-    body_font = (typography.get('body_text') or {}).get('family') or typography.get('body_font') or 'Open Sans'
+    hero_font = (typography.get('hero_title') or {}).get('family') or typography.get('hero_font') or 'Inter'
+    body_font = (typography.get('body_text') or {}).get('family') or typography.get('body_font') or 'Inter'
     return hero_font, body_font

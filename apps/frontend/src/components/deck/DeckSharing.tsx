@@ -461,27 +461,42 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
           status: data.collaborator_exists ? 'active' : 'invited',
           permissions: ['view', 'edit']
         };
-        
-        const updatedCollaborators = [...collaborators, newCollaborator];
+
+        const normalizedEmail = data.collaborator_email.toLowerCase();
+        const existingIndex = collaborators.findIndex(
+          (c) => (c.email || '').toLowerCase() === normalizedEmail
+        );
+        const updatedCollaborators =
+          existingIndex >= 0
+            ? collaborators.map((collaborator, idx) =>
+              idx === existingIndex
+                ? { ...collaborator, ...newCollaborator, id: collaborator.id || newCollaborator.id }
+                : collaborator
+            )
+            : [...collaborators, newCollaborator];
         saveCollaborators(updatedCollaborators);
         
         // Show appropriate message
-        if (data.collaborator_exists) {
-          toast({
-            title: "Collaborator added",
-            description: `${data.collaborator_email} has been added as a collaborator`,
-          });
-        } else if (data.invitation_sent) {
+        if (data.invitation_sent) {
           toast({
             title: "Invitation sent",
             description: `An invitation email has been sent to ${data.collaborator_email}`,
+          });
+        } else if (data.collaborator_exists) {
+          toast({
+            title: "Collaborator added",
+            description: data.invitation_error
+              ? `${data.collaborator_email} was added, but email failed: ${data.invitation_error}`
+              : `${data.collaborator_email} has been added as a collaborator`,
           });
         } else {
           const fullUrl = `${window.location.origin}${data.share_link.full_url}`;
           await navigator.clipboard.writeText(fullUrl);
           toast({
             title: "Share link created",
-            description: `Share link copied for ${data.collaborator_email}`,
+            description: data.invitation_error
+              ? `Email failed (${data.invitation_error}). Share link copied for ${data.collaborator_email}`
+              : `Share link copied for ${data.collaborator_email}`,
           });
         }
         
