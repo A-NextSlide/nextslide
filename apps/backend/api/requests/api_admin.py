@@ -3644,13 +3644,17 @@ HERO_SLOT_PROMPTS: Dict[int, str] = {
         "INTERACTIVE: Build a gravity simulator — drag a slider to increase mass and watch spacetime warp. "
         "Add a time dilation calculator: see how time slows as you approach the event horizon."
     ),
-    # ── 1  RELATABLE: everyone feels this ──
+    # ── 1  EDUCATION: high school calculus lesson ──
     1: (
-        "Your brain on doom scrolling — the neuroscience of infinite feeds. Dopamine loops, "
-        "variable-ratio reinforcement, the attention economy, what happens to your prefrontal cortex "
-        "after 3 hours on TikTok, and why the 'one more scroll' feeling is engineered. "
-        "Every slide must have a stunning, creative interactive visualization — something unexpected "
-        "and beautiful that makes the data feel alive. Surprise me."
+        "Teach me basic calculus like I'm in high school — start with limits and what 'approaching' means, "
+        "then derivatives as the slope of a curve at a single point, the power rule, chain rule basics, "
+        "then integrals as the area under a curve. Use real-world examples: velocity from position, "
+        "optimization problems, how phones calculate smooth animations using derivatives. "
+        "DESIGN: Clean, vibrant educational style — think modern textbook meets interactive whiteboard. "
+        "Bright accent colors on a clean white or soft dark background. Large, clear mathematical notation. "
+        "INTERACTIVE: Every slide MUST have a highly visual interactive component — draggable tangent lines, "
+        "animated curve tracing, sliders that change function parameters and show the derivative updating "
+        "in real-time, area-under-curve shading that grows as you drag. Make calculus feel visual and intuitive."
     ),
     # ── 2  ASPIRATIONAL: startup energy — stripe.com aesthetic ──
     2: (
@@ -3665,12 +3669,13 @@ HERO_SLOT_PROMPTS: Dict[int, str] = {
         "INTERACTIVE: Build interactive code demos, animated payment flow diagrams, and revenue growth "
         "charts with smooth transitions. Make it feel like browsing stripe.com/docs meets a keynote."
     ),
-    # ── 3  TRADITIONAL: Google quarterly financial breakdown ──
+    # ── 3  TRADITIONAL: Google Q4 2025 / FY2025 earnings ──
     3: (
-        "Alphabet (Google) latest quarterly earnings breakdown — revenue by segment (Search, YouTube, Cloud, "
-        "Other Bets), operating margins, AI capex surge, headcount changes, and what Wall Street missed. "
-        "Use real publicly available numbers. Dense charts, data tables, margin waterfalls, and "
-        "year-over-year comparisons. This is a serious financial analysis, not a hype deck. "
+        "Alphabet (Google) Q4 2025 and full-year 2025 earnings breakdown — this is the latest quarter "
+        "as of February 2026. Revenue by segment (Search, YouTube, Cloud, Other Bets), operating margins, "
+        "AI capex surge and Gemini investments, headcount changes, and what Wall Street missed. "
+        "Use real publicly available Q4 2025 numbers. Dense charts, data tables, margin waterfalls, and "
+        "year-over-year comparisons vs Q4 2024 and FY2024. This is a serious financial analysis, not a hype deck. "
         "Every slide must have a stunning, precise data visualization — clean, information-dense. "
         "Make the numbers tell a story."
     ),
@@ -3681,13 +3686,17 @@ HERO_SLOT_PROMPTS: Dict[int, str] = {
         "Every slide must have a stunning, creative interactive visualization — something unexpected "
         "and beautiful that makes the algorithm feel alive. Surprise me."
     ),
-    # ── 5  MARKETING: persuasion psychology ──
+    # ── 5  BUSINESS: B2B quarterly sales update meeting ──
     5: (
-        "The 7 invisible design tricks Apple uses to make you spend more — from the unboxing ritual "
-        "to store architecture, pricing decoys, the Diderot effect, typography choices that signal premium, "
-        "and the calculated friction in their upgrade cycle. "
-        "Every slide must have a stunning, creative interactive visualization — something unexpected "
-        "and beautiful that makes the psychology feel alive. Surprise me."
+        "Q4 2025 B2B sales quarterly update for Meridian Technologies — a mid-stage enterprise SaaS company. "
+        "Cover: revenue vs targets ($12.4M actual vs $11.8M target), pipeline health (142 qualified deals worth $28M), "
+        "top 5 enterprise wins (fake logos + deal sizes), churn analysis (3.2% down from 4.1%), "
+        "sales team performance by region (NA, EMEA, APAC), average deal size trending up, "
+        "and Q1 2026 forecast. Use professional company branding — Meridian's logo should be a stylized 'M' "
+        "in deep blue (#1B3A6B). Include competitor logos (fake). "
+        "DESIGN: Corporate and polished — clean data tables, bar charts, pipeline funnels, and KPI cards. "
+        "Dark navy and white with accent blue and green for positive metrics, red for misses. "
+        "This should look like a real board-ready quarterly business review."
     ),
     # ── 6  GAMING: PS2 hacking nostalgia ──
     6: (
@@ -3746,11 +3755,11 @@ HERO_SLOT_PROMPTS: Dict[int, str] = {
 # Community category for each hero slot (maps to community_decks.category)
 HERO_SLOT_CATEGORIES: Dict[int, str] = {
     0: "education",
-    1: "personal",
+    1: "education",
     2: "business",
     3: "business",
     4: "technology",
-    5: "marketing",
+    5: "business",
     6: "technology",
     7: "education",
     8: "education",
@@ -3760,7 +3769,7 @@ HERO_SLOT_CATEGORIES: Dict[int, str] = {
 }
 
 # Slots that use traditional/static slide mode (data-heavy, no interactivity)
-HERO_SLOT_STATIC: set = {3, 9}
+HERO_SLOT_STATIC: set = {3, 5, 9}
 
 # 11 curated community-seed prompts with full DESIGN + INTERACTIVE directives.
 # Keyed by index (0-10). Each covers a different viral/school/work topic.

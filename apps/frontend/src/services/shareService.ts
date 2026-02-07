@@ -356,7 +356,7 @@ class ShareService {
       if (!response.ok) {
         return {
           success: false,
-          error: data.message || data.error || data.detail || 'Failed to add collaborator'
+          error: data.message || data.error || extractApiError(data.detail, 'Failed to add collaborator')
         };
       }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Sparkles, Microscope, Brain, FlaskConical, Eye, Globe, Wifi, MousePointer2, X, Maximize2, Music, Waves, Zap, Paintbrush, Leaf, Presentation, Gamepad2, Landmark, Ship } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles, Microscope, FlaskConical, Eye, Globe, Wifi, MousePointer2, X, Maximize2, Music, Waves, Zap, Paintbrush, Leaf, Presentation, Gamepad2, Landmark, Ship, GraduationCap, Briefcase } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ShowcaseDeck } from '@/services/showcaseService';
 import MiniSlide from '@/components/deck/MiniSlide';
@@ -14,6 +14,7 @@ export interface PromptItem {
     text: string;
     theme: 'light' | 'orange';
     deckIndex: number;
+    traditional?: boolean;
 }
 
 interface InteractiveHeroProps {
@@ -28,15 +29,15 @@ const PROMPTS = [
         id: 'black-hole',
         badge: 'Physics',
         icon: FlaskConical,
-        text: "Inside a black hole — what actually happens past the event horizon",
+        text: "what happens inside a black hole past the event horizon",
         theme: 'light' as const,
         deckIndex: 0
     },
     {
-        id: 'doom-scrolling',
-        badge: 'Psych',
-        icon: Brain,
-        text: "Your brain on doom scrolling — the neuroscience of infinite feeds",
+        id: 'calculus-lesson',
+        badge: 'Education',
+        icon: GraduationCap,
+        text: "teach me basic calculus like I'm in high school, make it visual",
         theme: 'light' as const,
         deckIndex: 1
     },
@@ -44,7 +45,7 @@ const PROMPTS = [
         id: 'stripe-story',
         badge: 'Startup',
         icon: Zap,
-        text: "Stripe: Increasing the GDP of the Internet",
+        text: "how two brothers built Stripe from a garage to $40 billion",
         theme: 'orange' as const,
         deckIndex: 2
     },
@@ -52,31 +53,33 @@ const PROMPTS = [
         id: 'google-earnings',
         badge: 'Finance',
         icon: Presentation,
-        text: "Alphabet (Google) quarterly earnings breakdown — revenue, margins, AI capex",
+        text: "break down Google's latest quarterly earnings",
         theme: 'orange' as const,
-        deckIndex: 3
+        deckIndex: 3,
+        traditional: true
     },
     {
         id: 'spotify-algorithm',
         badge: 'Tech',
         icon: Music,
-        text: "How Spotify's algorithm knows what you want to hear before you do",
+        text: "how does Spotify's algorithm know what I want to hear",
         theme: 'light' as const,
         deckIndex: 4
     },
     {
-        id: 'apple-design',
-        badge: 'Design',
-        icon: Eye,
-        text: "The 7 invisible design tricks Apple uses to make you spend more",
+        id: 'b2b-sales',
+        badge: 'Business',
+        icon: Briefcase,
+        text: "quarterly B2B sales update for my team meeting",
         theme: 'light' as const,
-        deckIndex: 5
+        deckIndex: 5,
+        traditional: true
     },
     {
-        id: 'ps2-hacking',
+        id: 'crash-bandicoot',
         badge: 'Gaming',
         icon: Gamepad2,
-        text: "Crash's Impossible Code — the PlayStation tricks that shouldn't have worked",
+        text: "the impossible code tricks behind Crash Bandicoot on PlayStation",
         theme: 'light' as const,
         deckIndex: 6
     },
@@ -84,7 +87,7 @@ const PROMPTS = [
         id: 'photosynthesis',
         badge: 'Biology',
         icon: Leaf,
-        text: "Photosynthesis — the 3-billion-year-old chemical reaction keeping everything alive",
+        text: "explain how photosynthesis works at a molecular level",
         theme: 'light' as const,
         deckIndex: 7
     },
@@ -92,7 +95,7 @@ const PROMPTS = [
         id: 'deep-ocean',
         badge: 'Nature',
         icon: Ship,
-        text: "Into the Abyss — deep ocean exploration beneath 3,000 feet of darkness",
+        text: "what lives 3,000 feet underwater in complete darkness",
         theme: 'light' as const,
         deckIndex: 8
     },
@@ -100,15 +103,16 @@ const PROMPTS = [
         id: 'banking-2026',
         badge: 'Business',
         icon: Landmark,
-        text: "The state of global banking in 2026 — rates, margins, and the capital squeeze",
+        text: "research the state of global banking in 2026",
         theme: 'light' as const,
-        deckIndex: 9
+        deckIndex: 9,
+        traditional: true
     },
     {
         id: 'gps-einstein',
         badge: 'Science',
         icon: Wifi,
-        text: "Why your phone needs Einstein's relativity to find coffee",
+        text: "why does my phone need Einstein's relativity to find the nearest coffee",
         theme: 'light' as const,
         deckIndex: 10
     },
@@ -116,7 +120,7 @@ const PROMPTS = [
         id: 'hidden-geometry',
         badge: 'Art',
         icon: Paintbrush,
-        text: "The hidden geometry in every masterpiece from Da Vinci to Beyoncé",
+        text: "the hidden geometry in every masterpiece from Da Vinci to Beyoncé",
         theme: 'light' as const,
         deckIndex: 11
     }
@@ -386,9 +390,16 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
                             >
                                 {/* Badge & Nav */}
                                 <div className="flex items-center justify-between mb-3">
-                                    <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#FF4301]/10 text-[#FF4301] text-[10px] sm:text-xs font-bold uppercase tracking-wider">
-                                        {React.createElement(activePrompt.icon, { size: 12 })}
-                                        {activePrompt.badge}
+                                    <div className="flex items-center gap-2">
+                                        <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#FF4301]/10 text-[#FF4301] text-[10px] sm:text-xs font-bold uppercase tracking-wider">
+                                            {React.createElement(activePrompt.icon, { size: 12 })}
+                                            {activePrompt.badge}
+                                        </div>
+                                        {activePrompt.traditional && (
+                                            <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#7c3aed]/10 text-[#7c3aed] text-[10px] sm:text-xs font-bold uppercase tracking-wider">
+                                                Traditional
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="flex gap-1.5">
@@ -480,9 +491,16 @@ const InteractiveHero: React.FC<InteractiveHeroProps> = ({ decks, isLoading, pro
                             {/* Mobile: Prompt card below slide (orange outline like desktop) */}
                             <div className="md:hidden mt-1.5 w-full border-2 border-[#FF4301] rounded-xl p-2.5 bg-white dark:bg-zinc-900">
                                 <div className="flex items-center justify-between mb-2">
-                                    <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#FF4301]/10 text-[#FF4301] text-[10px] font-bold uppercase tracking-wider">
-                                        {React.createElement(activePrompt.icon, { size: 11 })}
-                                        {activePrompt.badge}
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#FF4301]/10 text-[#FF4301] text-[10px] font-bold uppercase tracking-wider">
+                                            {React.createElement(activePrompt.icon, { size: 11 })}
+                                            {activePrompt.badge}
+                                        </div>
+                                        {activePrompt.traditional && (
+                                            <div className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-[#7c3aed]/10 text-[#7c3aed] text-[9px] font-bold uppercase tracking-wider">
+                                                Traditional
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-1.5">
                                         <button onClick={handlePrev} className="w-7 h-7 flex items-center justify-center rounded-full border border-[#FF4301]/30 bg-[#FF4301]/5 text-[#FF4301] active:bg-[#FF4301]/10 transition-colors">

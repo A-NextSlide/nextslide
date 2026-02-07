@@ -7,12 +7,14 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useYjs } from '@/yjs/YjsProvider';
 import {
+  getAllAwarenessSources,
   getRandomBrightColor,
   updateCursorDirectly,
   normalizeCursorCoordinates,
   denormalizeCursorCoordinates
 } from '@/yjs/utils/cursorUtils';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
+import { useDeckStore } from '@/stores/deckStore';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 
 interface SimpleCursorsProps {
@@ -38,28 +40,57 @@ const SimpleCursors: React.FC<SimpleCursorsProps> = ({
   zoomLevel: propZoomLevel
 }) => {
   const [cursors, setCursors] = useState<RemoteCursor[]>([]);
+  const [storeUsers, setStoreUsers] = useState<any[]>([]);
 
   const { users: yjsUsers, docManager } = useYjs();
+  const storeDocManager = useDeckStore(state => (state as any).yjsDocManager);
+  const getYjsUsers = useDeckStore(state => (state as any).getYjsUsers);
+
+  const effectiveDocManager = docManager || storeDocManager;
 
   const storeZoomLevel = useEditorSettingsStore(state => state.zoomLevel);
   const zoomLevel = propZoomLevel || storeZoomLevel;
 
+  // Poll store-backed users as fallback when YjsProvider context is not used.
+  useEffect(() => {
+    if (!getYjsUsers) return;
+    const updateUsers = () => {
+      try {
+        const users = getYjsUsers() || [];
+        if (Array.isArray(users)) {
+          setStoreUsers(users);
+        }
+      } catch {
+        // Silent
+      }
+    };
+    updateUsers();
+    const interval = setInterval(updateUsers, 500);
+    return () => clearInterval(interval);
+  }, [getYjsUsers]);
+
   // Ensure awareness is accessible globally
   useEffect(() => {
-    if (docManager?.wsProvider?.awareness && !window._awareness) {
-      window._awareness = docManager.wsProvider.awareness;
+    if (effectiveDocManager?.wsProvider?.awareness && !window._awareness) {
+      window._awareness = effectiveDocManager.wsProvider.awareness;
     }
-    if (docManager?.wsProvider && window._yProviders && !window._yProviders.includes(docManager.wsProvider)) {
-      window._yProviders.push(docManager.wsProvider);
+    if (effectiveDocManager?.wsProvider) {
+      if (!window._yProviders) {
+        window._yProviders = [];
+      }
+      if (!window._yProviders.includes(effectiveDocManager.wsProvider)) {
+        window._yProviders.push(effectiveDocManager.wsProvider);
+      }
     }
-  }, [docManager]);
+  }, [effectiveDocManager]);
 
-  // De-duplicate users
+  // De-duplicate users from both Yjs context and store-backed collaboration.
   const allUsers = useMemo(() => {
-    return yjsUsers.filter((user, index, self) =>
+    const mergedUsers = [...(yjsUsers || []), ...(storeUsers || [])];
+    return mergedUsers.filter((user, index, self) =>
       index === self.findIndex(u => u.id === user.id)
     );
-  }, [yjsUsers]);
+  }, [yjsUsers, storeUsers]);
 
   // Find the actual slide container element
   const findSlideContainer = (root: HTMLElement | null): HTMLElement | null => {
@@ -111,27 +142,34 @@ const SimpleCursors: React.FC<SimpleCursorsProps> = ({
 
   // Build cursor list from awareness users
   useEffect(() => {
-    if (!slideId || allUsers.length === 0) {
+    if (!slideId) {
       setCursors([]);
       return;
     }
 
-    // Also read directly from awareness to catch any users not yet in the React state
-    const awareness = docManager?.wsProvider?.awareness;
-    const awarenessEntries: any[] = [];
-    if (awareness) {
-      awareness.getStates().forEach((state: any, clientId: number) => {
-        if (state?.user && state?.cursor) {
-          awarenessEntries.push({
-            id: state.user.id || `unknown-${clientId}`,
-            name: state.user.name || 'Unknown User',
-            color: state.user.color || getRandomBrightColor(),
-            cursor: state.cursor,
-            clientId,
-          });
-        }
-      });
+    // Read directly from all awareness sources to catch users that may not be
+    // reflected in context state yet.
+    const awarenessSources = getAllAwarenessSources();
+    const primaryAwareness = effectiveDocManager?.wsProvider?.awareness;
+    if (primaryAwareness && !awarenessSources.includes(primaryAwareness)) {
+      awarenessSources.push(primaryAwareness);
     }
+
+    const awarenessEntries: any[] = [];
+    awarenessSources.forEach((awareness: any) => {
+      if (!awareness?.getStates) return;
+      awareness.getStates().forEach((state: any, clientId: number) => {
+        if (!state?.user || !state?.cursor) return;
+        awarenessEntries.push({
+          id: state.user.id || `unknown-${clientId}`,
+          name: state.user.name || 'Unknown User',
+          color: state.user.color || getRandomBrightColor(),
+          cursor: state.cursor,
+          clientId,
+          self: Boolean(state.self),
+        });
+      });
+    });
 
     // Merge and de-duplicate
     const merged = [...allUsers, ...awarenessEntries];
@@ -160,7 +198,7 @@ const SimpleCursors: React.FC<SimpleCursorsProps> = ({
       }));
 
     setCursors(realCursors);
-  }, [allUsers, slideId, docManager]);
+  }, [allUsers, slideId, effectiveDocManager]);
 
   if (!containerRef.current) return null;
 

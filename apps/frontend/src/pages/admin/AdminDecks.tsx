@@ -117,18 +117,18 @@ const CATEGORY_OPTIONS = [
 
 // Prompt text mapped to each hero display_order — aligned with InteractiveHero PROMPTS
 const HERO_PROMPTS: Record<number, { badge: string; text: string }> = {
-  0: { badge: 'Physics', text: 'Inside a black hole — what actually happens past the event horizon' },
-  1: { badge: 'Psych', text: 'Your brain on doom scrolling — the neuroscience of infinite feeds' },
-  2: { badge: 'Startup', text: 'Stripe: Increasing the GDP of the Internet' },
-  3: { badge: 'Finance', text: 'Alphabet (Google) quarterly earnings breakdown — revenue, margins, AI capex' },
-  4: { badge: 'Tech', text: "How Spotify's algorithm knows what you want to hear before you do" },
-  5: { badge: 'Design', text: 'The 7 invisible design tricks Apple uses to make you spend more' },
-  6: { badge: 'Gaming', text: "Crash's Impossible Code — the PlayStation tricks that shouldn't have worked" },
-  7: { badge: 'Biology', text: 'Photosynthesis — the 3-billion-year-old chemical reaction keeping everything alive' },
-  8: { badge: 'Nature', text: 'Into the Abyss — deep ocean exploration beneath 3,000 feet of darkness' },
-  9: { badge: 'Business', text: 'The state of global banking in 2026 — rates, margins, and the capital squeeze' },
-  10: { badge: 'Science', text: "Why your phone needs Einstein's relativity to find coffee" },
-  11: { badge: 'Art', text: 'The hidden geometry in every masterpiece from Da Vinci to Beyoncé' },
+  0: { badge: 'Physics', text: 'what happens inside a black hole past the event horizon' },
+  1: { badge: 'Education', text: "teach me basic calculus like I'm in high school, make it visual" },
+  2: { badge: 'Startup', text: 'how two brothers built Stripe from a garage to $40 billion' },
+  3: { badge: 'Finance', text: "break down Google's latest quarterly earnings" },
+  4: { badge: 'Tech', text: "how does Spotify's algorithm know what I want to hear" },
+  5: { badge: 'Business', text: 'quarterly B2B sales update for my team meeting' },
+  6: { badge: 'Gaming', text: 'the impossible code tricks behind Crash Bandicoot on PlayStation' },
+  7: { badge: 'Biology', text: 'explain how photosynthesis works at a molecular level' },
+  8: { badge: 'Nature', text: 'what lives 3,000 feet underwater in complete darkness' },
+  9: { badge: 'Business', text: 'research the state of global banking in 2026' },
+  10: { badge: 'Science', text: "why does my phone need Einstein's relativity to find the nearest coffee" },
+  11: { badge: 'Art', text: 'the hidden geometry in every masterpiece from Da Vinci to Beyoncé' },
 };
 
 const RANDOM_PROMPTS = [

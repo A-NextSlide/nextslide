@@ -13,7 +13,7 @@ import uuid as uuid_module
 # Add backend to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-SLOTS_TO_REGENERATE = [2]
+SLOTS_TO_REGENERATE = [1, 3, 5, 10]
 
 
 async def main():
