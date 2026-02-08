@@ -15,6 +15,7 @@ declare global {
     _registerYjsDocManager?: (manager: any) => void;
     _forceCursorUpdate?: (slideId: string, x: number, y: number) => string;
     _forceCursorReactivation?: () => boolean;
+    _updateSelectionDirectly?: (slideId: string, componentIds: string[]) => void;
     _lastCursorActivity?: number;
     _debugCursor?: () => any;
     _inspectCursors?: () => any;
@@ -187,6 +188,46 @@ export function updateCursorDirectly(slideId: string, x: number, y: number): voi
 }
 
 /**
+ * Update selection in all available awareness sources
+ */
+export function updateSelectionDirectly(slideId: string, componentIds: string[]): void {
+  try {
+    const sources = getAllAwarenessSources();
+    if (sources.length === 0) return;
+
+    const safeSlideId = slideId || '';
+    const safeComponentIds = Array.isArray(componentIds)
+      ? componentIds.filter(id => typeof id === 'string')
+      : [];
+
+    sources.forEach(awareness => {
+      if (!awareness) return;
+      try {
+        const currentState = awareness.getLocalState() || {};
+        if (!currentState.user) {
+          awareness.setLocalStateField('user', {
+            id: `user-${Math.floor(Math.random() * 1000000)}`,
+            name: 'Anonymous',
+            color: getRandomBrightColor(),
+          });
+        }
+
+        awareness.setLocalStateField('selection', {
+          slideId: safeSlideId,
+          componentIds: safeComponentIds,
+          t: Date.now(),
+        });
+        awareness.setLocalStateField('lastUpdate', Date.now());
+      } catch {
+        // Silent
+      }
+    });
+  } catch {
+    // Silent
+  }
+}
+
+/**
  * Initialize global cursor utility functions
  */
 export function initializeGlobalCursorUtils() {
@@ -195,6 +236,9 @@ export function initializeGlobalCursorUtils() {
   }
   if (!window._updateCursorDirectly) {
     window._updateCursorDirectly = updateCursorDirectly;
+  }
+  if (!window._updateSelectionDirectly) {
+    window._updateSelectionDirectly = updateSelectionDirectly;
   }
   if (!window._shouldBroadcastCursor) {
     window._shouldBroadcastCursor = shouldBroadcastCursor;

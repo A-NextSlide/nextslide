@@ -54,6 +54,7 @@ declare global {
     // Cursor tracking functionality
     _awareness?: any;
     _updateCursorDirectly?: (slideId: string, x: number, y: number) => void;
+    _updateSelectionDirectly?: (slideId: string, componentIds: string[]) => void;
     _shouldBroadcastCursor?: (slideId: string) => boolean;
     
     // Component position tracking (used by the drag hook)

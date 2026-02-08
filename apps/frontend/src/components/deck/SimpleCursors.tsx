@@ -4,7 +4,7 @@
  * Uses coordinate normalization for consistent cursor positioning
  * across different browsers and zoom levels.
  */
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useYjs } from '@/yjs/YjsProvider';
 import {
   getAllAwarenessSources,
@@ -13,7 +13,6 @@ import {
   normalizeCursorCoordinates,
   denormalizeCursorCoordinates
 } from '@/yjs/utils/cursorUtils';
-import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 import { useDeckStore } from '@/stores/deckStore';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 
@@ -37,19 +36,17 @@ const SimpleCursors: React.FC<SimpleCursorsProps> = ({
   containerRef,
   offsetY = 0,
   offsetX = 0,
-  zoomLevel: propZoomLevel
+  zoomLevel: _zoomLevel
 }) => {
   const [cursors, setCursors] = useState<RemoteCursor[]>([]);
   const [storeUsers, setStoreUsers] = useState<any[]>([]);
+  const [awarenessVersion, setAwarenessVersion] = useState(0);
 
   const { users: yjsUsers, docManager } = useYjs();
   const storeDocManager = useDeckStore(state => (state as any).yjsDocManager);
   const getYjsUsers = useDeckStore(state => (state as any).getYjsUsers);
 
   const effectiveDocManager = docManager || storeDocManager;
-
-  const storeZoomLevel = useEditorSettingsStore(state => state.zoomLevel);
-  const zoomLevel = propZoomLevel || storeZoomLevel;
 
   // Poll store-backed users as fallback when YjsProvider context is not used.
   useEffect(() => {
@@ -65,7 +62,7 @@ const SimpleCursors: React.FC<SimpleCursorsProps> = ({
       }
     };
     updateUsers();
-    const interval = setInterval(updateUsers, 500);
+    const interval = setInterval(updateUsers, 200);
     return () => clearInterval(interval);
   }, [getYjsUsers]);
 
@@ -84,21 +81,65 @@ const SimpleCursors: React.FC<SimpleCursorsProps> = ({
     }
   }, [effectiveDocManager]);
 
+  const getAwarenessSources = useCallback(() => {
+    const sources = getAllAwarenessSources();
+    const primaryAwareness = effectiveDocManager?.wsProvider?.awareness;
+    if (primaryAwareness && !sources.includes(primaryAwareness)) {
+      sources.push(primaryAwareness);
+    }
+    return sources;
+  }, [effectiveDocManager]);
+
+  // Awareness events should drive cursor rendering for near realtime movement.
+  useEffect(() => {
+    const awarenessSources = getAwarenessSources();
+    if (awarenessSources.length === 0) return;
+
+    const handleAwarenessChange = () => setAwarenessVersion(v => v + 1);
+
+    awarenessSources.forEach((awareness: any) => {
+      awareness?.on?.('change', handleAwarenessChange);
+      awareness?.on?.('update', handleAwarenessChange);
+    });
+
+    return () => {
+      awarenessSources.forEach((awareness: any) => {
+        awareness?.off?.('change', handleAwarenessChange);
+        awareness?.off?.('update', handleAwarenessChange);
+      });
+    };
+  }, [getAwarenessSources]);
+
   // De-duplicate users from both Yjs context and store-backed collaboration.
   const allUsers = useMemo(() => {
     const mergedUsers = [...(yjsUsers || []), ...(storeUsers || [])];
-    return mergedUsers.filter((user, index, self) =>
-      index === self.findIndex(u => u.id === user.id)
-    );
+    const byId = new Map<string, any>();
+
+    mergedUsers.forEach((user: any) => {
+      const key = user?.clientId ? `client-${user.clientId}` : `id-${user?.id || 'unknown'}`;
+      const currentTs = Number(user?.cursor?.t || user?.lastUpdate || 0);
+      const previous = byId.get(key);
+      const previousTs = Number(previous?.cursor?.t || previous?.lastUpdate || 0);
+
+      if (!previous || currentTs >= previousTs) {
+        byId.set(key, user);
+      }
+    });
+
+    return Array.from(byId.values());
   }, [yjsUsers, storeUsers]);
 
   // Find the actual slide container element
-  const findSlideContainer = (root: HTMLElement | null): HTMLElement | null => {
+  const findSlideContainer = useCallback((root: HTMLElement | null): HTMLElement | null => {
     if (!root) return null;
-    if (root.dataset.slideId) return root;
+    if (root.dataset.slideId && root.dataset.slideId === slideId) return root;
+
+    const exactMatch = root.querySelector(`.slide-container[data-slide-id="${slideId}"]`);
+    if (exactMatch) return exactMatch as HTMLElement;
+
     const child = root.querySelector('.slide-container[data-slide-id]');
     return (child as HTMLElement) || root;
-  };
+  }, [slideId]);
 
   // Mouse move / leave: send cursor position via Yjs awareness only
   useEffect(() => {
@@ -131,14 +172,24 @@ const SimpleCursors: React.FC<SimpleCursorsProps> = ({
       updateCursorDirectly(slideId, -1, -1);
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        updateCursorDirectly(slideId, -1, -1);
+      }
+    };
+
     slideContainer.addEventListener('mousemove', handleMouseMove);
     slideContainer.addEventListener('mouseleave', handleMouseLeave);
+    window.addEventListener('blur', handleMouseLeave);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       slideContainer.removeEventListener('mousemove', handleMouseMove);
       slideContainer.removeEventListener('mouseleave', handleMouseLeave);
+      window.removeEventListener('blur', handleMouseLeave);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [slideId, containerRef, offsetX, offsetY]);
+  }, [slideId, containerRef, offsetX, offsetY, findSlideContainer]);
 
   // Build cursor list from awareness users
   useEffect(() => {
@@ -147,17 +198,17 @@ const SimpleCursors: React.FC<SimpleCursorsProps> = ({
       return;
     }
 
+    // Reference awarenessVersion to recompute on awareness update events.
+    void awarenessVersion;
+
     // Read directly from all awareness sources to catch users that may not be
-    // reflected in context state yet.
-    const awarenessSources = getAllAwarenessSources();
-    const primaryAwareness = effectiveDocManager?.wsProvider?.awareness;
-    if (primaryAwareness && !awarenessSources.includes(primaryAwareness)) {
-      awarenessSources.push(primaryAwareness);
-    }
+    // reflected in context/store state yet.
+    const awarenessSources = getAwarenessSources();
 
     const awarenessEntries: any[] = [];
     awarenessSources.forEach((awareness: any) => {
       if (!awareness?.getStates) return;
+      const localClientId = awareness.clientID;
       awareness.getStates().forEach((state: any, clientId: number) => {
         if (!state?.user || !state?.cursor) return;
         awarenessEntries.push({
@@ -166,25 +217,33 @@ const SimpleCursors: React.FC<SimpleCursorsProps> = ({
           color: state.user.color || getRandomBrightColor(),
           cursor: state.cursor,
           clientId,
-          self: Boolean(state.self),
+          self: Boolean(state.self) || clientId === localClientId,
+          lastUpdate: state.lastUpdate || state.cursor?.t || 0,
         });
       });
     });
 
-    // Merge and de-duplicate
+    // Merge and de-duplicate by freshest cursor timestamp.
     const merged = [...allUsers, ...awarenessEntries];
-    const unique = merged.filter((user, index, self) =>
-      index === self.findIndex(u =>
-        (u.clientId && user.clientId && u.clientId === user.clientId) ||
-        u.id === user.id
-      )
-    );
+    const uniqueByUser = new Map<string, any>();
+    merged.forEach((user: any) => {
+      const key = user?.clientId ? `client-${user.clientId}` : `id-${user?.id || 'unknown'}`;
+      const currentTs = Number(user?.cursor?.t || user?.lastUpdate || 0);
+      const previous = uniqueByUser.get(key);
+      const previousTs = Number(previous?.cursor?.t || previous?.lastUpdate || 0);
+      if (!previous || currentTs >= previousTs) {
+        uniqueByUser.set(key, user);
+      }
+    });
 
-    const realCursors = unique
+    const realCursors = Array.from(uniqueByUser.values())
       .filter(user =>
         user.cursor &&
         typeof user.cursor.x === 'number' &&
         typeof user.cursor.y === 'number' &&
+        user.cursor.slideId === slideId &&
+        user.cursor.x >= 0 &&
+        user.cursor.y >= 0 &&
         !user.self // Don't show own cursor
       )
       .map(user => ({
@@ -198,7 +257,7 @@ const SimpleCursors: React.FC<SimpleCursorsProps> = ({
       }));
 
     setCursors(realCursors);
-  }, [allUsers, slideId, effectiveDocManager]);
+  }, [allUsers, slideId, getAwarenessSources, awarenessVersion]);
 
   if (!containerRef.current) return null;
 

@@ -4,8 +4,10 @@
  * Uses Yjs awareness to detect which components remote users have selected,
  * then draws a non-interactive bounding box in that user's color with a name label.
  */
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useYjs } from '@/yjs/YjsProvider';
+import { getAllAwarenessSources } from '@/yjs/utils/cursorUtils';
+import { useDeckStore } from '@/stores/deckStore';
 import { ComponentInstance } from '@/types/components';
 
 interface RemoteSelectionsProps {
@@ -28,65 +30,139 @@ const RemoteSelections: React.FC<RemoteSelectionsProps> = ({
   components,
   slideSize,
 }) => {
-  const { docManager, users } = useYjs();
+  const { docManager } = useYjs();
+  const storeDocManager = useDeckStore(state => (state as any).yjsDocManager);
+  const getYjsUsers = useDeckStore(state => (state as any).getYjsUsers);
+  const effectiveDocManager = docManager || storeDocManager;
+
   const [awarenessVersion, setAwarenessVersion] = useState(0);
+  const [storeUsers, setStoreUsers] = useState<any[]>([]);
+
+  const getAwarenessSources = useCallback(() => {
+    const sources = getAllAwarenessSources();
+    const primaryAwareness = effectiveDocManager?.wsProvider?.awareness;
+    if (primaryAwareness && !sources.includes(primaryAwareness)) {
+      sources.push(primaryAwareness);
+    }
+    return sources;
+  }, [effectiveDocManager]);
+
+  // Poll store users as fallback when YjsProvider context is not mounted.
+  useEffect(() => {
+    if (!getYjsUsers) return;
+
+    const updateUsers = () => {
+      try {
+        const users = getYjsUsers() || [];
+        if (Array.isArray(users)) {
+          setStoreUsers(users);
+        }
+      } catch {
+        // Silent
+      }
+    };
+
+    updateUsers();
+    const interval = setInterval(updateUsers, 300);
+    return () => clearInterval(interval);
+  }, [getYjsUsers]);
 
   // Subscribe to awareness changes for responsive updates
   useEffect(() => {
-    const awareness = docManager?.wsProvider?.awareness;
-    if (!awareness) return;
+    const awarenessSources = getAwarenessSources();
+    if (awarenessSources.length === 0) return;
 
     const handleChange = () => {
       setAwarenessVersion(v => v + 1);
     };
 
-    awareness.on('change', handleChange);
+    awarenessSources.forEach((awareness: any) => {
+      awareness?.on?.('change', handleChange);
+      awareness?.on?.('update', handleChange);
+    });
+
     return () => {
-      awareness.off('change', handleChange);
+      awarenessSources.forEach((awareness: any) => {
+        awareness?.off?.('change', handleChange);
+        awareness?.off?.('update', handleChange);
+      });
     };
-  }, [docManager]);
+  }, [getAwarenessSources]);
 
   // Build list of remote selections from awareness state
   const remoteSelections = useMemo((): RemoteSelection[] => {
     // Reference awarenessVersion to trigger recalculation
     void awarenessVersion;
 
-    const awareness = docManager?.wsProvider?.awareness;
-    if (!awareness) return [];
-
     const now = Date.now();
-    const localClientId = awareness.clientID;
-    const results: RemoteSelection[] = [];
-    const seen = new Set<string>();
+    const byUser = new Map<string, RemoteSelection & { ts: number }>();
 
-    awareness.getStates().forEach((state: any, clientId: number) => {
-      if (clientId === localClientId) return;
-      if (!state?.user || !state?.selection) return;
+    const upsert = (entry: {
+      userId: string;
+      userName: string;
+      color: string;
+      componentIds: string[];
+      ts: number;
+      self?: boolean;
+    }) => {
+      if (entry.self) return;
+      if (!entry.userId || !Array.isArray(entry.componentIds) || entry.componentIds.length === 0) return;
+      if (entry.ts > 0 && now - entry.ts > STALE_THRESHOLD_MS) return;
 
-      const { selection, user } = state;
-      if (
-        selection.slideId !== slideId ||
-        !Array.isArray(selection.componentIds) ||
-        selection.componentIds.length === 0
-      ) return;
+      const previous = byUser.get(entry.userId);
+      if (!previous || entry.ts >= previous.ts) {
+        byUser.set(entry.userId, {
+          userId: entry.userId,
+          userName: entry.userName,
+          color: entry.color,
+          componentIds: entry.componentIds,
+          ts: entry.ts,
+        });
+      }
+    };
 
-      // Filter stale selections
-      if (typeof selection.t === 'number' && now - selection.t > STALE_THRESHOLD_MS) return;
+    storeUsers.forEach((user: any) => {
+      const selection = user?.selection;
+      if (!selection || selection.slideId !== slideId) return;
 
-      const uid = user.id || `unknown-${clientId}`;
-      if (seen.has(uid)) return;
-      seen.add(uid);
-
-      results.push({
-        userId: uid,
+      upsert({
+        userId: user.id || `unknown-${user.clientId || 'store'}`,
         userName: user.name || 'User',
         color: user.color || '#888',
-        componentIds: selection.componentIds,
+        componentIds: Array.isArray(selection.componentIds) ? selection.componentIds : [],
+        ts: Number(selection.t || user.lastUpdate || 0),
+        self: Boolean(user.self),
       });
     });
 
-    return results;
-  }, [awarenessVersion, docManager, slideId]);
+    const awarenessSources = getAwarenessSources();
+    awarenessSources.forEach((awareness: any) => {
+      if (!awareness?.getStates) return;
+      const localClientId = awareness.clientID;
+
+      awareness.getStates().forEach((state: any, clientId: number) => {
+        if (!state?.user || !state?.selection) return;
+
+        const { selection, user } = state;
+        if (
+          selection.slideId !== slideId ||
+          !Array.isArray(selection.componentIds) ||
+          selection.componentIds.length === 0
+        ) return;
+
+        upsert({
+          userId: user.id || `unknown-${clientId}`,
+          userName: user.name || 'User',
+          color: user.color || '#888',
+          componentIds: selection.componentIds,
+          ts: Number(selection.t || state.lastUpdate || 0),
+          self: Boolean(state.self) || clientId === localClientId,
+        });
+      });
+    });
+
+    return Array.from(byUser.values()).map(({ ts, ...selection }) => selection);
+  }, [awarenessVersion, getAwarenessSources, slideId, storeUsers]);
 
   // Build a lookup map from component id -> component
   const componentMap = useMemo(() => {

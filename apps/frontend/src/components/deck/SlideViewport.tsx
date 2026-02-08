@@ -22,6 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { useYjs } from '@/yjs/YjsProvider';
 import SimpleCursors from './SimpleCursors';
+import { updateSelectionDirectly } from '@/yjs/utils/cursorUtils';
 
 import SlideGeneratingPlaceholder from './SlideGeneratingPlaceholder';
 import { DeckStatus } from '@/types/DeckTypes';
@@ -721,10 +722,24 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     };
   }, [selectedComponent, isEditingMode, isTextEditing, currentSlide, addComponent, removeComponent, toast]);
 
-  // Get cursor update function from Yjs
-  const { updateCursor, updateSelection } = useYjs();
+  // Get selection update function from Yjs context (may be a no-op when store-backed collaboration is active).
+  const { updateSelection } = useYjs();
 
   // Cursor tracking is now handled by the cursor components
+
+  const broadcastSelection = useCallback((componentIds: string[]) => {
+    if (!currentSlide) return;
+
+    // Keep context provider path working for legacy views.
+    try {
+      updateSelection(currentSlide.id, componentIds);
+    } catch {
+      // Silent: context may be detached in store-backed mode.
+    }
+
+    // Always broadcast through global/store-backed awareness as fallback.
+    updateSelectionDirectly(currentSlide.id, componentIds);
+  }, [currentSlide, updateSelection]);
 
   const handleComponentSelect = (component: ComponentInstance) => {
     // If we're currently in text editing mode and selecting a different component,
@@ -746,18 +761,14 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     editorStore.selectComponent(component.id);
 
     // Broadcast selection to other users
-    if (updateSelection && currentSlide) {
-      updateSelection(currentSlide.id, [component.id]);
-    }
+    broadcastSelection([component.id]);
   };
 
   const handleComponentDeselect = () => {
     setSelectedComponentId(null);
 
     // Clear selection for other users
-    if (updateSelection && currentSlide) {
-      updateSelection(currentSlide.id, []);
-    }
+    broadcastSelection([]);
   };
 
   const handleComponentUpdate = (componentId: string, updates: Partial<ComponentInstance>) => {

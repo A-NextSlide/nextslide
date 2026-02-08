@@ -13,7 +13,7 @@ import uuid as uuid_module
 # Add backend to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-SLOTS_TO_REGENERATE = [1, 3, 5, 10]
+SLOTS_TO_REGENERATE = [3, 4, 10]
 
 
 async def main():
@@ -33,12 +33,8 @@ async def main():
     user_id = "942ccba7-5346-4f99-8189-82284dafb255"  # abeshry@gmail.com
     print(f"Using admin user: {user_id}")
 
-    # Delete old featured_decks for these slots
-    for slot in SLOTS_TO_REGENERATE:
-        sb.table("featured_decks").delete().eq("display_order", slot).execute()
-        print(f"Deleted old featured_deck for slot {slot}")
-
-    # Generate each slot
+    # Generate each slot (delete old featured_deck only right before inserting new one
+    # to avoid index gaps that break the landing page scroller)
     for slot in SLOTS_TO_REGENERATE:
         prompt = HERO_SLOT_PROMPTS[slot]
         deck_name = _clean_deck_name(prompt)
@@ -84,6 +80,8 @@ async def main():
                 slides_data = deck_row.data.get("slides") or []
                 deck_description = deck_row.data.get("description") or ""
 
+            # Delete old entry right before inserting new one (atomic swap)
+            sb.table("featured_decks").delete().eq("display_order", slot).execute()
             sb.table("featured_decks").insert({
                 "uuid": deck_uuid,
                 "name": deck_name[:100],

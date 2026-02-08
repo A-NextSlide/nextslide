@@ -3676,6 +3676,10 @@ HERO_SLOT_PROMPTS: Dict[int, str] = {
         "AI capex surge and Gemini investments, headcount changes, and what Wall Street missed. "
         "Use real publicly available Q4 2025 numbers. Dense charts, data tables, margin waterfalls, and "
         "year-over-year comparisons vs Q4 2024 and FY2024. This is a serious financial analysis, not a hype deck. "
+        "DESIGN: Use Google's brand identity — the Google colors (blue #4285F4, red #EA4335, yellow #FBBC05, "
+        "green #34A853) as accents throughout charts and data points. Clean white backgrounds with the Google "
+        "Sans font feel. Include the Alphabet/Google logo. Professional, corporate, investor-deck quality. "
+        "FONTS: Use only clean, highly legible sans-serif fonts — Inter, Roboto, or similar. No decorative fonts. "
         "Every slide must have a stunning, precise data visualization — clean, information-dense. "
         "Make the numbers tell a story."
     ),
@@ -3683,8 +3687,12 @@ HERO_SLOT_PROMPTS: Dict[int, str] = {
     4: (
         "How Spotify's algorithm knows what you want to hear before you do — collaborative filtering, "
         "audio fingerprinting, NLP on lyrics, the Discover Weekly pipeline, and the echo chamber problem. "
-        "Every slide must have a stunning, creative interactive visualization — something unexpected "
-        "and beautiful that makes the algorithm feel alive. Surprise me."
+        "DESIGN: Use Spotify's brand aesthetic — the iconic Spotify green (#1DB954) on dark/black backgrounds, "
+        "clean modern typography, circular album art placeholders, and waveform visualizations. Include the "
+        "Spotify logo. Make it feel like a Spotify Wrapped meets a tech deep-dive. "
+        "FONTS: Use only clean, highly legible sans-serif fonts — Circular, Inter, or similar. No decorative fonts. "
+        "INTERACTIVE: Build interactive audio waveform visualizations, animated recommendation graphs showing "
+        "how songs connect, draggable taste profile sliders, and live filtering demos. Make it feel alive."
     ),
     # ── 5  BUSINESS: B2B quarterly sales update meeting ──
     5: (
@@ -3739,8 +3747,12 @@ HERO_SLOT_PROMPTS: Dict[int, str] = {
         "Why your phone needs Einstein to find the nearest coffee — the insane engineering inside GPS. "
         "31 satellites with atomic clocks accurate to nanoseconds, relativity corrections that matter, "
         "trilateration math, and how your phone does all this in milliseconds. "
-        "Every slide must have a stunning, creative interactive visualization — something unexpected "
-        "and beautiful that makes the engineering feel alive. Surprise me."
+        "DESIGN: Space-meets-tech aesthetic — deep navy/dark backgrounds with satellite orbit diagrams, "
+        "signal wave animations, and clean infographics. Think NASA mission control meets a modern explainer. "
+        "FONTS: Use only clean, highly legible sans-serif fonts — Inter, DM Sans, or similar. No decorative fonts. "
+        "INTERACTIVE: Build interactive satellite orbit visualizations, draggable trilateration demos where "
+        "you move satellites and see how position accuracy changes, time dilation calculators, and animated "
+        "signal propagation diagrams. Make the physics tangible and visual."
     ),
     # ── 11  ART: beauty + hidden patterns ──
     11: (
