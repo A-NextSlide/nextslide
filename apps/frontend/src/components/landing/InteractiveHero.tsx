@@ -26,12 +26,12 @@ interface InteractiveHeroProps {
 
 const PROMPTS = [
     {
-        id: 'black-hole',
-        badge: 'Physics',
-        icon: FlaskConical,
-        text: "what happens inside a black hole past the event horizon",
-        theme: 'light' as const,
-        deckIndex: 0
+        id: 'stripe-story',
+        badge: 'Startup',
+        icon: Zap,
+        text: "how two brothers built Stripe from a garage to $40 billion",
+        theme: 'orange' as const,
+        deckIndex: 2
     },
     {
         id: 'calculus-lesson',
@@ -42,12 +42,12 @@ const PROMPTS = [
         deckIndex: 1
     },
     {
-        id: 'stripe-story',
-        badge: 'Startup',
-        icon: Zap,
-        text: "how two brothers built Stripe from a garage to $40 billion",
-        theme: 'orange' as const,
-        deckIndex: 2
+        id: 'black-hole',
+        badge: 'Physics',
+        icon: FlaskConical,
+        text: "what happens inside a black hole past the event horizon",
+        theme: 'light' as const,
+        deckIndex: 0
     },
     {
         id: 'google-earnings',

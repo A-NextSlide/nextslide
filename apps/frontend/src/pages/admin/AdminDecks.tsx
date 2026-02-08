@@ -117,9 +117,9 @@ const CATEGORY_OPTIONS = [
 
 // Prompt text mapped to each hero display_order — aligned with InteractiveHero PROMPTS
 const HERO_PROMPTS: Record<number, { badge: string; text: string }> = {
-  0: { badge: 'Physics', text: 'what happens inside a black hole past the event horizon' },
+  0: { badge: 'Startup', text: 'how two brothers built Stripe from a garage to $40 billion' },
   1: { badge: 'Education', text: "teach me basic calculus like I'm in high school, make it visual" },
-  2: { badge: 'Startup', text: 'how two brothers built Stripe from a garage to $40 billion' },
+  2: { badge: 'Physics', text: 'what happens inside a black hole past the event horizon' },
   3: { badge: 'Finance', text: "break down Google's latest quarterly earnings" },
   4: { badge: 'Tech', text: "how does Spotify's algorithm know what I want to hear" },
   5: { badge: 'Business', text: 'quarterly B2B sales update for my team meeting' },
