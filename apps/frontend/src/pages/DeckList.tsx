@@ -3301,7 +3301,7 @@ const DeckList: React.FC = () => {
         />
       )}
 
-      {/* Community Button - Fixed at bottom, hidden during conversational onboarding */}
+      {/* Community Button - hidden for now, will re-enable later
       {!showConversationalOnboarding && (
         <button
           onClick={() => setShowCommunity(true)}
@@ -3314,6 +3314,7 @@ const DeckList: React.FC = () => {
           Community Slides
         </button>
       )}
+      */}
 
       {/* Community Bottom Sheet */}
       <CommunityBottomSheet

@@ -1157,7 +1157,7 @@ const Landing: React.FC = () => {
         </div>
       </section>
 
-      {/* Community Slides */}
+      {/* Community Slides — hidden for now, will re-enable later
       <section className="py-24 px-8 bg-white dark:bg-black/30">
           <div className="max-w-[1400px] mx-auto">
             <div className="text-center mb-12 animate-on-scroll opacity-0">
@@ -1200,7 +1200,6 @@ const Landing: React.FC = () => {
           </div>
         </section>
 
-      {/* Community Button - Fixed at bottom, matches /app style */}
       <button
         onClick={() => setShowCommunity(true)}
         className="fixed left-1/2 -translate-x-1/2 bottom-6 z-40 px-4 py-2 bg-white dark:bg-[#111] text-sm font-medium rounded-lg border border-[#FF4301]/20 shadow-[0_0_16px_rgba(255,67,1,0.15)] hover:shadow-[0_0_24px_rgba(255,67,1,0.25)] hover:border-[#FF4301]/30 hover:scale-[1.02] transition-all duration-200 flex items-center gap-2 text-[#333] dark:text-white"
@@ -1208,6 +1207,7 @@ const Landing: React.FC = () => {
         <Users2 className="h-4 w-4" />
         Community Slides
       </button>
+      */}
 
       {/* Community Bottom Sheet */}
       <CommunityBottomSheet
