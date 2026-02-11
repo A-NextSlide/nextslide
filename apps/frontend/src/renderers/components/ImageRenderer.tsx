@@ -233,7 +233,6 @@ export const renderImage = (
   // This avoids the flash where src changes but the old imageLoaded=true
   // persists for one render frame before the useEffect resets it.
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
-  const imageLoaded = loadedSrc === src && !!src && src !== 'placeholder';
 
   const imageRef = useRef<HTMLImageElement>(null);
   const { updateComponent, slideId: activeSlideId } = useActiveSlide();
@@ -244,7 +243,7 @@ export const renderImage = (
   const isCroppingThis = isCroppingGlobal && croppingComponentId === component.id;
   const isSelected = useEditorStore(state => state.isComponentSelected(component.id));
   const theme = useThemeStore(state => state.getWorkspaceTheme());
-  
+
   // Randomize loading messages for variety
   useEffect(() => {
     const messages = [
@@ -258,8 +257,6 @@ export const renderImage = (
     setLoadingMessage(messages[Math.floor(Math.random() * messages.length)]);
   }, []);
 
-  // (moved below destructuring where src is defined)
-  
   const {
     src,
     alt = "",
@@ -315,6 +312,9 @@ export const renderImage = (
     width,
     height
   } = props;
+
+  // Derived after destructuring to avoid TDZ — `src` must be in scope.
+  const imageLoaded = loadedSrc === src && !!src && src !== 'placeholder';
 
   // When src changes, preload via a hidden Image() object.
   // We only assign the real src to the <img> element AFTER the browser has
