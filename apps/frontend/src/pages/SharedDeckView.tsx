@@ -730,8 +730,9 @@ const SharedDeckView: React.FC = () => {
               position: 'relative',
               width: `${baseSlideWidth}px`,
               height: `${baseSlideHeight}px`,
-              transform: `scale(${scale})`,
-              transformOrigin: 'top left',
+              // Skip transform: scale(1) on mobile — even a no-op transform creates
+              // a compositing layer (~8MB+ on mobile at 1920×1080×DPR)
+              ...(scale !== 1 ? { transform: `scale(${scale})`, transformOrigin: 'top left' } : {}),
               // Skip willChange on mobile — promotes to 1920x1080 GPU layer (~8MB)
               // which contributes to OOM crashes on mobile presentation mode
               ...(BROWSER.isMobile ? {} : { willChange: 'transform' as const }),

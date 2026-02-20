@@ -1463,6 +1463,23 @@ img.ns-img-ready {
       html = injectMobileImageOptimizations(html);
     }
 
+    // Mobile presentation: inject CSS zoom to preserve 1920×1080 layout in smaller iframe.
+    // PresentationMode reduces slideSize by 0.5× on mobile, so the iframe renders at half
+    // resolution (saving ~75% bitmap memory). The zoom makes the content lay out at the
+    // original 1920×1080 equivalent, keeping fixed-pixel fonts and positions correct.
+    if (BROWSER.isMobile && isPresenting) {
+      const zoomScale = 0.5; // Must match PresentationMode.MOBILE_RENDER_SCALE
+      const sizeMultiplier = Math.round(100 / zoomScale); // 200%
+      const zoomStyle = `<style>/* ns-mobile-zoom */ html { zoom: ${zoomScale} !important; width: ${sizeMultiplier}% !important; height: ${sizeMultiplier}% !important; }</style>`;
+      if (html.includes('</head>')) {
+        html = html.replace('</head>', zoomStyle + '\n</head>');
+      } else if (html.includes('<body')) {
+        html = html.replace('<body', zoomStyle + '\n<body');
+      } else {
+        html = zoomStyle + '\n' + html;
+      }
+    }
+
     // Inject image processing overlay handler script (edit-mode only)
     if (isMobileViewOnly) return html;
     const processingOverlayScript = `

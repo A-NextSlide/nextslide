@@ -38,6 +38,7 @@ import DeckNotes from './deck/DeckNotes';
 import { debugSlideImages } from '@/utils/debugSlideImages';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { BROWSER } from '@/utils/browser';
 
 /**
  * SlideEditor content component that assumes all context providers are in place
@@ -841,7 +842,13 @@ const SlideEditorContent: React.FC = () => {
       );
     }
 
-    // Render at full resolution - PresentationMode handles scaling
+    // Render at full resolution - PresentationMode handles scaling.
+    // On mobile, use reduced slide dimensions (matching PresentationMode's MOBILE_RENDER_SCALE)
+    // so the iframe renders at lower resolution to prevent OOM crashes.
+    const MOBILE_RENDER_SCALE = 0.5;
+    const slideSizeForProvider = BROWSER.isMobile
+      ? { width: Math.round(deckSlideSize.width * MOBILE_RENDER_SCALE), height: Math.round(deckSlideSize.height * MOBILE_RENDER_SCALE) }
+      : deckSlideSize;
     return (
       <div
         className="w-full h-full relative overflow-hidden"
@@ -852,7 +859,7 @@ const SlideEditorContent: React.FC = () => {
         }}
       >
         <NavigationProvider initialSlideIndex={index} onSlideChange={() => { }}>
-          <EditorStateProvider initialEditingState={false} slideSizeOverride={deckSlideSize}>
+          <EditorStateProvider initialEditingState={false} slideSizeOverride={slideSizeForProvider}>
             <StaticActiveSlideProvider slide={normalizedSlide}>
               <Slide
                 key={normalizedSlide.id}

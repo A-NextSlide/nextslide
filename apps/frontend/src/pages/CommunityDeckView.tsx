@@ -252,8 +252,8 @@ const CommunityDeckView: React.FC = () => {
             position: 'relative',
             width: `${deckSlideSize.width}px`,
             height: `${deckSlideSize.height}px`,
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left',
+            // Skip transform: scale(1) on mobile — even a no-op creates a compositing layer
+            ...(scale !== 1 ? { transform: `scale(${scale})`, transformOrigin: 'top left' } : {}),
             ...(BROWSER.isMobile ? {} : { willChange: 'transform' as const }),
           }}
         >

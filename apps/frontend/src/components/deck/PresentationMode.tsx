@@ -14,6 +14,7 @@ import { usePreventMobileZoom, MOBILE_SLIDE_GUARD_STYLE } from '@/hooks/usePreve
 import { useMobilePinchZoom } from '@/hooks/useMobilePinchZoom';
 import { BROWSER } from '@/utils/browser';
 import MobilePresentationThumbnail from './MobilePresentationThumbnail';
+import { StaticEditorStateProvider } from '@/context/EditorStateContext';
 
 interface PresentationModeProps {
   slides: SlideData[];
@@ -141,6 +142,17 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const baseSlideWidth = deckSlideSize.width;
   const baseSlideHeight = deckSlideSize.height;
 
+  // Mobile: render at half resolution to prevent OOM crashes.
+  // The iframe renders at renderWidth×renderHeight (e.g. 960×540) instead of 1920×1080,
+  // reducing GPU bitmap memory by ~75%. The visual output is scaled up to fill the viewport.
+  const MOBILE_RENDER_SCALE = 0.5;
+  const renderWidth = BROWSER.isMobile ? Math.round(baseSlideWidth * MOBILE_RENDER_SCALE) : baseSlideWidth;
+  const renderHeight = BROWSER.isMobile ? Math.round(baseSlideHeight * MOBILE_RENDER_SCALE) : baseSlideHeight;
+  const mobileSlideSize = useMemo(
+    () => ({ width: renderWidth, height: renderHeight }),
+    [renderWidth, renderHeight]
+  );
+
   // Thumbnail dimensions
   const thumbnailHeight = 120;
   const rawThumbnailWidth = thumbnailHeight * (deckSlideSize.width / deckSlideSize.height);
@@ -210,8 +222,9 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       const availableWidth = viewportWidth - horizontalPadding;
       const availableHeight = viewportHeight - verticalPadding;
 
-      const scaleX = availableWidth / baseSlideWidth;
-      const scaleY = availableHeight / baseSlideHeight;
+      // Scale based on render dimensions (reduced on mobile to save memory)
+      const scaleX = availableWidth / renderWidth;
+      const scaleY = availableHeight / renderHeight;
       const scale = Math.min(scaleX, scaleY);
 
       if (Number.isFinite(scale) && scale > 0) {
@@ -225,7 +238,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     // Recalculate on resize/orientation change
     window.addEventListener('resize', calculateScale);
     return () => window.removeEventListener('resize', calculateScale);
-  }, [isPresenting, baseSlideWidth, baseSlideHeight, isMobile]);
+  }, [isPresenting, renderWidth, renderHeight, isMobile]);
 
   // Scroll current slide into view when thumbnails open
   useEffect(() => {
@@ -341,8 +354,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
   if (!isPresenting || slideScale === null) return null;
 
-  const scaledWidth = baseSlideWidth * slideScale;
-  const scaledHeight = baseSlideHeight * slideScale;
+  const scaledWidth = renderWidth * slideScale;
+  const scaledHeight = renderHeight * slideScale;
   const progressTotal = Math.max(1, slides.length);
 
   // When forcing landscape, we rotate the entire view 90 degrees
@@ -382,10 +395,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
             style={{ width: scaledWidth, height: scaledHeight }}
           >
             <div
-              className="absolute top-0 left-0 origin-top-left"
+              className="absolute top-0 left-0 origin-top-left overflow-hidden"
               style={{
-                width: baseSlideWidth,
-                height: baseSlideHeight,
+                width: renderWidth,
+                height: renderHeight,
                 transform: `scale(${slideScale})`,
               }}
             >
@@ -399,7 +412,16 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                       pointerEvents: 'none'
                     } : undefined}
                   >
-                    {slideContent}
+                    {/* Mobile: override slideSize context to render at reduced resolution.
+                        The Slide component reads slideSize from EditorStateContext, so this
+                        makes iframes render at renderWidth×renderHeight instead of 1920×1080. */}
+                    {BROWSER.isMobile ? (
+                      <StaticEditorStateProvider slideSize={mobileSlideSize}>
+                        {slideContent}
+                      </StaticEditorStateProvider>
+                    ) : (
+                      slideContent
+                    )}
                   </div>
 
                   {/* Locked slide overlay - shown on top of blurred content */}
