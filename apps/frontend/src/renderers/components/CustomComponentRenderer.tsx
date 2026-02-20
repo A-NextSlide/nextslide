@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, RefObject, useMemo, useState, useCallback, memo } from "react";
 import DOMPurify from 'dompurify';
+import * as Sentry from '@sentry/react';
 import { ComponentInstance } from "../../types/components";
 import { useComponentInstance } from "../../context/CustomComponentStateContext";
 import { useNavigation } from '../../context/NavigationContext';
@@ -41,6 +42,7 @@ class ErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error) {
     console.error('[CustomComponent] Error caught by boundary:', error);
+    Sentry.captureException(error);
     // Notify parent component of error
     this.props.onError?.();
   }
@@ -984,13 +986,17 @@ img.ns-img-ready {
     img.classList.add('ns-img-ready');
   }
 
+  var isMobile = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
+
   function handleImage(img) {
     if (!img) return;
     if (img.complete && img.naturalWidth > 0) {
       reveal(img);
       return;
     }
-    if (img.decode) {
+    // On mobile: skip img.decode() — it forces parallel GPU bitmap creation
+    // which causes OOM crashes. Use simple load/error events instead.
+    if (!isMobile && img.decode) {
       img.decode().then(function() { reveal(img); }).catch(function() { reveal(img); });
     } else {
       img.addEventListener('load', function() { reveal(img); }, { once: true });
@@ -1039,6 +1045,23 @@ img.ns-img-ready {
       return html.replace('</html>', stabilityScript + '\n</html>');
     }
     return html + stabilityScript;
+  };
+
+  /**
+   * Add loading="lazy" and decoding="async" to all <img> tags in the HTML.
+   * Called only on mobile view-only mode to prevent simultaneous high-res
+   * image downloads that cause OOM crashes.
+   */
+  const injectMobileImageOptimizations = (html: string): string => {
+    if (!html) return html;
+
+    // Add loading="lazy" to img tags that don't already have it
+    let result = html.replace(/<img\b(?![^>]*\bloading\s*=)/gi, '<img loading="lazy"');
+
+    // Add decoding="async" to img tags that don't already have it
+    result = result.replace(/<img\b(?![^>]*\bdecoding\s*=)/gi, '<img decoding="async"');
+
+    return result;
   };
 
   // Inject image props into HTML by replacing placeholder src attributes
@@ -1332,16 +1355,26 @@ img.ns-img-ready {
       extraFonts
     });
 
-    // Then add click handlers for edit mode (skip on iOS due to postMessage issues)
-    if (!BROWSER.isIOS) {
+    // Mobile view-only: skip edit-only scripts and preloading to prevent OOM crashes
+    const isMobileViewOnly = BROWSER.isMobile && !isEditing;
+
+    // Add click handlers for edit mode (skip on all mobile, not just iOS)
+    if (!BROWSER.isMobile) {
       html = injectImageClickHandlers(html, component.id);
     }
 
-    html = injectZoomRelay(html, component.id);
+    // Zoom relay — not needed on mobile view-only (presentation handles gestures)
+    if (!isMobileViewOnly) {
+      html = injectZoomRelay(html, component.id);
+    }
 
-    // Inject interactivity safety net — fixes decorative overlays blocking button clicks
+    // Image stability (hide-then-reveal) — always needed, but uses load events on mobile
     html = injectImageStabilityFixes(html);
-    html = injectInteractivityFixes(html);
+
+    // Interactivity fixes — skip on mobile view-only (edit-mode pointer-events fix)
+    if (!isMobileViewOnly) {
+      html = injectInteractivityFixes(html);
+    }
 
     // Inject element-level edit mode when in edit mode (not just when selected)
     // This allows hover effects and double-click to work before selection
@@ -1355,12 +1388,19 @@ img.ns-img-ready {
       html = injectEditMode(html, component.id);
     }
 
-    // Inject <link rel="preload"> tags for ALL images found in the HTML.
-    // This makes the browser start fetching images immediately when the
-    // iframe loads, so tab-switching / hidden images are already cached.
-    html = injectImagePreloadLinks(html);
+    // Image preloading — skip on mobile view-only (primary crash fix: prevents
+    // simultaneous high-res downloads that cause OOM)
+    if (!isMobileViewOnly) {
+      html = injectImagePreloadLinks(html);
+    }
 
-    // Inject image processing overlay handler script
+    // Mobile view-only: add lazy loading and async decoding to all images
+    if (isMobileViewOnly) {
+      html = injectMobileImageOptimizations(html);
+    }
+
+    // Inject image processing overlay handler script (edit-mode only)
+    if (isMobileViewOnly) return html;
     const processingOverlayScript = `
 <style>
   .ns-image-processing-overlay {

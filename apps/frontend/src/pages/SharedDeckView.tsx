@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback, Component, ErrorInfo, ReactNode } from 'react';
+import * as Sentry from '@sentry/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { shareService } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
@@ -79,6 +80,7 @@ class SlideErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryStat
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('[SlideErrorBoundary] Error rendering slide:', error, errorInfo);
+    Sentry.captureException(error, { extra: { componentStack: errorInfo.componentStack } });
   }
 
   render() {

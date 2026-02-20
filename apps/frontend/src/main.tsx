@@ -8,7 +8,6 @@ import './index.css'
 import './components/ColorPickerStyles.css'
 import './styles/presentation.css'
 import { configureLogging, LogLevel } from '@/utils/logging'
-import { setupGlobalErrorHandlers } from '@/utils/errorHandler'
 import { initializeStorage } from '@/integrations/supabase/client'
 import { BROWSER } from '@/utils/browser'
 import { setupDiagnostics } from '@/utils/authDiagnostics'
@@ -42,9 +41,6 @@ configureLogging({
   globalLevel: LogLevel.NONE,
   useColors: false
 });
-
-// Set up global error handlers before any runtime logging
-setupGlobalErrorHandlers();
 
 // Add browser classes for CSS overrides (e.g., disable heavy effects on Safari/Firefox)
 try {
