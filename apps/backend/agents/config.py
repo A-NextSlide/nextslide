@@ -12,7 +12,7 @@ load_dotenv()
 GEMINI_FLASH = "gemini-2.5-flash"
 GEMINI_FLASH_LITE = "gemini-2.5-flash-lite"
 GEMINI_PRO = "gemini-2.5-pro"
-GEMINI_3_PRO = "gemini-3-pro-preview"
+GEMINI_3_PRO = "gemini-3.1-pro-preview"
 GEMINI_3_FLASH = "gemini-3-flash-preview"
 GEMINI_IMAGE = "gemini-2.5-flash-image"
 
@@ -20,10 +20,12 @@ GEMINI_IMAGE = "gemini-2.5-flash-image"
 CLAUDE_OPUS = "claude-opus-4-5"
 CLAUDE_OPUS_46 = "claude-opus-4-6"
 CLAUDE_SONNET = "claude-sonnet-4-5"
+CLAUDE_SONNET_46 = "claude-sonnet-4-6"
 CLAUDE_HAIKU = "claude-haiku-4-5"
 
 # Full IDs for raw API calls
 CLAUDE_OPUS_ID = "claude-opus-4-5-20251101"
+CLAUDE_SONNET_46_ID = "claude-sonnet-4-6-20260217"
 CLAUDE_SONNET_ID = "claude-sonnet-4-5-20250929"
 CLAUDE_HAIKU_ID = "claude-haiku-4-5-20251001"
 
