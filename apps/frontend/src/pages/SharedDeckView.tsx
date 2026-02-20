@@ -732,7 +732,9 @@ const SharedDeckView: React.FC = () => {
               height: `${baseSlideHeight}px`,
               transform: `scale(${scale})`,
               transformOrigin: 'top left',
-              willChange: 'transform',
+              // Skip willChange on mobile — promotes to 1920x1080 GPU layer (~8MB)
+              // which contributes to OOM crashes on mobile presentation mode
+              ...(BROWSER.isMobile ? {} : { willChange: 'transform' as const }),
               ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
             }}
           >

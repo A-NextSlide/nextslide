@@ -1048,18 +1048,82 @@ img.ns-img-ready {
   };
 
   /**
-   * Add loading="lazy" and decoding="async" to all <img> tags in the HTML.
-   * Called only on mobile view-only mode to prevent simultaneous high-res
-   * image downloads that cause OOM crashes.
+   * Throttle image loading on mobile to prevent OOM crashes.
+   *
+   * `loading="lazy"` alone doesn't help because all images are "above the fold"
+   * in a fullscreen slide iframe. Instead we:
+   * 1. Move every `src` to `data-src` and set a transparent placeholder
+   * 2. Inject a script that loads images 2 at a time via an async queue
+   * 3. Add `decoding="async"` so decode doesn't block the main thread
+   *
+   * Called only on mobile view-only mode.
    */
   const injectMobileImageOptimizations = (html: string): string => {
     if (!html) return html;
 
-    // Add loading="lazy" to img tags that don't already have it
-    let result = html.replace(/<img\b(?![^>]*\bloading\s*=)/gi, '<img loading="lazy"');
+    // Swap real src → data-src, insert tiny transparent placeholder
+    const PLACEHOLDER_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    let result = html.replace(
+      /<img\b([^>]*?)src=["'](https?:\/\/[^"']+)["']([^>]*?)>/gi,
+      (match, before, realSrc, after) => {
+        // Skip if already has data-src (shouldn't happen, but guard)
+        if ((before + after).includes('data-src')) return match;
+        return `<img ${before}src="${PLACEHOLDER_SRC}" data-src="${realSrc}" decoding="async"${after}>`;
+      }
+    );
 
-    // Add decoding="async" to img tags that don't already have it
-    result = result.replace(/<img\b(?![^>]*\bdecoding\s*=)/gi, '<img decoding="async"');
+    // Inject throttled loader script
+    const loaderScript = `
+<script>
+(function() {
+  if (window.__nsMobileImgLoader) return;
+  window.__nsMobileImgLoader = true;
+
+  var MAX_CONCURRENT = 2;
+  var active = 0;
+  var queue = [];
+
+  function loadNext() {
+    while (active < MAX_CONCURRENT && queue.length > 0) {
+      var img = queue.shift();
+      if (!img || !img.dataset.src) continue;
+      active++;
+      var src = img.dataset.src;
+      img.src = src;
+      img.removeAttribute('data-src');
+      var done = function() { active--; loadNext(); };
+      img.addEventListener('load', done, { once: true });
+      img.addEventListener('error', done, { once: true });
+    }
+  }
+
+  function enqueueAll() {
+    var imgs = document.querySelectorAll('img[data-src]');
+    for (var i = 0; i < imgs.length; i++) {
+      if (queue.indexOf(imgs[i]) === -1) queue.push(imgs[i]);
+    }
+    loadNext();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', enqueueAll);
+  } else {
+    enqueueAll();
+  }
+  /* Catch dynamically inserted images */
+  var obs = new MutationObserver(function() { enqueueAll(); });
+  obs.observe(document.documentElement || document.body, { childList: true, subtree: true });
+})();
+</script>`;
+
+    // Inject before </body> or at end
+    if (result.includes('</body>')) {
+      result = result.replace('</body>', loaderScript + '\n</body>');
+    } else if (result.includes('</html>')) {
+      result = result.replace('</html>', loaderScript + '\n</html>');
+    } else {
+      result += loaderScript;
+    }
 
     return result;
   };

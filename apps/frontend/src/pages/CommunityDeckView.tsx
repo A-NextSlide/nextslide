@@ -254,7 +254,7 @@ const CommunityDeckView: React.FC = () => {
             height: `${deckSlideSize.height}px`,
             transform: `scale(${scale})`,
             transformOrigin: 'top left',
-            willChange: 'transform',
+            ...(BROWSER.isMobile ? {} : { willChange: 'transform' as const }),
           }}
         >
           <StaticActiveSlideProvider slide={normalizedSlide}>
