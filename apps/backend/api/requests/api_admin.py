@@ -2863,6 +2863,7 @@ MODEL_PRICING = {
     "claude-haiku-4-5": {"input": 0.80, "output": 4.00, "provider": "anthropic"},
     "claude-3-5-haiku": {"input": 0.80, "output": 4.00, "provider": "anthropic"},
     "claude-sonnet-4": {"input": 3.00, "output": 15.00, "provider": "anthropic"},
+    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00, "provider": "anthropic"},
     "claude-sonnet-4-5": {"input": 3.00, "output": 15.00, "provider": "anthropic"},
     "claude-3-5-sonnet": {"input": 3.00, "output": 15.00, "provider": "anthropic"},
     "claude-opus-4": {"input": 15.00, "output": 75.00, "provider": "anthropic"},

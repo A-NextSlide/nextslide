@@ -44,6 +44,22 @@ class FontIntelligence:
         'mono': ['sans', 'geometric-sans'],
     }
 
+    # Tags that indicate niche/specialty fonts — penalized unless content demands them
+    NICHE_TAGS = frozenset({
+        'horror', 'graffiti', 'blackletter', 'pixel', 'gothic', 'comic', 'cartoon',
+        'western', 'medieval', 'psychedelic', 'punk', 'distressed', 'grunge', 'stencil',
+        'dark', 'aggressive', 'cyberpunk', 'military', 'streetwear', 'hip-hop',
+        'y2k', 'sci-fi', 'fantasy', '3d', 'shadow', 'inline', 'textured',
+        'decorative', 'victorian', 'art-nouveau', 'bohemian', 'tropical',
+    })
+
+    # Tags that should NEVER appear on body fonts — hard readability gate
+    BODY_BLOCKED_TAGS = frozenset({
+        'horror', 'graffiti', 'blackletter', 'pixel', 'gothic', 'comic', 'cartoon',
+        'western', 'medieval', 'psychedelic', 'punk', 'distressed', 'grunge', 'stencil',
+        'decorative', '3d', 'shadow', 'inline', 'textured', 'outline',
+    })
+
     # Map brand styles to metadata tags (these exist in our 1010 tags)
     BRAND_STYLE_TAGS = {
         'university': {
@@ -143,6 +159,34 @@ class FontIntelligence:
             'avoid_tags': ['bold', 'grunge', 'horror', 'comic'],
             'best_for_hero': ['invitations', 'logos', 'headlines'],
             'best_for_body': ['body_text', 'invitations', 'print'],
+        },
+        'halloween': {
+            'hero_tags': ['horror', 'gothic', 'dark', 'blackletter', 'medieval', 'distressed', 'grunge', 'spooky', 'creepy'],
+            'body_tags': ['clean', 'readable', 'modern', 'neutral'],
+            'avoid_tags': ['cute', 'playful', 'cheerful', 'friendly'],
+            'best_for_hero': ['headlines', 'posters', 'logos'],
+            'best_for_body': ['body_text', 'web'],
+        },
+        'urban': {
+            'hero_tags': ['graffiti', 'streetwear', 'hip-hop', 'punk', 'edgy', 'bold', 'urban', 'street'],
+            'body_tags': ['clean', 'readable', 'modern', 'neutral'],
+            'avoid_tags': ['elegant', 'formal', 'delicate', 'ornate'],
+            'best_for_hero': ['headlines', 'posters', 'logos'],
+            'best_for_body': ['body_text', 'web'],
+        },
+        'fantasy': {
+            'hero_tags': ['medieval', 'gothic', 'blackletter', 'fantasy', 'victorian', 'decorative', 'ornate', 'mystical'],
+            'body_tags': ['readable', 'clean', 'serif', 'classic'],
+            'avoid_tags': ['modern', 'tech', 'futuristic', 'corporate'],
+            'best_for_hero': ['headlines', 'posters', 'logos'],
+            'best_for_body': ['body_text', 'print'],
+        },
+        'western_style': {
+            'hero_tags': ['western', 'distressed', 'slab-serif', 'vintage', 'rustic', 'rugged', 'americana'],
+            'body_tags': ['readable', 'clean', 'classic', 'neutral'],
+            'avoid_tags': ['futuristic', 'modern', 'tech', 'digital'],
+            'best_for_hero': ['headlines', 'posters', 'logos'],
+            'best_for_body': ['body_text', 'print'],
         },
     }
 
@@ -313,6 +357,7 @@ class FontIntelligence:
         scored_fonts = []
         available_lower = {f.lower(): f for f in self.available_fonts}
         avoid_tags_lower = set(t.lower() for t in avoid_tags)
+        required_tags_lower = set(t.lower() for t in required_tags)
 
         for font_id, metadata in self.font_metadata.items():
             # Check if font is available in our registry
@@ -347,6 +392,10 @@ class FontIntelligence:
             if font_tags.intersection(avoid_tags_lower):
                 continue
 
+            # Body fonts: hard-block unreadable niche tags
+            if not is_hero and font_tags.intersection(self.BODY_BLOCKED_TAGS):
+                continue
+
             # Score calculation
             score = 0.0
 
@@ -358,6 +407,14 @@ class FontIntelligence:
                 # Partial match (e.g., "elegant" matches "elegant font")
                 elif any(tag_lower in t for t in font_tags):
                     score += 5
+
+            # Niche tag penalty — niche fonts only when content demands them
+            font_niche_tags = font_tags.intersection(self.NICHE_TAGS)
+            if font_niche_tags:
+                unlocked = font_niche_tags.intersection(required_tags_lower)
+                unmatched = len(font_niche_tags) - len(unlocked)
+                if unmatched > 0:
+                    score -= unmatched * 30
 
             # best_for matches
             for bf in best_for:
@@ -373,7 +430,7 @@ class FontIntelligence:
             else:
                 if 'body_text' in font_best_for:
                     score += 10  # Strong bonus for body text suitability
-                if 'readable' in font_tags or 'clean' in font_tags:
+                if 'body-text' in font_tags or 'clean' in font_tags:
                     score += 5
 
             # Style characteristics bonus
@@ -443,18 +500,22 @@ class FontIntelligence:
         combined = f"{brand_name} {brand_domain or ''} {content_topic or ''}".lower()
 
         style_keywords = {
-            'university': ['university', 'college', 'school', 'edu', 'academic', 'institute', 'faculty', 'campus'],
-            'tech': ['tech', 'software', 'ai', 'digital', 'app', 'saas', 'cloud', 'data', '.io', 'startup', 'crypto', 'blockchain'],
-            'sports': ['sport', 'athletic', 'fitness', 'gym', 'team', 'league', 'football', 'basketball', 'soccer', 'running'],
+            'university': ['university', 'college', 'school', 'academic', 'institute', 'faculty', 'campus'],
+            'tech': ['tech', 'software', 'digital', 'saas', 'cloud', 'data', '.io', 'startup', 'crypto', 'blockchain'],
+            'halloween': ['halloween', 'horror', 'spooky', 'haunted', 'scary', 'creepy', 'zombie', 'ghost', 'witch', 'vampire'],
+            'urban': ['urban', 'graffiti', 'hip-hop', 'hip hop', 'streetwear', 'skate'],
+            'fantasy': ['fantasy', 'medieval', 'dragon', 'wizard', 'mythical', 'enchanted'],
+            'western_style': ['western', 'cowboy', 'ranch', 'rodeo', 'frontier', 'saloon', 'wild west'],
+            'sports': ['sport', 'athletic', 'fitness', 'gym', 'league', 'football', 'basketball', 'soccer', 'running'],
             'luxury': ['luxury', 'premium', 'exclusive', 'haute', 'boutique', 'designer', 'high-end', 'elite'],
             'food': ['food', 'restaurant', 'cafe', 'coffee', 'bakery', 'kitchen', 'dining', 'culinary', 'bistro'],
-            'kids': ['kids', 'children', 'toy', 'play', 'learn', 'preschool', 'nursery', 'pediatric'],
-            'creative': ['design', 'creative', 'art', 'studio', 'agency', 'media', 'photography', 'illustration'],
-            'health': ['health', 'medical', 'wellness', 'care', 'clinic', 'pharma', 'hospital', 'therapy'],
-            'retro': ['retro', 'vintage', '80s', '70s', '60s', 'classic', 'throwback', 'nostalgia'],
-            'gaming': ['gaming', 'game', 'esports', 'arcade', 'pixel', 'nintendo', 'playstation', 'xbox'],
-            'music': ['music', 'concert', 'festival', 'band', 'artist', 'record', 'audio', 'studio'],
-            'fashion': ['fashion', 'style', 'apparel', 'clothing', 'couture', 'vogue', 'runway'],
+            'kids': ['kids', 'children', 'toy', 'preschool', 'nursery', 'pediatric'],
+            'creative': ['design', 'creative', 'artist', 'agency', 'photography', 'illustration'],
+            'health': ['health', 'medical', 'wellness', 'clinic', 'pharma', 'hospital', 'therapy'],
+            'retro': ['retro', 'vintage', '80s', '70s', '60s', 'throwback', 'nostalgia'],
+            'gaming': ['gaming', 'esports', 'arcade', 'pixel', 'nintendo', 'playstation', 'xbox'],
+            'music': ['music', 'concert', 'festival', 'band', 'record', 'audio'],
+            'fashion': ['fashion', 'apparel', 'clothing', 'couture', 'vogue', 'runway'],
             'wedding': ['wedding', 'bridal', 'marriage', 'engagement', 'ceremony'],
         }
 
@@ -478,17 +539,56 @@ class FontIntelligence:
         if vibe:
             vibe_lower = vibe.lower()
             vibe_map = {
-                'professional': 'corporate',
-                'creative': 'creative',
-                'playful': 'kids',
-                'elegant': 'luxury',
-                'modern': 'tech',
-                'retro': 'retro',
-                'vintage': 'retro',
-                'fun': 'creative',
-                'serious': 'corporate',
-                'minimal': 'tech',
-                'bold': 'sports',
+                # Corporate / professional
+                'professional': 'corporate', 'formal': 'corporate', 'business': 'corporate',
+                'serious': 'corporate', 'corporate': 'corporate', 'trustworthy': 'corporate',
+                # Tech / modern
+                'modern': 'tech', 'minimal': 'tech', 'sleek': 'tech', 'futuristic': 'tech',
+                'digital': 'tech', 'innovative': 'tech', 'technical': 'tech',
+                # Creative
+                'creative': 'creative', 'artistic': 'creative', 'fun': 'creative',
+                'expressive': 'creative', 'colorful': 'creative', 'quirky': 'creative',
+                # Luxury / elegant
+                'elegant': 'luxury', 'luxury': 'luxury', 'premium': 'luxury',
+                'sophisticated': 'luxury', 'refined': 'luxury', 'chic': 'luxury',
+                # Sports / energetic
+                'bold': 'sports', 'energetic': 'sports', 'dynamic': 'sports',
+                'athletic': 'sports', 'powerful': 'sports', 'intense': 'sports',
+                # Retro / vintage
+                'retro': 'retro', 'vintage': 'retro', 'nostalgic': 'retro',
+                'classic': 'retro', 'throwback': 'retro', 'groovy': 'retro',
+                # Kids / playful
+                'playful': 'kids', 'cute': 'kids', 'whimsical': 'kids',
+                'cheerful': 'kids', 'friendly': 'kids',
+                # Dark / horror / halloween
+                'dark': 'halloween', 'spooky': 'halloween', 'horror': 'halloween',
+                'scary': 'halloween', 'creepy': 'halloween', 'gothic': 'halloween',
+                'macabre': 'halloween',
+                # Urban / street
+                'urban': 'urban', 'street': 'urban', 'graffiti': 'urban',
+                'edgy': 'urban', 'raw': 'urban', 'gritty': 'urban',
+                # Gaming
+                'gaming': 'gaming', 'pixel': 'gaming', 'arcade': 'gaming',
+                '8-bit': 'gaming', 'cyberpunk': 'gaming',
+                # Fantasy / medieval
+                'fantasy': 'fantasy', 'medieval': 'fantasy', 'mystical': 'fantasy',
+                'magical': 'fantasy', 'enchanted': 'fantasy', 'mythical': 'fantasy',
+                # Western
+                'western': 'western_style', 'cowboy': 'western_style',
+                'rustic': 'western_style', 'rugged': 'western_style',
+                # Wedding / romantic
+                'romantic': 'wedding', 'dreamy': 'wedding', 'love': 'wedding',
+                # Music / concert
+                'concert': 'music', 'festival': 'music', 'rock': 'music',
+                'punk': 'music', 'musical': 'music',
+                # Fashion
+                'fashion': 'fashion', 'stylish': 'fashion', 'trendy': 'fashion',
+                # Food
+                'warm': 'food', 'cozy': 'food', 'organic': 'food',
+                'appetizing': 'food', 'homemade': 'food',
+                # Health
+                'calming': 'health', 'wellness': 'health', 'zen': 'health',
+                'peaceful': 'health',
             }
             for v, style in vibe_map.items():
                 if v in vibe_lower:

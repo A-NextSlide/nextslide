@@ -80,6 +80,7 @@ from agents.config import ENABLE_ANTHROPIC_PROMPT_CACHING, LOG_ANTHROPIC_CACHE_M
 MODELS = {
     # Claude
     "claude-opus-4-5": ("anthropic", "claude-opus-4-5-20251101"),
+    "claude-sonnet-4-6": ("anthropic", "claude-sonnet-4-6-20260217"),
     "claude-sonnet-4-5": ("anthropic", "claude-sonnet-4-5-20250929"),
     "claude-sonnet-4": ("anthropic", "claude-sonnet-4-20250514"),  # Legacy
     "claude-haiku-4-5": ("anthropic", "claude-haiku-4-5-20251001"),
@@ -132,6 +133,7 @@ MODELS = {
 # ═══════════════════════════════════════════════════════════════════════════════
 MODEL_MAX_TOKENS = {
     "claude-opus-4-5-20251101": 32000,
+    "claude-sonnet-4-6-20260217": 64000,
     "claude-sonnet-4-5-20250929": 64000,
     "claude-sonnet-4-20250514": 64000,  # Legacy
     "claude-haiku-4-5-20251001": 64000,
@@ -164,6 +166,7 @@ MAX_COMPLETION_TOKEN_MODELS = {"o3-mini", "o4-mini", "gpt-5", "gpt-5-mini", "gpt
 MODEL_PRICING = {
     # Anthropic Claude
     "claude-opus-4-5-20251101": {"input": 15.0, "output": 75.0},
+    "claude-sonnet-4-6-20260217": {"input": 3.0, "output": 15.0},
     "claude-sonnet-4-5-20250929": {"input": 3.0, "output": 15.0},
     "claude-sonnet-4-20250514": {"input": 3.0, "output": 15.0},
     "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.0},

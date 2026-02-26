@@ -536,8 +536,14 @@ const Landing: React.FC = () => {
                   <textarea
                     ref={heroTextareaRef}
                     value={heroInput}
-                    onChange={(e) => setHeroInput(e.target.value)}
-                    onFocus={() => setIsHeroInputFocused(true)}
+                    onChange={(e) => isSignedIn ? setHeroInput(e.target.value) : undefined}
+                    onFocus={() => {
+                      if (!isSignedIn) {
+                        navigate('/login');
+                        return;
+                      }
+                      setIsHeroInputFocused(true);
+                    }}
                     onBlur={() => !heroInput.trim() && setIsHeroInputFocused(false)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey && heroInput.trim()) {
@@ -545,7 +551,8 @@ const Landing: React.FC = () => {
                         handleGeneratePreview();
                       }
                     }}
-                    className="w-full bg-transparent border-none outline-none text-black dark:text-white placeholder-transparent caret-[#FF4301] text-2xl sm:text-3xl font-semibold leading-tight resize-none m-0 relative z-20"
+                    readOnly={!isSignedIn}
+                    className="w-full bg-transparent border-none outline-none text-black dark:text-white placeholder-transparent caret-[#FF4301] text-2xl sm:text-3xl font-semibold leading-tight resize-none m-0 relative z-20 cursor-pointer"
                     style={{ height: 'auto', minHeight: '80px' }}
                     placeholder="Create a quarterly business..." // Hidden by custom typewriter
                     rows={1}
@@ -560,14 +567,14 @@ const Landing: React.FC = () => {
 
                   <Button
                     size="lg"
-                    onClick={handleGeneratePreview}
-                    disabled={isGeneratingPreview}
+                    onClick={isSignedIn ? handleGeneratePreview : () => navigate('/login')}
+                    disabled={isSignedIn && isGeneratingPreview}
                     className={cn(
                       "bg-[#FF4301] hover:bg-[#E63901] text-white rounded-xl px-8 py-6 text-lg font-bold shadow-lg shadow-orange-500/20 transition-all duration-300",
-                      isGeneratingPreview && "opacity-80 cursor-not-allowed"
+                      isSignedIn && isGeneratingPreview && "opacity-80 cursor-not-allowed"
                     )}
                   >
-                    {isGeneratingPreview ? (
+                    {isSignedIn && isGeneratingPreview ? (
                       <>
                         <Loader2 className="mr-2 w-5 h-5 animate-spin" /> Generating...
                       </>

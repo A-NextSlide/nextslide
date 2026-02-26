@@ -14,7 +14,7 @@ GEMINI_FLASH_LITE = "gemini-2.5-flash-lite"
 GEMINI_PRO = "gemini-2.5-pro"
 GEMINI_3_PRO = "gemini-3.1-pro-preview"
 GEMINI_3_FLASH = "gemini-3-flash-preview"
-GEMINI_IMAGE = "gemini-2.5-flash-image"
+GEMINI_IMAGE = "gemini-3.1-flash-image-preview"
 
 # Claude Models
 CLAUDE_OPUS = "claude-opus-4-5"
