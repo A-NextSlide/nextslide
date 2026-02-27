@@ -19,6 +19,10 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+MAX_TEXT_DOCUMENT_CHARS = 30000
+MAX_DOC_CONTEXT_TOTAL_CHARS = 12000
+MAX_DOC_CONTEXT_PER_DOCUMENT_CHARS = 3500
+
 
 class FileType(Enum):
     """Categorization of file types"""
@@ -56,6 +60,63 @@ class FileProcessor:
         self.supported_doc_formats = ['text/plain', 'application/pdf', 
                                     'application/vnd.ms-powerpoint',
                                     'application/vnd.openxmlformats-officedocument.presentationml.presentation']
+
+    def _decode_text_payload(self, content: Any) -> str:
+        """Decode text payloads, including base64 uploads from the frontend."""
+        if content is None:
+            return ""
+
+        if isinstance(content, bytes):
+            try:
+                return content.decode("utf-8")
+            except UnicodeDecodeError:
+                return content.decode("utf-8", errors="ignore")
+
+        if not isinstance(content, str):
+            return str(content)
+
+        raw = content.strip()
+        if not raw:
+            return ""
+
+        def _decode_base64_string(b64_text: str) -> Optional[str]:
+            try:
+                decoded_bytes = base64.b64decode(b64_text, validate=False)
+            except Exception:
+                return None
+
+            if not decoded_bytes:
+                return None
+
+            try:
+                decoded_text = decoded_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                decoded_text = decoded_bytes.decode("utf-8", errors="ignore")
+
+            if not decoded_text:
+                return None
+
+            printable = sum(1 for ch in decoded_text if ch.isprintable() or ch in "\n\r\t")
+            if printable / max(len(decoded_text), 1) < 0.75:
+                return None
+            return decoded_text
+
+        # Handle Data URL payloads
+        if raw.startswith("data:") and ";base64," in raw:
+            payload = raw.split(";base64,", 1)[1]
+            decoded = _decode_base64_string(payload)
+            if decoded is not None:
+                return decoded
+            return raw
+
+        # Handle raw base64 payloads from the client
+        compact = re.sub(r"\s+", "", raw)
+        if len(compact) >= 256 and re.fullmatch(r"[A-Za-z0-9+/=]+", compact):
+            decoded = _decode_base64_string(compact)
+            if decoded is not None:
+                return decoded
+
+        return raw
     
     async def process_files(self, files: List[Dict[str, Any]], prompt: str) -> Dict[str, Any]:
         """
@@ -366,10 +427,9 @@ class FileProcessor:
     def _parse_csv_data(self, content: Any) -> Optional[Dict[str, Any]]:
         """Parse CSV data"""
         try:
-            if isinstance(content, bytes):
-                text = content.decode('utf-8')
-            else:
-                text = str(content)
+            text = self._decode_text_payload(content)
+            if not text:
+                return None
             
             # Parse CSV
             reader = csv.reader(io.StringIO(text))
@@ -483,17 +543,18 @@ class FileProcessor:
 
             # For text files, extract content
             if file_type == 'text/plain' or filename.endswith('.txt'):
-                if isinstance(content, bytes):
-                    text = content.decode('utf-8')
-                else:
-                    text = str(content)
+                text = self._decode_text_payload(content)
+                if not text:
+                    logger.warning(f"[FileProcessor] ⚠️ Document {filename} could not be decoded as text - skipping")
+                    return None
                 
                 return {
                     'filename': filename,
                     'type': 'document',
                     'format': 'text',
-                    'content': text[:5000],  # Limit to 5000 chars
+                    'content': text[:MAX_TEXT_DOCUMENT_CHARS],
                     'full_length': len(text),
+                    'truncated': len(text) > MAX_TEXT_DOCUMENT_CHARS,
                     'interpretation': f"Text document with {len(text)} characters. Content will be incorporated into relevant slides."
                 }
             
@@ -610,13 +671,21 @@ class FileProcessor:
         
         # Add document context
         if processed_files['documents']:
-            doc_context = "\n\nDOCUMENTS:"
+            doc_context = (
+                "\n\nDOCUMENTS (PRIMARY SOURCE MATERIAL):"
+                "\n- Use these excerpts as source-of-truth for slide facts."
+                "\n- If a fact is not present here or in the prompt, do not invent it."
+            )
+            remaining_budget = MAX_DOC_CONTEXT_TOTAL_CHARS
             for doc in processed_files['documents']:
                 doc_context += f"\n- {doc['filename']}: {doc['interpretation']}"
-                if doc['format'] == 'text' and 'content' in doc:
-                    # Include a snippet of the content
-                    snippet = doc['content'][:200] + "..." if len(doc['content']) > 200 else doc['content']
-                    doc_context += f"\n  Content preview: {snippet}"
+                if doc.get('format') == 'text' and 'content' in doc and remaining_budget > 0:
+                    excerpt_budget = min(MAX_DOC_CONTEXT_PER_DOCUMENT_CHARS, remaining_budget)
+                    excerpt = doc['content'][:excerpt_budget]
+                    if len(doc['content']) > excerpt_budget:
+                        excerpt += "\n...[document excerpt truncated]..."
+                    doc_context += f"\n  Source excerpt:\n{excerpt}"
+                    remaining_budget -= min(len(doc['content']), excerpt_budget)
             context_parts.append(doc_context)
         
         # Add style file context

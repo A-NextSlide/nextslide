@@ -35,9 +35,36 @@ from agents.generation.image_processing import apply_tagged_media_to_images
 logger = logging.getLogger(__name__)
 
 
+_EXPLICIT_REWRITE_KEYWORDS = (
+    "redesign",
+    "redo",
+    "rebuild",
+    "from scratch",
+    "start over",
+    "completely different",
+    "entirely different",
+    "totally different",
+    "overhaul",
+    "transform",
+    "rebrand",
+    "rewrite",
+)
+
+
 def _current_date_note() -> str:
     """Return a short current-date note for prompt grounding."""
     return f"CURRENT DATE (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+
+
+def _instruction_requests_full_rewrite(instruction: str) -> bool:
+    """Detect explicit user intent for a full redesign/rebuild."""
+    instruction_l = (instruction or "").lower()
+    return (
+        any(k in instruction_l for k in _EXPLICIT_REWRITE_KEYWORDS)
+        or ("img_" in instruction_l)
+        or (".jpeg" in instruction_l)
+        or (".png" in instruction_l)
+    )
 
 
 def edit_slide(
@@ -74,28 +101,7 @@ def edit_slide(
     custom_component = next((c for c in components if _get_attr(c, 'type') == 'CustomComponent'), None)
     is_empty = len(non_bg_components) == 0
 
-    instruction_l = (instruction or "").lower()
-    rewrite_keywords = [
-        # Explicit rewrite requests
-        "redesign", "redo", "rebuild", "from scratch", "start over",
-        "completely different", "entirely different", "make it totally different",
-        "overhaul", "transform",
-        "replace the current", "match the image", "like the image", "use the image",
-        # Branding changes (always need full rewrite)
-        "co-brand", "cobrand", "rebrand", "brand with", "branded with",
-        "add their logo", "add the logo", "use their logo",
-        # Significant visual changes
-        "make it nicer", "make it better", "improve the design",
-        "more professional", "more modern", "update the style",
-        "change the look", "change the style", "different style",
-        "make it look", "make this look",
-    ]
-    wants_rewrite = (
-        any(k in instruction_l for k in rewrite_keywords)
-        or ("img_" in instruction_l)
-        or (".jpeg" in instruction_l)
-        or (".png" in instruction_l)
-    )
+    wants_rewrite = _instruction_requests_full_rewrite(instruction)
 
     logger.info(f"[edit_slide] slide={slide_id}, empty={is_empty}, has_custom={custom_component is not None}")
     _dbg(

@@ -30,6 +30,11 @@ class OutlineOptions(BaseModel):
     async_images: bool = Field(False, description="If True, images are placeholders; if False, images are auto-applied")
     # Research queries determined by intelligent analysis (populated by research_decision module)
     research_queries: List[str] = Field(default_factory=list, description="Specific research queries if research is needed")
+    # Optional user override from UI toggle. If set, it takes precedence over automatic decision.
+    research_preference: Optional[bool] = Field(
+        default=None,
+        description="Explicit user preference for enabling/disabling web research"
+    )
 
     @validator('slide_count')
     def validate_slide_count(cls, v):

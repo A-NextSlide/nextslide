@@ -243,7 +243,9 @@ Return JSON:
 
 - Create exactly {slide_count} slides.
 - Keep titles specific and engaging.
-- Use slide_types when useful (title, agenda, content, conclusion)."""
+- Use slide_types when useful (title, agenda, content, conclusion).
+- Treat provided prompt/context/file excerpts as source-of-truth.
+- Do not add unsupported facts or topics not grounded in the provided context."""
 
         try:
             # Get quick outline structure - use mode-appropriate model
@@ -254,7 +256,13 @@ Return JSON:
             
             # Use asyncio to run the synchronous API call in a thread executor
             # Mode-specific search parameters
-            if options.detail_level != 'detailed':
+            if not options.enable_research:
+                search_params = {
+                    "return_citations": False,
+                    "num_search_results": 0,
+                }
+                logger.info("[STREAMING] Research disabled for outline planning")
+            elif options.detail_level != 'detailed':
                 # Presentation mode: minimal search
                 search_params = {
                     "return_citations": True,

@@ -1,19 +1,122 @@
 import asyncio
 import re
 import time
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, Optional, Tuple, List
 
 from agents.config import USE_PERPLEXITY_FOR_OUTLINE
 from agents.research import OutlineResearchAgent
 from setup_logging_optimized import get_logger
 
 from .models import OutlineOptions, OutlineResult, ProgressUpdate
-from .research_decision import should_research, get_current_date_context
+from .research_decision import should_research
 
 logger = get_logger(__name__)
 
+_TIME_SENSITIVE_RE = re.compile(
+    r"\b("
+    r"latest|current|today|yesterday|this\s+week|this\s+month|this\s+year|as\s+of|up[-\s]?to[-\s]?date|"
+    r"recent|newest|breaking|now|forecast|prediction|market\s+share|stock\s+price|election|release\s+date"
+    r")\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_RESEARCH_RE = re.compile(
+    r"\b("
+    r"research|look\s+up|find\s+sources|cite|citations|web\s+search|latest\s+data|benchmark|compare\s+against"
+    r")\b",
+    re.IGNORECASE,
+)
+_NO_RESEARCH_RE = re.compile(
+    r"\b("
+    r"use\s+only\s+(the\s+)?(provided|attached|uploaded)|no\s+web\s+research|don['’]t\s+research|"
+    r"without\s+research|from\s+these\s+notes\s+only"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_STRONG_PROMPT_LENGTH = 1400
+_STRONG_DOC_CHARS = 4000
+
 
 class OutlineGeneratorFlowMixin:
+
+    def _collect_document_char_count(self, processed_files: Optional[Dict[str, Any]]) -> int:
+        if not processed_files:
+            return 0
+        total = 0
+        try:
+            for doc in processed_files.get("documents") or []:
+                if not isinstance(doc, dict):
+                    continue
+                if doc.get("format") != "text":
+                    continue
+                full_len = doc.get("full_length")
+                if isinstance(full_len, int) and full_len > 0:
+                    total += full_len
+                else:
+                    total += len(doc.get("content") or "")
+        except Exception:
+            return total
+        return total
+
+    def _has_strong_user_context(self, options: OutlineOptions, processed_files: Optional[Dict[str, Any]]) -> bool:
+        prompt_len = len((options.prompt or "").strip())
+        file_count = len(options.files or [])
+        doc_chars = self._collect_document_char_count(processed_files)
+        has_structured_data = bool(
+            (processed_files or {}).get("extracted_data")
+            or (processed_files or {}).get("data_files")
+        )
+        return (
+            prompt_len >= _STRONG_PROMPT_LENGTH
+            or doc_chars >= _STRONG_DOC_CHARS
+            or (file_count >= 2 and (doc_chars >= 1500 or has_structured_data))
+        )
+
+    async def _resolve_research_decision(
+        self,
+        options: OutlineOptions,
+        processed_files: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, List[str], str]:
+        combined = " ".join(
+            part.strip()
+            for part in [options.prompt or "", options.style_context or ""]
+            if isinstance(part, str) and part.strip()
+        )
+
+        if options.research_preference is not None:
+            enabled = bool(options.research_preference)
+            reason = "User preference requested research." if enabled else "User preference disabled research."
+            return enabled, [], reason
+
+        explicit_no_research = bool(_NO_RESEARCH_RE.search(combined))
+        explicit_research = bool(_EXPLICIT_RESEARCH_RE.search(combined))
+        time_sensitive = bool(_TIME_SENSITIVE_RE.search(combined))
+        strong_context = self._has_strong_user_context(options, processed_files)
+
+        if explicit_no_research:
+            return False, [], "Prompt requests using provided context only."
+
+        try:
+            needs_research, research_queries, reason = await should_research(
+                options.prompt,
+                options.style_context
+            )
+        except Exception as e:
+            logger.warning(f"[RESEARCH DECISION] Failed to analyze prompt: {e}")
+            if strong_context and not explicit_research and not time_sensitive:
+                return False, [], "Using provided prompt/files due rich source context."
+            return True, [], f"Decision error; defaulting to research: {e}"
+
+        if explicit_research:
+            return True, research_queries, "Prompt explicitly requests external research."
+
+        if strong_context and not time_sensitive and not needs_research:
+            return False, [], "Rich prompt/files detected; no external research required."
+
+        if strong_context and not time_sensitive and needs_research:
+            return False, [], "Rich prompt/files detected; prioritizing provided source material."
+
+        return needs_research, research_queries, reason
 
     async def generate(self, options: OutlineOptions, progress_callback=None) -> OutlineResult:
         """Generate complete outline"""
@@ -21,24 +124,42 @@ class OutlineGeneratorFlowMixin:
 
         logger.info(f"Starting outline generation: slides={options.slide_count}, detail={options.detail_level}")
 
-        # INTELLIGENT RESEARCH DECISION: Analyze prompt to determine if research is needed
-        try:
-            needs_research, research_queries, reason = await should_research(
-                options.prompt,
-                options.style_context
-            )
-            options.enable_research = needs_research
-            options.research_queries = research_queries
-            logger.info(f"[RESEARCH DECISION] Research {'ENABLED' if needs_research else 'DISABLED'}: {reason}")
-            if progress_callback and needs_research:
-                await self._call_progress(progress_callback, ProgressUpdate(
-                    stage="research_decision",
-                    message=f"Research needed: {reason}",
-                    progress=3
-                ))
-        except Exception as e:
-            logger.warning(f"[RESEARCH DECISION] Failed to analyze prompt, defaulting to research: {e}")
-            options.enable_research = True
+        # Process uploaded files
+        processed_files = await self._process_files(options, progress_callback)
+        pptx_outlines = (processed_files or {}).get("pptx_outlines") or []
+        preserve_pptx_content = False
+        if pptx_outlines:
+            try:
+                preserve_pptx_content = self._should_preserve_pptx_content(options.prompt)
+            except Exception:
+                preserve_pptx_content = False
+        
+        # Extract brand guidelines if present
+        brand_guidelines = None
+        if processed_files and processed_files.get('brand_guidelines'):
+            brand_guidelines = processed_files['brand_guidelines']
+            logger.info(f"[GENERATE] Found brand guidelines with {len(brand_guidelines.get('colors', []))} colors")
+        
+        # Log extracted data
+        if processed_files and processed_files.get('extracted_data'):
+            logger.info(f"[GENERATE] Extracted data available: {len(processed_files['extracted_data'])} items")
+            for idx, data in enumerate(processed_files['extracted_data']):
+                if isinstance(data, dict) and 'summary' in data:
+                    logger.info(f"[GENERATE] Data item {idx}: {data['summary'].get('symbol', 'Unknown')} - ${data['summary'].get('currentPrice', 'N/A')}")
+        else:
+            logger.info("[GENERATE] No extracted data found in processed files")
+
+        # Decide research after file processing so uploaded context can disable unnecessary web lookups.
+        needs_research, research_queries, reason = await self._resolve_research_decision(options, processed_files)
+        options.enable_research = needs_research
+        options.research_queries = research_queries
+        logger.info(f"[RESEARCH DECISION] Research {'ENABLED' if needs_research else 'DISABLED'}: {reason}")
+        if progress_callback and needs_research:
+            await self._call_progress(progress_callback, ProgressUpdate(
+                stage="research_decision",
+                message=f"Research needed: {reason}",
+                progress=12 if options.files else 3
+            ))
 
         # Fast-path: Perplexity/Claude single-pass outline generation (mode-optimized)
         # Use different models based on detail level for optimized performance
@@ -47,10 +168,12 @@ class OutlineGeneratorFlowMixin:
                 USE_PERPLEXITY_FOR_OUTLINE or
                 (options.model and isinstance(options.model, str) and (options.model.startswith("perplexity-") or options.model.startswith("claude-")))
             )
+            if preserve_pptx_content:
+                use_pplx = False
             logger.debug(f"[DEBUG] USE_PERPLEXITY_FOR_OUTLINE={USE_PERPLEXITY_FOR_OUTLINE}, detail_level={options.detail_level}, use_fast_path={use_pplx}")
         except Exception as e:
             logger.warning(f"[DEBUG] Exception in fast-path check: {e}")
-            use_pplx = USE_PERPLEXITY_FOR_OUTLINE
+            use_pplx = USE_PERPLEXITY_FOR_OUTLINE and not preserve_pptx_content
         if use_pplx:
             try:
                 if progress_callback:
@@ -73,24 +196,6 @@ class OutlineGeneratorFlowMixin:
                 logger.warning(f"Perplexity fast-path failed, falling back to standard flow: {e}")
                 import traceback
                 logger.warning(f"Traceback: {traceback.format_exc()}")
-        
-        # Process uploaded files
-        processed_files = await self._process_files(options, progress_callback)
-        
-        # Extract brand guidelines if present
-        brand_guidelines = None
-        if processed_files and processed_files.get('brand_guidelines'):
-            brand_guidelines = processed_files['brand_guidelines']
-            logger.info(f"[GENERATE] Found brand guidelines with {len(brand_guidelines.get('colors', []))} colors")
-        
-        # Log extracted data
-        if processed_files and processed_files.get('extracted_data'):
-            logger.info(f"[GENERATE] Extracted data available: {len(processed_files['extracted_data'])} items")
-            for idx, data in enumerate(processed_files['extracted_data']):
-                if isinstance(data, dict) and 'summary' in data:
-                    logger.info(f"[GENERATE] Data item {idx}: {data['summary'].get('symbol', 'Unknown')} - ${data['summary'].get('currentPrice', 'N/A')}")
-        else:
-            logger.info("[GENERATE] No extracted data found in processed files")
         
         # Optional: Agent-based research prior to planning (non-stream path)
         research_findings = []
@@ -235,25 +340,6 @@ class OutlineGeneratorFlowMixin:
         async def streaming_generate():
             start_time = time.time()
 
-            # INTELLIGENT RESEARCH DECISION: Analyze prompt to determine if research is needed
-            try:
-                needs_research, research_queries, reason = await should_research(
-                    options.prompt,
-                    options.style_context
-                )
-                options.enable_research = needs_research
-                options.research_queries = research_queries
-                logger.info(f"[RESEARCH DECISION] Research {'ENABLED' if needs_research else 'DISABLED'}: {reason}")
-                if needs_research:
-                    yield ProgressUpdate(
-                        stage="research_decision",
-                        message=f"Research needed: {reason}",
-                        progress=2
-                    )
-            except Exception as e:
-                logger.warning(f"[RESEARCH DECISION] Failed to analyze prompt, defaulting to research: {e}")
-                options.enable_research = True
-
             # Decide on Perplexity fast-path early (respects explicit model)
             try:
                 use_pplx_stream = USE_PERPLEXITY_FOR_OUTLINE or (options.model and options.model.startswith("perplexity-"))
@@ -291,6 +377,19 @@ class OutlineGeneratorFlowMixin:
                     }
                 )
                 await asyncio.sleep(0.1)
+
+            # Decide research after file processing so uploaded context can suppress unnecessary web lookups.
+            needs_research, research_queries, reason = await self._resolve_research_decision(options, processed_files)
+            options.enable_research = needs_research
+            options.research_queries = research_queries
+            logger.info(f"[RESEARCH DECISION] Research {'ENABLED' if needs_research else 'DISABLED'}: {reason}")
+            if needs_research:
+                yield ProgressUpdate(
+                    stage="research_decision",
+                    message=f"Research needed: {reason}",
+                    progress=2 if not options.files else 9
+                )
+                await asyncio.sleep(0)
             
             # Check if we should preserve PPTX content (before Perplexity)
             preserve_pptx_content = False

@@ -169,7 +169,7 @@ IMAGE_AI_EDIT_TOOLS = [
 
 THEME_CHANGE_PROMPT = """TASK: Change fonts, colors, or theme across the entire deck.
 
-This applies to ALL slides automatically via CSS variable hotswap - instant and efficient.
+Use this only when the user clearly asks for deck-wide scope (e.g., "all slides", "every slide", "across the deck", "entire presentation").
 
 TOOLS AVAILABLE:
 1. apply_theme_to_custom_components - Apply theme to all slides (PREFERRED - instant)
@@ -191,7 +191,7 @@ FONT RECOMMENDATIONS:
    Only use if apply_theme_to_custom_components doesn't work.
 
 CRITICAL:
-- This affects ALL slides. User does NOT need to say "all slides" - theme changes are global by default.
+- This affects ALL slides. Only do this for explicit deck-wide requests.
 - Use apply_theme_to_custom_components - it's instant (CSS variable swap)
 - Do NOT use edit_all_slides for font changes - that's slow (edits each slide individually)
 """

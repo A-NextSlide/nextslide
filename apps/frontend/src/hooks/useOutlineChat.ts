@@ -31,6 +31,26 @@ interface UseOutlineChatProps {
   deckId?: string; // CRITICAL: Deck ID to use for outline.id (ensures UUID consistency)
 }
 
+const PLACEHOLDER_HOSTS = [
+  'placehold.co',
+  'placeholder.com',
+  'via.placeholder.com',
+  'placekitten.com',
+  'placebear.com',
+  'dummyimage.com',
+  'fakeimg.pl',
+  'picsum.photos',
+  'loremflickr.com',
+];
+
+const isPlaceholderHost = (host?: string): boolean => {
+  if (!host) return false;
+  const normalizedHost = host.replace(/^www\./i, '').toLowerCase();
+  return PLACEHOLDER_HOSTS.some((candidate) => (
+    normalizedHost === candidate || normalizedHost.endsWith(`.${candidate}`)
+  ));
+};
+
 const extractDomainFromText = (input?: string): string | undefined => {
   if (!input) return undefined;
   const trimmed = input.trim();
@@ -44,10 +64,12 @@ const extractDomainFromText = (input?: string): string | undefined => {
   try {
     const parsed = new URL(normalized);
     const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
-    return host || undefined;
+    if (!host || isPlaceholderHost(host)) return undefined;
+    return host;
   } catch {
     const fallback = cleaned.replace(/^www\./i, '').toLowerCase();
-    return fallback.includes('.') ? fallback : undefined;
+    if (!fallback.includes('.') || isPlaceholderHost(fallback)) return undefined;
+    return fallback;
   }
 };
 

@@ -40,6 +40,59 @@ DEPTH_RESEARCH_PATTERN = re.compile(
 )
 DATA_URL_PATTERN = re.compile(r"data:[^\s]+", re.IGNORECASE)
 MAX_FILE_CONTEXT_CHARS = 120000
+PLACEHOLDER_HOSTS = (
+    "placehold.co",
+    "placeholder.com",
+    "via.placeholder.com",
+    "placekitten.com",
+    "placebear.com",
+    "dummyimage.com",
+    "fakeimg.pl",
+    "picsum.photos",
+    "loremflickr.com",
+)
+
+
+def _is_placeholder_host(host: str) -> bool:
+    if not host:
+        return False
+    normalized = host.strip().lower().lstrip(".")
+    if normalized.startswith("www."):
+        normalized = normalized[4:]
+    return any(
+        normalized == candidate or normalized.endswith(f".{candidate}")
+        for candidate in PLACEHOLDER_HOSTS
+    )
+
+
+def _normalize_candidate_url(candidate: str) -> Optional[str]:
+    if not isinstance(candidate, str):
+        return None
+
+    value = candidate.strip()
+    if not value:
+        return None
+
+    value = value.rstrip("),.;")
+    if not value.startswith(("http://", "https://")):
+        value = f"https://{value}"
+
+    try:
+        parsed = urlparse(value)
+    except Exception:
+        return None
+
+    if parsed.scheme not in ("http", "https"):
+        return None
+
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return None
+
+    if _is_placeholder_host(host):
+        return None
+
+    return value
 
 
 def is_explicit_research_request(message: str) -> bool:
@@ -95,7 +148,7 @@ def extract_domains_from_message(message: str) -> List[str]:
     cleaned = []
     for host in candidates:
         normalized = host.strip().lower().lstrip("www.")
-        if normalized and normalized not in cleaned:
+        if normalized and not _is_placeholder_host(normalized) and normalized not in cleaned:
             cleaned.append(normalized)
 
     return cleaned
@@ -125,7 +178,9 @@ def build_prefetch_research_query(
             host = parsed.hostname or candidate
         except Exception:
             host = candidate
-        domain_hint = host.lstrip("www.").lower()
+        normalized_host = host.lstrip("www.").lower()
+        if not _is_placeholder_host(normalized_host):
+            domain_hint = normalized_host
     if not domain_hint and message:
         domains = extract_domains_from_message(message)
         if domains:
@@ -279,15 +334,14 @@ def collect_urls_to_scrape(message: str, context: Optional[Dict[str, Any]] = Non
 
     urls_to_scrape: List[str] = []
     for url in detected_urls:
-        if url and not url.startswith('http'):
-            url = f'https://{url}'
-        if url:
-            urls_to_scrape.append(url)
+        normalized = _normalize_candidate_url(url)
+        if normalized and normalized not in urls_to_scrape:
+            urls_to_scrape.append(normalized)
 
     for domain in detected_domains:
-        url = f'https://{domain}'
-        if url not in urls_to_scrape:
-            urls_to_scrape.append(url)
+        normalized = _normalize_candidate_url(domain)
+        if normalized and normalized not in urls_to_scrape:
+            urls_to_scrape.append(normalized)
 
     def _add_candidate(candidate: str) -> None:
         if not isinstance(candidate, str):
@@ -298,14 +352,14 @@ def collect_urls_to_scrape(message: str, context: Optional[Dict[str, Any]] = Non
         matches = URL_PATTERN.findall(candidate)
         if matches:
             for match in matches:
-                url = match if match.startswith('http') else f'https://{match}'
-                if url not in urls_to_scrape:
-                    urls_to_scrape.append(url)
+                normalized = _normalize_candidate_url(match)
+                if normalized and normalized not in urls_to_scrape:
+                    urls_to_scrape.append(normalized)
             return
         if DOMAIN_PATTERN.search(candidate):
-            url = f'https://{candidate}'
-            if url not in urls_to_scrape:
-                urls_to_scrape.append(url)
+            normalized = _normalize_candidate_url(candidate)
+            if normalized and normalized not in urls_to_scrape:
+                urls_to_scrape.append(normalized)
 
     if context:
         reference_links = context.get('reference_links') or context.get('referenceLinks') or []

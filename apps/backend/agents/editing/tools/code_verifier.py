@@ -1048,11 +1048,10 @@ def _check_image_src_switching(html: str) -> Tuple[List[str], List[str]]:
 
 
 def _check_zero_images(html: str) -> List[str]:
-    """Check if a slide with card/container layouts has zero images.
+    """Detect image-free card/container layouts and provide soft guidance.
 
-    Flags slides that use cards, grids, or panels but don't include
-    any images in them. Pure diagram/chart slides without containers
-    are fine without images.
+    Image-free layouts are valid when diagrams/charts/components communicate
+    better; this check is informational only.
     """
     warnings = []
 
@@ -1070,7 +1069,7 @@ def _check_zero_images(html: str) -> List[str]:
     if content_imgs > 0 or bg_imgs > 0:
         return warnings  # Has images, all good
 
-    # Only warn if the slide has card-like containers that should have images
+    # Only provide informational warning for card-like layouts with zero images.
     has_cards = bool(re.search(
         r'(?:display\s*:\s*(?:grid|flex)|class\s*=\s*["\'][^"\']*(?:card|grid|panel|tile))',
         html,
@@ -1084,9 +1083,9 @@ def _check_zero_images(html: str) -> List[str]:
 
     if has_cards or has_data_arrays:
         warnings.append(
-            "Slide has cards/containers but ZERO images. Each card, panel, or "
-            "grid item should have its own image. Add image properties to JS data "
-            "arrays and <img> tags to card templates."
+            "Slide has cards/containers with zero images. This is acceptable for "
+            "diagram/chart/component-driven designs. Add images only if they improve "
+            "clarity for this specific content."
         )
 
     return warnings

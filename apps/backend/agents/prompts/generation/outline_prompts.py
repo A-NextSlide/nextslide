@@ -150,6 +150,10 @@ def get_outline_planning_prompt(user_prompt: str, style_context: Optional[str], 
         f"{context_inst}\n"
         f"Flow: {get_flow_requirements(slide_count)}\n"
         "Include a title slide and a closing slide when appropriate.\n\n"
+        "GROUNDING RULES:\n"
+        "- Treat the user's prompt and any uploaded-file excerpts as source-of-truth.\n"
+        "- Prioritize explicit requirements in the provided context.\n"
+        "- Do not introduce unsupported facts, statistics, people, dates, or quotes.\n\n"
         "SLIDE TITLE FORMATTING:\n"
         "- Use Title Case (capitalize first letter of major words)\n"
         "- Keep titles concise (2-6 words ideal)\n"
@@ -195,6 +199,13 @@ def get_slide_content_prompt(
 
     if slide_type:
         lines.append(f"Slide type: {slide_type}")
+    lines.append(
+        "Grounding rules: use only facts supported by the provided topic/context/file excerpts. "
+        "Do not invent statistics, names, dates, or quotes."
+    )
+    lines.append(
+        "If key details are missing, keep wording high-level instead of fabricating specifics."
+    )
     lines.append(
         "Write for a presentation slide — let the content decide density: "
         "data-heavy analysis can be detailed, but most slides should be concise and visual."

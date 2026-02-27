@@ -483,6 +483,19 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
     def _needs_visual_context(msg: str) -> bool:
         msg_lower = (msg or "").lower()
 
+        # Ultra-short prompts are typically fast follow-ups where full screenshot context
+        # adds latency without improving tool selection.
+        short_followups = {
+            "fix this",
+            "fix it",
+            "improve this",
+            "enhance this",
+            "make it better",
+            "make this better",
+        }
+        if msg_lower.strip() in short_followups:
+            return False
+
         # Keywords indicating visual/complex edits
         visual_keywords = [
             "fix", "broken", "wrong", "issue", "problem", "bug",
@@ -551,20 +564,16 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
     elif USE_AGENTS_MD:
         logger.info(f"[AgentChat] agents.md mode - skipping classifier")
 
-    # Determine screenshot inclusion based on classification (or fallback to keyword-based)
-    # DEBUG: Force include screenshot when available to verify capture is working
-    if slide_screenshot_data:
-        include_screenshot = True
-        logger.info(f"[AgentChat] DEBUG: Forcing screenshot inclusion ({len(slide_screenshot_data.get('data', ''))} chars)")
-    elif classification:
-        include_screenshot = slide_screenshot_data and should_include_screenshot(classification)
+    # Determine screenshot inclusion based on classification (or fallback keyword heuristic)
+    if classification:
+        include_screenshot = bool(slide_screenshot_data and should_include_screenshot(classification))
         if slide_screenshot_data and not include_screenshot:
             logger.info(f"[AgentChat] Skipping screenshot - classification: {classification.type}")
         elif include_screenshot:
             logger.info(f"[AgentChat] Including screenshot - classification needs visual: {classification.needs_screenshot}")
     else:
         # Fallback to keyword-based detection if classification failed
-        include_screenshot = slide_screenshot_data and _needs_visual_context(text)
+        include_screenshot = bool(slide_screenshot_data and _needs_visual_context(text))
         if slide_screenshot_data and not include_screenshot:
             logger.info(f"[AgentChat] Skipping screenshot - simple request detected (fallback)")
         elif include_screenshot:

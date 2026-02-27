@@ -20,7 +20,6 @@ import re
 from typing import Dict, Any, List, Optional, Tuple
 from io import BytesIO
 from PIL import Image
-import uuid
 
 from agents.application.event_bus import get_event_bus, Events
 from agents.config import IMAGE_PROVIDER, IMAGE_TRANSPARENT_DEFAULT_FULL, IMAGE_GENERATION_ENABLED
@@ -184,41 +183,17 @@ class AIImageOrchestrator:
             title, content = self._get_slide_context_texts(slide_data)
             theme = self._pick_theme_for_slide(slide_data)
 
-            # Identify placeholder images
+            # Identify placeholder images. Do not force-add hero images when a slide has none.
+            # Images should only appear when the slide structure explicitly requests them.
             components = slide_data.get('components', []) or []
             placeholder_indices = [i for i, c in enumerate(components)
                                    if c.get('type') == 'Image' and (c.get('props', {}) or {}).get('src') in ('', 'placeholder')]
             if not placeholder_indices:
-                # Create a temporary full-bleed hero placeholder plan
-                logger.info("[AIImageOrchestrator] Slide %s: no placeholders; creating hero image plan", slide_index + 1)
-                temp_slide = dict(slide_data)
-                temp_components = list(components)
-                temp_components.append({
-                    'id': str(uuid.uuid4()),
-                    'type': 'Image',
-                    'props': {
-                        'src': 'placeholder',
-                        'position': {'x': 0, 'y': 0},
-                        'width': 1920,
-                        'height': 1080,
-                        'objectFit': 'cover',
-                        'opacity': 1,
-                        'rotation': 0,
-                        'zIndex': 1,
-                        'alt': title or 'Hero image'
-                    }
-                })
-                temp_slide['components'] = temp_components
-                builder = ImageGenerationPromptBuilder(theme)
-                plans = builder.build_for_slide(temp_slide, title, content, max_images=1)
-                # After generation succeeds we will append the new component with the generated URL
-                generate_into_new_component = True
-                new_component_index = len(components)  # index where we'll append
+                logger.info("[AIImageOrchestrator] Slide %s: no image placeholders; skipping AI image generation", slide_index + 1)
+                plans = []
             else:
                 builder = ImageGenerationPromptBuilder(theme)
                 plans = builder.build_for_slide(slide_data, title, content, max_images=3)
-                generate_into_new_component = False
-                new_component_index = -1
             if not plans:
                 logger.info("[AIImageOrchestrator] Slide %s: plan produced 0 images", slide_index + 1)
                 return

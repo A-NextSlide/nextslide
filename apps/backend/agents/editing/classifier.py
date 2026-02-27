@@ -147,7 +147,7 @@ COMPLEX EDITS (smart model needed):
 - "content_update" - Update with real data: "update the stats", "add current revenue numbers"
 - "research_edit" - Research then edit: "research Tesla and update the slide", "add a chart with latest data"
 - "image_ai_edit" - AI modify image: "make the image greener", "remove the background"
-- "complex_edit" - Redesigns, multi-step, ambiguous: "redesign this", "make it better", "fix everything"
+- "complex_edit" - Explicit redesign/rebuild or clearly multi-step changes: "redesign this", "rebuild from scratch", "fix everything on this slide"
 
 SCOPE DETECTION (critical for font/color changes):
 - "slide" - Current slide only. DEFAULT for most edits. Use when:

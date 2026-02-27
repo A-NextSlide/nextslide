@@ -113,7 +113,7 @@ CRITICAL INSTRUCTIONS FOR PRESENTATION STRUCTURING:
 - Use visual hierarchy: main bullets (•) + sub-bullets (  •)
 - Emphasize key numbers and data points with **bold**
 - Add charts for numerical data only when the deck is data-driven/analytical/scientific or explicitly asks for charts
-- Include [IMAGE: description] tags for visual slides (70% of content slides)
+- Use images only when they materially improve the slide; otherwise prefer charts/JS components/diagrams
 - Maintain all citations from the research
 - Total: 40-80 words per content slide (concise, presentation-ready content)"""
             
@@ -200,7 +200,9 @@ CRITICAL INSTRUCTIONS FOR PRESENTATION STRUCTURING:
                 "Slides are presentation-ready: concise, visual-first, one idea per slide. "
                 "Use citations inline as [n] when sources are available. "
                 "Avoid YouTube sources. "
-                "Only include chart data when the deck is data-driven/analytical/scientific or explicitly asks for charts."
+                "Only include chart data when the deck is data-driven/analytical/scientific or explicitly asks for charts. "
+                "Treat the user prompt and uploaded-file excerpts as source-of-truth. "
+                "Do not invent unsupported facts, statistics, dates, people, or quotes."
             )
 
             user_lines = [
@@ -231,12 +233,19 @@ CRITICAL INSTRUCTIONS FOR PRESENTATION STRUCTURING:
             }
 
             if model_name.startswith('perplexity'):
-                invoke_params["extra_body"] = {
-                    "return_citations": True,
-                    "search_recency_filter": "month" if detail_level == 'detailed' else "week",
-                    "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
-                    "num_search_results": 15 if detail_level == 'detailed' else 8,
-                }
+                if options.enable_research:
+                    invoke_params["extra_body"] = {
+                        "return_citations": True,
+                        "search_recency_filter": "month" if detail_level == 'detailed' else "week",
+                        "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
+                        "num_search_results": 15 if detail_level == 'detailed' else 8,
+                    }
+                else:
+                    invoke_params["extra_body"] = {
+                        "return_citations": False,
+                        "num_search_results": 0,
+                    }
+                    logger.info("[OUTLINE] Research disabled: generating without web search results")
             text = invoke(
                 client,
                 model_name,

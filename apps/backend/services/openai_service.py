@@ -92,6 +92,19 @@ class OpenAIService:
         self.assistants_url = f"{self.base_url}/assistants"
         self.threads_url = f"{self.base_url}/threads"
         self.files_url = f"{self.base_url}/files"
+
+    @staticmethod
+    def _truncate_head_tail(text: str, max_chars: int = 12000, tail_chars: int = 2500) -> str:
+        """Preserve both beginning and end when truncating long assistant output."""
+        if not isinstance(text, str):
+            text = str(text or "")
+        if len(text) <= max_chars:
+            return text
+        safe_tail = min(max(tail_chars, 0), max_chars // 2)
+        head_chars = max_chars - safe_tail - 32
+        if head_chars < 200:
+            head_chars = max_chars - safe_tail
+        return f"{text[:head_chars]}\n\n...[assistant output truncated]...\n\n{text[-safe_tail:]}"
     
     async def _fetch_openai_api(self, url: str, method: str = 'POST', 
                                 json_data: Optional[Dict] = None, 
@@ -389,7 +402,7 @@ If this is a brand guideline document, extract:
                 logger.info(f"[ASSISTANT] Passing through raw extracted data")
             else:
                 # Fallback to full output if markers not found
-                file_context = raw_output[:3000]  # Limit to 3000 chars
+                file_context = self._truncate_head_tail(raw_output, max_chars=12000, tail_chars=2500)
                 logger.info(f"[ASSISTANT] No extraction markers found, using raw output")
             
             logger.info(f"[ASSISTANT] Final context length: {len(file_context)} chars")

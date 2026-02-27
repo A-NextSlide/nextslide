@@ -198,6 +198,109 @@ function injectImageProps(html: string, props: Record<string, any>): string {
     }
   );
 
+  // Runtime safeguard: if an image URL is rendered as plain text, convert it to an <img>.
+  const isImageLikeUrl = (value: string): boolean => {
+    if (typeof value !== 'string') return false;
+    if (value.startsWith('data:image/')) return true;
+    if (!/^https?:\/\//i.test(value)) return false;
+    if (/\.(png|jpe?g|gif|webp|svg|avif)(?:[?#]|$)/i.test(value)) return true;
+    return /\/storage\/v1\/object\/public\//i.test(value);
+  };
+
+  const imageLikeUrlsFromProps = Object.values(imagePropsMap).filter((value): value is string => isImageLikeUrl(value));
+  const imageLikeUrlsFromHtml = (result.match(/https?:\/\/[^\s"'<>]+/gi) || []).filter(isImageLikeUrl);
+  const candidateImageUrls = Array.from(new Set([
+    ...imageLikeUrlsFromProps,
+    ...imageLikeUrlsFromHtml,
+  ]));
+
+  if (candidateImageUrls.length > 0) {
+    const existingFixScriptRegex = /<script[^>]*id=["']ns-image-url-text-fix["'][^>]*>[\s\S]*?<\/script>/gi;
+    result = result.replace(existingFixScriptRegex, '');
+
+    const safeUrlsJson = JSON.stringify(candidateImageUrls).replace(/<\/script/gi, '<\\/script');
+    const urlTextFixScript = `
+<script id="ns-image-url-text-fix">
+(function() {
+  try {
+    var urls = ${safeUrlsJson};
+    if (!Array.isArray(urls) || urls.length === 0) return;
+    var urlSet = Object.create(null);
+    for (var i = 0; i < urls.length; i++) {
+      urlSet[urls[i]] = true;
+    }
+
+    function replaceIfImageUrlText(node) {
+      if (!node || !node.tagName) return false;
+      var tag = String(node.tagName || '').toLowerCase();
+      if (!tag || tag === 'script' || tag === 'style' || tag === 'img') return false;
+      if (node.childElementCount > 0) return false;
+
+      var text = (node.textContent || '').trim();
+      if (!text || !urlSet[text]) return false;
+
+      var img = document.createElement('img');
+      img.src = text;
+      img.alt = '';
+      img.setAttribute('data-ns-url-fix', 'true');
+      img.style.display = 'block';
+      img.style.width = '100%';
+      img.style.height = '100%';
+      img.style.maxWidth = '100%';
+      img.style.maxHeight = '100%';
+      img.style.objectFit = 'contain';
+
+      node.textContent = '';
+      node.appendChild(img);
+      return true;
+    }
+
+    function scan(root) {
+      var container = (root && root.querySelectorAll) ? root : document;
+      replaceIfImageUrlText(container);
+      var nodes = container.querySelectorAll ? container.querySelectorAll('*') : [];
+      for (var i = 0; i < nodes.length; i++) {
+        replaceIfImageUrlText(nodes[i]);
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function() { scan(document); }, { once: true });
+    } else {
+      scan(document);
+    }
+
+    var observer = new MutationObserver(function(mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        var mutation = mutations[i];
+        if (mutation.type !== 'childList' || !mutation.addedNodes) continue;
+        for (var j = 0; j < mutation.addedNodes.length; j++) {
+          var node = mutation.addedNodes[j];
+          if (!node) continue;
+          if (node.nodeType === 1) {
+            scan(node);
+          } else if (node.nodeType === 3 && node.parentElement) {
+            replaceIfImageUrlText(node.parentElement);
+          }
+        }
+      }
+    });
+    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+  } catch (err) {
+    console.warn('[HTML Export] URL text image fix failed:', err);
+  }
+})();
+</script>`;
+
+    if (result.includes('</body>')) {
+      result = result.replace('</body>', `${urlTextFixScript}\n</body>`);
+    } else if (result.includes('</html>')) {
+      result = result.replace('</html>', `${urlTextFixScript}\n</html>`);
+    } else {
+      result += urlTextFixScript;
+    }
+  }
+
   return result;
 }
 

@@ -403,14 +403,13 @@ STAY ON THEME (CRITICAL):
 - Only change theme colors if user EXPLICITLY asks to change them
 - If user says "make it red", apply red while keeping other theme elements
 
-⚡ GLOBAL STYLE CHANGES (FONTS, COLORS, THEME) - AUTO-APPLY TO ALL SLIDES:
+⚡ GLOBAL STYLE CHANGES (FONTS, COLORS, THEME):
 
-When user asks about fonts, colors, or theme changes WITHOUT specifying a single slide, ALWAYS apply to ALL slides:
-- "Change the font" / "Use Poppins" / "Make the fonts bigger" → apply_theme_to_custom_components (ALL slides)
-- "Change the colors" / "Use blue theme" / "Make it darker" → apply_theme_to_custom_components (ALL slides)
-- "Update the theme" / "Change the style" / "Make it more professional" → apply_theme_to_custom_components (ALL slides)
+Apply to ALL slides ONLY when user explicitly indicates deck-wide scope:
+- "all slides", "every slide", "across the deck", "entire presentation", "everywhere"
+- Example: "Change the font on all slides" → apply_theme_to_custom_components
 
-⚠️ CRITICAL: User does NOT need to say "all slides" - font/color/theme requests are GLOBAL by default!
+If scope is not explicit, default to CURRENT SLIDE edits.
 
 How to use apply_theme_to_custom_components:
 - For font changes: {"typography": {"heading": {"family": "Poppins"}, "body": {"family": "Inter"}}}
@@ -501,7 +500,7 @@ data/stats needed              → web_search THEN custom_component_str_replace 
 site-specific URL              → deep_extract THEN custom_component_str_replace or edit tool
 @linkedin Name                 → linkedin_lookup          → name, company
 edit ALL slides                → edit_all_slides          → instruction
-improve/make better/enhance    → custom_component_rewrite → instruction (rewrite the selected block with improvements)
+improve/make better/enhance    → custom_component_str_replace DIRECT → old_string, new_string (small targeted polish)
 delete slide                   → delete_slide             → slide_id
 duplicate slide                → duplicate_slide          → slide_id
 chat/question/thanks           → NO tools, message only (ONLY when nothing is selected)
@@ -534,14 +533,14 @@ RULES:
 2. Current slide ID from context unless user says otherwise
 3. Past tense responses always
 4. EDIT, DON'T REPLACE. Always use str_replace DIRECT to modify the specific thing the user asked about. Do NOT use edit_slide or custom_component_rewrite unless user explicitly asks to redesign/rebuild/redo or the fix requires JS logic changes. "Make the title red" = str_replace the color value. "Add a border" = str_replace to insert the CSS. "Fix the text" = str_replace the text. Never rewrite the whole slide for a surgical change.
-5. SELECTION = ALWAYS EDIT. When the user has selected an element (🎯 SELECTED in context), you MUST make an edit — never respond with chat only. Even vague requests like "make this better", "improve this", "fix this", "enhance this" should trigger an edit on the selected block. Use custom_component_rewrite with a clear instruction to improve the selected element's design, content, and visual quality. The user clicked on it for a reason — act on it.
+5. SELECTION = ALWAYS EDIT. When the user has selected an element (🎯 SELECTED in context), make a SMALL targeted edit to that selected block. For vague requests like "make this better"/"fix this", do lightweight polish (spacing/contrast/wording) with custom_component_str_replace. Do NOT use full rewrites unless user explicitly asks for redesign/rebuild/redo or the issue is JS interactivity.
 6. Chat-only messages (thanks, questions, ideas with NO selection) → message only, NO tool_calls
 7. Research before factual content - call web_search first, use ONLY those numbers
 8. Short image queries: 2-4 words max ("Tesla logo", "office meeting")
 9. Canvas: 1920x1080, origin top-left
 10. Multiple tools OK in one response
 11. Preserve theme unless user asks to change it
-12. Font/color requests without "this slide" → apply_theme_to_custom_components (global)
+12. Font/color/theme changes are GLOBAL only with explicit deck-wide wording ("all slides", "every slide", "across deck", "everywhere"). Otherwise edit current slide only.
 13. Follow-up complaints → check chat history first. "can't see"/"invisible"/"contrast" = str_replace DIRECT to fix color. "can't click"/"buttons broken"/"doesn't respond" = custom_component_rewrite (JS logic only)
 14. For "latest/current" data requests, include current date in web_search query
 15. Do NOT add a specific year/season unless user explicitly says one
@@ -665,6 +664,56 @@ def parse_selections_from_message(user_message: str) -> tuple[str, List[Dict[str
 
 _VIDEO_KEYWORDS = ("video", "demo", "footage", "clip", "mp4", "webm", "vimeo", "youtube", "wistia", "loom", "mux")
 
+_EXPLICIT_REWRITE_KEYWORDS = (
+    "redesign",
+    "redo",
+    "rebuild",
+    "from scratch",
+    "start over",
+    "overhaul",
+    "rebrand",
+    "rewrite",
+    "totally different",
+    "completely different",
+    "entirely different",
+    "recreate",
+)
+
+_INTERACTIVITY_BUG_KEYWORDS = (
+    "can't click",
+    "cannot click",
+    "doesn't click",
+    "does not click",
+    "not clickable",
+    "buttons don't work",
+    "buttons do not work",
+    "button doesn't work",
+    "button does not work",
+    "not working",
+    "doesn't work",
+    "does not work",
+    "broken",
+    "js",
+    "javascript",
+    "event handler",
+    "on click",
+    "onclick",
+    "tab doesn't switch",
+    "tabs don't switch",
+)
+
+_GLOBAL_SCOPE_KEYWORDS = (
+    "all slides",
+    "every slide",
+    "across the deck",
+    "across deck",
+    "whole deck",
+    "entire deck",
+    "entire presentation",
+    "throughout the deck",
+    "everywhere",
+)
+
 
 def _looks_like_url_or_domain(text: str) -> bool:
     if not text:
@@ -679,6 +728,34 @@ def _should_hint_video_extract(text: str) -> bool:
     if not any(k in lower for k in _VIDEO_KEYWORDS):
         return False
     return _looks_like_url_or_domain(text)
+
+
+def _message_explicitly_requests_rewrite(text: str) -> bool:
+    """True only when the user clearly asks for a full redesign/rebuild."""
+    lower = (text or "").lower()
+    return any(k in lower for k in _EXPLICIT_REWRITE_KEYWORDS)
+
+
+def _message_reports_interactivity_bug(text: str) -> bool:
+    """Detect click/JS behavior issues that may require a rewrite."""
+    lower = (text or "").lower()
+    return any(k in lower for k in _INTERACTIVITY_BUG_KEYWORDS)
+
+
+def _message_explicitly_requests_global_scope(text: str) -> bool:
+    """True when the user clearly asks to apply changes across the whole deck."""
+    lower = (text or "").lower()
+    return any(k in lower for k in _GLOBAL_SCOPE_KEYWORDS)
+
+
+def _find_custom_component_id(slide: Dict[str, Any]) -> Optional[str]:
+    """Return the first CustomComponent id on the provided slide."""
+    if not isinstance(slide, dict):
+        return None
+    for comp in (slide.get("components") or []):
+        if isinstance(comp, dict) and comp.get("type") == "CustomComponent" and comp.get("id"):
+            return comp.get("id")
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1517,6 +1594,122 @@ Respond with the tool_calls to execute."""
         for tool_call in tool_calls or []:
             tool_name = tool_call.tool_name
             tool_args = tool_call.tool_args
+            if not isinstance(tool_args, dict):
+                tool_args = dict(tool_args or {})
+
+            # Guardrail: prevent unnecessary full rewrites for vague "fix/improve" requests.
+            if tool_name in ("edit_slide", "custom_component_rewrite"):
+                instruction_text = str((tool_args or {}).get("instruction") or "")
+                explicit_rewrite = (
+                    _message_explicitly_requests_rewrite(clean_message)
+                    or _message_explicitly_requests_rewrite(instruction_text)
+                )
+                interactivity_bug = (
+                    _message_reports_interactivity_bug(clean_message)
+                    or _message_reports_interactivity_bug(instruction_text)
+                )
+
+                if tool_name == "custom_component_rewrite" and not (explicit_rewrite or interactivity_bug):
+                    fallback_component_id = (tool_args or {}).get("component_id") or _find_custom_component_id(current_slide)
+                    if fallback_component_id:
+                        logger.info(
+                            "[ORCHESTRATOR] Guardrail: downgraded custom_component_rewrite -> custom_component_str_replace (no explicit redesign request)"
+                        )
+                        tool_name = "custom_component_str_replace"
+                        tool_args = {
+                            "slide_id": (tool_args or {}).get("slide_id") or _get_attr(current_slide, "id"),
+                            "component_id": fallback_component_id,
+                            "instruction": instruction_text or clean_message,
+                        }
+                        if not getattr(tool_call, "summary", ""):
+                            tool_call.summary = "Applied a targeted update"
+                    else:
+                        logger.info(
+                            "[ORCHESTRATOR] Guardrail: skipped custom_component_rewrite (no explicit redesign request and no CustomComponent target)"
+                        )
+                        observations.append({
+                            "tool": "guardrail",
+                            "data": {
+                                "status": "blocked",
+                                "tool": "custom_component_rewrite",
+                                "reason": "Full rewrite blocked because user did not explicitly request redesign/rebuild/redo.",
+                            },
+                        })
+                        continue
+
+                if tool_name == "edit_slide" and not explicit_rewrite:
+                    fallback_component_id = (tool_args or {}).get("component_id") or _find_custom_component_id(current_slide)
+                    if fallback_component_id:
+                        logger.info(
+                            "[ORCHESTRATOR] Guardrail: downgraded edit_slide -> custom_component_str_replace (no explicit redesign request)"
+                        )
+                        tool_name = "custom_component_str_replace"
+                        tool_args = {
+                            "slide_id": (tool_args or {}).get("slide_id") or _get_attr(current_slide, "id"),
+                            "component_id": fallback_component_id,
+                            "instruction": instruction_text or clean_message,
+                        }
+                        if not getattr(tool_call, "summary", ""):
+                            tool_call.summary = "Applied a targeted update"
+                    elif instruction_text:
+                        tool_args["instruction"] = (
+                            "Apply a surgical edit only. Preserve layout, structure, and theme. "
+                            "Change only what the user asked for.\n\n"
+                            + instruction_text
+                        )
+
+            # Guardrail: block accidental deck-wide edits unless user explicitly asks for global scope.
+            if tool_name in ("apply_theme_to_custom_components", "apply_theme", "edit_all_slides"):
+                explicit_global_scope = _message_explicitly_requests_global_scope(clean_message)
+                if not explicit_global_scope:
+                    fallback_component_id = (tool_args or {}).get("component_id") or _find_custom_component_id(current_slide)
+                    logger.info(
+                        "[ORCHESTRATOR] Guardrail: downgraded %s (global) -> single-slide edit (no explicit global scope)",
+                        tool_name,
+                    )
+                    if fallback_component_id:
+                        local_instruction = (tool_args or {}).get("instruction", "")
+                        if not local_instruction:
+                            colors = (tool_args or {}).get("colors")
+                            typography = (tool_args or {}).get("typography")
+                            details = []
+                            if colors:
+                                details.append(f"Apply these color changes on this slide only: {json.dumps(colors)}")
+                            if typography:
+                                details.append(f"Apply these typography changes on this slide only: {json.dumps(typography)}")
+                            local_instruction = " ".join(details) or "Apply the requested style update on this slide only."
+                        tool_name = "custom_component_str_replace"
+                        tool_args = {
+                            "slide_id": (tool_args or {}).get("slide_id") or _get_attr(current_slide, "id"),
+                            "component_id": fallback_component_id,
+                            "instruction": local_instruction,
+                        }
+                    elif tool_name == "edit_all_slides":
+                        tool_name = "edit_slide"
+                        tool_args = {
+                            "slide_id": (tool_args or {}).get("slide_id") or _get_attr(current_slide, "id"),
+                            "instruction": (tool_args or {}).get("instruction") or clean_message,
+                        }
+                    else:
+                        local_instruction = (tool_args or {}).get("instruction", "")
+                        if not local_instruction:
+                            colors = (tool_args or {}).get("colors")
+                            typography = (tool_args or {}).get("typography")
+                            details = []
+                            if colors:
+                                details.append(f"Apply these color changes on the current slide only: {json.dumps(colors)}")
+                            if typography:
+                                details.append(f"Apply these typography changes on the current slide only: {json.dumps(typography)}")
+                            local_instruction = " ".join(details) or (clean_message or "Apply the requested style changes on this slide only.")
+                        tool_name = "edit_slide"
+                        tool_args = {
+                            "slide_id": (tool_args or {}).get("slide_id") or _get_attr(current_slide, "id"),
+                            "instruction": (
+                                "Apply this as a single-slide style update only. "
+                                "Do not touch other slides and preserve existing layout.\n\n"
+                                + local_instruction
+                            ),
+                        }
 
             # CRITICAL: Only allow linkedin_lookup if @linkedin is explicitly in the message
             # This prevents the LLM from calling LinkedIn lookup without user intent

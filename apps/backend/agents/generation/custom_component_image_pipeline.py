@@ -393,16 +393,13 @@ def _ensure_containers_have_images(
     slide_context: Dict[str, Any],
     content: str,
 ) -> str:
-    """Inject placeholder images into card/container layouts that have zero images.
+    """Keep container layouts image-optional.
 
-    Gemini sometimes generates cards, panels, or grid items with text only and
-    no images. This detects JS data arrays that describe visual containers but
-    lack image properties, and injects placeholder image fields so the pipeline
-    can search for appropriate images.
-
-    Also handles the case where HTML has card-like containers (grid items, cards)
-    but zero <img> tags — injects a single hero image as a fallback.
+    Some slides are better communicated with diagrams, charts, tables, or
+    interactive JS components and should not be forced to include photos.
     """
+    _ = content
+
     # Skip title slides
     slide_index = slide_context.get("slide_index", 0) if slide_context else 0
     if slide_index == 0:
@@ -428,41 +425,10 @@ def _ensure_containers_have_images(
         re.IGNORECASE,
     ))
 
-    if not has_cards and not has_data_arrays:
-        return html  # Not a container layout — no images needed
-
-    # Build search query from slide title / content
-    title = slide_context.get("title", "") if slide_context else ""
-    query = title.strip()
-    if not query or len(query) < 5:
-        if content:
-            words = content.split()[:8]
-            query = " ".join(words)
-        if not query or len(query) < 5:
-            return html
-
-    query = query.replace('"', '').replace("'", "").strip()[:60]
-
-    logger.warning(
-        "[IMAGE_PIPELINE] Container layout has ZERO images — injecting fallback for: '%s'",
-        query,
-    )
-
-    fallback_img = (
-        '\n<div style="position:absolute;right:60px;top:180px;width:480px;height:340px;'
-        'overflow:hidden;border-radius:12px;z-index:15;opacity:0.95;">'
-        f'<img src="placeholder" alt="search: {query}" '
-        'style="width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0;">'
-        '</div>\n'
-    )
-
-    html_lower = html.lower()
-    body_idx = html_lower.rfind('</body>')
-    if body_idx >= 0:
-        html = html[:body_idx] + fallback_img + html[body_idx:]
-    else:
-        html += fallback_img
-
+    if has_cards or has_data_arrays:
+        logger.info(
+            "[IMAGE_PIPELINE] Container layout has zero images; leaving unchanged (image use is optional)"
+        )
     return html
 
 
@@ -488,7 +454,7 @@ async def resolve_images(
     # This ensures needs_image_search correctly detects them
     html = _cleanup_invalid_image_values(html)
 
-    # If container layouts (cards, grids, panels) have zero images, inject a fallback
+    # Keep container layouts image-optional; do not auto-inject fallback photos.
     html = _ensure_containers_have_images(html, slide_context, content)
 
     if not _needs_image_search(html):

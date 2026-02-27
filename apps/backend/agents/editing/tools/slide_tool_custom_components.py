@@ -925,6 +925,20 @@ def custom_component_rewrite(
     colors = theme.get("color_palette") or theme.get("colors") or {}
     typography = theme.get("typography") or {}
 
+    # Preserve the existing slide theme from current HTML (source of truth for rewrites).
+    from agents.editing.tools.html_utils import (
+        apply_theme_to_custom_component_html,
+        extract_theme_from_custom_component_html,
+    )
+    current_theme_colors, current_theme_typography = extract_theme_from_custom_component_html(
+        current_html,
+        props if isinstance(props, dict) else {},
+    )
+    preserve_colors = dict(colors) if isinstance(colors, dict) else {}
+    preserve_colors.update(current_theme_colors or {})
+    preserve_typography = dict(typography) if isinstance(typography, dict) else {}
+    preserve_typography.update(current_theme_typography or {})
+
     slide_mode = _detect_slide_mode_from_html(current_html)
 
     # Gather ALL reference images (we embed a few as multimodal, but include all URLs in text context)
@@ -952,7 +966,45 @@ def custom_component_rewrite(
             "chat_history": chat_history,  # Pass full chat history for context
             "use_uploaded_images": use_attachments,
         }
-        theme_for_gen = theme if isinstance(theme, dict) else {}
+        theme_for_gen = dict(theme) if isinstance(theme, dict) else {}
+        if preserve_colors:
+            merged_palette = {}
+            if isinstance(theme_for_gen.get("color_palette"), dict):
+                merged_palette.update(theme_for_gen.get("color_palette") or {})
+            elif isinstance(theme_for_gen.get("colors"), dict):
+                merged_palette.update(theme_for_gen.get("colors") or {})
+            merged_palette.update(preserve_colors)
+            theme_for_gen["color_palette"] = merged_palette
+        if preserve_typography:
+            merged_typography = {}
+            if isinstance(theme_for_gen.get("typography"), dict):
+                merged_typography.update(theme_for_gen.get("typography") or {})
+            merged_typography.update(preserve_typography)
+            theme_for_gen["typography"] = merged_typography
+
+        theme_lock_context = ""
+        if preserve_colors or preserve_typography:
+            theme_lines = [
+                "\n\nKEEP THE SAME EXISTING THEME (DO NOT CHANGE IT):",
+                "- Preserve the exact color palette and typography from the current slide.",
+            ]
+            if preserve_colors:
+                color_pairs = [f"{k}={v}" for k, v in preserve_colors.items()]
+                theme_lines.append("- Locked colors: " + ", ".join(color_pairs[:10]))
+            if preserve_typography:
+                heading = None
+                body = None
+                if isinstance(preserve_typography.get("heading"), dict):
+                    heading = preserve_typography.get("heading", {}).get("family")
+                elif isinstance(preserve_typography.get("heading"), str):
+                    heading = preserve_typography.get("heading")
+                if isinstance(preserve_typography.get("body"), dict):
+                    body = preserve_typography.get("body", {}).get("family")
+                elif isinstance(preserve_typography.get("body"), str):
+                    body = preserve_typography.get("body")
+                if heading or body:
+                    theme_lines.append(f"- Locked fonts: heading={heading or 'unchanged'}, body={body or 'unchanged'}")
+            theme_lock_context = "\n".join(theme_lines)
         # Include all attachment URLs in the prompt text so the model can infer intent without UI buttons.
         attachment_context = _build_attachment_context(
             attachments,
@@ -1028,7 +1080,7 @@ def custom_component_rewrite(
 
         generated = run_async(
             gen.generate(
-                content=f"""REDESIGN REQUEST: {instruction}{attachment_context}{chat_context}{uploads_note}{logo_context}{multi_image_context}
+                content=f"""REDESIGN REQUEST: {instruction}{attachment_context}{chat_context}{uploads_note}{logo_context}{multi_image_context}{theme_lock_context}
 
 EXISTING SLIDE CONTENT TO REDESIGN:
 {actual_content}
@@ -1056,6 +1108,17 @@ IMPORTANT:
         new_html = ((generated or {}).get("props") or {}).get("render") or ""
         if not new_html:
             raise ValueError("generator returned empty render")
+
+        # Enforce current-slide theme lock after rewrite generation.
+        if preserve_colors or preserve_typography:
+            themed_html = apply_theme_to_custom_component_html(
+                new_html,
+                preserve_colors or None,
+                preserve_typography or None,
+            )
+            if themed_html != new_html:
+                logger.info("[custom_component_rewrite] Re-applied existing theme lock to generated HTML")
+            new_html = themed_html
 
         # Build diff with render + full-bleed sizing
         deck_diff = DeckDiff(DeckDiffBase())
@@ -1102,6 +1165,18 @@ IMPORTANT:
         system_prompt = "You are an expert HTML/CSS designer. Modify the CustomComponent with high quality and theme consistency. Fill 1920x1080."
         logger.warning(f"[custom_component_rewrite] Failed to build generator prompt, using fallback: {e}")
 
+    fallback_theme_lock_context = ""
+    if preserve_colors or preserve_typography:
+        fallback_lines = [
+            "THEME LOCK (MUST PRESERVE EXACTLY):",
+            "- Keep the same colors and fonts as the current slide.",
+        ]
+        if preserve_colors:
+            fallback_lines.append("- Colors: " + ", ".join([f"{k}={v}" for k, v in preserve_colors.items()][:10]))
+        if preserve_typography:
+            fallback_lines.append(f"- Typography: {preserve_typography}")
+        fallback_theme_lock_context = "\n\n" + "\n".join(fallback_lines)
+
     user_prompt = f"""{_current_date_note()}
 
 CURRENT CUSTOMCOMPONENT HTML:
@@ -1111,6 +1186,7 @@ REFERENCE IMAGE URLS (if any): {', '.join(reference_images) if reference_images 
 
 USER REQUEST (use this to guide your redesign, do NOT display this text in the slide):
 {instruction}
+{fallback_theme_lock_context}
 
 IMPORTANT:
 - Fill the entire 1920x1080 canvas.
@@ -1146,6 +1222,17 @@ Return ONLY the complete updated HTML (starting with <!DOCTYPE html>)."""
         logger.info("[custom_component_rewrite] Processed images in fallback path")
     except Exception as e:
         logger.warning(f"[custom_component_rewrite] Failed to process images in fallback: {e}")
+
+    # Enforce current-slide theme lock after fallback rewrite generation.
+    if preserve_colors or preserve_typography:
+        themed_html = apply_theme_to_custom_component_html(
+            new_html,
+            preserve_colors or None,
+            preserve_typography or None,
+        )
+        if themed_html != new_html:
+            logger.info("[custom_component_rewrite] Re-applied existing theme lock in fallback path")
+        new_html = themed_html
 
     # Build diff
     deck_diff = DeckDiff(DeckDiffBase())

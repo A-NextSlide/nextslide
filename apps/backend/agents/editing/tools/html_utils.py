@@ -7,9 +7,164 @@ These are shared helper functions used by multiple tools for:
 
 import re
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Tuple, List
 
 logger = logging.getLogger(__name__)
+
+
+_GENERIC_FONTS = {
+    "inherit",
+    "initial",
+    "unset",
+    "sans-serif",
+    "serif",
+    "monospace",
+    "system-ui",
+    "ui-sans-serif",
+    "ui-serif",
+    "ui-monospace",
+}
+
+
+def _normalize_css_var_name(name: str) -> str:
+    return (name or "").strip().lower().replace("-", "_")
+
+
+def _clean_color_value(value: str) -> Optional[str]:
+    """Keep only concrete color values; ignore unresolved vars."""
+    v = (value or "").strip().strip('"').strip("'")
+    if not v or "var(" in v:
+        return None
+    return v
+
+
+def _clean_font_value(value: str) -> Optional[str]:
+    """Extract primary font family from CSS font-family-like values."""
+    if not value:
+        return None
+    v = value.strip().strip('"').strip("'")
+    if not v or "var(" in v:
+        return None
+    primary = v.split(",")[0].strip().strip('"').strip("'")
+    if not primary:
+        return None
+    if primary.lower() in _GENERIC_FONTS:
+        return None
+    return primary
+
+
+def _extract_css_variables(html: str) -> Dict[str, str]:
+    """Extract CSS custom properties from the HTML stylesheet content."""
+    if not html:
+        return {}
+    matches = re.findall(
+        r'--([a-zA-Z0-9_-]+)\s*:\s*([^;}{]+);',
+        html,
+        flags=re.IGNORECASE,
+    )
+    out: Dict[str, str] = {}
+    for raw_name, raw_value in matches:
+        key = _normalize_css_var_name(raw_name)
+        value = raw_value.strip()
+        if key and value and key not in out:
+            out[key] = value
+    return out
+
+
+def _pick_first_var_value(var_map: Dict[str, str], candidate_names: List[str]) -> Optional[str]:
+    for name in candidate_names:
+        v = var_map.get(_normalize_css_var_name(name))
+        if v:
+            return v
+    return None
+
+
+def extract_theme_from_custom_component_html(
+    html: str,
+    component_props: Optional[Dict[str, Any]] = None,
+) -> Tuple[Dict[str, str], Dict[str, Any]]:
+    """
+    Extract the active theme (colors + typography) from existing CustomComponent HTML.
+
+    Returns:
+        (colors, typography)
+        colors keys: accent_1, accent_2, accent_3, primary_text, primary_background
+        typography keys: heading/body with {family}
+    """
+    var_map = _extract_css_variables(html)
+
+    colors: Dict[str, str] = {}
+    color_candidates = {
+        "accent_1": ["accent", "accent_1", "primary", "accent_color"],
+        "accent_2": ["secondary", "accent_2", "secondary_color"],
+        "accent_3": ["accent_3", "highlight"],
+        "primary_text": ["text", "text_color", "primary_text", "foreground"],
+        "primary_background": ["bg", "background", "bg_color", "primary_background"],
+    }
+    for key, names in color_candidates.items():
+        raw = _pick_first_var_value(var_map, names)
+        cleaned = _clean_color_value(raw or "")
+        if cleaned:
+            colors[key] = cleaned
+
+    props = component_props if isinstance(component_props, dict) else {}
+
+    heading_font = _clean_font_value(
+        str(
+            props.get("heroFont")
+            or props.get("overrideHeroFont")
+            or props.get("headingFont")
+            or ""
+        )
+    )
+    body_font = _clean_font_value(
+        str(
+            props.get("bodyFont")
+            or props.get("overrideBodyFont")
+            or props.get("fontFamily")
+            or ""
+        )
+    )
+
+    if not heading_font:
+        heading_font = _clean_font_value(
+            _pick_first_var_value(
+                var_map,
+                ["font_heading", "font_hero", "heading_font", "ns_hero_font", "hero_font"],
+            )
+            or ""
+        )
+    if not body_font:
+        body_font = _clean_font_value(
+            _pick_first_var_value(
+                var_map,
+                ["font_body", "font_text", "body_font", "ns_body_font", "font_main"],
+            )
+            or ""
+        )
+
+    # Last-resort fallback from explicit font-family declarations.
+    if not heading_font or not body_font:
+        seen_fonts: List[str] = []
+        for m in re.finditer(r'font-family\s*:\s*([^;}{]+);', html or "", re.IGNORECASE):
+            font_name = _clean_font_value(m.group(1))
+            if font_name and font_name not in seen_fonts:
+                seen_fonts.append(font_name)
+            if len(seen_fonts) >= 3:
+                break
+        if seen_fonts:
+            if not heading_font:
+                heading_font = seen_fonts[0]
+            if not body_font:
+                body_font = seen_fonts[1] if len(seen_fonts) > 1 else seen_fonts[0]
+
+    typography: Dict[str, Any] = {}
+    if heading_font:
+        typography["heading"] = {"family": heading_font}
+    if body_font:
+        typography["body"] = {"family": body_font}
+
+    return colors, typography
 
 
 def strip_frontend_editing_scripts(html: str) -> str:
