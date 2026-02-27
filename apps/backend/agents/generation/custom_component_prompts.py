@@ -38,9 +38,13 @@ def build_system_prompt(
         "- These two elements must be in IDENTICAL positions on every slide. Never move, center, enlarge, or omit them."
     )
 
-    # Visual toolkit guidance - both built components and images
+    # Visual toolkit guidance - choose the right visual medium per slide
     visual_component_guidance = (
-        "VISUAL TOOLKIT - You have TWO powerful tools. Use BOTH:\n\n"
+        "VISUAL TOOLKIT - choose the right tool for the content (do NOT force both):\n\n"
+        "DEFAULT POLICY:\n"
+        "  - Component-first by default: many slides should have ZERO photos/images.\n"
+        "  - Use JS/SVG/HTML components first for processes, comparisons, metrics, timelines, architectures, and frameworks.\n"
+        "  - Add images only when they provide real-world visual evidence that components cannot.\n\n"
         "1. BUILT COMPONENTS (HTML/CSS/SVG/JS) - great for explaining concepts visually:\n"
         "  - Flowcharts & process diagrams → SVG arrows, boxes, and connectors\n"
         "  - Timelines → CSS/SVG timeline with nodes, dates, and labels\n"
@@ -54,9 +58,9 @@ def build_system_prompt(
         "  - Quadrant/matrix layouts → 2x2 grids with labeled axes\n"
         "  - Icon grids & feature lists → CSS grid with SVG icons + text\n"
         "  - Progress & status → CSS progress bars, step indicators, checklists\n\n"
-        "2. IMAGES — generate: is the DEFAULT, search: is the exception:\n"
+        "2. IMAGES — optional tool, not mandatory:\n"
         "  ⚠️ Every <img> alt MUST start with \"search:\" or \"generate:\". Bare alts are BROKEN.\n\n"
-        "  ■ generate: — AI-generated image. DEFAULT CHOICE for most images.\n"
+        "  ■ generate: — AI-generated image. Use only when a visual photo/illustration is truly needed.\n"
         "    alt=\"generate:RATIO 15-30 word detailed prompt, no text no words no labels no overlays\"\n"
         "    RATIO: 16:9 | 4:3 | 1:1 | 3:4 (match container shape)\n"
         "    🚨 SIMPLICITY RULE: Keep images SIMPLE. One clear subject, clean composition, no clutter.\n"
@@ -91,7 +95,7 @@ def build_system_prompt(
         "      - Named places (Eiffel Tower, MIT campus, Apple Park)\n"
         "      - Branded items, logos, specific software UI, real devices\n"
         "      - Anything where a REAL photo would be more credible than an AI rendering\n"
-        "    🚨 RULE: If the presentation is ABOUT a company/brand, SEARCH for their products and services.\n"
+        "    🚨 RULE: If you include company/brand imagery, SEARCH for their real products and services.\n"
         "      A deck about Porsche → search: for Porsche cars. A deck about Slack → search: for Slack interface.\n"
         "      AI-generated versions of real products look fake and hurt credibility.\n"
         "    GOOD: alt=\"search: Porsche 911 GT3 RS studio press photo white background\"\n"
@@ -107,7 +111,7 @@ def build_system_prompt(
         "  - Use images only when they add concrete value (product/place/person/real object).\n"
         "  - For processes, comparisons, metrics, and structured content, prefer built JS/SVG components.\n"
         "  - It is valid for containers to be text/icon/chart-only when that communicates better.\n"
-        "Mix both tools freely. A slide can have a built SVG diagram AND a generated image.\n"
+        "Mix both tools only when useful. Pure component slides (no images) are often the best choice.\n"
     )
 
     if has_palette:
@@ -176,8 +180,9 @@ def build_system_prompt(
             "- NEVER stack a tall visual + a tall text block + a footer vertically — use side-by-side\n\n"
             f"{theme_info}\n\n"
             "DESIGN PRINCIPLES:\n"
-            "- Use both built visuals (HTML/CSS/SVG diagrams, flowcharts, infographics) and images where each fits best\n"
-            "- Images are optional; do not force one per card/panel/slide when components communicate better\n"
+            "- Component-first by default: prefer built visuals (HTML/CSS/SVG diagrams, flowcharts, infographics)\n"
+            "- Images are optional; use them only when they add concrete real-world evidence\n"
+            "- Do not force one image per card/panel/slide when components communicate better\n"
             "- Bold, precise typography; clear hierarchy\n"
             "- Generous whitespace; balanced composition\n"
             "- Bespoke visuals/diagrams that explain the idea\n"
@@ -217,7 +222,8 @@ def build_system_prompt(
             "- ALL content containers must have `overflow: hidden` to prevent content escaping bounds\n\n"
             "**IMAGE RULES**:\n"
             "- ⚠️ Every <img> alt MUST start with \"search:\" or \"generate:\". Bare alts are BROKEN.\n"
-            "- generate: — DEFAULT. ONE simple subject, clean composition, no text/charts/clutter. Build charts as HTML instead.\n"
+            "- generate: — optional. Use only when a photo/illustration is truly needed.\n"
+            "  Keep it simple: one subject, clean composition, no text/charts/clutter. Build charts as HTML instead.\n"
             "  Example: alt=\"generate:16:9 close-up of SpaceX rocket engine nozzle, dramatic studio lighting, shallow depth of field, clean background, no text no overlays\"\n"
             "- search: — for company products/services, real people, named places, branded items. If the deck is ABOUT a company, search: for their products.\n"
             "  Example: alt=\"search: Porsche 911 GT3 RS press photo studio lighting\"\n"
@@ -299,7 +305,8 @@ def build_system_prompt(
         "- NEVER stack a tall visual + a tall text block + a footer vertically — use side-by-side\n\n"
         f"{theme_info}\n\n"
         "DESIGN PRINCIPLES:\n"
-        "- Use built visuals AND images — whichever fits the content best\n"
+        "- Component-first by default: use built visuals for structure, logic, and data\n"
+        "- Images are optional; include only when they add concrete value\n"
         "- Bold, creative visuals/diagrams that explain the idea\n"
         "- Clear hierarchy and strong composition\n"
         "- Fill the full canvas; keep content inside bounds\n"
@@ -375,7 +382,8 @@ def build_system_prompt(
         "  * Without <link> tags, fonts silently fall back to ugly system defaults\n\n"
         "**IMAGE RULES**:\n"
         "⚠️ Every <img> alt MUST start with \"search:\" or \"generate:\". Bare alts are BROKEN.\n"
-        "- generate: — DEFAULT. Describe the REAL subject + visual style + camera/lighting effect. Must look realistic and educational, never abstract.\n"
+        "- generate: — optional. Use only when a photo/illustration is truly needed.\n"
+        "  Describe the REAL subject + visual style + camera/lighting effect. Must look realistic and educational, never abstract.\n"
         "- search: — for company products/services, real people, named places, branded items. If the deck is ABOUT a company, search: for their products.\n"
         "- generate: for generic/educational concepts. search: for anything specific and real.\n"
         "   🚨 NEVER use placeholder image services (placehold.co, via.placeholder.com, dummyimage.com, picsum.photos).\n"
@@ -604,8 +612,8 @@ def build_user_prompt(
     if brand_name:
         sections.append(
             f"BRAND: This presentation is about {brand_name}. "
-            f"Use search: for all images of {brand_name} products, services, UI, and branding. "
-            "AI-generated versions of real products look fake — always search for the real thing."
+            f"If you include imagery of {brand_name} products, services, UI, or branding, use search: for real references. "
+            "Do not force brand/product images on slides that are better explained with components."
         )
 
     extracted_data = slide_context.get("extracted_data") or slide_context.get("extractedData")
@@ -621,7 +629,7 @@ def build_user_prompt(
             sections.append("EXTRACTED DATA:")
             sections.append(formatted_extracted)
     if manual_charts or extracted_data:
-        sections.append("DATA USE: Use what helps; omit the rest.")
+        sections.append("DATA USE: Use what helps; omit the rest. Do not invent new metrics, percentages, dates, or counts.")
 
     if reference_images:
         sections.append(
@@ -655,8 +663,8 @@ def build_user_prompt(
             sections.append("- " + ", ".join(filenames[:8]))
             if slide_context.get("use_uploaded_images"):
                 sections.append(
-                    "UPLOADS POLICY: Use the uploaded images as real assets. "
-                    "Add <img src=\"placeholder\" alt=\"...\"> elements so the system can apply them."
+                    "UPLOADS POLICY: Use uploaded images only on slides where they are semantically relevant. "
+                    "Do not force one image per slide or per card."
                 )
 
     if prefetched_images:
@@ -705,8 +713,16 @@ def build_user_prompt(
         sections.append("CONVERSATION HISTORY (use explicit customization requests):")
         sections.append(formatted_history)
 
+    sections.append(
+        "GROUNDING: Treat CONTENT, MANUAL DATA, EXTRACTED DATA, and CONVERSATION HISTORY as source-of-truth. "
+        "Do not fabricate facts, statistics, names, dates, quotes, or claims not supported by provided context."
+    )
+
     # Image alt reminder BEFORE content so it doesn't leak into the slide as visible text
-    sections.append("IMG ALTS: alt must start with search: or generate:. search: for company products/services/people/places. generate: for generic educational concepts. Never abstract.")
+    sections.append(
+        "IMG ALTS: If you use images, alt must start with search: or generate:. "
+        "If no image is needed, omit <img> entirely."
+    )
 
     if content:
         sections.append("NOTE: Ignore any webpage boilerplate in the content (nav, headers, terms).")

@@ -1,5 +1,5 @@
 import { API_CONFIG } from '@/config/environment';
-import { TranslatedSlide } from '@/pages/SlideTagging';
+import { TranslatedSlide } from '@/types/slide-templates';
 
 /**
  * Service for AI-powered slide template analysis and tagging

@@ -30,7 +30,6 @@ import SlideEditor from './components/SlideEditor';
 import { RegistryProvider, useRegistry } from './context/RegistryContext';
 import { CompleteDeckData } from './types/DeckTypes';
 import TestCollaboration from './yjs/TestCollaboration';
-import SlideTagging from './pages/SlideTagging';
 import SharedDeckView from './pages/SharedDeckView';
 import SharedDeckEdit from './pages/SharedDeckEdit';
 const EmbedView = lazy(() => import('./pages/EmbedView'));
@@ -45,7 +44,7 @@ import { useEnsureUserRecord } from './hooks/useEnsureUserRecord';
 const DevPerformanceHUD = import.meta.env.PROD ? null : React.lazy(() => import('./components/dev/PerformanceHUD'));
 
 // Admin imports (lazy-loaded to reduce bundle size for non-admin users)
-const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
+const AdminUsers = lazy(() => import('./pages/admin/AdminUsersV2'));
 const AdminUserDetail = lazy(() => import('./pages/admin/AdminUserDetail'));
 const AdminDecks = lazy(() => import('./pages/admin/AdminDecks'));
 const AdminBrands = lazy(() => import('./pages/admin/AdminBrands'));
@@ -338,10 +337,6 @@ const AppContent = () => {
           <DeckMonitor onChange={handleDeckDataChange} />
           <TemporaryPasswordGate enabled={true} password={import.meta.env.VITE_TEMP_GATE_PASSWORD || 'slides4ever'}>
             <Routes>
-              {/* Legacy alias: redirect settings/integrations to system integrations tab */}
-              <Route path="/settings/integrations" element={<Navigate to="/admin/services?tab=integrations" replace />} />
-              {/* Redirect old /integrations to system integrations tab */}
-              <Route path="/integrations" element={<Navigate to="/admin/services?tab=integrations" replace />} />
               <Route path="/" element={BROWSER.isNativeApp ? <NativeAppLanding /> : <Landing />} />
               <Route
                 path="/app"
@@ -376,15 +371,6 @@ const AppContent = () => {
                 }
               />
               {/* Outline View route - removed, using embedded outline in DeckList */}
-              {/* Google Slides JSON Test route */}
-              <Route
-                path="/slide-tagging"
-                element={
-                  <ProtectedRoute>
-                    <SlideTagging />
-                  </ProtectedRoute>
-                }
-              />
               {/* Yjs collaboration test route */}
               <Route
                 path="/collaboration-test"
@@ -403,10 +389,6 @@ const AppContent = () => {
                     <Profile />
                   </ProtectedRoute>
                 }
-              />
-              <Route
-                path="/team"
-                element={<Navigate to="/profile?tab=team" replace />}
               />
               {/* Team invitation acceptance */}
               <Route
@@ -485,11 +467,6 @@ const AppContent = () => {
                   </AdminProtectedRoute>
                 }
               />
-              {/* Redirect old analytics path to overview */}
-              <Route
-                path="/admin/analytics"
-                element={<Navigate to="/admin/overview" replace />}
-              />
               <Route
                 path="/admin/users"
                 element={
@@ -519,19 +496,6 @@ const AppContent = () => {
                     </React.Suspense>
                   </AdminProtectedRoute>
                 }
-              />
-              {/* Redirects for consolidated admin pages */}
-              <Route
-                path="/admin/community"
-                element={<Navigate to="/admin/growth?tab=community" replace />}
-              />
-              <Route
-                path="/admin/leads"
-                element={<Navigate to="/admin/growth?tab=leads" replace />}
-              />
-              <Route
-                path="/admin/integrations"
-                element={<Navigate to="/admin/services?tab=integrations" replace />}
               />
               <Route
                 path="/admin/brands"

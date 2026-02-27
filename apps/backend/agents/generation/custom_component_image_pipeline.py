@@ -32,6 +32,49 @@ VALID_GEMINI_RATIOS = frozenset({
     "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
 })
 MAX_AI_IMAGES_PER_SLIDE = 6
+TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+
+COMPONENT_FIRST_HINTS = (
+    "process",
+    "workflow",
+    "timeline",
+    "roadmap",
+    "comparison",
+    "matrix",
+    "quadrant",
+    "architecture",
+    "framework",
+    "funnel",
+    "pipeline",
+    "org chart",
+    "hierarchy",
+    "kpi",
+    "metric",
+    "metrics",
+    "trend",
+    "analysis",
+    "chart",
+    "graph",
+    "table",
+    "dataset",
+    "data model",
+)
+
+IMAGE_INTENT_HINTS = (
+    "photo",
+    "photos",
+    "image",
+    "images",
+    "screenshot",
+    "screenshots",
+    "portrait",
+    "headshot",
+    "illustration",
+    "render",
+    "product shot",
+    "moodboard",
+    "gallery",
+)
 
 
 # Use unified service for finding external image URLs and placeholder detection
@@ -432,6 +475,85 @@ def _ensure_containers_have_images(
     return html
 
 
+def _replace_literal_placeholders_with_transparent_pixel(html: str) -> str:
+    """Replace unresolved placeholder image sources with a transparent pixel."""
+    if not html:
+        return html
+
+    updated = html
+
+    # HTML tags: src="placeholder" / src='placeholder' / src=placeholder
+    updated = re.sub(
+        r'src\s*=\s*["\']placeholder(?:\?[^"\']*)?["\']',
+        f'src="{TRANSPARENT_PIXEL}"',
+        updated,
+        flags=re.IGNORECASE,
+    )
+    updated = re.sub(
+        r'(src\s*=\s*)placeholder(\s|>|/)',
+        rf'\1"{TRANSPARENT_PIXEL}"\2',
+        updated,
+        flags=re.IGNORECASE,
+    )
+
+    # JS objects: image/src-like properties with placeholder value
+    updated = re.sub(
+        r'(\b(?:src|image|img|photo|picture|thumbnail|background)\w*\s*:\s*)["\']placeholder(?:\?[^"\']*)?["\']',
+        rf'\1"{TRANSPARENT_PIXEL}"',
+        updated,
+        flags=re.IGNORECASE,
+    )
+    updated = re.sub(
+        r'(\b(?:src|image|img|photo|picture|thumbnail|background)\w*\s*:\s*)placeholder(\s*[,}\]])',
+        rf'\1"{TRANSPARENT_PIXEL}"\2',
+        updated,
+        flags=re.IGNORECASE,
+    )
+
+    return updated
+
+
+def _should_skip_auto_image_resolution(
+    slide_context: Dict[str, Any],
+    content: str,
+    uploaded_media: List[Any] | None,
+) -> bool:
+    """Return True when we should avoid auto-fetching images from placeholders."""
+    slide_context = slide_context or {}
+
+    # Never block title slide styling decisions.
+    if int(slide_context.get("slide_index", 0) or 0) == 0:
+        return False
+
+    # If uploads are explicitly enabled and available, allow normal image resolution.
+    if slide_context.get("use_uploaded_images") and uploaded_media:
+        return False
+
+    text_parts = [
+        slide_context.get("title"),
+        slide_context.get("slide_type"),
+        slide_context.get("presentation_context"),
+        slide_context.get("initial_idea"),
+        slide_context.get("vibe_context"),
+        content,
+    ]
+    lower_text = " ".join(str(part) for part in text_parts if part).lower()
+
+    # Respect explicit user/image intent in the request context.
+    if any(token in lower_text for token in IMAGE_INTENT_HINTS):
+        return False
+
+    has_structured_data = bool(
+        slide_context.get("extracted_data")
+        or slide_context.get("extractedData")
+        or slide_context.get("manual_charts")
+        or slide_context.get("manualCharts")
+    )
+    has_component_first_hint = any(token in lower_text for token in COMPONENT_FIRST_HINTS)
+
+    return has_structured_data or has_component_first_hint
+
+
 async def resolve_images(
     html: str,
     *,
@@ -538,6 +660,24 @@ async def resolve_images(
         prefetched_images.update(matched)
     else:
         remaining = image_props
+
+    skip_auto_resolution = _should_skip_auto_image_resolution(slide_context, content, uploaded_media)
+    if skip_auto_resolution and remaining:
+        logger.info(
+            "[IMAGE_PIPELINE] Component-first slide detected; skipping auto image search/generation for %d placeholders",
+            len(remaining),
+        )
+        for prop_name, query in remaining:
+            prefetched_images[prop_name] = TRANSPARENT_PIXEL
+            prefetched_images[f"{prop_name}_query"] = query
+
+        if prefetched_images:
+            html = html_processor.inject_prefetched_images(html, prefetched_images)
+        html = _replace_literal_placeholders_with_transparent_pixel(html)
+        html = _inject_image_mode_attrs(html)
+        html = _clean_alt_text_in_html(html)
+        html = _fix_icon_url_interpolations(html)
+        return html, prefetched_images
 
     # ── Split remaining into AI-generate vs search ────────────────────────
     generate_props: List[Tuple[str, str, str, str]] = []  # (prop, prompt, aspect_ratio, original_query)

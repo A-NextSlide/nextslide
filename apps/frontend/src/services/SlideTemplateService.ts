@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
-import { TranslatedSlide } from '@/pages/SlideTagging';
+import { TranslatedSlide } from '@/types/slide-templates';
 import { DEFAULT_SLIDE_WIDTH } from '@/utils/deckUtils';
 import { SlideTemplateAIService } from './SlideTemplateAIService';
 import { EmbeddingsService, EmbeddingContent } from './EmbeddingsService';

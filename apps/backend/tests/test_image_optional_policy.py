@@ -6,6 +6,8 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.generation.custom_component_image_pipeline import _ensure_containers_have_images
+from agents.generation.custom_component_image_pipeline import _should_skip_auto_image_resolution
+from agents.generation.custom_component_image_pipeline import _replace_literal_placeholders_with_transparent_pixel
 from agents.generation.ai_image_orchestrator import AIImageOrchestrator
 from agents.generation import ai_image_orchestrator as orchestrator_module
 
@@ -45,6 +47,43 @@ def test_container_layout_without_images_stays_unchanged():
     )
     assert output == html
     assert "src=\"placeholder\"" not in output
+
+
+def test_component_first_slide_skips_auto_resolution():
+    should_skip = _should_skip_auto_image_resolution(
+        slide_context={
+            "slide_index": 2,
+            "title": "Architecture and KPI Breakdown",
+            "slide_type": "content",
+            "extracted_data": {"data": [{"label": "A", "value": 10}]},
+        },
+        content="Explain the process and compare metrics in a structured layout.",
+        uploaded_media=None,
+    )
+    assert should_skip is True
+
+
+def test_explicit_image_request_does_not_skip_auto_resolution():
+    should_skip = _should_skip_auto_image_resolution(
+        slide_context={
+            "slide_index": 2,
+            "title": "Product Launch Visuals",
+            "slide_type": "content",
+        },
+        content="Use photos and screenshots of the product UI.",
+        uploaded_media=None,
+    )
+    assert should_skip is False
+
+
+def test_placeholder_values_can_be_neutralized_without_search():
+    html = (
+        '<img src="placeholder" alt="search: market chart"/>'
+        "<script>const items=[{image:'placeholder'}];</script>"
+    )
+    updated = _replace_literal_placeholders_with_transparent_pixel(html)
+    assert "placeholder" not in updated
+    assert "data:image/gif;base64" in updated
 
 
 @pytest.mark.asyncio

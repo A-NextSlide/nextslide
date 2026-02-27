@@ -140,7 +140,7 @@ from api.requests.api_auth import router as auth_router
 from api.requests.api_auth import get_auth_header
 from api.requests.api_deck_sharing import router as deck_sharing_router
 from api.requests.api_public_deck import router as public_deck_router
-from api.requests.api_og_image import router as og_image_router, share_router as og_share_router
+from api.requests.api_og_image import router as og_image_router
 from api.requests.api_teams import router as teams_router
 from api.requests.api_deck_access import router as deck_access_router
 from api.requests.api_comments import router as comments_router
@@ -149,11 +149,6 @@ from api.requests.api_outline_agent import router as outline_agent_router
 from api.requests.api_outline_theme import router as outline_theme_router
 from api.requests.api_slide_research import router as slide_research_router
 from api.requests.api_slide_reorder import router as slide_reorder_router
-# Make narrative test optional if module was removed during cleanup
-try:
-    from api.requests.api_narrative_test import router as narrative_test_router
-except Exception:  # ModuleNotFoundError or other import errors
-    narrative_test_router = None
 from api.requests.api_websocket_analytics import router as websocket_analytics_router
 from api.requests.api_agent_endpoints import router as agent_router
 from api.requests.api_agent_stream import router as agent_stream_router
@@ -348,8 +343,6 @@ app.include_router(font_router)
 app.include_router(deck_sharing_router)
 app.include_router(public_deck_router)
 app.include_router(og_image_router)
-# og_share_router disabled - Cloudflare Worker now handles /p/ and /e/ routes
-# app.include_router(og_share_router)
 app.include_router(teams_router)
 app.include_router(deck_access_router)
 app.include_router(comments_router)
@@ -358,8 +351,6 @@ app.include_router(outline_agent_router)
 app.include_router(outline_theme_router)
 app.include_router(slide_research_router)
 app.include_router(slide_reorder_router)
-if narrative_test_router is not None:
-    app.include_router(narrative_test_router, prefix="", tags=["Narrative Test"])
 app.include_router(websocket_analytics_router, prefix="", tags=["Websocket Analytics"])
 app.include_router(deck_notes_router, prefix="", tags=["Deck Notes"])
 app.include_router(admin_router)
