@@ -9,6 +9,9 @@ from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
 
+MAX_RESEARCH_CONTEXT_CHARS = 8000
+MAX_SCRAPED_CONTEXT_CHARS = 5000
+
 
 def _get_attr_or_key(obj: Any, key: str, default: Any = None) -> Any:
     if obj is None:
@@ -285,13 +288,21 @@ class CustomComponentEnhancer:
                 # Add research context (truncated to avoid huge prompts)
                 research_context = notes.get("research_context") or notes.get("researchContext")
                 if research_context and isinstance(research_context, str):
-                    truncated = research_context[:3000] if len(research_context) > 3000 else research_context
+                    truncated = (
+                        research_context[:MAX_RESEARCH_CONTEXT_CHARS]
+                        if len(research_context) > MAX_RESEARCH_CONTEXT_CHARS
+                        else research_context
+                    )
                     parts.append(f"\n\nRESEARCH CONTEXT (use relevant facts):\n{truncated}")
 
                 # Add scraped context
                 scraped_context = notes.get("scraped_context") or notes.get("scrapedContext")
                 if scraped_context and isinstance(scraped_context, str):
-                    truncated = scraped_context[:2000] if len(scraped_context) > 2000 else scraped_context
+                    truncated = (
+                        scraped_context[:MAX_SCRAPED_CONTEXT_CHARS]
+                        if len(scraped_context) > MAX_SCRAPED_CONTEXT_CHARS
+                        else scraped_context
+                    )
                     parts.append(f"\n\nREFERENCE MATERIAL:\n{truncated}")
         except Exception as e:
             logger.debug(f"[CUSTOM_COMPONENT] Could not extract research context: {e}")
