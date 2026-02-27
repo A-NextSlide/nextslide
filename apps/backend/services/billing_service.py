@@ -214,8 +214,8 @@ class BillingService:
             # Create balance
             client.table("credit_balances").upsert({
                 "user_id": user_id,
-                "monthly_credits": 500,  # Free tier credits
-                "purchased_credits": 0,  # No signup bonus
+                "monthly_credits": 2000,  # Pro tier credits
+                "purchased_credits": 0,
                 "used_credits": 0,
                 "period_start": now.isoformat(),
                 "period_end": period_end.isoformat()
@@ -224,7 +224,7 @@ class BillingService:
             # Create subscription
             client.table("subscriptions").upsert({
                 "user_id": user_id,
-                "plan_id": "free",
+                "plan_id": "pro",
                 "status": "active",
                 "current_period_start": now.isoformat(),
                 "current_period_end": period_end.isoformat()
