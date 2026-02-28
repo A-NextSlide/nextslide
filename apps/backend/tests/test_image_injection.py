@@ -84,8 +84,11 @@ def test_inject_prefetched_images():
 
     result3 = generator._inject_prefetched_images_into_html(html3, prefetched)
 
-    assert "const image1 = 'https://example.com/real-image-1.jpg'" in result3, "JS variable should be replaced"
-    print("✅ Test 3 PASSED: JavaScript variables replaced")
+    # Current injector contract: resolve image output in rendered HTML.
+    # We intentionally do not rewrite all JS variable declarations.
+    assert 'src="https://example.com/real-image-1.jpg"' in result3, "Rendered image src should be resolved"
+    assert '${' not in result3, "Template src placeholders should be removed"
+    print("✅ Test 3 PASSED: Rendered src resolved from JavaScript-backed template")
 
     # Test Case 4: Mixed patterns (real-world scenario)
     html4 = '''

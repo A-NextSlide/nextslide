@@ -52,6 +52,16 @@ async def _fire_thumbnail_render(deck_uuid: str) -> None:
         logger.warning("Thumbnail render failed (non-fatal) for %s: %s", deck_uuid, e)
 
 
+def _extract_status_state(status: Any) -> Optional[str]:
+    """Normalize deck status shape to a simple state string."""
+    if isinstance(status, dict):
+        state = status.get("state")
+        return state if isinstance(state, str) else None
+    if isinstance(status, str):
+        return status
+    return None
+
+
 class CreateDeckFromOutlineRequest(BaseModel):
     """Request for creating a deck from an outline with streaming"""
     outline: Dict[str, Any] = Field(description="The deck outline")
@@ -179,12 +189,12 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
             existing_deck = get_deck(deck_uuid)
             if existing_deck:
                 logger.warning(f"DECK ALREADY EXISTS - UUID: {deck_uuid}")
-                existing_status = existing_deck.get('status') or {}
-                logger.warning(f"  - Existing deck status: {existing_status.get('state', 'unknown')}")
+                existing_status = existing_deck.get('status') if isinstance(existing_deck, dict) else None
+                status_state = _extract_status_state(existing_status) or 'unknown'
+                logger.warning(f"  - Existing deck status: {status_state}")
                 logger.warning(f"  - Existing deck created: {existing_deck.get('created_at', 'unknown')}")
 
                 # If deck is already completed or generating, reject this request
-                status_state = existing_status.get('state', '')
                 if status_state in ['completed', 'generating', 'creating']:
                     # Send deck_created first for navigation
                     yield _sse({
@@ -214,12 +224,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
             # First check if deck already exists and is completed
             existing_deck = get_deck(deck_uuid)
             existing_status = existing_deck.get('status') if isinstance(existing_deck, dict) else None
-            if isinstance(existing_status, dict):
-                existing_state = existing_status.get('state')
-            elif isinstance(existing_status, str):
-                existing_state = existing_status
-            else:
-                existing_state = None
+            existing_state = _extract_status_state(existing_status)
 
             if existing_deck and existing_state == 'completed':
                 logger.warning(f"Deck {deck_uuid} already exists and is completed - rejecting duplicate request")
@@ -462,17 +467,37 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                                 deck_uuid,
                             )
                             yield _sse({'type': 'error', 'error': 'stream_incomplete', 'message': 'Stream ended before composition completed', 'deck_uuid': deck_uuid})
-                            # Also send a fallback composition_complete so frontend can proceed
-                            yield _sse({
-                                'type': 'composition_complete',
-                                'deck_uuid': deck_uuid,
-                                'version': SCHEMA_VERSION,
-                                'warning': 'Finalization may be incomplete'
-                            })
-                            logger.warning(
-                                "Sent fallback composition_complete for deck %s",
-                                deck_uuid,
-                            )
+                            # Only emit fallback completion if deck is actually completed in persistence.
+                            persisted_state: Optional[str] = None
+                            try:
+                                persisted = get_deck(deck_uuid) if deck_uuid else None
+                                persisted_state = _extract_status_state(
+                                    persisted.get('status') if isinstance(persisted, dict) else None
+                                )
+                            except Exception as status_err:
+                                logger.warning(
+                                    "Failed to read persisted status for %s: %s",
+                                    deck_uuid,
+                                    status_err,
+                                )
+
+                            if persisted_state == 'completed':
+                                yield _sse({
+                                    'type': 'composition_complete',
+                                    'deck_uuid': deck_uuid,
+                                    'version': SCHEMA_VERSION,
+                                    'warning': 'Recovered completion from persisted deck state'
+                                })
+                                logger.warning(
+                                    "Recovered composition_complete from persisted status for deck %s",
+                                    deck_uuid,
+                                )
+                            else:
+                                logger.warning(
+                                    "Not emitting fallback composition_complete for %s (persisted state: %s)",
+                                    deck_uuid,
+                                    persisted_state or 'unknown',
+                                )
                     except Exception as e:
                         logger.warning("Error in finally block: %s", e)
                         pass

@@ -473,16 +473,26 @@ class ParallelSlideOrchestrator:
                 # If async_images is enabled and we have an image manager, get pending images
                 if options.async_images and self.image_manager:
                     slide_id = getattr(slide_outline, 'id', None)
-                    print(f"\n[SLIDE GENERATION] Checking pending images for slide {slide_index + 1} (ID: {slide_id})")
+                    logger.debug(
+                        "[SLIDE GENERATION] Checking pending images for slide %s (ID: %s)",
+                        slide_index + 1,
+                        slide_id,
+                    )
                     pending_images = self.image_manager.get_pending_images_for_slide(slide_id) if slide_id else []
                     if pending_images:
                         logger.debug(f"[SLIDE GENERATION] Found {len(pending_images)} pending images for slide {slide_index + 1}")
-                        print(f"[SLIDE GENERATION] ✓ Found {len(pending_images)} pending images for slide {slide_index + 1}")
                         available_images = pending_images
                     else:
-                        print(f"[SLIDE GENERATION] ✗ No pending images found for slide {slide_index + 1}")
+                        logger.debug(
+                            "[SLIDE GENERATION] No pending images found for slide %s",
+                            slide_index + 1,
+                        )
                 else:
-                    print(f"[SLIDE GENERATION] Skipping image check - async_images: {options.async_images}, has image_manager: {self.image_manager is not None}")
+                    logger.debug(
+                        "[SLIDE GENERATION] Skipping image check - async_images=%s has_image_manager=%s",
+                        options.async_images,
+                        self.image_manager is not None,
+                    )
                 
                 # Log theme information before creating context
                 logger.debug(f"[SLIDE {slide_index + 1}] deck_state.theme exists: {deck_state.theme is not None}")

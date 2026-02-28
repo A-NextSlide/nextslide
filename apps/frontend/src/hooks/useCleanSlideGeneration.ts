@@ -98,7 +98,12 @@ export function useCleanSlideGeneration(options: UseCleanSlideGenerationOptions)
     }
     
     // Handle completion
-    if (event.type === 'deck_complete' || event.stage === 'composition_complete') {
+    if (
+      event.type === 'deck_complete' ||
+      event.type === 'composition_complete' ||
+      event.type === 'complete' ||
+      event.stage === 'composition_complete'
+    ) {
       setIsGenerating(false);
       setProgress(100);
       onComplete?.();

@@ -153,6 +153,8 @@ def create_deck_compose_stream(
                 return sse_encode({"type": "error", "error": "serialization_failed"})
         cancelled = False
         deck_lock_acquired = False
+        stream_end_sent = False
+        composition_completed = False
         try:
             existing_deck = get_deck(deck_id)
             if not existing_deck:
@@ -240,6 +242,9 @@ def create_deck_compose_stream(
                 prefetch_images=request.prefetch_images,
                 user_id=user_id  # Pass user_id for deck attribution
             ):
+                if update.get('type') in ('deck_complete', 'composition_complete', 'complete'):
+                    composition_completed = True
+
                 # Log image-related updates
                 if 'image' in update.get('type', '').lower():
                     logger.info(
@@ -258,21 +263,18 @@ def create_deck_compose_stream(
                 yield _sse(update)
                 await asyncio.sleep(0.01)  # Small delay to prevent overwhelming the client
                 
-            # Final success message
-            # Build response data separately to avoid multi-line f-string issues
-            response_data = {
-                'type': 'composition_complete',
-                'deck_id': deck_id,
-                'message': 'Deck composition completed successfully!',
-                'version': SCHEMA_VERSION
-            }
-            yield _sse(response_data)
+            # Emit completion if upstream stream did not already provide one.
+            if not composition_completed:
+                response_data = {
+                    'type': 'composition_complete',
+                    'deck_id': deck_id,
+                    'message': 'Deck composition completed successfully!',
+                    'version': SCHEMA_VERSION
+                }
+                yield _sse(response_data)
 
             # Fire-and-forget thumbnail render
             asyncio.create_task(_fire_thumbnail_render(deck_id))
-
-            # Emit explicit end-of-stream marker
-            yield _sse({'type': 'end', 'message': 'Stream complete'})
 
         except asyncio.CancelledError:
             cancelled = True
@@ -307,18 +309,21 @@ def create_deck_compose_stream(
             logger.error(f"Error in deck composition stream: {e}", exc_info=True)
             yield _sse({'type': 'error', 'error': str(e)})
         finally:
-            # Ensure stream termination marker in any case
-            try:
-                if not cancelled:
-                    yield _sse({'type': 'end', 'message': 'Stream complete'})
-            except Exception:
-                return
             # Always release deck lock if acquired
             try:
                 if deck_lock_acquired:
                     concurrency_manager.release_deck_lock(deck_id)
+                    deck_lock_acquired = False
                     logger.info(f"Released deck lock for {deck_id} (compose-stream)")
             except Exception:
                 pass
+
+            # Ensure stream termination marker in any case (single emission only).
+            try:
+                if not cancelled and not stream_end_sent:
+                    yield _sse({'type': 'end', 'message': 'Stream complete'})
+                    stream_end_sent = True
+            except Exception:
+                return
     
     return generate() 

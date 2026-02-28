@@ -182,12 +182,18 @@ export interface StreamingEvent {
   'outline_complete' | 'deck_ready' | 'deck_created' | 'deck_created_with_warning' |
   'narrative_flow_started' | 'narrative_flow_ready' | 'narrative_flow_pending' |
   'error' | 'images_collected' | 'images_ready_for_selection' | 'data' | 'complete' |
-  'deck_creation_started' | 'deck_complete' | 'creating_deck' |
+  'deck_creation_started' | 'deck_complete' | 'deck_completed' | 'composition_complete' |
+  'creating_deck' | 'started' | 'resuming' | 'already_complete' | 'end' |
   'theme_loading' | 'theme_ready';
 
   // Common fields
   message?: string;
   timestamp?: number;
+  deck_id?: string;
+  deck_uuid?: string;
+  deck_url?: string;
+  error?: string;
+  fatal?: boolean;
 
   // For progress events
   stage?: string;
@@ -1039,6 +1045,17 @@ export class OutlineAPI {
 
           try {
             const event = normalizeSseEvent(JSON.parse(data)) as StreamingEvent;
+            const eventDeckId = event.deck_id || event.deck_uuid || event.data?.deck_id || event.data?.deck_uuid;
+            const eventDeckUrl = event.deck_url || event.data?.deck_url;
+
+            if (eventDeckId) {
+              deckId = eventDeckId;
+            }
+            if (eventDeckUrl) {
+              deckUrl = eventDeckUrl;
+            } else if (deckId && !deckUrl) {
+              deckUrl = `/deck/${deckId}`;
+            }
 
             if (onProgress) {
               onProgress(event);
@@ -1053,16 +1070,23 @@ export class OutlineAPI {
                 break;
 
               case 'complete':
-                if (event.data?.deck_id) {
-                  deckId = event.data.deck_id;
-                }
-                if (event.data?.deck_url) {
-                  deckUrl = event.data.deck_url;
-                }
+              case 'deck_complete':
+              case 'deck_completed':
+              case 'composition_complete':
                 return { deck_id: deckId, deck_url: deckUrl };
 
+              case 'end':
+                if (deckId) {
+                  return { deck_id: deckId, deck_url: deckUrl };
+                }
+                break;
+
               case 'error':
-                throw new Error(event.message || 'Deck creation failed');
+                if (!deckId) {
+                  throw new Error(event.error || event.message || event.data?.error || 'Deck creation failed');
+                }
+                // If a deck already exists, keep streaming for possible completion.
+                break;
             }
           } catch (parseError) {
             // Parse errors handled silently
