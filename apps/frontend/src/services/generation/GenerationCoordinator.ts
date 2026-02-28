@@ -361,7 +361,6 @@ export class GenerationCoordinator extends EventTarget {
     let deckUrl = '';
     const decoder = new TextDecoder();
     let buffer = '';
-    let composeStreamStarted = false;
 
     // Process streaming response
     while (true) {
@@ -391,9 +390,6 @@ export class GenerationCoordinator extends EventTarget {
               });
             }
 
-            // Send event to progress tracker
-            this.progressTracker.handleEvent(data);
-            
             // Capture deck ID immediately
             if (data.deck_id && !deckId) {
               deckId = data.deck_id;
@@ -408,21 +404,14 @@ export class GenerationCoordinator extends EventTarget {
                 const { updateDeckData } = useDeckStore.getState();
                 updateDeckData({ locked_slide_info: data.locked_slide_info } as any);
               }
+            }
 
-              // Proactively start composition streaming to avoid backend cancelling due to no client
-              if (!composeStreamStarted) {
-                composeStreamStarted = true;
-                // Fire and forget; coordinator prevents duplicates
-            this.startGeneration({
-                  deckId,
-                  outline: validatedOutline,
-                  detailLevel: 'standard',
-                  slideCount: 6,
-                  onProgress: (evt) => this.handleProgress(deckId, evt, onProgress),
-                  onError: (err) => this.handleError(deckId, err, undefined),
-                  _skipStatusReset: true  // generateFromOutline handles status reset
-                }).catch(e => console.warn('[GenerationCoordinator] compose-stream start failed:', e?.message || e));
-              }
+            // Send event to progress tracker after critical IDs are captured.
+            // Tracker failures should not prevent stream state from progressing.
+            try {
+              this.progressTracker.handleEvent(data);
+            } catch (trackerError) {
+              console.error('[GenerationCoordinator] Progress tracker failed for event:', data?.type, trackerError);
             }
 
             // Forward progress events to coordinator bus and optional callback

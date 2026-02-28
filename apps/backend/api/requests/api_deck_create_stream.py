@@ -213,7 +213,15 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
             
             # First check if deck already exists and is completed
             existing_deck = get_deck(deck_uuid)
-            if existing_deck and existing_deck.get('status') == 'completed':
+            existing_status = existing_deck.get('status') if isinstance(existing_deck, dict) else None
+            if isinstance(existing_status, dict):
+                existing_state = existing_status.get('state')
+            elif isinstance(existing_status, str):
+                existing_state = existing_status
+            else:
+                existing_state = None
+
+            if existing_deck and existing_state == 'completed':
                 logger.warning(f"Deck {deck_uuid} already exists and is completed - rejecting duplicate request")
                 # Send deck_created first for navigation
                 yield _sse({
