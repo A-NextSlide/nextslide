@@ -959,11 +959,10 @@ export const useConversationalOnboarding = ({
           setStage('planning');
           outlineState.initializeOutline(enrichedOutline);
           themeState.initializeThemeFromOutline(enrichedOutline);
-          const cleanedMessage = stripAssistantMarkup(assistantMessage);
           if (isFirstOutline) {
             chatMessages.addMessage(
               'assistant',
-              cleanedMessage || 'Review the outline and theme to the right. Edit anything you want before choosing a mode.',
+              'Review the outline and theme to the right. Edit anything you want before choosing a mode.',
               { skipHistory: true }
             );
           }

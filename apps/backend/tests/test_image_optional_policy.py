@@ -49,7 +49,10 @@ def test_container_layout_without_images_stays_unchanged():
     assert "src=\"placeholder\"" not in output
 
 
-def test_component_first_slide_skips_auto_resolution():
+def test_skip_auto_resolution_always_returns_false():
+    """Image decisions are now handled by the AI prompt, not keyword matching.
+    _should_skip_auto_image_resolution always returns False — the AI simply
+    won't generate <img> tags when they aren't needed."""
     should_skip = _should_skip_auto_image_resolution(
         slide_context={
             "slide_index": 2,
@@ -58,19 +61,6 @@ def test_component_first_slide_skips_auto_resolution():
             "extracted_data": {"data": [{"label": "A", "value": 10}]},
         },
         content="Explain the process and compare metrics in a structured layout.",
-        uploaded_media=None,
-    )
-    assert should_skip is True
-
-
-def test_explicit_image_request_does_not_skip_auto_resolution():
-    should_skip = _should_skip_auto_image_resolution(
-        slide_context={
-            "slide_index": 2,
-            "title": "Product Launch Visuals",
-            "slide_type": "content",
-        },
-        content="Use photos and screenshots of the product UI.",
         uploaded_media=None,
     )
     assert should_skip is False

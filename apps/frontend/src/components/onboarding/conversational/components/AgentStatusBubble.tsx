@@ -48,6 +48,26 @@ const phaseMessages: Record<string, string> = {
   outline_complete: 'Outline ready',
 };
 
+const normalizeText = (value?: string | null) => (value || '').trim().toLowerCase();
+
+const formatStepText = (label: string, detail?: string | null) => {
+  const trimmedDetail = (detail || '').trim();
+  if (!trimmedDetail) return label;
+
+  const normalizedLabel = normalizeText(label);
+  const normalizedDetail = normalizeText(trimmedDetail);
+  if (!normalizedLabel) return trimmedDetail;
+  if (normalizedDetail === normalizedLabel) return label;
+  if (
+    normalizedDetail.startsWith(`${normalizedLabel}:`) ||
+    normalizedDetail.startsWith(`${normalizedLabel} `)
+  ) {
+    return trimmedDetail;
+  }
+
+  return `${label}: ${trimmedDetail}`;
+};
+
 const AgentStatusBubble: React.FC<AgentStatusBubbleProps> = ({
   thinkingSteps,
   streamingText,
@@ -59,10 +79,7 @@ const AgentStatusBubble: React.FC<AgentStatusBubbleProps> = ({
     // If we have thinking steps, show the most recent active one
     if (thinkingSteps.length > 0) {
       const activeStep = thinkingSteps.find(s => s.status === 'active') || thinkingSteps[thinkingSteps.length - 1];
-      if (activeStep.detail) {
-        return `${activeStep.label}: ${activeStep.detail}`;
-      }
-      return activeStep.label;
+      return formatStepText(activeStep.label, activeStep.detail);
     }
 
     // If we have a status message with actual content, use it directly
@@ -90,7 +107,7 @@ const AgentStatusBubble: React.FC<AgentStatusBubbleProps> = ({
             animate={{ opacity: step.status === 'completed' ? 0.5 : 1, x: 0 }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-            className="flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-500"
+            className="flex min-w-0 items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-500"
             style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif', fontWeight: 500 }}
           >
             {step.status === 'active' ? (
@@ -98,8 +115,8 @@ const AgentStatusBubble: React.FC<AgentStatusBubbleProps> = ({
             ) : (
               <span className="w-1 h-1 rounded-full bg-amber-300 dark:bg-amber-700 flex-shrink-0" />
             )}
-            <span>
-              {step.detail ? `${step.label}: ${step.detail}` : step.label}
+            <span className="min-w-0 break-words">
+              {formatStepText(step.label, step.detail)}
             </span>
           </motion.div>
         ))}
@@ -111,11 +128,11 @@ const AgentStatusBubble: React.FC<AgentStatusBubbleProps> = ({
           initial={{ opacity: 0, x: -5 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-          className="flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-500"
+          className="flex min-w-0 items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-500"
           style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif', fontWeight: 500 }}
         >
           <span className="w-1 h-1 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
-          <span>{currentMessage}</span>
+          <span className="min-w-0 break-words">{currentMessage}</span>
         </motion.div>
       )}
     </div>

@@ -16,7 +16,9 @@ from agents.generation.custom_component_enhancer import (
     inject_theme_data,
     resolve_custom_component_layout,
 )
+from agents.generation.custom_component_prompts import build_user_prompt as build_custom_component_user_prompt
 from agents.generation.component_hints import infer_component_hints
+from agents.generation.components.prompt_builder import SlidePromptBuilder
 from agents.generation.image_processing import apply_tagged_media_to_images
 from models.requests import (
     ColorConfigItem,
@@ -132,6 +134,25 @@ def test_build_custom_component_context_includes_charts():
     assert slide_context["manual_charts"][0]["chartType"] == "line"
 
 
+def test_build_custom_component_context_sets_strict_grounding_flags_from_source_context():
+    context = _make_context()
+    context.deck_outline.notes = {
+        "context_store": {
+            "grounding": {
+                "content_context": "Canonical file excerpt",
+                "file_intent": "use_content_only",
+            }
+        }
+    }
+    layout = resolve_custom_component_layout(context, full_slide=False)
+    slide_context = build_custom_component_context(context, layout=layout, include_charts=False)
+
+    assert slide_context["strict_grounding"] is True
+    assert slide_context["source_context_available"] is True
+    assert slide_context["source_only_mode"] is True
+    assert slide_context["source_intent"] == "use_content_only"
+
+
 @pytest.mark.asyncio
 async def test_custom_component_enhancer_partial_preserves_background():
     class StubGenerator:
@@ -188,6 +209,95 @@ async def test_custom_component_enhancer_full_slide_replaces_all():
     )
 
     assert updated["components"] == [{"type": "CustomComponent", "props": {"render": "<div />"}}]
+
+
+@pytest.mark.asyncio
+async def test_custom_component_enhancer_reads_source_context_from_notes_store():
+    class StubGenerator:
+        def __init__(self):
+            self.last_content = None
+
+        async def generate(self, **kwargs):
+            self.last_content = kwargs.get("content")
+            return {"type": "CustomComponent", "props": {"render": "<div />"}}
+
+    stub = StubGenerator()
+    context = _make_context(content="Short outline sentence")
+    context.deck_outline.notes = {
+        "context_store": {
+            "grounding": {
+                "content_context": "Source file says launch is limited to US and Canada.",
+                "research_context": "External research says launch includes Europe.",
+                "scraped_context": "Website says global launch soon.",
+                "file_intent": "use_content_only",
+                "user_notes": "Make the examples practical.",
+            }
+        }
+    }
+    slide_data = {
+        "components": [
+            {"type": "Background", "props": {"backgroundType": "color", "backgroundColor": "#FFFFFF"}},
+        ]
+    }
+    theme_dict = context.theme.to_dict()
+    enhancer = CustomComponentEnhancer(stub, full_slide=False)
+
+    await enhancer.enhance(
+        slide_data,
+        context,
+        theme_dict,
+        predicted_components=["CustomComponent"],
+    )
+
+    assert "SOURCE MATERIAL CONTEXT" in (stub.last_content or "")
+    assert "launch is limited to US and Canada" in (stub.last_content or "")
+    assert "External research says launch includes Europe." not in (stub.last_content or "")
+    assert "Website says global launch soon." not in (stub.last_content or "")
+    assert "STRICT GROUNDING RULES" in (stub.last_content or "")
+    assert "USER NOTES" in (stub.last_content or "")
+    assert "practical" in (stub.last_content or "")
+
+
+def test_custom_component_user_prompt_enables_strict_source_grounding():
+    prompt = build_custom_component_user_prompt(
+        content="SOURCE MATERIAL CONTEXT: Feature rollout limited to US only.",
+        slide_context={
+            "title": "Launch Scope",
+            "slide_index": 0,
+            "total_slides": 5,
+            "strict_grounding": True,
+            "source_only_mode": True,
+            "source_intent": "use_content_only",
+        },
+        width=1920,
+        height=1080,
+    )
+
+    assert "STRICT SOURCE GROUNDING: ON" in prompt
+    assert "SOURCE-ONLY MODE" in prompt
+    assert "Do not add vendor names" in prompt
+
+
+def test_slide_prompt_builder_source_only_prioritizes_source_context():
+    context = _make_context(content="Short slide content")
+    context.deck_outline.notes = {
+        "context_store": {
+            "grounding": {
+                "content_context": "Canonical source chapter excerpt.",
+                "research_context": "External research context should be ignored.",
+                "scraped_context": "External scraped context should be ignored.",
+                "file_intent": "use_content_only",
+            }
+        }
+    }
+    builder = SlidePromptBuilder()
+    static_block, _ = builder.build_user_prompt_blocks(context)
+
+    assert "--- STRICT GROUNDING MODE ---" in static_block
+    assert "--- SOURCE MATERIAL CONTEXT (uploaded files) ---" in static_block
+    assert "DECK-WIDE RESEARCH CONTEXT (secondary)" not in static_block
+    assert "REFERENCE CONTEXT (secondary)" not in static_block
+    assert "SOURCE-ONLY MODE: Ignore secondary research/reference context" in static_block
 
 
 def test_apply_tagged_media_to_images_replaces_placeholder():

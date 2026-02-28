@@ -5,12 +5,15 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from agents.domain.models import SlideGenerationContext
 from agents.generation.custom_component_generator import CustomComponentGenerator
+from services.outline.context_store import extract_grounding_context_from_notes
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
 
 MAX_RESEARCH_CONTEXT_CHARS = 8000
 MAX_SCRAPED_CONTEXT_CHARS = 5000
+MAX_SOURCE_CONTEXT_CHARS = 6000
+SOURCE_ONLY_FILE_INTENTS = {"use_content_only", "recreate_exact"}
 
 
 def _get_attr_or_key(obj: Any, key: str, default: Any = None) -> Any:
@@ -192,6 +195,13 @@ def _extract_style_context(context: SlideGenerationContext) -> Tuple[Optional[st
     return initial_idea, vibe_context
 
 
+def _extract_grounding_from_context(context: SlideGenerationContext) -> Dict[str, Any]:
+    notes = None
+    if hasattr(context, "deck_outline") and context.deck_outline:
+        notes = getattr(context.deck_outline, "notes", None)
+    return extract_grounding_context_from_notes(notes if isinstance(notes, dict) else None)
+
+
 @dataclass(frozen=True)
 class CustomComponentLayout:
     width: int
@@ -237,6 +247,18 @@ def build_custom_component_context(
         _get_attr_or_key(style_prefs, "brandName")
         or _get_attr_or_key(style_prefs, "brandDomain")
     )
+    grounding = _extract_grounding_from_context(context)
+    source_material_context = (
+        grounding.get("content_context")
+        or grounding.get("file_context")
+        or ""
+    )
+    normalized_file_intent = str(grounding.get("file_intent") or "").strip().lower()
+    has_source_context = bool(str(source_material_context).strip())
+    source_only_mode = (
+        has_source_context
+        and normalized_file_intent in SOURCE_ONLY_FILE_INTENTS
+    )
 
     slide_context = {
         "title": _get_attr_or_key(context.slide_outline, "title"),
@@ -254,6 +276,10 @@ def build_custom_component_context(
         "is_full_slide": layout.is_full_slide,
         "use_uploaded_images": bool(getattr(context.deck_outline, "use_uploaded_images", False)),
         "has_assigned_video": bool(context.available_videos),
+        "strict_grounding": has_source_context,
+        "source_only_mode": source_only_mode,
+        "source_context_available": has_source_context,
+        "source_intent": normalized_file_intent or None,
     }
 
     if include_charts:
@@ -278,32 +304,61 @@ class CustomComponentEnhancer:
         """
         parts = [content] if content else []
 
-        # Get research context from deck_outline.notes
+        # Get grounding context from deck_outline.notes/context_store
         try:
-            notes = None
-            if hasattr(context, "deck_outline") and context.deck_outline:
-                notes = getattr(context.deck_outline, "notes", None)
+            grounding = _extract_grounding_from_context(context)
+            if grounding:
+                source_material_context = grounding.get("content_context") or grounding.get("file_context")
+                file_intent = str(grounding.get("file_intent") or "").strip().lower()
+                has_source_context = bool(
+                    source_material_context and isinstance(source_material_context, str) and source_material_context.strip()
+                )
+                source_only_mode = has_source_context and file_intent in SOURCE_ONLY_FILE_INTENTS
 
-            if isinstance(notes, dict):
-                # Add research context (truncated to avoid huge prompts)
-                research_context = notes.get("research_context") or notes.get("researchContext")
-                if research_context and isinstance(research_context, str):
+                if source_material_context and isinstance(source_material_context, str):
+                    truncated = (
+                        source_material_context[:MAX_SOURCE_CONTEXT_CHARS]
+                        if len(source_material_context) > MAX_SOURCE_CONTEXT_CHARS
+                        else source_material_context
+                    )
+                    parts.append(f"\n\nSOURCE MATERIAL CONTEXT:\n{truncated}")
+
+                if file_intent:
+                    parts.append(f"\n\nSOURCE INTENT: {file_intent}")
+
+                if has_source_context:
+                    parts.append(
+                        "\n\nSTRICT GROUNDING RULES:\n"
+                        "- SOURCE MATERIAL CONTEXT is the canonical factual source for this slide.\n"
+                        "- Do NOT add vendor/tool/person/place names unless they appear in SOURCE MATERIAL CONTEXT.\n"
+                        "- Do NOT invent numbers, dates, claims, quotes, or product specifics.\n"
+                        "- If a detail is missing, keep the wording generic or omit the detail."
+                    )
+
+                research_context = grounding.get("research_context")
+                if research_context and isinstance(research_context, str) and not source_only_mode:
                     truncated = (
                         research_context[:MAX_RESEARCH_CONTEXT_CHARS]
                         if len(research_context) > MAX_RESEARCH_CONTEXT_CHARS
                         else research_context
                     )
-                    parts.append(f"\n\nRESEARCH CONTEXT (use relevant facts):\n{truncated}")
+                    parts.append(f"\n\nRESEARCH CONTEXT (secondary, use only if consistent with source):\n{truncated}")
 
-                # Add scraped context
-                scraped_context = notes.get("scraped_context") or notes.get("scrapedContext")
-                if scraped_context and isinstance(scraped_context, str):
+                scraped_context = grounding.get("scraped_context")
+                if scraped_context and isinstance(scraped_context, str) and not source_only_mode:
                     truncated = (
                         scraped_context[:MAX_SCRAPED_CONTEXT_CHARS]
                         if len(scraped_context) > MAX_SCRAPED_CONTEXT_CHARS
                         else scraped_context
                     )
-                    parts.append(f"\n\nREFERENCE MATERIAL:\n{truncated}")
+                    parts.append(f"\n\nREFERENCE MATERIAL (secondary, use only if consistent with source):\n{truncated}")
+
+                if source_only_mode and (research_context or scraped_context):
+                    logger.info("[CUSTOM_COMPONENT] Source-only grounding active; skipping research/scraped context")
+                user_notes = grounding.get("user_notes")
+                if user_notes and isinstance(user_notes, str):
+                    truncated = user_notes[:1800] if len(user_notes) > 1800 else user_notes
+                    parts.append(f"\n\nUSER NOTES:\n{truncated}")
         except Exception as e:
             logger.debug(f"[CUSTOM_COMPONENT] Could not extract research context: {e}")
 

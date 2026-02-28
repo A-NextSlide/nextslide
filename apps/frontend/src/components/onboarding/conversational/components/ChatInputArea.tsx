@@ -68,7 +68,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         : 'Type your message or drag & drop files...';
 
   return (
-    <div className="sticky bottom-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-md border-t border-zinc-200 dark:border-zinc-800">
+    <div className="shrink-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-md border-t border-zinc-200 dark:border-zinc-800">
       <div className="px-3 py-2 sm:px-6 sm:py-4">
         <PendingFilesPreview files={uploadedFiles} onRemove={onRemoveFile} />
 

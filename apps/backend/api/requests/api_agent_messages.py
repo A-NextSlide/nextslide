@@ -2,6 +2,7 @@ import uuid
 import json
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException
 import os
@@ -75,6 +76,175 @@ def _summarize_deck_diff(diff: dict) -> str:
         parts.append(f"reorder({len(diff['slide_order'])})")
 
     return " | ".join(parts) if parts else "(no changes)"
+
+
+def _compress_screenshot_payload(
+    screenshot: Optional[Dict[str, str]],
+    max_bytes: int = 220_000,
+    max_side: int = 1280,
+    jpeg_quality: int = 65,
+) -> Optional[Dict[str, str]]:
+    """
+    Compress screenshot base64 payload before sending to LLM.
+    Reduces token/cost blowups for vision prompts.
+    """
+    if not screenshot or not isinstance(screenshot, dict):
+        return screenshot
+    b64 = screenshot.get("data") or ""
+    if not b64:
+        return screenshot
+    # If already small enough, keep as-is
+    if len(b64) <= max_bytes:
+        return screenshot
+
+    try:
+        from PIL import Image
+        raw = base64.b64decode(b64)
+        img = Image.open(BytesIO(raw))
+        # Normalize to RGB JPEG to maximize compression ratio
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        if max(img.size) > max_side:
+            img.thumbnail((max_side, max_side), Image.LANCZOS)
+
+        q = jpeg_quality
+        best_bytes = None
+        for _ in range(4):
+            buf = BytesIO()
+            img.save(buf, format="JPEG", optimize=True, quality=q)
+            data = buf.getvalue()
+            best_bytes = data
+            if len(data) <= max_bytes:
+                break
+            q = max(35, q - 10)
+
+        if not best_bytes:
+            return screenshot
+        compressed_b64 = base64.b64encode(best_bytes).decode("utf-8")
+        logger.info(
+            "[AgentChat] Compressed screenshot for LLM: %s -> %s chars base64",
+            len(b64),
+            len(compressed_b64),
+        )
+        return {"data": compressed_b64, "media_type": "image/jpeg"}
+    except Exception as e:
+        logger.warning(f"[AgentChat] Screenshot compression skipped: {e}")
+        return screenshot
+
+
+def _needs_visual_context_fallback(
+    message: Optional[str],
+    selections: Optional[List[Dict[str, Any]]] = None,
+) -> bool:
+    """
+    Conservative screenshot fallback when classifier is unavailable.
+    Defaults to no screenshot unless the request clearly needs visual inspection.
+    """
+    msg = " ".join((message or "").strip().lower().split())
+    if not msg:
+        return False
+
+    # Ultra-short follow-ups are usually targeted tweaks; HTML + selection is enough.
+    if msg in {
+        "fix this",
+        "fix it",
+        "improve this",
+        "enhance this",
+        "make it better",
+        "make this better",
+        "do it",
+        "try again",
+    }:
+        return False
+
+    # Pure text/style/theme operations do not require rendered screenshot.
+    non_visual_patterns = [
+        "change text",
+        "replace text",
+        "update text",
+        "change title to",
+        "rename",
+        "typo",
+        "font",
+        "color",
+        "colour",
+        "hex",
+        "add slide",
+        "delete slide",
+        "remove slide",
+        "duplicate slide",
+        "copy slide",
+        "all slides",
+        "every slide",
+        "across deck",
+        "whole deck",
+        "entire presentation",
+    ]
+    if any(pattern in msg for pattern in non_visual_patterns):
+        return False
+
+    # Strong visual intent: layout, visibility, and visual ambiguity.
+    strong_visual_patterns = [
+        "redesign",
+        "rebuild",
+        "redo",
+        "from scratch",
+        "overhaul",
+        "layout",
+        "alignment",
+        "align",
+        "spacing",
+        "position",
+        "move",
+        "left",
+        "right",
+        "top",
+        "bottom",
+        "center",
+        "centre",
+        "overlap",
+        "cropped",
+        "cut off",
+        "hidden",
+        "not visible",
+        "invisible",
+        "can't see",
+        "cannot see",
+        "doesn't show",
+        "does not show",
+        "looks wrong",
+        "looks off",
+        "misaligned",
+        "first image",
+        "second image",
+        "third image",
+        "image on the",
+    ]
+    if any(pattern in msg for pattern in strong_visual_patterns):
+        return True
+
+    # Ambiguous references benefit from screenshot only when nothing is selected.
+    has_selection = bool(selections)
+    ambiguous_refs = ["this one", "that one", "the one on the", "the one with"]
+    if any(ref in msg for ref in ambiguous_refs):
+        return not has_selection
+
+    # Image replacement without a selected target may need visual disambiguation.
+    image_replace_patterns = [
+        "replace image",
+        "replace the image",
+        "swap image",
+        "change image",
+        "update image",
+        "replace logo",
+    ]
+    if any(pattern in msg for pattern in image_replace_patterns):
+        return not has_selection
+
+    # Default to no screenshot for speed/cost.
+    return False
+
+
 # Auto-apply by default (frontend without an Apply button). Tests disable via PYTEST_CURRENT_TEST.
 # Default to auto-apply in production, but disable under pytest to match tests that expect 'proposed'
 ALWAYS_AUTO_APPLY = (os.getenv("AGENT_AUTO_APPLY", "true").lower() == "true") and not bool(os.getenv("PYTEST_CURRENT_TEST"))
@@ -478,62 +648,6 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                 'url': att_url
             })
 
-    # Classify request to decide if we need the screenshot
-    # Complex requests that benefit from seeing the slide visually
-    def _needs_visual_context(msg: str) -> bool:
-        msg_lower = (msg or "").lower()
-
-        # Ultra-short prompts are typically fast follow-ups where full screenshot context
-        # adds latency without improving tool selection.
-        short_followups = {
-            "fix this",
-            "fix it",
-            "improve this",
-            "enhance this",
-            "make it better",
-            "make this better",
-        }
-        if msg_lower.strip() in short_followups:
-            return False
-
-        # Keywords indicating visual/complex edits
-        visual_keywords = [
-            "fix", "broken", "wrong", "issue", "problem", "bug",
-            "redesign", "redo", "rebuild", "restyle", "overhaul",
-            "layout", "spacing", "alignment", "position", "move",
-            "looks", "ugly", "better", "improve", "enhance",
-            "image", "photo", "picture", "logo", "icon",
-            "color", "colours", "style", "theme", "font",
-            "too big", "too small", "resize", "size",
-            "overlap", "cut off", "cropped", "hidden",
-            "doesn't look", "not showing", "can't see",
-        ]
-
-        # Simple requests that don't need visual context
-        simple_patterns = [
-            "change text", "replace text", "update text",
-            "change title to", "rename", "typo",
-            "add slide", "delete slide", "remove slide",
-            "duplicate", "copy slide",
-        ]
-
-        # Check if it's a simple request first
-        for pattern in simple_patterns:
-            if pattern in msg_lower:
-                return False
-
-        # Check if it needs visual context
-        for keyword in visual_keywords:
-            if keyword in msg_lower:
-                return True
-
-        # Default: include for safety on ambiguous requests
-        # But if message is very short (< 30 chars), probably simple
-        if len(msg_lower.strip()) < 30:
-            return False
-
-        return True
-
     # ═══════════════════════════════════════════════════════════════════════════════
     # CLASSIFICATION: For model selection only (all messages go through orchestrator)
     # ═══════════════════════════════════════════════════════════════════════════════
@@ -573,11 +687,31 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
             logger.info(f"[AgentChat] Including screenshot - classification needs visual: {classification.needs_screenshot}")
     else:
         # Fallback to keyword-based detection if classification failed
-        include_screenshot = bool(slide_screenshot_data and _needs_visual_context(text))
+        include_screenshot = bool(
+            slide_screenshot_data
+            and _needs_visual_context_fallback(text, selections=selections)
+        )
         if slide_screenshot_data and not include_screenshot:
             logger.info(f"[AgentChat] Skipping screenshot - simple request detected (fallback)")
         elif include_screenshot:
             logger.info(f"[AgentChat] Including screenshot - complex/visual request detected (fallback)")
+
+    screenshot_for_orchestrator = None
+    if include_screenshot and slide_screenshot_data:
+        screenshot_for_orchestrator = _compress_screenshot_payload(slide_screenshot_data)
+        if screenshot_for_orchestrator:
+            screenshot_size = len(screenshot_for_orchestrator.get("data") or "")
+            if screenshot_size > 260_000:
+                logger.warning(
+                    "[AgentChat] Dropping oversized screenshot after compression: %s chars base64",
+                    screenshot_size,
+                )
+                screenshot_for_orchestrator = None
+            else:
+                logger.info(
+                    "[AgentChat] Using screenshot payload: %s chars base64",
+                    screenshot_size,
+                )
 
     # LinkedIn lookup is now handled by the orchestrator via the linkedin_lookup tool
     # The LLM decides when to use it based on @linkedin mentions in the message
@@ -596,7 +730,7 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                 run_uuid=str(uuid.uuid4()),
                 event_cb=_event_cb,
                 attachments=normalized_attachments,
-                slide_screenshot=slide_screenshot_data if include_screenshot else None,
+                slide_screenshot=screenshot_for_orchestrator,
                 classification=classification,
             )
         else:
@@ -611,7 +745,7 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                 run_uuid=str(uuid.uuid4()),
                 event_cb=_event_cb,
                 attachments=normalized_attachments,
-                slide_screenshot=slide_screenshot_data if include_screenshot else None,
+                slide_screenshot=screenshot_for_orchestrator,
                 classification=classification,
             )
     except Exception as edit_error:

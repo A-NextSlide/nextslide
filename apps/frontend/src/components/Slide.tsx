@@ -20,6 +20,7 @@ import { useEditorStateSafe } from '@/context/EditorStateContext';
 import LockedSlideOverlay from '@/components/deck/LockedSlideOverlay';
 import RemoteSelections from '@/components/deck/RemoteSelections';
 import { useSlideFonts } from '@/hooks/useSlideFonts';
+import { normalizeSlideForRender } from '@/utils/slideNormalization';
 
 interface SlideProps {
   slide: SlideData;
@@ -211,6 +212,36 @@ const SlideContent: React.FC<SlideProps> = ({
     }
   };
 
+  // Get slide size from editor context (properly using hook at component level)
+  const editorState = useEditorStateSafe();
+  const slideSize = editorState.slideSize;
+
+  // Keep view-mode store updates and thumbnail rendering on the same geometry normalization path.
+  const normalizedStoreSlideComponents = useMemo(() => {
+    if (!storeSlideComponents || isEditing || isThumbnail || isPresenting) {
+      return storeSlideComponents;
+    }
+    const normalized = normalizeSlideForRender(
+      { ...slideData, components: storeSlideComponents } as SlideData,
+      slideSize,
+      { preferFallbackSize: true }
+    );
+    return normalized?.slide?.components || storeSlideComponents;
+  }, [storeSlideComponents, isEditing, isThumbnail, isPresenting, slideData, slideSize]);
+
+  // Keep edit-mode draft components on the same geometry normalization path as non-edit and thumbnail renderers.
+  const normalizedActiveComponents = useMemo(() => {
+    if (!isEditing || !isActive) {
+      return activeComponents;
+    }
+    const normalized = normalizeSlideForRender(
+      { ...slideData, components: activeComponents } as SlideData,
+      slideSize,
+      { preferFallbackSize: true }
+    );
+    return normalized?.slide?.components || activeComponents;
+  }, [isEditing, isActive, activeComponents, slideData, slideSize]);
+
   // Use the activeComponents when we're showing the current slide,
   // otherwise use the components from the slide prop
   // Ensure componentsToRender is always an array
@@ -223,16 +254,16 @@ const SlideContent: React.FC<SlideProps> = ({
     let components: ComponentInstance[] | null = null;
 
     if (isActive && isEditing) {
-      components = activeComponents;
-    } else if (storeSlideComponents && !isPresenting) {
+      components = normalizedActiveComponents;
+    } else if (normalizedStoreSlideComponents && !isPresenting) {
       // Real-time store subscription for non-edit mode
-      components = storeSlideComponents;
+      components = normalizedStoreSlideComponents;
     } else {
       components = slideData.components || [];
     }
 
     return Array.isArray(components) ? components : [];
-  }, [isActive, isEditing, activeComponents, slideData.components, storeSlideComponents, isPresenting]);
+  }, [isActive, isEditing, normalizedActiveComponents, slideData.components, normalizedStoreSlideComponents, isPresenting]);
   
   // PERFORMANCE: Skip loading components if explicitly told to
   // This helps with edit mode performance when there are many slides in a deck
@@ -262,10 +293,6 @@ const SlideContent: React.FC<SlideProps> = ({
 
   // Ensure we have a consistent direction value
   const animationDirection = direction || null;
-
-  // Get slide size from editor context (properly using hook at component level)
-  const editorState = useEditorStateSafe();
-  const slideSize = editorState.slideSize;
 
   // Track line dragging state globally
   const [lineDragState, setLineDragState] = useState<{

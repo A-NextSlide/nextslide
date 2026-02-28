@@ -427,11 +427,19 @@ class CustomComponentGenerator:
         used_fallback = False
         allow_fallback = bool(CUSTOM_COMPONENT_ALLOW_FALLBACK and CUSTOM_COMPONENT_FALLBACK_MODEL)
 
-        client, model_name = get_client(self.model)
+        try:
+            client, model_name = get_client(self.model)
+        except Exception as exc:
+            if allow_fallback:
+                logger.warning("[CUSTOM_COMPONENT] Primary model %s unavailable (%s), using fallback: %s", self.model, exc, CUSTOM_COMPONENT_FALLBACK_MODEL)
+                client, model_name = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+                used_fallback = True
+            else:
+                raise
         active_client, active_model = client, model_name
 
         if CUSTOM_COMPONENT_RESPECT_GLOBAL_GEMINI_COOLDOWN and is_provider_in_cooldown(GEMINI_PROVIDER):
-            if allow_fallback:
+            if allow_fallback and not used_fallback:
                 logger.info(
                     "[CUSTOM_COMPONENT] Gemini in cooldown, using fallback: %s",
                     CUSTOM_COMPONENT_FALLBACK_MODEL,
@@ -502,7 +510,7 @@ class CustomComponentGenerator:
         error_str = str(error).lower()
         return any(
             term in error_str
-            for term in ['503', '500', '502', '504', 'unavailable', 'overloaded', 'server error']
+            for term in ['503', '500', '502', '504', 'unavailable', 'overloaded', 'server error', 'unknown model', 'not found']
         )
 
     @staticmethod

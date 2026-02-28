@@ -3,11 +3,11 @@ import asyncio
 import os
 from urllib.parse import urlparse
 from typing import Dict, Any, List, Optional, AsyncGenerator
-from datetime import datetime
 
 from agents.ai.clients import get_client, invoke
 from setup_logging_optimized import get_logger
 from services.outline.chart_normalization import normalize_slide_chart_fields
+from services.outline.context_store import merge_outline_context_into_notes
 
 from .models import OutlineAgentRequest
 from .media import scrape_media_from_url, assign_videos_to_slides, scrape_reference_videos
@@ -238,6 +238,8 @@ async def _enrich_outline_data(
     extracted_slide_screenshots: List[Any],
     detected_slide_style: Optional[str],
     detected_intent: Optional[str],
+    file_context: str,
+    content_context: str,
     analysis_by_id: Dict[str, Dict[str, Any]],
     analysis_by_name: Dict[str, Dict[str, Any]],
     text_after_json: str,
@@ -380,6 +382,18 @@ async def _enrich_outline_data(
                 outline_data["stylePreferences"]["vibeContext"] = style_context
                 outline_data["stylePreferences"]["style"] = style_context
 
+        # Canonical grounding persistence for downstream slide generation/editor.
+        merge_outline_context_into_notes(
+            outline_data,
+            scraped_context=scraped_context,
+            research_context=research_context,
+            reference_sources=reference_sources,
+            research_citations=research_citations,
+            content_context=content_context,
+            file_context=file_context,
+            file_intent=detected_intent,
+        )
+
     if action == "generate_outline" and request.files:
         use_uploaded_images = bool(outline_data.get("use_uploaded_images"))
         uploaded_media = []
@@ -446,6 +460,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         videos_collected = False
         research_task = None
         file_context = ""
+        content_context = ""
         research_context = ""
         research_citations: List[str] = []
         reference_sources: List[Dict[str, Any]] = []
@@ -514,6 +529,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
             yield sse_event(event)
 
         file_context = file_payload.file_context
+        content_context = file_payload.content_context
         detected_intent = file_payload.detected_intent
         detected_slide_style = file_payload.detected_slide_style
         extracted_design_context = file_payload.extracted_design_context
@@ -926,6 +942,8 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 extracted_slide_screenshots=extracted_slide_screenshots,
                 detected_slide_style=detected_slide_style,
                 detected_intent=detected_intent,
+                file_context=file_context,
+                content_context=content_context,
                 analysis_by_id=analysis_by_id,
                 analysis_by_name=analysis_by_name,
                 text_after_json=text_after_json,
@@ -977,6 +995,11 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                         outline_data["reference_sources"] = reference_sources
                         updated = True
                     if updated:
+                        merge_outline_context_into_notes(
+                            outline_data,
+                            scraped_context=scraped_context,
+                            reference_sources=reference_sources,
+                        )
                         yield f"data: {json.dumps({'type': 'outline', 'data': outline_data})}\n\n"
 
         if outline_data and research_task and not research_task.done():
@@ -1012,6 +1035,11 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                         outline_data["research_citations"] = research_citations
                         updated = True
                     if updated:
+                        merge_outline_context_into_notes(
+                            outline_data,
+                            research_context=research_context,
+                            research_citations=research_citations,
+                        )
                         yield f"data: {json.dumps({'type': 'outline', 'data': outline_data})}\n\n"
 
         if outline_data and video_task and not videos_collected:

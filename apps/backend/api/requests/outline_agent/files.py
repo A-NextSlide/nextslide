@@ -7,6 +7,7 @@ from services.file_design_extractor import (
     FileDesignExtractor, FileIntent, SlideStyle, FileAnalysis,
     design_to_theme_context, content_to_outline_context
 )
+from services.document_text_extractor import extract_text_from_document_bytes, is_document_file
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
@@ -68,7 +69,7 @@ async def analyze_files_for_presentation(files: List['FileAttachment']) -> Dict[
                 is_pdf = file_type == "application/pdf" or filename.endswith(".pdf")
                 is_excel = "spreadsheet" in file_type or "excel" in file_type or filename.endswith((".xlsx", ".xls", ".csv"))
                 is_pptx = "presentation" in file_type or filename.endswith((".pptx", ".ppt"))
-                is_doc = "document" in file_type or "word" in file_type or filename.endswith((".doc", ".docx", ".txt", ".md"))
+                is_doc = is_document_file(filename=file.name, file_type=file_type)
 
                 content_blocks = []
 
@@ -315,13 +316,28 @@ Provide:
                     # Parse document text
                     analysis["file_type"] = "document"
                     raw_bytes = base64.b64decode(file_content)
-                    text_content = raw_bytes.decode('utf-8', errors='ignore')[:15000]  # First 15k chars
+                    text_content = extract_text_from_document_bytes(
+                        raw_bytes,
+                        filename=file.name,
+                        file_type=file_type,
+                        max_chars=50000,
+                    )
+                    if not text_content:
+                        if filename.endswith(".doc"):
+                            analysis["summary"] = (
+                                "Could not extract text from legacy .doc format. "
+                                "Please upload as .docx, .txt, or .md for reliable analysis."
+                            )
+                        else:
+                            analysis["summary"] = "Could not extract readable text from this document."
+                        analyses.append(analysis)
+                        continue
 
                     content_blocks.append({
                         "type": "text",
                         "text": f"""Analyze this document for creating a presentation:
 
-{text_content}
+{text_content[:50000]}
 
 Provide:
 1. **Main Topic**: What is this about?

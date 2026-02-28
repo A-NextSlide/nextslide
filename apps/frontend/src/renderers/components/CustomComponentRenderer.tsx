@@ -841,7 +841,7 @@ body:not(.ns-overlay-mode) .tab-btn,
 body:not(.ns-overlay-mode) .nav-btn,
 body:not(.ns-overlay-mode) .accordion-header {
   pointer-events: auto !important;
-  position: relative;
+  isolation: isolate;
 }
 
 /* 3. Give ::before/::after on interactive wrappers safe pointer-events */
@@ -2031,19 +2031,23 @@ img.ns-img-ready {
     const element = rootRef.current;
     if (!element) return;
 
+    const applyScaleFromWidth = (width: number) => {
+      if (effectiveContentWidth <= 0 || width <= 0) return;
+      const nextScale = width / effectiveContentWidth;
+      // Guard against transient zero/tiny measurements during layout transitions.
+      setScale(nextScale < 0.1 ? 1 : nextScale);
+    };
+
+    // Always perform an immediate measurement first.
+    // Relying only on ResizeObserver can leave full-slide components briefly or permanently mis-scaled
+    // in some browser/layout edge-cases (observer callback never fires or fires with stale width).
+    const initialWidth = element.offsetWidth || element.clientWidth || 0;
+    applyScaleFromWidth(initialWidth);
+
     // On iOS, just calculate scale once and skip ResizeObserver
     if (BROWSER.isIOS) {
       try {
-        // CRITICAL FIX: Use offsetWidth instead of getBoundingClientRect().width
-        // getBoundingClientRect returns the size AFTER CSS transforms are applied,
-        // which causes double-scaling when PresentationMode already applies transform: scale()
-        // offsetWidth returns the layout size BEFORE transforms
-        const width = element.offsetWidth;
-        if (effectiveContentWidth > 0 && width > 0) {
-          const newScale = width / effectiveContentWidth;
-          // Avoid tiny scales that could result from measurement issues
-          setScale(newScale < 0.1 ? 1 : newScale);
-        }
+        applyScaleFromWidth(element.offsetWidth || element.clientWidth || 0);
       } catch (err) {
         // Ignore errors on iOS
       }
@@ -2055,23 +2059,17 @@ img.ns-img-ready {
       observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
           const { width } = entry.contentRect;
-          // Calculate scale based on the ratio of displayed width to effective content width
           // During resize of iframe components, effectiveContentWidth is frozen to prevent
           // iframe viewport changes, so only the scale changes.
-          if (effectiveContentWidth > 0) {
-            const newScale = width / effectiveContentWidth;
-            setScale(newScale);
-          }
+          applyScaleFromWidth(width);
         }
       });
       observer.observe(element);
     } catch (err) {
       // ResizeObserver may crash, fallback to single calculation
       try {
-        const width = element.getBoundingClientRect().width;
-        if (effectiveContentWidth > 0 && width > 0) {
-          setScale(width / effectiveContentWidth);
-        }
+        // Use layout width (pre-transform) to avoid double-scaling in transformed parents.
+        applyScaleFromWidth(element.offsetWidth || element.clientWidth || 0);
       } catch (e) {
         // Ignore
       }

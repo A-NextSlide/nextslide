@@ -40,11 +40,12 @@ def build_system_prompt(
 
     # Visual toolkit guidance - choose the right visual medium per slide
     visual_component_guidance = (
-        "VISUAL TOOLKIT - choose the right tool for the content (do NOT force both):\n\n"
-        "DEFAULT POLICY:\n"
-        "  - Component-first by default: many slides should have ZERO photos/images.\n"
-        "  - Use JS/SVG/HTML components first for processes, comparisons, metrics, timelines, architectures, and frameworks.\n"
-        "  - Add images only when they provide real-world visual evidence that components cannot.\n\n"
+        "VISUAL TOOLKIT:\n\n"
+        "🚨 IMAGE POLICY — READ FIRST:\n"
+        "  Most slides must have ZERO <img> tags. Do NOT include images by default.\n"
+        "  Your HTML/CSS/SVG/JS components ARE the visuals — they communicate better than photos.\n"
+        "  Only add <img> tags when the slide genuinely needs a photograph (a real product, person, place,\n"
+        "  or when the user explicitly asked for photos). If you can explain it with a component, do that instead.\n\n"
         "1. BUILT COMPONENTS (HTML/CSS/SVG/JS) - great for explaining concepts visually:\n"
         "  - Flowcharts & process diagrams → SVG arrows, boxes, and connectors\n"
         "  - Timelines → CSS/SVG timeline with nodes, dates, and labels\n"
@@ -104,14 +105,10 @@ def build_system_prompt(
         "    Use generate: for generic/educational concepts that don't belong to a specific brand.\n\n"
         "  🚨 Each image needs a UNIQUE alt describing its SPECIFIC subject — never reuse the same alt across multiple images or array items.\n"
         "  Use fixed-size container with overflow:hidden.\n"
-        "  🎯 IMAGE RELEVANCE: Every image must directly relate to THIS slide's content. Read the slide title and\n"
-        "  bullet points — pick images that illustrate THAT specific topic, not generic stock filler.\n"
-        "  Not every slide needs a photo — prefer built components when they convey the idea.\n\n"
-        "CARD/CONTAINER MEDIA RULE: Cards, panels, tabs, and grid items do NOT automatically need photos.\n"
-        "  - Use images only when they add concrete value (product/place/person/real object).\n"
-        "  - For processes, comparisons, metrics, and structured content, prefer built JS/SVG components.\n"
-        "  - It is valid for containers to be text/icon/chart-only when that communicates better.\n"
-        "Mix both tools only when useful. Pure component slides (no images) are often the best choice.\n"
+        "  🎯 IMAGE RELEVANCE: Every image must directly relate to THIS slide's content — not generic filler.\n\n"
+        "CARD/CONTAINER RULE: Cards, panels, tabs, and grid items do NOT need photos.\n"
+        "  Text/icon/chart-only containers are valid and often communicate better.\n\n"
+        "REMINDER: Default is ZERO images per slide. Only add <img> when there is a concrete reason.\n"
     )
 
     if has_palette:
@@ -405,7 +402,7 @@ def build_system_prompt(
         "   ⚠️ The <img> that displays array images MUST have style=\"width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0;\" inside a fixed-size container with overflow:hidden.\n"
         "   ⚠️ ICON/IMAGE RENDERING: When JS data has icon/image URL properties, render them as <img> tags:\n"
         "   WRONG: <div>${item.icon}</div>  ← renders URL as visible text!\n"
-        "   RIGHT: <img src=\"${item.icon}\" style=\"width:100%;height:100%;object-fit:contain;\">  ← renders the image\n"
+        "   RIGHT: <img src=\"${item.icon}\" alt=\"\">  ← renders the image (styling via CSS, not inline)\n"
         "3. **SIZING (MUST FOLLOW TO PREVENT OVERFLOW)** — these rules apply to content images, NOT logos:\n"
         "   - ALWAYS wrap images in a container with FIXED width AND height in PIXELS\n"
         "   - Container MUST have: overflow:hidden; position:relative;\n"
@@ -577,6 +574,12 @@ def build_user_prompt(
     total_slides = slide_context.get("total_slides", 1)
     is_full_slide = slide_context.get("is_full_slide", False)
     slide_mode = slide_context.get("slide_mode")
+    strict_grounding = bool(
+        slide_context.get("strict_grounding")
+        or slide_context.get("source_context_available")
+    )
+    source_only_mode = bool(slide_context.get("source_only_mode"))
+    source_intent = str(slide_context.get("source_intent") or "").strip()
 
     sections: List[str] = [
         f'SLIDE: "{slide_title}" (Slide {slide_index} of {total_slides})',
@@ -713,10 +716,29 @@ def build_user_prompt(
         sections.append("CONVERSATION HISTORY (use explicit customization requests):")
         sections.append(formatted_history)
 
-    sections.append(
-        "GROUNDING: Treat CONTENT, MANUAL DATA, EXTRACTED DATA, and CONVERSATION HISTORY as source-of-truth. "
-        "Do not fabricate facts, statistics, names, dates, quotes, or claims not supported by provided context."
-    )
+    if strict_grounding:
+        sections.append("STRICT SOURCE GROUNDING: ON")
+        if source_intent:
+            sections.append(f"SOURCE INTENT: {source_intent}")
+        sections.append(
+            "STRICT RULES: SOURCE MATERIAL CONTEXT and CONTENT are canonical facts. "
+            "Do not add vendor names, tool names, platform names, people, places, numbers, dates, or quotes "
+            "unless they appear in provided context."
+        )
+        sections.append(
+            "If details are missing, keep labels generic (for example: 'Model Provider', 'Media Service') "
+            "or omit the detail. Do not create illustrative examples."
+        )
+        if source_only_mode:
+            sections.append(
+                "SOURCE-ONLY MODE: Ignore secondary/reference context when introducing factual claims. "
+                "Base claims only on SOURCE MATERIAL CONTEXT + CONTENT."
+            )
+    else:
+        sections.append(
+            "GROUNDING: Treat CONTENT, MANUAL DATA, EXTRACTED DATA, and CONVERSATION HISTORY as source-of-truth. "
+            "Do not fabricate facts, statistics, names, dates, quotes, or claims not supported by provided context."
+        )
 
     # Image alt reminder BEFORE content so it doesn't leak into the slide as visible text
     sections.append(

@@ -18,6 +18,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from io import BytesIO
 from dataclasses import dataclass, field
 from enum import Enum
+from services.document_text_extractor import extract_text_from_document_bytes, is_document_file
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,34 @@ class FileDesignExtractor:
         logger.info(f"[FileExtractor] Detected intent: {intent.value}, style: {slide_style.value}")
         if specific_pages:
             logger.info(f"[FileExtractor] User requested specific pages: {specific_pages}")
+
+        if is_document_file(filename=filename, file_type=file_type):
+            try:
+                raw_bytes = base64.b64decode(file_content)
+                extracted_text = extract_text_from_document_bytes(
+                    raw_bytes,
+                    filename=filename,
+                    file_type=file_type,
+                    max_chars=100000,
+                )
+            except Exception as decode_err:
+                logger.warning(f"[FileExtractor] Could not decode document bytes for {filename}: {decode_err}")
+                extracted_text = ""
+
+            if extracted_text:
+                content = ExtractedContent(raw_text=extracted_text, total_slides=1)
+                await self._analyze_content_from_text(content)
+                return FileAnalysis(
+                    filename=filename,
+                    file_type=file_type,
+                    intent=intent,
+                    slide_style=slide_style,
+                    design=ExtractedDesign(),
+                    content=content,
+                    confidence=0.8,
+                    analysis_notes=f"Extracted text document ({len(extracted_text)} chars)",
+                )
+            logger.warning(f"[FileExtractor] No readable text extracted from document: {filename}")
 
         # Convert file to images for vision analysis
         images = await self._convert_to_images(file_content, filename, file_type, specific_pages=specific_pages)

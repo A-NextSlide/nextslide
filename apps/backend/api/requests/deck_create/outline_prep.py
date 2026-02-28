@@ -11,6 +11,7 @@ from models.requests import DeckOutline
 from services.outline.media_manager import MediaManager
 from services.outline.models import SlideContent
 from services.outline.chart_normalization import normalize_slide_chart_fields
+from services.outline.context_store import merge_outline_context_into_notes
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
@@ -151,6 +152,9 @@ def prepare_outline_dict(
 
     if "title" not in outline_dict:
         outline_dict["title"] = "Untitled Presentation"
+
+    # Ensure grounding context survives parse into DeckOutline by persisting it in notes.
+    merge_outline_context_into_notes(outline_dict)
 
     merge_style_preferences_into_outline(outline_dict, request_style)
 

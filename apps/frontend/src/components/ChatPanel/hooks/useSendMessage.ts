@@ -509,6 +509,20 @@ export function useSendMessage({
         ));
 
         if (outlineData) {
+          const mergedOutlineNotes = {
+            ...(((outline as any)?.notes && typeof (outline as any).notes === 'object') ? (outline as any).notes : {}),
+            ...((outlineData.notes && typeof outlineData.notes === 'object') ? outlineData.notes : {}),
+            ...(outlineData.scraped_videos ? { videos: outlineData.scraped_videos } : {}),
+            ...(outlineData.scraped_context ? { scraped_context: outlineData.scraped_context } : {}),
+            ...(outlineData.research_context ? { research_context: outlineData.research_context } : {}),
+            ...(((outlineData as any).content_context ? { content_context: (outlineData as any).content_context } : {})),
+            ...(((outlineData as any).file_context ? { file_context: (outlineData as any).file_context } : {})),
+            ...(((outlineData as any).file_intent ? { file_intent: (outlineData as any).file_intent } : {})),
+            ...(Array.isArray(outlineData.reference_sources) ? { reference_sources: outlineData.reference_sources } : {}),
+            ...(Array.isArray(outlineData.research_citations) ? { research_citations: outlineData.research_citations } : {}),
+          };
+          const normalizedNotes = Object.keys(mergedOutlineNotes).length > 0 ? mergedOutlineNotes : undefined;
+
           if (outlineData.action === 'clarify') {
             const toText = (value: unknown): string => (typeof value === 'string' ? value : '');
             const clarificationMessage = toText(outlineData.message) ||
@@ -740,7 +754,9 @@ export function useSendMessage({
                 ...(outline as any).stylePreferences,
                 ...outlineData.stylePreferences
               } : (outline as any).stylePreferences,
-              uploadedMedia: outlineData.uploadedMedia ?? (outline as any).uploadedMedia
+              uploadedMedia: outlineData.uploadedMedia ?? (outline as any).uploadedMedia,
+              use_uploaded_images: outlineData.use_uploaded_images ?? (outline as any).use_uploaded_images,
+              notes: normalizedNotes ?? (outline as any).notes
             });
           } else if (outlineData.action === 'update_outline' && outline && onOutlineUpdate) {
             const updatedSlides = outlineData.slides.map((slide: any, index: number) => ({
@@ -762,7 +778,9 @@ export function useSendMessage({
                 ...(outline as any).stylePreferences,
                 ...outlineData.stylePreferences
               } : (outline as any).stylePreferences,
-              uploadedMedia: outlineData.uploadedMedia ?? (outline as any).uploadedMedia
+              uploadedMedia: outlineData.uploadedMedia ?? (outline as any).uploadedMedia,
+              use_uploaded_images: outlineData.use_uploaded_images ?? (outline as any).use_uploaded_images,
+              notes: normalizedNotes ?? (outline as any).notes
             });
           } else if (outlineData.action === 'generate_outline' && onOutlineUpdate) {
             setIsGenerating(true);
@@ -785,9 +803,8 @@ export function useSendMessage({
               })),
               stylePreferences: outlineData.stylePreferences,
               uploadedMedia: outlineData.uploadedMedia,
-              notes: outlineData.scraped_videos
-                ? { videos: outlineData.scraped_videos }
-                : undefined
+              use_uploaded_images: outlineData.use_uploaded_images,
+              notes: normalizedNotes
             };
             onOutlineUpdate(newOutline);
 
@@ -798,7 +815,16 @@ export function useSendMessage({
               detail_level: outlineData.detail_level || 'standard',
               tone: outlineData.tone,
               stylePreferences: outlineData.stylePreferences,
-              uploadedMedia: outlineData.uploadedMedia
+              uploadedMedia: outlineData.uploadedMedia,
+              use_uploaded_images: outlineData.use_uploaded_images,
+              notes: normalizedNotes,
+              scraped_context: outlineData.scraped_context,
+              research_context: outlineData.research_context,
+              content_context: (outlineData as any).content_context,
+              file_context: (outlineData as any).file_context,
+              file_intent: (outlineData as any).file_intent,
+              reference_sources: outlineData.reference_sources,
+              research_citations: outlineData.research_citations
             });
 
             const slidesWithoutContent = newOutline.slides.filter((s: any) => !s.content || s.content.trim() === '');

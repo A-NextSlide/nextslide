@@ -13,6 +13,7 @@ GEMINI_FLASH = "gemini-2.5-flash"
 GEMINI_FLASH_LITE = "gemini-2.5-flash-lite"
 GEMINI_PRO = "gemini-2.5-pro"
 GEMINI_3_PRO = "gemini-3.1-pro-preview"
+GEMINI_3_PRO_V1 = "gemini-3-pro-preview"
 GEMINI_3_FLASH = "gemini-3-flash-preview"
 GEMINI_IMAGE = "gemini-3.1-flash-image-preview"
 
@@ -63,7 +64,7 @@ PERPLEXITY_SONAR_PRO = "perplexity-sonar-pro"
 MODEL_HARD = GEMINI_3_PRO
 MODEL_SMART = CLAUDE_SONNET    # Smart reasoning (orchestration, planning)
 MODEL_EASY = GEMINI_3_FLASH    # Fast/simple tasks (was CLAUDE_HAIKU)
-MODEL_FALLBACK = CLAUDE_OPUS   # Rate limit fallback
+MODEL_FALLBACK = GEMINI_3_PRO_V1  # Rate limit fallback (Gemini 3.0 Pro)
 MODEL_RESEARCH = PERPLEXITY_SONAR_PRO  # Web search
 AGENT_MODEL = os.getenv('AGENT_MODEL', GEMINI_3_FLASH)
 
@@ -205,7 +206,7 @@ CUSTOM_COMPONENT_CREATIVE = MODEL_HARD
 CUSTOM_COMPONENT_FALLBACK = MODEL_FALLBACK
 # Prefer Gemini 3 Pro for CustomComponentGenerator (raw HTML generation works well even when structured output is finicky)
 CUSTOM_COMPONENT_MODEL = GEMINI_3_PRO
-CUSTOM_COMPONENT_ALLOW_FALLBACK = os.getenv('CUSTOM_COMPONENT_ALLOW_FALLBACK', 'false').lower() == 'true'
+CUSTOM_COMPONENT_ALLOW_FALLBACK = os.getenv('CUSTOM_COMPONENT_ALLOW_FALLBACK', 'true').lower() == 'true'
 CUSTOM_COMPONENT_RESPECT_GLOBAL_GEMINI_COOLDOWN = os.getenv(
     'CUSTOM_COMPONENT_RESPECT_GLOBAL_GEMINI_COOLDOWN',
     'false'

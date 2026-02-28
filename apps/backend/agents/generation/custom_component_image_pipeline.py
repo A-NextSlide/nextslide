@@ -34,47 +34,8 @@ VALID_GEMINI_RATIOS = frozenset({
 MAX_AI_IMAGES_PER_SLIDE = 6
 TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
 
-COMPONENT_FIRST_HINTS = (
-    "process",
-    "workflow",
-    "timeline",
-    "roadmap",
-    "comparison",
-    "matrix",
-    "quadrant",
-    "architecture",
-    "framework",
-    "funnel",
-    "pipeline",
-    "org chart",
-    "hierarchy",
-    "kpi",
-    "metric",
-    "metrics",
-    "trend",
-    "analysis",
-    "chart",
-    "graph",
-    "table",
-    "dataset",
-    "data model",
-)
-
-IMAGE_INTENT_HINTS = (
-    "photo",
-    "photos",
-    "image",
-    "images",
-    "screenshot",
-    "screenshots",
-    "portrait",
-    "headshot",
-    "illustration",
-    "render",
-    "product shot",
-    "moodboard",
-    "gallery",
-)
+# Removed COMPONENT_FIRST_HINTS and IMAGE_INTENT_HINTS — the AI prompt now handles
+# the decision of whether to include images. No keyword-based second-guessing needed.
 
 
 # Use unified service for finding external image URLs and placeholder detection
@@ -518,40 +479,14 @@ def _should_skip_auto_image_resolution(
     content: str,
     uploaded_media: List[Any] | None,
 ) -> bool:
-    """Return True when we should avoid auto-fetching images from placeholders."""
-    slide_context = slide_context or {}
+    """Return True when we should avoid auto-fetching images from placeholders.
 
-    # Never block title slide styling decisions.
-    if int(slide_context.get("slide_index", 0) or 0) == 0:
-        return False
-
-    # If uploads are explicitly enabled and available, allow normal image resolution.
-    if slide_context.get("use_uploaded_images") and uploaded_media:
-        return False
-
-    text_parts = [
-        slide_context.get("title"),
-        slide_context.get("slide_type"),
-        slide_context.get("presentation_context"),
-        slide_context.get("initial_idea"),
-        slide_context.get("vibe_context"),
-        content,
-    ]
-    lower_text = " ".join(str(part) for part in text_parts if part).lower()
-
-    # Respect explicit user/image intent in the request context.
-    if any(token in lower_text for token in IMAGE_INTENT_HINTS):
-        return False
-
-    has_structured_data = bool(
-        slide_context.get("extracted_data")
-        or slide_context.get("extractedData")
-        or slide_context.get("manual_charts")
-        or slide_context.get("manualCharts")
-    )
-    has_component_first_hint = any(token in lower_text for token in COMPONENT_FIRST_HINTS)
-
-    return has_structured_data or has_component_first_hint
+    The AI prompt now instructs the model to omit <img> tags when images aren't
+    needed, so this function is no longer the primary gatekeeper. It exists only
+    as a minimal safety net — not a keyword-based heuristic.
+    """
+    # Always allow: title slides, user-uploaded media
+    return False
 
 
 async def resolve_images(
@@ -1299,6 +1234,14 @@ def _fix_icon_url_interpolations(html: str) -> str:
 
     Fix: convert to <img src="${item.icon}" ...> when the property name
     suggests it's an image (icon, image, img, thumbnail, photo, avatar, logo, picture).
+
+    SKIP when:
+    1. The interpolation is inside an <svg> element — the value is SVG inner
+       content (<path>, <image>, etc.), not a URL.
+    2. The JS property value is HTML/SVG markup (starts with '<') rather than
+       a URL string. E.g. icon: `<svg viewBox="...">...</svg>` or
+       icon: '<path d="..."/>'. Converting these to <img src> would inject
+       markup into the src attribute, breaking the image entirely.
     """
     # Match: >${someVar.imageProperty}</  — URL interpolation used as text content
     IMAGE_PROPS = r'(?:icon|image|img|thumbnail|photo|avatar|logo|picture|src|cover|banner|poster|thumb)'
@@ -1308,14 +1251,67 @@ def _fix_icon_url_interpolations(html: str) -> str:
         re.IGNORECASE,
     )
 
+    def _is_inside_svg(pos: int) -> bool:
+        """Check if a position in the HTML string is inside an <svg>...</svg> block."""
+        preceding = html[:pos].lower()
+        last_svg_open = preceding.rfind('<svg')
+        last_svg_close = preceding.rfind('</svg')
+        return last_svg_open > last_svg_close
+
+    # Build a cache of property names whose JS values are HTML/SVG content.
+    # Matches patterns like:  icon: '<svg...', icon: `<path...`, icon: "<circle..."
+    _svg_value_props: set[str] = set()
+    for prop_m in re.finditer(
+        r"""(?<![a-zA-Z0-9_])(\w+)\s*:\s*['"`]\s*<""",
+        html,
+    ):
+        _svg_value_props.add(prop_m.group(1).lower())
+
+    def _prop_has_svg_value(interpolation: str) -> bool:
+        """Check if the interpolated property is assigned SVG/HTML content in JS data."""
+        prop_m = re.search(r'\.(\w+)\s*\}', interpolation)
+        if prop_m:
+            return prop_m.group(1).lower() in _svg_value_props
+        return False
+
+    def _should_skip(m) -> bool:
+        if _is_inside_svg(m.start()):
+            return True
+        if _prop_has_svg_value(m.group(2)):
+            return True
+        return False
+
     def _replace(m):
+        if _should_skip(m):
+            return m.group(0)
         interpolation = m.group(2)
-        return f'{m.group(1)}<img src="{interpolation}" style="width:100%;height:100%;object-fit:contain;" alt="">{m.group(3)}'
+        # Use a CSS class instead of inline style to prevent attribute text leakage.
+        # The inline style was being orphaned as visible text when downstream regex
+        # processing (frontend injectImageProps) matched the <img> tag inside JS
+        # template literals and broke the tag structure.
+        return f'{m.group(1)}<img class="ns-icon-img" src="{interpolation}" alt="">{m.group(3)}'
 
     new_html = pattern.sub(_replace, html)
     if new_html != html:
-        count = len(pattern.findall(html))
-        logger.info(f"[IMAGE_PIPELINE] Fixed {count} icon/image URL interpolations rendered as text")
+        total = len(pattern.findall(html))
+        skipped = sum(1 for m in pattern.finditer(html) if _should_skip(m))
+        replaced = total - skipped
+        logger.info(
+            f"[IMAGE_PIPELINE] Fixed {replaced} icon/image URL interpolations rendered as text"
+            + (f" (skipped {skipped} with SVG/HTML values)" if skipped else "")
+        )
+        # Inject a <style> rule for the icon images so styling comes from CSS
+        # rather than inline attributes that can leak as text if the tag breaks.
+        icon_style = '<style>.ns-icon-img{width:100%;height:100%;object-fit:contain;display:block}</style>'
+        if '</head>' in new_html:
+            new_html = new_html.replace('</head>', icon_style + '\n</head>', 1)
+        elif '<body' in new_html:
+            new_html = new_html.replace('<body', icon_style + '\n<body', 1)
+        elif '<style' in new_html:
+            # Insert before the first <style> tag
+            new_html = new_html.replace('<style', icon_style + '\n<style', 1)
+        else:
+            new_html = icon_style + '\n' + new_html
     return new_html
 
 

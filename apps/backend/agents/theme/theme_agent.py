@@ -1171,6 +1171,119 @@ IMPORTANT:
                     return True
                 return True
 
+            def _looks_like_icon_logo(url: Optional[str]) -> bool:
+                if not url:
+                    return False
+                lower = str(url).lower()
+                icon_markers = (
+                    "favicon",
+                    "apple-touch-icon",
+                    "android-chrome",
+                    "mask-icon",
+                    "/icon.",
+                    "/icon/",
+                    "_icon.",
+                    "icon.png",
+                    "icon.jpg",
+                    "icon.jpeg",
+                    "icon.svg",
+                )
+                return any(marker in lower for marker in icon_markers)
+
+            def _format_score(fmt: Dict[str, Any]) -> int:
+                score = 0
+                fmt_name = str(fmt.get("format") or "").lower()
+                if fmt_name == "svg":
+                    score += 24
+                elif fmt_name == "png":
+                    score += 18
+                elif fmt_name in ("webp", "jpeg", "jpg"):
+                    score += 10
+
+                width = fmt.get("width")
+                height = fmt.get("height")
+                try:
+                    width_i = int(width) if width is not None else None
+                    height_i = int(height) if height is not None else None
+                except Exception:
+                    width_i = None
+                    height_i = None
+
+                if width_i and height_i:
+                    max_side = max(width_i, height_i)
+                    min_side = min(width_i, height_i)
+                    if max_side >= 256:
+                        score += 10
+                    elif max_side >= 128:
+                        score += 6
+                    elif max_side < 48:
+                        score -= 16
+
+                    # Strongly de-prioritize tiny square assets (usually favicons/icons)
+                    if min_side == max_side and max_side <= 64:
+                        score -= 18
+
+                return score
+
+            def _url_score(url: str) -> int:
+                lower = str(url).lower()
+                score = 0
+                if "/logo" in lower or "wordmark" in lower:
+                    score += 8
+                if _looks_like_icon_logo(lower):
+                    score -= 20
+                return score
+
+            def _select_logo_candidate(data: Dict[str, Any], allow_icons: bool) -> Optional[str]:
+                logos = data.get("logos", {}) if isinstance(data, dict) else {}
+                if not isinstance(logos, dict):
+                    return None
+
+                category_order: List[str] = ["light", "dark", "other"]
+                if allow_icons:
+                    category_order.append("icons")
+
+                best_score: Optional[int] = None
+                best_url: Optional[str] = None
+
+                for category in category_order:
+                    entries = logos.get(category, [])
+                    if not isinstance(entries, list):
+                        continue
+                    for entry in entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        logo_type = str(entry.get("type") or "").lower()
+                        if not allow_icons and (category == "icons" or logo_type == "icon"):
+                            continue
+                        formats = entry.get("formats", [])
+                        if not isinstance(formats, list):
+                            continue
+                        for fmt in formats:
+                            if not isinstance(fmt, dict):
+                                continue
+                            candidate = fmt.get("url") or fmt.get("src")
+                            if not candidate:
+                                continue
+                            score = _format_score(fmt) + _url_score(str(candidate))
+                            if category == "light":
+                                score += 8
+                            elif category == "dark":
+                                score += 6
+                            elif category == "other":
+                                score += 4
+                            else:
+                                score += 1
+
+                            if logo_type == "icon":
+                                score -= 24
+
+                            if best_score is None or score > best_score:
+                                best_score = score
+                                best_url = str(candidate)
+
+                return best_url
+
             brand_data = None
             colors: List[str] = []
             categorized_colors: Dict[str, Any] = {}
@@ -1181,12 +1294,22 @@ IMPORTANT:
                         brand_data = await cache.get_brand_data(domain)
                         if brand_data and not brand_data.get("error"):
                             def _attach_logo(data: Dict[str, Any]) -> None:
+                                existing_logo = data.get("logo_url")
+                                preferred_logo = _select_logo_candidate(data, allow_icons=False)
+                                if preferred_logo:
+                                    data["logo_url"] = preferred_logo
+                                    return
+                                if existing_logo:
+                                    data["logo_url"] = existing_logo
+                                    return
                                 logo_url = None
                                 try:
                                     logo_url = cache.get_best_logo(data)
                                 except Exception:
                                     logo_url = None
-                                data["logo_url"] = data.get("logo_url") or logo_url
+                                if not logo_url:
+                                    logo_url = _select_logo_candidate(data, allow_icons=True)
+                                data["logo_url"] = logo_url
 
                             _attach_logo(brand_data)
 
@@ -1285,29 +1408,13 @@ IMPORTANT:
 
                 # Extract logo
                 logo_url = brand_data.get("logo_url")
+                preferred_logo = _select_logo_candidate(brand_data, allow_icons=False)
+                if preferred_logo:
+                    logo_url = preferred_logo
+                elif logo_url and _looks_like_icon_logo(logo_url):
+                    logo_url = _select_logo_candidate(brand_data, allow_icons=True) or logo_url
                 if not logo_url:
-                    logos = brand_data.get('logos', {}) or {}
-                    for logo_type in ['light', 'dark', 'icons', 'other']:
-                        items = logos.get(logo_type, [])
-                        if not items or not isinstance(items, list):
-                            continue
-                        for item in items:
-                            if not isinstance(item, dict):
-                                continue
-                            formats = item.get('formats', [])
-                            if not formats:
-                                continue
-                            for fmt in formats:
-                                if not isinstance(fmt, dict):
-                                    continue
-                                candidate = fmt.get('url') or fmt.get('src')
-                                if candidate:
-                                    logo_url = candidate
-                                    break
-                            if logo_url:
-                                break
-                        if logo_url:
-                            break
+                    logo_url = _select_logo_candidate(brand_data, allow_icons=True)
                 if not logo_url:
                     logo_url = await self._fetch_logo_fallback(domain, brand_name)
 

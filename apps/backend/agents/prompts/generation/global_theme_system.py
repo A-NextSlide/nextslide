@@ -443,7 +443,7 @@ SLIDE DETAILS:
 {f'''
 1. TITLE SLIDE TRANSFORMATION:
    - Create a CINEMATIC opening with massive typography (600-1000pt)
-   - Use full-bleed hero image with gradient overlay
+   - Use bold color, gradient, or geometric background — a hero image is optional, not required
    - Position title dramatically (center, off-center, or diagonal). Left-aligned layouts are encouraged when the narrative benefits from strong reading direction.
    - Add subtle animation effects (ken-burns, fade-in)
    - Consider adding a powerful tagline or subtitle
@@ -1028,29 +1028,12 @@ def get_enhanced_slide_prompt(
     
     # Determine image guidance based on mode
     if async_images and not available_images:
-        # In async mode without images yet, tell AI to create placeholder Image components
+        # In async mode without images yet - images are optional
         image_guidance = """
-IMAGES ARE BEING LOADED:
-Images are being searched in the background. Create Image components with placeholder sources.
-Based on the theme's image prominence ({image_prominence}%), include appropriate Image components.
-Use "placeholder" as the src value - these will be replaced when images arrive.
-
-EXAMPLE PLACEHOLDER IMAGE:
-{{
-  "type": "Image",
-  "props": {{
-    "src": "placeholder",
-    "position": {{"x": 0, "y": 0}},
-    "width": 960,
-    "height": 1080,
-    "objectFit": "cover",
-    "alt": "Image related to {slide_title}"
-  }}
-}}
-""".format(
-            image_prominence=global_theme.get('visual_style', {}).get('image_prominence', 70),
-            slide_title=slide_outline.title
-        )
+IMAGES: Optional. Only include Image components if this slide genuinely needs a photograph.
+Most slides communicate better through typography, layout, and built components (charts, diagrams, SVG).
+If you do need an image, use "placeholder" as the src value - it will be replaced later.
+"""
     elif available_images:
         # Images are available, use them
         image_guidance = f"""
@@ -1085,7 +1068,7 @@ SLIDE-SPECIFIC GUIDELINES:
 DESIGN APPROACH:
 1. Start with the background color from the theme
 2. Apply the typography system with proper sizing
-3. {"Include Image components based on theme's image prominence" if async_images else "Use images creatively if available"}
+3. {"Include Image components only if this slide genuinely needs a photograph" if async_images else "Use images only if available and relevant to the slide content"}
 4. Add minimal accent elements only if needed
 5. SIZE COMPONENTS PROPERLY FOR CONTENT:
    - Calculate text box dimensions based on content length

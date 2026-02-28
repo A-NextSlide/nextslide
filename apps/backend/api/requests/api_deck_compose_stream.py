@@ -16,6 +16,7 @@ from agents.generation.concurrency_manager import concurrency_manager
 from agents.domain.models import SlideStatus
 from agents.config import DELAY_BETWEEN_SLIDES, CONTINUE_GENERATION_ON_DISCONNECT
 from models.registry import ComponentRegistry
+from services.outline.context_store import merge_outline_context_into_notes
 from utils.supabase import get_deck, upload_deck
 from agents.generation.events import sse_encode
 
@@ -29,6 +30,58 @@ async def _fire_thumbnail_render(deck_uuid: str) -> None:
         await trigger_thumbnail_render(deck_uuid)
     except Exception as e:
         logger.warning("Thumbnail render failed (non-fatal) for %s: %s", deck_uuid, e)
+
+
+def _hydrate_outline_notes_from_existing_deck(
+    deck_outline: DeckOutline,
+    existing_deck: Optional[Dict[str, Any]],
+) -> None:
+    """Restore grounding context into outline.notes from the persisted deck outline."""
+    if not isinstance(existing_deck, dict):
+        return
+
+    persisted_outline = existing_deck.get("outline")
+    if not isinstance(persisted_outline, dict):
+        return
+
+    incoming_outline = (
+        deck_outline.model_dump()
+        if hasattr(deck_outline, "model_dump")
+        else {}
+    )
+    if not isinstance(incoming_outline, dict):
+        incoming_outline = {}
+
+    merged_outline = dict(persisted_outline)
+    merged_outline.update(incoming_outline)
+
+    persisted_notes = persisted_outline.get("notes")
+    if not isinstance(persisted_notes, dict):
+        persisted_notes = existing_deck.get("notes") if isinstance(existing_deck.get("notes"), dict) else {}
+    incoming_notes = incoming_outline.get("notes") if isinstance(incoming_outline.get("notes"), dict) else {}
+    merged_notes: Dict[str, Any] = {}
+    if persisted_notes:
+        merged_notes.update(persisted_notes)
+    if incoming_notes:
+        merged_notes.update(incoming_notes)
+
+    user_notes = ""
+    existing_data = existing_deck.get("data")
+    if isinstance(existing_data, dict):
+        user_notes = str(existing_data.get("user_notes") or "").strip()
+    if user_notes:
+        merged_notes.setdefault("user_notes", user_notes)
+
+    if merged_notes:
+        merged_outline["notes"] = merged_notes
+
+    merge_outline_context_into_notes(
+        merged_outline,
+        user_notes=user_notes or None,
+    )
+    normalized_notes = merged_outline.get("notes")
+    if isinstance(normalized_notes, dict):
+        deck_outline.notes = normalized_notes
 
 class StreamingDeckComposeRequest(BaseModel):
     deck_id: str = Field(description="The UUID of the deck to compose")
@@ -131,6 +184,8 @@ def create_deck_compose_stream(
                     logger.error(f"[COMPOSE_STREAM] Failed to create deck {deck_id}: {e}")
                     yield _sse({'type': 'error', 'error': f'Failed to create deck: {str(e)}'})
                     return
+
+            _hydrate_outline_notes_from_existing_deck(deck_outline, existing_deck)
             
             if not request.force_restart:
                 raw_status = existing_deck.get('status')

@@ -35,6 +35,32 @@ class LogoStorageService:
             public_url = public_url[:-1]
         return public_url
 
+    @staticmethod
+    def _is_image_content_type(content_type: Optional[str]) -> bool:
+        if not content_type:
+            return False
+        lowered = str(content_type).lower()
+        # Some stored assets are served as octet-stream despite being valid images.
+        return (
+            lowered.startswith("image/")
+            or "svg" in lowered
+            or lowered.startswith("application/octet-stream")
+        )
+
+    @staticmethod
+    def _looks_like_svg_content(content: bytes) -> bool:
+        if not content:
+            return False
+        head = content[:512].lstrip().lower()
+        return head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in head)
+
+    @staticmethod
+    def _looks_like_html_content(content: bytes) -> bool:
+        if not content:
+            return False
+        head = content[:512].lstrip().lower()
+        return head.startswith(b"<!doctype html") or head.startswith(b"<html") or b"<html" in head
+
     async def __aenter__(self):
         """Async context manager entry."""
         if not self.session:
@@ -114,16 +140,26 @@ class LogoStorageService:
                 file_name = os.path.basename(file_path)
 
                 if any(f['name'] == file_name for f in existing):
-                    logger.info(f"Logo already exists in storage: {file_path}")
                     public_url = self._get_clean_public_url(file_path)
-                    result = {
-                        'url': public_url,
-                        'path': file_path,
-                        'original_url': logo_url,
-                        'cached': True
-                    }
-                    self._cache[cache_key] = result
-                    return result
+                    is_valid_existing = await self.check_logo_url_health(
+                        public_url,
+                        require_image_content_type=True,
+                    )
+                    if not is_valid_existing:
+                        logger.warning(
+                            "Existing logo appears invalid, refreshing: %s",
+                            file_path,
+                        )
+                    else:
+                        logger.info(f"Logo already exists in storage: {file_path}")
+                        result = {
+                            'url': public_url,
+                            'path': file_path,
+                            'original_url': logo_url,
+                            'cached': True
+                        }
+                        self._cache[cache_key] = result
+                        return result
             except Exception as e:
                 logger.debug(f"Error checking existing file: {e}")
 
@@ -148,6 +184,24 @@ class LogoStorageService:
                 if len(content) == 0:
                     logger.warning(f"Empty logo content: {logo_url}")
                     return {'url': logo_url, 'error': "Empty content"}
+
+                is_svg_payload = self._looks_like_svg_content(content)
+                if not self._is_image_content_type(content_type) and not is_svg_payload:
+                    if self._looks_like_html_content(content):
+                        logger.warning(
+                            "Invalid logo payload (HTML content) for %s",
+                            logo_url,
+                        )
+                        return {'url': logo_url, 'error': "Invalid logo payload (HTML)"}
+                    logger.warning(
+                        "Invalid logo content-type for %s: %s",
+                        logo_url,
+                        content_type,
+                    )
+                    return {'url': logo_url, 'error': f"Invalid content-type: {content_type}"}
+
+                if is_svg_payload and not self._is_image_content_type(content_type):
+                    content_type = "image/svg+xml"
 
                 # Upload to Supabase with upsert to handle existing files
                 try:
@@ -273,19 +327,25 @@ class LogoStorageService:
 
         return updated_brand_data
 
-    async def check_logo_url_health(self, logo_url: str) -> bool:
+    async def check_logo_url_health(self, logo_url: str, require_image_content_type: bool = False) -> bool:
         """
         Check if a logo URL is accessible (returns 200).
 
         Args:
             logo_url: URL to check
+            require_image_content_type: If True, require response Content-Type to be image-like
 
         Returns:
             True if accessible, False otherwise
         """
         try:
-            async with self.session.head(logo_url, timeout=10) as response:
-                return response.status == 200
+            async with self.session.head(logo_url, timeout=10, allow_redirects=True) as response:
+                if response.status != 200:
+                    return False
+                if not require_image_content_type:
+                    return True
+                content_type = response.headers.get("Content-Type")
+                return self._is_image_content_type(content_type)
         except Exception:
             return False
 

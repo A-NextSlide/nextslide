@@ -70,6 +70,7 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
 
   const [activeColor, setActiveColor] = useState<'background' | 'text' | 'accent' | null>(null);
   const [activeFontType, setActiveFontType] = useState<'heading' | 'body' | null>(null);
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
   const { groups: fontGroups } = useFontCatalog();
   const [loadingFont, setLoadingFont] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -88,6 +89,10 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
       } catch {}
     })();
   }, [data.fonts.heading, data.fonts.body]);
+
+  useEffect(() => {
+    setLogoLoadFailed(false);
+  }, [data.logo]);
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -137,21 +142,6 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
     setActiveColor(null);
   };
 
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className={cn(
-        "relative w-full max-w-[360px] rounded-2xl overflow-hidden border border-zinc-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-zinc-900/80 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]",
-        "before:content-[''] before:absolute before:inset-0 before:rounded-2xl before:bg-[radial-gradient(circle_at_top,rgba(251,146,60,0.15),transparent_55%)] before:pointer-events-none",
-        className
-      )}>
-        <div className="relative z-10 h-10 flex items-center justify-center">
-          <span className="text-[11px] text-zinc-500">{loadingLabel || 'Updating theme...'}</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={cn(
       "relative w-full max-w-[360px] rounded-2xl overflow-hidden border border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-zinc-900/90 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]",
@@ -198,8 +188,13 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
               )}
               onClick={() => isEditable && fileInputRef.current?.click()}
             >
-              {data.logo ? (
-                <img src={data.logo} alt="Logo" className="w-7 h-7 object-contain drop-shadow-sm" />
+              {data.logo && !logoLoadFailed ? (
+                <img
+                  src={data.logo}
+                  alt="Logo"
+                  className="w-7 h-7 object-contain drop-shadow-sm"
+                  onError={() => setLogoLoadFailed(true)}
+                />
               ) : (
                 <Image className="w-4 h-4 text-zinc-300 dark:text-zinc-600" />
               )}
@@ -392,6 +387,15 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
           </div>
         )}
       </div>
+
+      {isLoading && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/70 dark:bg-zinc-900/70 backdrop-blur-[1px]">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/95 dark:bg-zinc-900/95 px-3 py-1 text-[11px] text-zinc-600 dark:text-zinc-300 shadow-sm">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>{loadingLabel || 'Updating theme...'}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

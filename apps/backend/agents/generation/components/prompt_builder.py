@@ -5,6 +5,7 @@ Prompt builder for slide generation.
 from typing import Dict, Any, List, Optional, Tuple
 
 from agents.domain.models import SlideGenerationContext
+from services.outline.context_store import extract_grounding_context_from_notes
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
@@ -67,6 +68,11 @@ class SlidePromptBuilder:
     ) -> str:
         """Build minimal deck-static instructions."""
         sections: List[str] = []
+        def _truncate_static(text: str, limit: int = 4000) -> str:
+            """Truncate with a higher limit for cached static context."""
+            if len(text) <= limit:
+                return text
+            return text[:limit] + "\n[TRUNCATED]"
 
         theme = (
             context.theme.to_dict()
@@ -142,24 +148,54 @@ class SlidePromptBuilder:
         # Add deck-wide research context to static block (cached once, not per-slide)
         # This reduces prompt size from ~29K per slide to ~3K per slide + ~20K cached once
         notes = getattr(context.deck_outline, "notes", None) if hasattr(context, "deck_outline") else None
-        if isinstance(notes, dict):
-            def _truncate_static(text: str, limit: int = 4000) -> str:
-                """Truncate with slightly higher limit for cached static context."""
-                if len(text) <= limit:
-                    return text
-                return text[:limit] + "\n[TRUNCATED]"
+        grounding_context = extract_grounding_context_from_notes(notes if isinstance(notes, dict) else None)
+        if grounding_context:
+            research_context = grounding_context.get("research_context")
+            scraped_context = grounding_context.get("scraped_context")
+            content_context = grounding_context.get("content_context")
+            file_context = grounding_context.get("file_context")
+            file_intent = str(grounding_context.get("file_intent") or "").strip().lower()
+            user_notes = grounding_context.get("user_notes")
+            reference_sources = grounding_context.get("reference_sources")
+            research_citations = grounding_context.get("research_citations")
 
-            research_context = notes.get("research_context") or notes.get("researchContext")
-            scraped_context = notes.get("scraped_context") or notes.get("scrapedContext")
-            reference_sources = notes.get("reference_sources") or notes.get("referenceSources")
-            research_citations = notes.get("research_citations") or notes.get("researchCitations")
+            has_source_context = bool(
+                (isinstance(content_context, str) and content_context.strip())
+                or (isinstance(file_context, str) and file_context.strip())
+            )
+            source_only_mode = has_source_context and file_intent in {"use_content_only", "recreate_exact"}
 
-            if research_context:
-                sections.append("\n--- DECK-WIDE RESEARCH CONTEXT (use for all slides) ---")
-                sections.append(_truncate_static(str(research_context)))
-            if scraped_context:
-                sections.append("\n--- REFERENCE CONTEXT (use for all slides) ---")
-                sections.append(_truncate_static(str(scraped_context)))
+            if has_source_context:
+                sections.append("\n--- STRICT GROUNDING MODE ---")
+                sections.append(
+                    "SOURCE MATERIAL CONTEXT is the canonical factual source. "
+                    "Do NOT introduce unsupported names (vendors, tools, people, places), numbers, dates, or claims. "
+                    "If details are missing, keep wording generic or omit them."
+                )
+
+            if content_context:
+                sections.append("\n--- SOURCE MATERIAL CONTEXT (uploaded files) ---")
+                sections.append(_truncate_static(str(content_context), limit=5000))
+            if file_context and (not content_context or file_context not in content_context):
+                sections.append("\n--- FILE ANALYSIS CONTEXT ---")
+                sections.append(_truncate_static(str(file_context), limit=3500))
+            if file_intent:
+                sections.append(f"SOURCE USAGE INTENT: {file_intent}")
+
+            if research_context and not source_only_mode:
+                sections.append("\n--- DECK-WIDE RESEARCH CONTEXT (secondary) ---")
+                sections.append(_truncate_static(str(research_context), limit=4500))
+            if scraped_context and not source_only_mode:
+                sections.append("\n--- REFERENCE CONTEXT (secondary) ---")
+                sections.append(_truncate_static(str(scraped_context), limit=4500))
+            if source_only_mode and (research_context or scraped_context):
+                sections.append(
+                    "SOURCE-ONLY MODE: Ignore secondary research/reference context when adding factual details."
+                )
+
+            if user_notes:
+                sections.append("\n--- USER NOTES (prioritize these preferences) ---")
+                sections.append(_truncate_static(str(user_notes), limit=1800))
             if isinstance(reference_sources, list) and reference_sources:
                 sources = [
                     f"{s.get('title') or 'Source'} ({s.get('url') or 'n/a'})"

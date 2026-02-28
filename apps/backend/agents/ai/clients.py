@@ -91,8 +91,11 @@ MODELS = {
     "gemini-2.5-pro": ("gemini", "gemini-2.5-pro"),
     "gemini-3-pro": ("gemini", "gemini-3-pro-preview"),
     "gemini-3-pro-preview": ("gemini", "gemini-3-pro-preview"),
+    "gemini-3.1-pro": ("gemini", "gemini-3.1-pro-preview"),
+    "gemini-3.1-pro-preview": ("gemini", "gemini-3.1-pro-preview"),
     "gemini-3-flash": ("gemini", "gemini-3-flash-preview"),
     "gemini-3-flash-preview": ("gemini", "gemini-3-flash-preview"),
+    "gemini-3.1-flash-image-preview": ("gemini", "gemini-3.1-flash-image-preview"),
 
     # OpenAI
     "gpt-4o-mini": ("openai", "gpt-4o-mini"),
@@ -141,7 +144,9 @@ MODEL_MAX_TOKENS = {
     "gemini-2.5-flash-lite": 65536,
     "gemini-2.5-pro": 8192,
     "gemini-3-pro-preview": 65536,
+    "gemini-3.1-pro-preview": 65536,
     "gemini-3-flash-preview": 65536,
+    "gemini-3.1-flash-image-preview": 65536,
     "gpt-4o-mini": 16384,
     "gpt-4.1-2025-04-14": 32768,
     "claude-opus-4-6": 128000,
@@ -175,7 +180,9 @@ MODEL_PRICING = {
     "gemini-2.5-flash-lite": {"input": 0.075, "output": 0.30},
     "gemini-2.5-pro": {"input": 1.25, "output": 10.0},
     "gemini-3-pro-preview": {"input": 1.25, "output": 10.0},
+    "gemini-3.1-pro-preview": {"input": 1.25, "output": 10.0},
     "gemini-3-flash-preview": {"input": 0.15, "output": 0.60},
+    "gemini-3.1-flash-image-preview": {"input": 0.15, "output": 0.60},
     # OpenAI
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "gpt-4.1-2025-04-14": {"input": 2.0, "output": 8.0},
@@ -200,6 +207,85 @@ MODEL_PRICING = {
     # Groq
     "deepseek-r1-distill-llama-70b": {"input": 0.75, "output": 0.99},
 }
+
+_ANALYTICS_MAX_TEXT_CHARS = 4000
+_ANALYTICS_MAX_LIST_ITEMS = 8
+_ANALYTICS_MAX_DEPTH = 6
+
+
+def _sanitize_for_analytics(value: Any, depth: int = 0) -> Any:
+    """Strip large/binary payloads (especially base64) from analytics payloads."""
+    if depth > _ANALYTICS_MAX_DEPTH:
+        return "[truncated-depth]"
+
+    if isinstance(value, str):
+        # Detect raw/base64-like long strings
+        if len(value) > 512 and re.fullmatch(r"[A-Za-z0-9+/=\s]+", value):
+            return f"[omitted-base64:{len(value)} chars]"
+        if len(value) > _ANALYTICS_MAX_TEXT_CHARS:
+            return value[:_ANALYTICS_MAX_TEXT_CHARS] + f"... [truncated {len(value) - _ANALYTICS_MAX_TEXT_CHARS} chars]"
+        return value
+
+    if isinstance(value, dict):
+        sanitized: Dict[str, Any] = {}
+        for k, v in value.items():
+            key_l = str(k).lower()
+            if key_l in {"data", "base64", "binary", "bytes"} and isinstance(v, str):
+                sanitized[k] = f"[omitted-binary:{len(v)} chars]"
+                continue
+            if key_l == "source" and isinstance(v, dict):
+                src = dict(v)
+                if isinstance(src.get("data"), str):
+                    src["data"] = f"[omitted-binary:{len(src['data'])} chars]"
+                sanitized[k] = _sanitize_for_analytics(src, depth + 1)
+                continue
+            if key_l == "inline_data" and isinstance(v, dict):
+                inline = dict(v)
+                if isinstance(inline.get("data"), str):
+                    inline["data"] = f"[omitted-binary:{len(inline['data'])} chars]"
+                sanitized[k] = _sanitize_for_analytics(inline, depth + 1)
+                continue
+            sanitized[k] = _sanitize_for_analytics(v, depth + 1)
+        return sanitized
+
+    if isinstance(value, list):
+        trimmed = value[:_ANALYTICS_MAX_LIST_ITEMS]
+        out = [_sanitize_for_analytics(v, depth + 1) for v in trimmed]
+        if len(value) > _ANALYTICS_MAX_LIST_ITEMS:
+            out.append(f"[{len(value) - _ANALYTICS_MAX_LIST_ITEMS} more items omitted]")
+        return out
+
+    return value
+
+
+def _sanitize_messages_for_analytics(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return a compact/safe view of chat messages for analytics capture."""
+    if not messages:
+        return []
+    safe_messages: List[Dict[str, Any]] = []
+    for msg in messages[:3]:
+        if not isinstance(msg, dict):
+            safe_messages.append({"role": "unknown", "content": _sanitize_for_analytics(str(msg))})
+            continue
+        safe_messages.append({
+            "role": msg.get("role", "user"),
+            "content": _sanitize_for_analytics(msg.get("content")),
+        })
+    return safe_messages
+
+
+def _estimate_input_tokens_for_analytics(system_content: Any, messages: List[Dict[str, Any]]) -> int:
+    """Estimate token count while excluding huge binary payloads."""
+    safe = {
+        "system": _sanitize_for_analytics(system_content),
+        "messages": _sanitize_messages_for_analytics(messages or []),
+    }
+    try:
+        text = json.dumps(safe, ensure_ascii=False)
+    except Exception:
+        text = str(safe)
+    return max(1, len(text) // 4)
+
 
 def _calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """Calculate the cost in USD for a model call."""
@@ -248,6 +334,11 @@ def _track_llm_generation(
         # Get user_id from context if not explicitly provided
         effective_user_id = user_id or get_current_user() or "anonymous"
 
+        safe_messages = _sanitize_messages_for_analytics(messages or [])
+        safe_output = _sanitize_for_analytics(str(output) if output else "")
+        if isinstance(safe_output, str) and len(safe_output) > 1000:
+            safe_output = safe_output[:1000] + "... [truncated]"
+
         properties = {
             "$ai_trace_id": trace_id,  # Required for PostHog LLM Analytics
             "$ai_model": model,
@@ -256,8 +347,8 @@ def _track_llm_generation(
             "$ai_output_tokens": output_tokens,
             "$ai_total_cost_usd": round(cost, 6),
             "$ai_latency": round(latency_seconds, 3),
-            "$ai_input": messages[:3] if messages else [],  # First 3 messages
-            "$ai_output_choices": [{"role": "assistant", "content": str(output)[:500] if output else ""}],
+            "$ai_input": safe_messages,
+            "$ai_output_choices": [{"role": "assistant", "content": safe_output[:500] if isinstance(safe_output, str) else str(safe_output)[:500]}],
         }
 
         if error:
@@ -474,11 +565,11 @@ def invoke(
                 result = _invoke_freeform(client, model, filtered_messages, system_content, invoke_kwargs)
                 # Track LLM usage in PostHog
                 _latency = _time.time() - _start_time
-                _input_text = str(system_content or "") + str(filtered_messages)
+                _input_tokens = _estimate_input_tokens_for_analytics(system_content, filtered_messages)
                 _output_text = str(result) if result else ""
                 _track_llm_generation(
                     model=model,
-                    input_tokens=len(_input_text) // 4,  # Estimate: ~4 chars per token
+                    input_tokens=_input_tokens,
                     output_tokens=len(_output_text) // 4,
                     latency_seconds=_latency,
                     user_id=user_id,
@@ -491,11 +582,11 @@ def invoke(
             result = _invoke_structured(client, model, filtered_messages, system_content, response_model, invoke_kwargs, max_retries)
             # Track LLM usage in PostHog
             _latency = _time.time() - _start_time
-            _input_text = str(system_content or "") + str(filtered_messages)
+            _input_tokens = _estimate_input_tokens_for_analytics(system_content, filtered_messages)
             _output_text = str(result) if result else ""
             _track_llm_generation(
                 model=model,
-                input_tokens=len(_input_text) // 4,
+                input_tokens=_input_tokens,
                 output_tokens=len(_output_text) // 4,
                 latency_seconds=_latency,
                 user_id=user_id,
@@ -507,10 +598,10 @@ def invoke(
         except Exception as e:
             # Track error in PostHog
             _latency = _time.time() - _start_time
-            _input_text = str(system_content or "") + str(filtered_messages)
+            _input_tokens = _estimate_input_tokens_for_analytics(system_content, filtered_messages)
             _track_llm_generation(
                 model=model,
-                input_tokens=len(_input_text) // 4,
+                input_tokens=_input_tokens,
                 output_tokens=0,
                 latency_seconds=_latency,
                 user_id=user_id,

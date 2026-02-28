@@ -42,6 +42,33 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = (props
     }
   }, [isMobileView]);
 
+  useEffect(() => {
+    if (state.stage !== 'slide_mode_selection') return;
+    const container = refs.scrollContainerRef.current;
+    if (!container) return;
+
+    const scrollToBottom = () => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'auto',
+      });
+    };
+
+    // Run multiple passes so late layout/animation changes still land at bottom.
+    scrollToBottom();
+    const raf1 = requestAnimationFrame(scrollToBottom);
+    const raf2 = requestAnimationFrame(() => requestAnimationFrame(scrollToBottom));
+    const timeout1 = window.setTimeout(scrollToBottom, 120);
+    const timeout2 = window.setTimeout(scrollToBottom, 280);
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      window.clearTimeout(timeout1);
+      window.clearTimeout(timeout2);
+    };
+  }, [refs.scrollContainerRef, state.messages.length, state.stage]);
+
   const planAvailable = useMemo(() => (
     Boolean(state.outlineBlock || state.themeBlock) ||
     state.generationStatus.hasOutline ||
@@ -104,7 +131,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = (props
             <div
               ref={refs.scrollContainerRef}
               className={cn(
-                "flex-1 overflow-y-auto",
+                "flex-1 overflow-y-auto overflow-x-hidden",
                 isMobileView ? "px-3 py-4" : "px-4 py-8"
               )}
             >

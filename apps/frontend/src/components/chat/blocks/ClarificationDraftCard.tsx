@@ -101,6 +101,29 @@ const normalizeResponseLabel = (value: string) => value.replace(/[?]+$/, '').tri
 
 const normalizeKey = (value?: string) => (value || '').replace(/[_-]+/g, '').toLowerCase();
 
+const extractSingleExample = (placeholder?: string): string | undefined => {
+  const raw = (placeholder || '').trim();
+  if (!raw) return undefined;
+  if (!/^(e\.?\s*g\.?|for example)\b/i.test(raw)) return undefined;
+
+  const withoutPrefix = raw
+    .replace(/^(e\.?\s*g\.?|for example)\s*[:,]?\s*/i, '')
+    .trim();
+  if (!withoutPrefix) return undefined;
+
+  const cleaned = withoutPrefix
+    .replace(/\s+or\s+/gi, ', ')
+    .replace(/\s+and\/or\s+/gi, ', ')
+    .replace(/\.\s*$/, '');
+
+  const first = cleaned
+    .split(',')
+    .map((part) => part.trim().replace(/^["']+|["']+$/g, ''))
+    .find(Boolean);
+
+  return first || undefined;
+};
+
 const KEY_LABEL_OVERRIDES: Record<string, string> = {
   slidemode: 'How will this be presented (live talk with minimal text vs detailed document or interactive web)',
 };
@@ -116,7 +139,8 @@ const buildQuestionsFromFields = (fields: ClarificationField[]): ClarificationQu
     const normalizedLabel = (overrideLabel && isFallbackLabel) ? overrideLabel : normalizeLabel(rawLabel);
     const label = normalizedLabel || fallbackLabel || `Detail ${index + 1}`;
     const responseLabel = normalizeResponseLabel(normalizedLabel || fallbackLabel || label);
-    let defaultValue = field.value !== undefined ? String(field.value) : (field.placeholder || '');
+    const examplePrefill = extractSingleExample(field.placeholder);
+    let defaultValue = field.value !== undefined ? String(field.value) : (examplePrefill || '');
     if (field.type === 'boolean' && typeof field.value === 'boolean') {
       defaultValue = field.value ? 'Yes' : 'No';
     }

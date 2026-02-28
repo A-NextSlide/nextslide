@@ -128,6 +128,8 @@ export interface OutlineData {
   // Research context for downstream slide generation
   research_context?: string;
   research_citations?: string[];
+  // Canonical persisted context + theme/video metadata
+  notes?: Record<string, any>;
   // Style/theme preferences from the agent
   stylePreferences?: {
     colors?: {

@@ -699,6 +699,7 @@ const DeckList: React.FC = () => {
     research_context?: string;
     reference_sources?: Array<{ url?: string; title?: string }>;
     research_citations?: string[];
+    notes?: Record<string, any>;
   } | null>(null);
 
   // Handle overage confirmation - retry generation with confirmOverage flag
@@ -836,6 +837,7 @@ const DeckList: React.FC = () => {
     research_context?: string;
     reference_sources?: Array<{ url?: string; title?: string }>;
     research_citations?: string[];
+    notes?: Record<string, any>;
   }) => {
     console.log('[DeckList] Conversational onboarding complete:', data);
     console.log('[DeckList] Uploaded files count:', data.uploadedFiles?.length || 0);
@@ -957,7 +959,11 @@ const DeckList: React.FC = () => {
         research_context?: string;
         reference_sources?: Array<{ url?: string; title?: string }>;
         research_citations?: string[];
+        context_store?: Record<string, any>;
       } = {};
+      if (data.notes && typeof data.notes === 'object') {
+        Object.assign(notesPayload, data.notes);
+      }
       if (hasThemePayload) {
         notesPayload.theme = themePayload;
       }
@@ -2380,6 +2386,7 @@ const DeckList: React.FC = () => {
                                   uploadedMedia: normalizedUploadedMedia || prev.uploadedMedia,
                                   notes: {
                                     ...(prev.notes || {}),
+                                    ...(((params as any).notes && typeof (params as any).notes === 'object') ? (params as any).notes : {}),
                                     ...(params.scraped_context ? { scraped_context: params.scraped_context } : {}),
                                     ...(params.research_context ? { research_context: params.research_context } : {}),
                                     ...(params.reference_sources ? { reference_sources: params.reference_sources } : {}),
@@ -2478,6 +2485,7 @@ const DeckList: React.FC = () => {
                               },
                               notes: {
                                 ...(currentOutline?.notes || {}),
+                                ...(((params as any).notes && typeof (params as any).notes === 'object') ? (params as any).notes : {}),
                                 ...(params.scraped_context ? { scraped_context: params.scraped_context } : {}),
                                 ...(params.research_context ? { research_context: params.research_context } : {}),
                                 ...(params.reference_sources ? { reference_sources: params.reference_sources } : {}),
