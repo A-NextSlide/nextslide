@@ -1156,11 +1156,30 @@ img.ns-img-ready {
 
     DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Image props available:', Object.keys(imagePropsMap));
 
+    // Pre-compute <script> block ranges so img-tag patterns skip matches inside JS code.
+    // Processing img tags inside <script> breaks template literals and leaks attributes as text.
+    const scriptRanges: Array<[number, number]> = [];
+    const scriptBlockRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+    let scriptMatch: RegExpExecArray | null;
+    while ((scriptMatch = scriptBlockRegex.exec(result)) !== null) {
+      scriptRanges.push([scriptMatch.index, scriptMatch.index + scriptMatch[0].length]);
+    }
+    const isInsideScript = (offset: number): boolean => {
+      for (const [start, end] of scriptRanges) {
+        if (offset >= start && offset < end) return true;
+      }
+      return false;
+    };
+
     // PATTERN 1: Find all img tags with ${propName} in src (AI-generated pattern)
     // Example: <img src="${storeClosingSignImage}" alt="Store closing sign">
     const varSrcRegex = /<img\s+([^>]*?)src=["']\$\{+\s*(\w+)\s*\}+["']([^>]*?)>/gi;
 
-    result = result.replace(varSrcRegex, (match, before, varName, after) => {
+    result = result.replace(varSrcRegex, (match, before, varName, after, offset) => {
+      // Skip img tags inside <script> blocks — they're in JS template literals
+      // and modifying them corrupts the JS code structure
+      if (isInsideScript(offset)) return match;
+
       const varNameLower = varName.toLowerCase();
       const hasDataProp = /data-prop=["'][^"']+["']/i.test(before + after);
       const dataPropAttr = hasDataProp ? '' : ` data-prop="${varName}"`;
@@ -1191,7 +1210,10 @@ img.ns-img-ready {
     let imageIndex = 0;
     const imgRegex = /<img\s+([^>]*?)src=["']([^"']*)["']([^>]*?)>/gi;
 
-    result = result.replace(imgRegex, (match, before, src, after) => {
+    result = result.replace(imgRegex, (match, before, src, after, offset) => {
+      // Skip img tags inside <script> blocks — they're in JS template literals
+      // and modifying them corrupts the JS code or leaks attributes as text
+      if (isInsideScript(offset)) return match;
       // Skip if already has a valid URL
       if (src.startsWith('http') || src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('//')) {
         imageIndex++;
