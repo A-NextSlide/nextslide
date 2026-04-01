@@ -24,6 +24,7 @@ class WebhookPayload:
     event: str  # "deck.created", "deck.completed", "deck.failed"
     deck_id: str
     status: str  # "generating", "completed", "failed"
+    slide_mode: Optional[str] = None
     view_url: Optional[str] = None
     edit_url: Optional[str] = None
     pdf_url: Optional[str] = None
@@ -40,6 +41,7 @@ class WebhookPayload:
             "event": self.event,
             "deck_id": self.deck_id,
             "status": self.status,
+            "slide_mode": self.slide_mode,
             "view_url": self.view_url,
             "edit_url": self.edit_url,
             "pdf_url": self.pdf_url,
@@ -189,6 +191,7 @@ class WebhookService:
         webhook_url: str,
         deck_id: str,
         view_url: str,
+        slide_mode: Optional[str] = None,
         edit_url: Optional[str] = None,
         pdf_url: Optional[str] = None,
         outputs: Optional[Dict[str, Any]] = None,
@@ -199,6 +202,7 @@ class WebhookService:
             event="deck.created",
             deck_id=deck_id,
             status="generating",
+            slide_mode=slide_mode,
             view_url=view_url,
             edit_url=edit_url,
             pdf_url=pdf_url,
@@ -212,6 +216,7 @@ class WebhookService:
         deck_id: str,
         view_url: str,
         slides_count: int,
+        slide_mode: Optional[str] = None,
         edit_url: Optional[str] = None,
         pdf_url: Optional[str] = None,
         outputs: Optional[Dict[str, Any]] = None,
@@ -222,6 +227,7 @@ class WebhookService:
             event="deck.completed",
             deck_id=deck_id,
             status="completed",
+            slide_mode=slide_mode,
             view_url=view_url,
             edit_url=edit_url,
             pdf_url=pdf_url,

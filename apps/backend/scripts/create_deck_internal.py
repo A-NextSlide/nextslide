@@ -63,6 +63,7 @@ async def create_deck_with_api_key(api_key: str, topic: str, num_slides: int = 8
         num_slides=num_slides,
         style=None,
         additional_instructions=None,
+        slide_mode="interactive",
         view_url=view_url,
         edit_url=edit_url,
         requested_outputs={"pdf": True, "image": False, "iframe": False},

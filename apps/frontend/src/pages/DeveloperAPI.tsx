@@ -206,7 +206,7 @@ const DeveloperAPI: React.FC = () => {
                 onClick={() => handleCopy(`curl -X POST https://api.nextslide.ai/v1/decks \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"topic": "Q4 Sales Review", "slides": 10, "outputs": {"pdf": true, "image": true, "iframe": true}}'`, 'quickstart')}
+  -d '{"topic": "Q4 Sales Review", "slides": 10, "slide_mode": "interactive", "outputs": {"pdf": true, "image": true, "iframe": true}}'`, 'quickstart')}
                 className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
               >
                 {copiedCode === 'quickstart' ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -224,12 +224,38 @@ const DeveloperAPI: React.FC = () => {
               <span className="text-sky-300">"Content-Type: application/json"</span>{' '}
               <span className="text-zinc-600">\</span>{'\n'}
               {'  '}<span className="text-zinc-500">-d</span>{' '}
-              <span className="text-emerald-300">{'\'{"topic": "Q4 Sales Review", "slides": 10, "outputs": {"pdf": true, "image": true, "iframe": true}}\''}</span>
+              <span className="text-emerald-300">{'\'{"topic": "Q4 Sales Review", "slides": 10, "slide_mode": "interactive", "outputs": {"pdf": true, "image": true, "iframe": true}}\''}</span>
             </pre>
           </div>
           <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
             Outputs are optional. Request <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">pdf</code>, <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">image</code>, and/or <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">iframe</code> in the create payload, then read the generated links from <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">outputs</code>.
           </p>
+          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+            Generation mode is optional too. Set <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">slide_mode</code> to <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">interactive</code> for NextGen slides or <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">static</code> for Traditional slides. Friendly aliases <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">nextgen</code> and <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">traditional</code> are accepted too.
+          </p>
+
+          <div className="grid md:grid-cols-2 gap-3 mt-5">
+            {[
+              {
+                label: 'interactive',
+                title: 'NextGen',
+                copy: 'Default mode. Best for animated, custom, and motion-heavy slides that pair well with the iframe renderer.',
+              },
+              {
+                label: 'static',
+                title: 'Traditional',
+                copy: 'Best for classic clean slides with a more PPT-like feel and fewer interactive affordances.',
+              }
+            ].map((item) => (
+              <div key={item.label} className="rounded-xl border border-zinc-200/70 dark:border-zinc-800/70 bg-white dark:bg-zinc-900 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <code className="text-[11px] font-mono px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">{item.label}</code>
+                  <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{item.title}</span>
+                </div>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">{item.copy}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -417,6 +443,7 @@ const DeveloperAPI: React.FC = () => {
   "topic": "string",              // Required
   "slides": 10,                   // Optional, 1-30
   "style": "corporate",           // Optional
+  "slide_mode": "interactive",    // Optional, interactive (NextGen) | static (Traditional)
   "additional_instructions": "",  // Optional
   "metadata": {},                 // Optional, passed to webhook
   "outputs": {                    // Optional
@@ -428,6 +455,7 @@ const DeveloperAPI: React.FC = () => {
               responseBody={`{
   "deck_id": "uuid",
   "status": "generating",
+  "slide_mode": "interactive",
   "view_url": "https://nextslide.ai/p/abc123",
   "edit_url": "https://nextslide.ai/e/xyz789",
   "pdf_url": "https://api.nextslide.ai/v1/decks/{id}/pdf",
@@ -450,6 +478,7 @@ const DeveloperAPI: React.FC = () => {
               responseBody={`{
   "deck_id": "uuid",
   "status": "completed",  // generating | completed | failed
+  "slide_mode": "interactive",
   "view_url": "...",
   "pdf_url": "https://api.nextslide.ai/v1/decks/{id}/pdf",
   "outputs": {
@@ -547,6 +576,7 @@ Content-Disposition: inline; filename="Quarterly Business Review-slide-1.png"`}
   "event": "deck.completed",
   "deck_id": "uuid",
   "status": "completed",
+  "slide_mode": "interactive",
   "view_url": "https://nextslide.ai/p/abc123",
   "edit_url": "https://nextslide.ai/e/xyz789",
   "pdf_url": "https://api.nextslide.ai/v1/decks/{id}/pdf",
@@ -622,6 +652,7 @@ expected = hmac.new(secret, signed, sha256)`}
   -d '{
     "topic": "Quarterly Business Review",
     "slides": 12,
+    "slide_mode": "interactive",
     "outputs": { "pdf": true, "image": true, "iframe": true }
   }'
 
@@ -655,6 +686,7 @@ response = requests.post(
     json={
         "topic": "Quarterly Business Review",
         "slides": 12,
+        "slide_mode": "interactive",
         "outputs": {"pdf": True, "image": True, "iframe": True},
     }
 )
@@ -714,6 +746,7 @@ while True:
   body: JSON.stringify({
     topic: "Quarterly Business Review",
     slides: 12,
+    slide_mode: "interactive",
     outputs: { pdf: true, image: true, iframe: true }
   })
 });

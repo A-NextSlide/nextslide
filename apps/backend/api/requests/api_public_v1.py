@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Depends, Header, BackgroundTasks, Query, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from services.api_key_service import get_api_key_service, ApiKeyRecord
 from services.billing_service import get_billing_service, CreditAction
@@ -101,6 +101,31 @@ def _extract_share_code(view_url: Optional[str]) -> Optional[str]:
     return None
 
 
+_SLIDE_MODE_ALIASES = {
+    "interactive": "interactive",
+    "static": "static",
+    "nextgen": "interactive",
+    "next-gen": "interactive",
+    "traditional": "static",
+}
+
+
+def _normalize_slide_mode_value(raw: Any, *, default: str = "interactive") -> str:
+    if raw is None:
+        return default
+    if not isinstance(raw, str):
+        raise ValueError("slide_mode must be a string")
+
+    normalized = raw.strip().lower().replace("_", "-").replace(" ", "")
+    slide_mode = _SLIDE_MODE_ALIASES.get(normalized)
+    if slide_mode:
+        return slide_mode
+
+    raise ValueError(
+        "slide_mode must be one of: interactive, static, nextgen, next-gen, traditional"
+    )
+
+
 # =============================================================================
 # Fix 1: Per-key concurrency tracking
 # =============================================================================
@@ -133,7 +158,15 @@ async def _release_concurrency_slot(api_key_id: str):
 _recent_api_creations: Dict[str, Tuple[float, str]] = {}  # hash -> (timestamp, deck_id)
 
 
-def _get_api_request_hash(user_id: str, topic: str, slides: int, style: Optional[str], additional_instructions: Optional[str]) -> str:
+def _get_api_request_hash(
+    user_id: str,
+    topic: str,
+    slides: int,
+    style: Optional[str],
+    additional_instructions: Optional[str],
+    slide_mode: str,
+    requested_outputs: Optional[Dict[str, Any]],
+) -> str:
     """Hash request params for dedup."""
     data = json.dumps({
         "user_id": user_id,
@@ -141,6 +174,8 @@ def _get_api_request_hash(user_id: str, topic: str, slides: int, style: Optional
         "slides": slides,
         "style": style or "",
         "additional_instructions": additional_instructions or "",
+        "slide_mode": slide_mode,
+        "requested_outputs": requested_outputs or {},
     }, sort_keys=True)
     return hashlib.md5(data.encode()).hexdigest()
 
@@ -260,11 +295,24 @@ class CreateDeckRequest(BaseModel):
     slides: int = Field(default=8, ge=1, le=30, description="Number of slides to generate")
     style: Optional[str] = Field(default=None, max_length=100, description="Style preset (e.g., 'corporate', 'creative', 'minimal')")
     additional_instructions: Optional[str] = Field(default=None, max_length=2000, description="Additional instructions for generation")
+    slide_mode: str = Field(
+        default="interactive",
+        validation_alias=AliasChoices("slide_mode", "slideMode"),
+        description=(
+            "Presentation mode. Use 'interactive' for NextGen slides or 'static' for Traditional slides. "
+            "Aliases 'nextgen', 'next-gen', and 'traditional' are also accepted."
+        ),
+    )
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Custom metadata to include in webhook responses")
     outputs: Optional["RequestedDeckOutputs"] = Field(
         default=None,
         description="Optional output formats to enable for this deck",
     )
+
+    @field_validator("slide_mode", mode="before")
+    @classmethod
+    def _validate_slide_mode(cls, value: Any) -> str:
+        return _normalize_slide_mode_value(value)
 
 
 class RequestedDeckOutputs(BaseModel):
@@ -302,6 +350,7 @@ class DeckStatusResponse(BaseModel):
     """Response for deck status endpoint."""
     deck_id: str
     status: str  # "generating", "completed", "failed"
+    slide_mode: str = "interactive"
     view_url: Optional[str] = None
     edit_url: Optional[str] = None
     pdf_url: Optional[str] = None
@@ -316,6 +365,7 @@ class CreateDeckResponse(BaseModel):
     """Response after initiating deck creation."""
     deck_id: str
     status: str  # Always "generating" on creation
+    slide_mode: str = "interactive"
     view_url: str
     edit_url: Optional[str] = None
     pdf_url: Optional[str] = None
@@ -361,6 +411,27 @@ def _get_requested_outputs_from_deck(deck: Dict[str, Any]) -> RequestedDeckOutpu
         legacy_pdf_default = deck_data.get("source") == "api" and raw is None
         return _normalize_requested_outputs(raw, legacy_pdf_default=legacy_pdf_default)
     return RequestedDeckOutputs()
+
+
+def _get_slide_mode_from_deck(deck: Dict[str, Any]) -> str:
+    raw = None
+
+    deck_data = deck.get("data")
+    if isinstance(deck_data, dict):
+        raw = deck_data.get("slide_mode") or deck_data.get("slideMode")
+
+    if raw is None:
+        outline = deck.get("outline")
+        if isinstance(outline, dict):
+            style_prefs = outline.get("stylePreferences")
+            if isinstance(style_prefs, dict):
+                raw = style_prefs.get("slideMode") or style_prefs.get("slide_mode")
+
+    try:
+        return _normalize_slide_mode_value(raw)
+    except ValueError:
+        logger.warning("Invalid persisted slide_mode=%r for deck %s; defaulting to interactive", raw, deck.get("uuid"))
+        return "interactive"
 
 
 def _extract_status_state(status_obj: Any) -> str:
@@ -496,6 +567,7 @@ async def generate_deck_background(
     num_slides: int,
     style: Optional[str],
     additional_instructions: Optional[str],
+    slide_mode: str,
     view_url: str,
     edit_url: Optional[str],
     requested_outputs: Optional[Dict[str, Any]],
@@ -614,6 +686,7 @@ async def generate_deck_background(
         style_prefs_data = {
             "initialIdea": topic,
             "vibeContext": style or topic,
+            "slideMode": slide_mode,
         }
 
         # Add context images as reference images for slide generation to use
@@ -741,6 +814,7 @@ async def generate_deck_background(
         deck_data["data"]["source"] = "api"
         deck_data["data"]["api_key_id"] = api_key_record.id
         deck_data["data"]["api_key_name"] = api_key_record.name
+        deck_data["data"]["slide_mode"] = slide_mode
         deck_data["data"]["requested_outputs"] = normalized_outputs.model_dump()
 
         # Upload initial deck
@@ -781,6 +855,7 @@ async def generate_deck_background(
                     "source": "api",
                     "api_key_id": api_key_record.id,
                     "api_key_name": api_key_record.name,
+                    "slide_mode": slide_mode,
                     "requested_outputs": normalized_outputs.model_dump(),
                 }
 
@@ -803,6 +878,7 @@ async def generate_deck_background(
                                 "source": "api",
                                 "api_key_id": api_key_record.id,
                                 "api_key_name": api_key_record.name,
+                                "slide_mode": slide_mode,
                                 "requested_outputs": normalized_outputs.model_dump(),
                             },
                         }).eq("uuid", deck_uuid).execute()
@@ -824,6 +900,7 @@ async def generate_deck_background(
                 deck_id=deck_uuid,
                 view_url=view_url,
                 slides_count=final_slides_count,
+                slide_mode=slide_mode,
                 edit_url=edit_url,
                 pdf_url=_pdf_url_from_outputs(outputs),
                 outputs=outputs.model_dump(exclude_none=True) if outputs else None,
@@ -887,7 +964,15 @@ async def create_deck(
     # Fix 4: Request deduplication
     # ------------------------------------------------------------------
     _cleanup_dedup_cache()
-    req_hash = _get_api_request_hash(user_id, body.topic, body.slides, body.style, body.additional_instructions)
+    req_hash = _get_api_request_hash(
+        user_id,
+        body.topic,
+        body.slides,
+        body.style,
+        body.additional_instructions,
+        body.slide_mode,
+        requested_outputs.model_dump(),
+    )
     if req_hash in _recent_api_creations:
         ts, existing_deck_id = _recent_api_creations[req_hash]
         if time.time() - ts < API_DEDUP_WINDOW_SECONDS:
@@ -942,6 +1027,7 @@ async def create_deck(
                 "source": "api",
                 "api_key_id": api_key_record.id,
                 "api_key_name": api_key_record.name,
+                "slide_mode": body.slide_mode,
                 "requested_outputs": requested_outputs.model_dump(),
             }
         }
@@ -1004,6 +1090,7 @@ async def create_deck(
             num_slides=body.slides,
             style=body.style,
             additional_instructions=body.additional_instructions,
+            slide_mode=body.slide_mode,
             view_url=view_url,
             edit_url=edit_url,
             requested_outputs=requested_outputs.model_dump(),
@@ -1023,6 +1110,7 @@ async def create_deck(
             num_slides=body.slides,
             style=body.style,
             additional_instructions=body.additional_instructions,
+            slide_mode=body.slide_mode,
             view_url=view_url,
             edit_url=edit_url,
             requested_outputs=requested_outputs.model_dump(),
@@ -1037,6 +1125,7 @@ async def create_deck(
                 webhook_url=api_key_record.webhook_url,
                 deck_id=deck_uuid,
                 view_url=view_url,
+                slide_mode=body.slide_mode,
                 edit_url=edit_url,
                 pdf_url=_pdf_url_from_outputs(outputs),
                 outputs=outputs.model_dump(exclude_none=True) if outputs else None,
@@ -1047,6 +1136,7 @@ async def create_deck(
     return CreateDeckResponse(
         deck_id=deck_uuid,
         status="generating",
+        slide_mode=body.slide_mode,
         view_url=view_url,
         edit_url=edit_url,
         pdf_url=_pdf_url_from_outputs(outputs),
@@ -1100,12 +1190,14 @@ async def get_deck_status(
             view_url=view_url,
             request=request,
         )
+        slide_mode = _get_slide_mode_from_deck(deck)
 
         error_message = status_obj.get("error") if isinstance(status_obj, dict) and status_state == "failed" else None
 
         return DeckStatusResponse(
             deck_id=deck_id,
             status=status_state,
+            slide_mode=slide_mode,
             view_url=view_url,
             edit_url=edit_url,
             pdf_url=_pdf_url_from_outputs(outputs),
@@ -1323,10 +1415,12 @@ async def list_decks(
                     view_url=view_url,
                     request=request,
                 )
+                slide_mode = _get_slide_mode_from_deck(deck)
 
                 api_decks.append(DeckStatusResponse(
                     deck_id=deck["uuid"],
                     status=status_state,
+                    slide_mode=slide_mode,
                     view_url=view_url,
                     edit_url=edit_url,
                     pdf_url=_pdf_url_from_outputs(outputs),
