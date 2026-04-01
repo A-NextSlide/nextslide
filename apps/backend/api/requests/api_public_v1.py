@@ -18,18 +18,26 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import time
 import uuid
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List, Tuple
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, Depends, Header, BackgroundTasks, Request
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Depends, Header, BackgroundTasks, Query, Request
+from fastapi.responses import JSONResponse, Response
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from services.api_key_service import get_api_key_service, ApiKeyRecord
 from services.billing_service import get_billing_service, CreditAction
+from services.deck_pdf_service import (
+    generate_deck_pdf,
+    generate_slide_png,
+    safe_image_filename,
+    safe_pdf_filename,
+)
 from services.deck_sharing_service import get_sharing_service
 from services.webhook_service import get_webhook_service
 from services.supabase import get_supabase_client
@@ -47,6 +55,75 @@ from services.api_rate_limiter import limiter
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Public API v1"])
+
+
+def _api_base_url(request: Optional[Request] = None) -> str:
+    if request is not None:
+        return str(request.base_url).rstrip("/")
+    return os.getenv("API_URL", "https://api.nextslide.ai").rstrip("/")
+
+
+def _frontend_base_url() -> str:
+    return os.getenv("FRONTEND_URL", "https://nextslide.ai").rstrip("/")
+
+
+def _build_pdf_url(deck_id: str, request: Optional[Request] = None) -> str:
+    return f"{_api_base_url(request)}/v1/decks/{deck_id}/pdf"
+
+
+def _build_image_url(deck_id: str, slide_index: int = 0, request: Optional[Request] = None) -> str:
+    return f"{_api_base_url(request)}/v1/decks/{deck_id}/image?slide_index={slide_index}"
+
+
+def _build_iframe_url(share_code: str) -> str:
+    return f"{_frontend_base_url()}/embed/{share_code}"
+
+
+def _build_iframe_html(share_code: str) -> str:
+    iframe_url = _build_iframe_url(share_code)
+    return (
+        f'<iframe src="{iframe_url}" width="960" height="540" '
+        f'frameborder="0" allowfullscreen></iframe>'
+    )
+
+
+def _extract_share_code(view_url: Optional[str]) -> Optional[str]:
+    if not view_url:
+        return None
+    try:
+        parsed = urlparse(view_url)
+        path = (parsed.path or "").strip("/")
+        parts = path.split("/")
+        if len(parts) == 2 and parts[0] == "p" and parts[1]:
+            return parts[1]
+    except Exception:
+        return None
+    return None
+
+
+_SLIDE_MODE_ALIASES = {
+    "interactive": "interactive",
+    "static": "static",
+    "nextgen": "interactive",
+    "next-gen": "interactive",
+    "traditional": "static",
+}
+
+
+def _normalize_slide_mode_value(raw: Any, *, default: str = "interactive") -> str:
+    if raw is None:
+        return default
+    if not isinstance(raw, str):
+        raise ValueError("slide_mode must be a string")
+
+    normalized = raw.strip().lower().replace("_", "-").replace(" ", "")
+    slide_mode = _SLIDE_MODE_ALIASES.get(normalized)
+    if slide_mode:
+        return slide_mode
+
+    raise ValueError(
+        "slide_mode must be one of: interactive, static, nextgen, next-gen, traditional"
+    )
 
 
 # =============================================================================
@@ -81,7 +158,15 @@ async def _release_concurrency_slot(api_key_id: str):
 _recent_api_creations: Dict[str, Tuple[float, str]] = {}  # hash -> (timestamp, deck_id)
 
 
-def _get_api_request_hash(user_id: str, topic: str, slides: int, style: Optional[str], additional_instructions: Optional[str]) -> str:
+def _get_api_request_hash(
+    user_id: str,
+    topic: str,
+    slides: int,
+    style: Optional[str],
+    additional_instructions: Optional[str],
+    slide_mode: str,
+    requested_outputs: Optional[Dict[str, Any]],
+) -> str:
     """Hash request params for dedup."""
     data = json.dumps({
         "user_id": user_id,
@@ -89,6 +174,8 @@ def _get_api_request_hash(user_id: str, topic: str, slides: int, style: Optional
         "slides": slides,
         "style": style or "",
         "additional_instructions": additional_instructions or "",
+        "slide_mode": slide_mode,
+        "requested_outputs": requested_outputs or {},
     }, sort_keys=True)
     return hashlib.md5(data.encode()).hexdigest()
 
@@ -208,15 +295,66 @@ class CreateDeckRequest(BaseModel):
     slides: int = Field(default=8, ge=1, le=30, description="Number of slides to generate")
     style: Optional[str] = Field(default=None, max_length=100, description="Style preset (e.g., 'corporate', 'creative', 'minimal')")
     additional_instructions: Optional[str] = Field(default=None, max_length=2000, description="Additional instructions for generation")
+    slide_mode: str = Field(
+        default="interactive",
+        validation_alias=AliasChoices("slide_mode", "slideMode"),
+        description=(
+            "Presentation mode. Use 'interactive' for NextGen slides or 'static' for Traditional slides. "
+            "Aliases 'nextgen', 'next-gen', and 'traditional' are also accepted."
+        ),
+    )
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Custom metadata to include in webhook responses")
+    outputs: Optional["RequestedDeckOutputs"] = Field(
+        default=None,
+        description="Optional output formats to enable for this deck",
+    )
+
+    @field_validator("slide_mode", mode="before")
+    @classmethod
+    def _validate_slide_mode(cls, value: Any) -> str:
+        return _normalize_slide_mode_value(value)
+
+
+class RequestedDeckOutputs(BaseModel):
+    """Optional output formats that can be enabled per deck."""
+    pdf: bool = Field(default=False, description="Enable screenshot-backed PDF export")
+    image: bool = Field(default=False, description="Enable screenshot PNG export for the first slide")
+    iframe: bool = Field(default=False, description="Enable embeddable iframe output")
+
+
+class ApiOutputAsset(BaseModel):
+    """A generated or embeddable deck output."""
+    ready: bool
+    url: Optional[str] = None
+
+
+class ApiImageOutputAsset(ApiOutputAsset):
+    """Static PNG screenshot output."""
+    slide_index: int = 0
+    content_type: str = "image/png"
+
+
+class ApiIframeOutputAsset(ApiOutputAsset):
+    """Embeddable NextSlide viewer output."""
+    html: Optional[str] = None
+
+
+class DeckOutputsResponse(BaseModel):
+    """Optional outputs requested for a deck."""
+    pdf: Optional[ApiOutputAsset] = None
+    image: Optional[ApiImageOutputAsset] = None
+    iframe: Optional[ApiIframeOutputAsset] = None
 
 
 class DeckStatusResponse(BaseModel):
     """Response for deck status endpoint."""
     deck_id: str
     status: str  # "generating", "completed", "failed"
+    slide_mode: str = "interactive"
     view_url: Optional[str] = None
     edit_url: Optional[str] = None
+    pdf_url: Optional[str] = None
+    outputs: Optional[DeckOutputsResponse] = None
     slides_count: Optional[int] = None
     created_at: str
     completed_at: Optional[str] = None
@@ -227,8 +365,11 @@ class CreateDeckResponse(BaseModel):
     """Response after initiating deck creation."""
     deck_id: str
     status: str  # Always "generating" on creation
+    slide_mode: str = "interactive"
     view_url: str
     edit_url: Optional[str] = None
+    pdf_url: Optional[str] = None
+    outputs: Optional[DeckOutputsResponse] = None
     poll_url: str
     estimated_seconds: int
     message: str
@@ -240,6 +381,124 @@ class DeckListResponse(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+CreateDeckRequest.model_rebuild()
+
+
+def _normalize_requested_outputs(
+    raw: Optional[Any],
+    *,
+    legacy_pdf_default: bool = False,
+) -> RequestedDeckOutputs:
+    data = {"pdf": legacy_pdf_default, "image": False, "iframe": False}
+
+    if isinstance(raw, RequestedDeckOutputs):
+        return raw
+
+    if isinstance(raw, dict):
+        for key in data:
+            if key in raw:
+                data[key] = bool(raw.get(key))
+
+    return RequestedDeckOutputs(**data)
+
+
+def _get_requested_outputs_from_deck(deck: Dict[str, Any]) -> RequestedDeckOutputs:
+    deck_data = deck.get("data")
+    if isinstance(deck_data, dict):
+        raw = deck_data.get("requested_outputs")
+        legacy_pdf_default = deck_data.get("source") == "api" and raw is None
+        return _normalize_requested_outputs(raw, legacy_pdf_default=legacy_pdf_default)
+    return RequestedDeckOutputs()
+
+
+def _get_slide_mode_from_deck(deck: Dict[str, Any]) -> str:
+    raw = None
+
+    deck_data = deck.get("data")
+    if isinstance(deck_data, dict):
+        raw = deck_data.get("slide_mode") or deck_data.get("slideMode")
+
+    if raw is None:
+        outline = deck.get("outline")
+        if isinstance(outline, dict):
+            style_prefs = outline.get("stylePreferences")
+            if isinstance(style_prefs, dict):
+                raw = style_prefs.get("slideMode") or style_prefs.get("slide_mode")
+
+    try:
+        return _normalize_slide_mode_value(raw)
+    except ValueError:
+        logger.warning("Invalid persisted slide_mode=%r for deck %s; defaulting to interactive", raw, deck.get("uuid"))
+        return "interactive"
+
+
+def _extract_status_state(status_obj: Any) -> str:
+    if isinstance(status_obj, dict):
+        return status_obj.get("state", "unknown")
+    if isinstance(status_obj, str):
+        return status_obj
+    return "unknown"
+
+
+def _resolve_share_urls(user_id: str, deck_id: str) -> Tuple[Optional[str], Optional[str]]:
+    sharing_service = get_sharing_service()
+    shares = sharing_service.get_user_share_links(user_id, deck_id)
+
+    view_url = None
+    edit_url = None
+    for share in shares:
+        if share.get("share_type") == "view":
+            view_url = f"{_frontend_base_url()}/p/{share['short_code']}"
+        elif share.get("share_type") == "edit":
+            edit_url = f"{_frontend_base_url()}/e/{share['short_code']}"
+
+    return view_url, edit_url
+
+
+def _build_outputs_response(
+    deck_id: str,
+    status_state: str,
+    requested_outputs: RequestedDeckOutputs,
+    view_url: Optional[str],
+    request: Optional[Request] = None,
+) -> Optional[DeckOutputsResponse]:
+    payload: Dict[str, Any] = {}
+    is_completed = status_state == "completed"
+
+    if requested_outputs.pdf:
+        payload["pdf"] = ApiOutputAsset(
+            ready=is_completed,
+            url=_build_pdf_url(deck_id, request=request),
+        )
+
+    if requested_outputs.image:
+        payload["image"] = ApiImageOutputAsset(
+            ready=is_completed,
+            url=_build_image_url(deck_id, request=request),
+            slide_index=0,
+            content_type="image/png",
+        )
+
+    if requested_outputs.iframe:
+        share_code = _extract_share_code(view_url)
+        payload["iframe"] = ApiIframeOutputAsset(
+            ready=bool(share_code),
+            url=_build_iframe_url(share_code) if share_code else None,
+            html=_build_iframe_html(share_code) if share_code else None,
+        )
+
+    if not payload:
+        return None
+
+    return DeckOutputsResponse(**payload)
+
+
+def _pdf_url_from_outputs(outputs: Optional[DeckOutputsResponse]) -> Optional[str]:
+    if outputs and outputs.pdf:
+        return outputs.pdf.url
+    return None
 
 
 # =============================================================================
@@ -308,8 +567,10 @@ async def generate_deck_background(
     num_slides: int,
     style: Optional[str],
     additional_instructions: Optional[str],
+    slide_mode: str,
     view_url: str,
     edit_url: Optional[str],
+    requested_outputs: Optional[Dict[str, Any]],
     metadata: Optional[Dict[str, Any]]
 ):
     """
@@ -319,6 +580,7 @@ async def generate_deck_background(
     Concurrency slot is released in finally block (Fix 1).
     """
     webhook_service = get_webhook_service()
+    normalized_outputs = _normalize_requested_outputs(requested_outputs)
 
     try:
         # Build the outline from the topic
@@ -424,6 +686,7 @@ async def generate_deck_background(
         style_prefs_data = {
             "initialIdea": topic,
             "vibeContext": style or topic,
+            "slideMode": slide_mode,
         }
 
         # Add context images as reference images for slide generation to use
@@ -478,7 +741,6 @@ async def generate_deck_background(
                     try:
                         import base64
                         import uuid as uuid_module
-                        from utils.supabase import get_supabase_client
 
                         # Parse data URL: data:image/png;base64,xxxxx
                         header, b64_data = logo_url.split(",", 1)
@@ -552,6 +814,8 @@ async def generate_deck_background(
         deck_data["data"]["source"] = "api"
         deck_data["data"]["api_key_id"] = api_key_record.id
         deck_data["data"]["api_key_name"] = api_key_record.name
+        deck_data["data"]["slide_mode"] = slide_mode
+        deck_data["data"]["requested_outputs"] = normalized_outputs.model_dump()
 
         # Upload initial deck
         upload_deck(deck_data, deck_uuid, user_id)
@@ -591,6 +855,8 @@ async def generate_deck_background(
                     "source": "api",
                     "api_key_id": api_key_record.id,
                     "api_key_name": api_key_record.name,
+                    "slide_mode": slide_mode,
+                    "requested_outputs": normalized_outputs.model_dump(),
                 }
 
                 client.table("decks").update({
@@ -608,6 +874,13 @@ async def generate_deck_background(
                     try:
                         get_supabase_client().table("decks").update({
                             "status": {"state": "completed"},
+                            "data": {
+                                "source": "api",
+                                "api_key_id": api_key_record.id,
+                                "api_key_name": api_key_record.name,
+                                "slide_mode": slide_mode,
+                                "requested_outputs": normalized_outputs.model_dump(),
+                            },
                         }).eq("uuid", deck_uuid).execute()
                     except Exception:
                         logger.error(f"Final status update failed for {deck_uuid}")
@@ -616,12 +889,21 @@ async def generate_deck_background(
 
         # Send webhook if configured
         if api_key_record.webhook_url:
+            outputs = _build_outputs_response(
+                deck_id=deck_uuid,
+                status_state="completed",
+                requested_outputs=normalized_outputs,
+                view_url=view_url,
+            )
             await webhook_service.send_deck_completed(
                 webhook_url=api_key_record.webhook_url,
                 deck_id=deck_uuid,
                 view_url=view_url,
                 slides_count=final_slides_count,
+                slide_mode=slide_mode,
                 edit_url=edit_url,
+                pdf_url=_pdf_url_from_outputs(outputs),
+                outputs=outputs.model_dump(exclude_none=True) if outputs else None,
                 metadata=metadata
             )
 
@@ -676,12 +958,21 @@ async def create_deck(
     """
     user_id, api_key_record = auth
     deck_uuid = str(uuid.uuid4())
+    requested_outputs = _normalize_requested_outputs(body.outputs)
 
     # ------------------------------------------------------------------
     # Fix 4: Request deduplication
     # ------------------------------------------------------------------
     _cleanup_dedup_cache()
-    req_hash = _get_api_request_hash(user_id, body.topic, body.slides, body.style, body.additional_instructions)
+    req_hash = _get_api_request_hash(
+        user_id,
+        body.topic,
+        body.slides,
+        body.style,
+        body.additional_instructions,
+        body.slide_mode,
+        requested_outputs.model_dump(),
+    )
     if req_hash in _recent_api_creations:
         ts, existing_deck_id = _recent_api_creations[req_hash]
         if time.time() - ts < API_DEDUP_WINDOW_SECONDS:
@@ -735,7 +1026,9 @@ async def create_deck(
             "data": {
                 "source": "api",
                 "api_key_id": api_key_record.id,
-                "api_key_name": api_key_record.name
+                "api_key_name": api_key_record.name,
+                "slide_mode": body.slide_mode,
+                "requested_outputs": requested_outputs.model_dump(),
             }
         }
         upload_deck(initial_deck, deck_uuid, user_id)
@@ -755,7 +1048,7 @@ async def create_deck(
             share_type='view',
             metadata={"source": "api", "api_key_id": api_key_record.id}
         )
-        view_url = f"https://nextslide.ai/p/{view_share['short_code']}"
+        view_url = f"{_frontend_base_url()}/p/{view_share['short_code']}"
 
         # Create edit link if enabled
         edit_url = None
@@ -766,13 +1059,21 @@ async def create_deck(
                 share_type='edit',
                 metadata={"source": "api", "api_key_id": api_key_record.id}
             )
-            edit_url = f"https://nextslide.ai/e/{edit_share['short_code']}"
+            edit_url = f"{_frontend_base_url()}/e/{edit_share['short_code']}"
 
     except Exception as e:
         logger.warning(f"Failed to create share links: {e}")
         # Fallback to direct URLs
-        view_url = f"https://nextslide.ai/deck/{deck_uuid}"
-        edit_url = f"https://nextslide.ai/deck/{deck_uuid}" if api_key_record.include_edit_link else None
+        view_url = f"{_frontend_base_url()}/deck/{deck_uuid}"
+        edit_url = f"{_frontend_base_url()}/deck/{deck_uuid}" if api_key_record.include_edit_link else None
+
+    outputs = _build_outputs_response(
+        deck_id=deck_uuid,
+        status_state="generating",
+        requested_outputs=requested_outputs,
+        view_url=view_url,
+        request=request,
+    )
 
     # ------------------------------------------------------------------
     # Fix 6: Try Redis queue first, fall back to background tasks
@@ -789,8 +1090,10 @@ async def create_deck(
             num_slides=body.slides,
             style=body.style,
             additional_instructions=body.additional_instructions,
+            slide_mode=body.slide_mode,
             view_url=view_url,
             edit_url=edit_url,
+            requested_outputs=requested_outputs.model_dump(),
             metadata=body.metadata,
         )
     except Exception as e:
@@ -807,8 +1110,10 @@ async def create_deck(
             num_slides=body.slides,
             style=body.style,
             additional_instructions=body.additional_instructions,
+            slide_mode=body.slide_mode,
             view_url=view_url,
             edit_url=edit_url,
+            requested_outputs=requested_outputs.model_dump(),
             metadata=body.metadata
         )
 
@@ -820,7 +1125,10 @@ async def create_deck(
                 webhook_url=api_key_record.webhook_url,
                 deck_id=deck_uuid,
                 view_url=view_url,
+                slide_mode=body.slide_mode,
                 edit_url=edit_url,
+                pdf_url=_pdf_url_from_outputs(outputs),
+                outputs=outputs.model_dump(exclude_none=True) if outputs else None,
                 metadata=body.metadata
             )
         )
@@ -828,8 +1136,11 @@ async def create_deck(
     return CreateDeckResponse(
         deck_id=deck_uuid,
         status="generating",
+        slide_mode=body.slide_mode,
         view_url=view_url,
         edit_url=edit_url,
+        pdf_url=_pdf_url_from_outputs(outputs),
+        outputs=outputs,
         poll_url=f"/v1/decks/{deck_uuid}/status",
         estimated_seconds=120,  # ~2 minutes
         message="Deck creation started. Poll the status endpoint or wait for webhook."
@@ -869,34 +1180,32 @@ async def get_deck_status(
             raise HTTPException(status_code=403, detail="Access denied")
 
         status_obj = deck.get("status", {})
-        if isinstance(status_obj, dict):
-            status_state = status_obj.get("state", "unknown")
-        elif isinstance(status_obj, str):
-            status_state = status_obj
-        else:
-            status_state = "unknown"
+        status_state = _extract_status_state(status_obj)
+        requested_outputs = _get_requested_outputs_from_deck(deck)
+        view_url, edit_url = _resolve_share_urls(user_id, deck_id)
+        outputs = _build_outputs_response(
+            deck_id=deck_id,
+            status_state=status_state,
+            requested_outputs=requested_outputs,
+            view_url=view_url,
+            request=request,
+        )
+        slide_mode = _get_slide_mode_from_deck(deck)
 
-        # Get share URLs
-        sharing_service = get_sharing_service()
-        shares = sharing_service.get_user_share_links(user_id, deck_id)
-
-        view_url = None
-        edit_url = None
-        for share in shares:
-            if share.get("share_type") == "view":
-                view_url = f"https://nextslide.ai/p/{share['short_code']}"
-            elif share.get("share_type") == "edit":
-                edit_url = f"https://nextslide.ai/e/{share['short_code']}"
+        error_message = status_obj.get("error") if isinstance(status_obj, dict) and status_state == "failed" else None
 
         return DeckStatusResponse(
             deck_id=deck_id,
             status=status_state,
+            slide_mode=slide_mode,
             view_url=view_url,
             edit_url=edit_url,
+            pdf_url=_pdf_url_from_outputs(outputs),
+            outputs=outputs,
             slides_count=len(deck.get("slides", [])),
             created_at=deck.get("created_at", ""),
             completed_at=deck.get("last_modified") if status_state == "completed" else None,
-            error_message=status_obj.get("error") if status_state == "failed" else None
+            error_message=error_message,
         )
 
     except HTTPException:
@@ -946,6 +1255,124 @@ async def get_deck_full(
         raise HTTPException(status_code=500, detail="Failed to get deck")
 
 
+@router.get("/decks/{deck_id}/pdf")
+@limiter.limit(API_RATE_LIMIT)
+async def download_deck_pdf(
+    request: Request,
+    deck_id: str,
+    auth: Tuple[str, ApiKeyRecord] = Depends(get_api_key_auth)
+):
+    """
+    Download a completed deck as a PDF.
+
+    The PDF is generated on demand from the stored deck payload.
+    """
+    user_id, _ = auth
+
+    if not deck_id or deck_id in ("undefined", "null", ""):
+        raise HTTPException(status_code=400, detail="Invalid deck ID")
+    try:
+        import uuid as _uuid
+        _uuid.UUID(deck_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid deck ID format")
+
+    try:
+        deck = get_deck(deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+
+        if deck.get("user_id") != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        status_obj = deck.get("status", {})
+        status_state = _extract_status_state(status_obj)
+        requested_outputs = _get_requested_outputs_from_deck(deck)
+
+        if not requested_outputs.pdf:
+            raise HTTPException(status_code=409, detail="PDF output was not requested for this deck")
+
+        if status_state != "completed":
+            raise HTTPException(status_code=409, detail="PDF is available only after generation completes")
+
+        pdf_bytes = await generate_deck_pdf(deck)
+        filename = safe_pdf_filename(deck.get("name") or deck.get("title"))
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as e:
+        logger.error(f"Error generating deck PDF for {deck_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate deck PDF")
+
+
+@router.get("/decks/{deck_id}/image")
+@limiter.limit(API_RATE_LIMIT)
+async def download_deck_image(
+    request: Request,
+    deck_id: str,
+    slide_index: int = Query(default=0, ge=0, description="Zero-based slide index to render"),
+    auth: Tuple[str, ApiKeyRecord] = Depends(get_api_key_auth)
+):
+    """
+    Render a completed deck slide as a PNG screenshot.
+
+    Defaults to slide 0 (the first slide).
+    """
+    user_id, _ = auth
+
+    if not deck_id or deck_id in ("undefined", "null", ""):
+        raise HTTPException(status_code=400, detail="Invalid deck ID")
+    try:
+        import uuid as _uuid
+        _uuid.UUID(deck_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid deck ID format")
+
+    try:
+        deck = get_deck(deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+
+        if deck.get("user_id") != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        status_state = _extract_status_state(deck.get("status", {}))
+        requested_outputs = _get_requested_outputs_from_deck(deck)
+
+        if not requested_outputs.image:
+            raise HTTPException(status_code=409, detail="Image output was not requested for this deck")
+
+        if status_state != "completed":
+            raise HTTPException(status_code=409, detail="Image output is available only after generation completes")
+
+        png_bytes = await generate_slide_png(deck, slide_index=slide_index)
+        filename = safe_image_filename(deck.get("name") or deck.get("title"), slide_index=slide_index)
+
+        return Response(
+            content=png_bytes,
+            media_type="image/png",
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"',
+            },
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as e:
+        logger.error(f"Error generating deck image for {deck_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate deck image")
+
+
 @router.get("/decks", response_model=DeckListResponse)
 @limiter.limit(API_RATE_LIMIT)
 async def list_decks(
@@ -978,19 +1405,30 @@ async def list_decks(
             data = deck.get("data", {})
             if isinstance(data, dict) and data.get("source") == "api":
                 status_obj = deck.get("status", {})
-                if isinstance(status_obj, dict):
-                    status_state = status_obj.get("state", "unknown")
-                elif isinstance(status_obj, str):
-                    status_state = status_obj
-                else:
-                    status_state = "unknown"
+                status_state = _extract_status_state(status_obj)
+                requested_outputs = _get_requested_outputs_from_deck(deck)
+                view_url, edit_url = _resolve_share_urls(user_id, deck["uuid"])
+                outputs = _build_outputs_response(
+                    deck_id=deck["uuid"],
+                    status_state=status_state,
+                    requested_outputs=requested_outputs,
+                    view_url=view_url,
+                    request=request,
+                )
+                slide_mode = _get_slide_mode_from_deck(deck)
 
                 api_decks.append(DeckStatusResponse(
                     deck_id=deck["uuid"],
                     status=status_state,
+                    slide_mode=slide_mode,
+                    view_url=view_url,
+                    edit_url=edit_url,
+                    pdf_url=_pdf_url_from_outputs(outputs),
+                    outputs=outputs,
                     slides_count=len(deck.get("slides", [])),
                     created_at=deck.get("created_at", ""),
-                    completed_at=deck.get("last_modified") if status_state == "completed" else None
+                    completed_at=deck.get("last_modified") if status_state == "completed" else None,
+                    error_message=status_obj.get("error") if isinstance(status_obj, dict) and status_state == "failed" else None,
                 ))
 
         # Get total count

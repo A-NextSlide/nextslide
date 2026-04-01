@@ -1,5 +1,6 @@
 """Shared helpers for CustomComponent enhancement across slide generators."""
 
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -372,6 +373,115 @@ class CustomComponentEnhancer:
 
         return enriched
 
+    def _build_text_fallback_slide(
+        self,
+        slide_data: Dict[str, Any],
+        context: SlideGenerationContext,
+        theme_dict: Dict[str, Any],
+        content: str,
+    ) -> Dict[str, Any]:
+        """Build a deterministic text slide when CustomComponent generation fails."""
+        existing_components = slide_data.get("components", []) or []
+        non_background = [
+            component for component in existing_components
+            if component.get("type") != "Background"
+        ]
+        if non_background:
+            return slide_data
+
+        slide_id = slide_data.get("id") or f"slide-{context.slide_index}"
+        title = slide_data.get("title") or _get_attr_or_key(context.slide_outline, "title") or f"Slide {context.slide_index + 1}"
+
+        palette = theme_dict.get("color_palette", {}) if isinstance(theme_dict, dict) else {}
+        typography = theme_dict.get("typography", {}) if isinstance(theme_dict, dict) else {}
+        hero_font = _get_attr_or_key(_get_attr_or_key(typography, "hero_title", {}), "family")
+        body_font = _get_attr_or_key(_get_attr_or_key(typography, "body_text", {}), "family")
+        background_color = (
+            palette.get("primary_background")
+            or palette.get("background")
+            or "#F8FAFC"
+        )
+        title_color = (
+            palette.get("accent_1")
+            or palette.get("primary_text")
+            or "#0F172A"
+        )
+        body_color = (
+            palette.get("primary_text")
+            or palette.get("text")
+            or "#1E293B"
+        )
+
+        lines: List[str] = []
+        for raw_line in (content or "").splitlines():
+            cleaned = re.sub(r"^[\s\-*•]+", "", raw_line).strip()
+            if cleaned:
+                lines.append(cleaned)
+
+        if not lines and context.presentation_context:
+            lines.append(str(context.presentation_context).strip())
+
+        body_lines = lines[:4] if lines else ["Content generation fallback rendered this slide in a readable format."]
+        body_text = "\n\n".join(body_lines)
+
+        background = next((c for c in existing_components if c.get("type") == "Background"), None)
+        if not background:
+            background = {
+                "id": f"{slide_id}-fallback-bg",
+                "type": "Background",
+                "props": {
+                    "backgroundType": "color",
+                    "backgroundColor": background_color,
+                    "opacity": 1,
+                },
+            }
+
+        title_block = {
+            "id": f"{slide_id}-fallback-title",
+            "type": "TiptapTextBlock",
+            "props": {
+                "position": {"x": 120, "y": 110},
+                "width": 1680,
+                "height": 140,
+                "texts": [{
+                    "text": title,
+                    "fontSize": 52,
+                    "fontWeight": 700,
+                    "textColor": title_color,
+                    "fontFamily": hero_font,
+                    "style": [],
+                }],
+                "textAlign": "left",
+                "verticalAlign": "middle",
+                "zIndex": 10,
+            },
+        }
+
+        body_block = {
+            "id": f"{slide_id}-fallback-body",
+            "type": "TiptapTextBlock",
+            "props": {
+                "position": {"x": 120, "y": 280},
+                "width": 1480,
+                "height": 560,
+                "texts": [{
+                    "text": body_text,
+                    "fontSize": 28,
+                    "fontWeight": 400,
+                    "textColor": body_color,
+                    "fontFamily": body_font,
+                    "style": [],
+                }],
+                "textAlign": "left",
+                "verticalAlign": "top",
+                "zIndex": 10,
+            },
+        }
+
+        logger.warning("[CUSTOM_COMPONENT] Falling back to text blocks for slide %s", context.slide_index + 1)
+        slide_data["components"] = [background, title_block, body_block]
+        return slide_data
+
     async def enhance(
         self,
         slide_data: Dict[str, Any],
@@ -418,8 +528,8 @@ class CustomComponentEnhancer:
         )
 
         if not enhanced:
-            logger.warning("[CUSTOM_COMPONENT] Generation returned None; keeping original components")
-            return slide_data
+            logger.warning("[CUSTOM_COMPONENT] Generation returned None; using text fallback")
+            return self._build_text_fallback_slide(slide_data, context, theme_dict, content)
 
         components = slide_data.get("components", [])
         if layout.is_full_slide and self.full_slide:

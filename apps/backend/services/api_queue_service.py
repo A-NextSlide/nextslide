@@ -70,8 +70,10 @@ async def enqueue_deck_generation(
     num_slides: int,
     style: Optional[str],
     additional_instructions: Optional[str],
+    slide_mode: str,
     view_url: str,
     edit_url: Optional[str],
+    requested_outputs: Optional[Dict[str, Any]],
     metadata: Optional[Dict[str, Any]],
 ) -> bool:
     """
@@ -95,8 +97,10 @@ async def enqueue_deck_generation(
             num_slides=num_slides,
             style=style,
             additional_instructions=additional_instructions,
+            slide_mode=slide_mode,
             view_url=view_url,
             edit_url=edit_url,
+            requested_outputs=requested_outputs,
             metadata=metadata,
             _job_id=f"deck:{deck_uuid}",
         )
