@@ -2089,8 +2089,11 @@ const Profile: React.FC = () => {
 {`curl -X POST https://api.nextslide.ai/v1/decks \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"topic": "Q4 Sales Review", "slides": 10}'`}
+  -d '{"topic": "Q4 Sales Review", "slides": 10, "outputs": {"pdf": true, "image": true, "iframe": true}}'`}
                         </pre>
+                        <p className="text-[11px] text-zinc-400 mt-2">
+                          Outputs are optional. Request them in <code className="font-mono">outputs</code>, then use <code className="font-mono">outputs.pdf.url</code>, <code className="font-mono">outputs.image.url</code>, and <code className="font-mono">outputs.iframe.url</code> from the status response.
+                        </p>
                         <Button
                           variant="link"
                           size="sm"

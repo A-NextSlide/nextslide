@@ -36,6 +36,7 @@ async def generate_deck_job(
     additional_instructions: Optional[str],
     view_url: str,
     edit_url: Optional[str],
+    requested_outputs: Optional[Dict[str, Any]],
     metadata: Optional[Dict[str, Any]],
 ):
     """
@@ -64,6 +65,7 @@ async def generate_deck_job(
         additional_instructions=additional_instructions,
         view_url=view_url,
         edit_url=edit_url,
+        requested_outputs=requested_outputs,
         metadata=metadata,
     )
     logger.info(f"[worker] Finished deck generation for {deck_uuid}")

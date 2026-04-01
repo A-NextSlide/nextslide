@@ -65,6 +65,7 @@ async def create_deck_with_api_key(api_key: str, topic: str, num_slides: int = 8
         additional_instructions=None,
         view_url=view_url,
         edit_url=edit_url,
+        requested_outputs={"pdf": True, "image": False, "iframe": False},
         metadata={"created_via": "internal_script"}
     )
 

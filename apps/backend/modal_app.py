@@ -371,6 +371,31 @@ async def render_slide_thumbnail_remote(
 
 
 @app.function(
+    image=playwright_image,
+    secrets=[modal.Secret.from_name("nextslide-env")],
+    timeout=60,
+    memory=2048,
+    cpu=1.0,
+)
+@modal.concurrent(max_inputs=4)
+async def render_slide_png_remote(
+    deck_uuid: str,
+    slide_data: dict,
+    slide_size: dict,
+    theme_data: Optional[dict] = None,
+    slide_index: int = 0,
+) -> bytes:
+    """Render a slide to PNG bytes via Playwright inside a Modal container."""
+    from services.thumbnail_renderer import build_slide_html, capture_slide_screenshot
+
+    width = (slide_size or {}).get("width", 1920)
+    height = (slide_size or {}).get("height", 1080)
+    html = build_slide_html(slide_data, slide_size, theme_data)
+
+    return await capture_slide_screenshot(html, width, height)
+
+
+@app.function(
     image=image,
     secrets=[modal.Secret.from_name("nextslide-env")],
     timeout=300,

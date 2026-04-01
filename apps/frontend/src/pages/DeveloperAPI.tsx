@@ -206,7 +206,7 @@ const DeveloperAPI: React.FC = () => {
                 onClick={() => handleCopy(`curl -X POST https://api.nextslide.ai/v1/decks \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"topic": "Q4 Sales Review", "slides": 10}'`, 'quickstart')}
+  -d '{"topic": "Q4 Sales Review", "slides": 10, "outputs": {"pdf": true, "image": true, "iframe": true}}'`, 'quickstart')}
                 className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
               >
                 {copiedCode === 'quickstart' ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -224,9 +224,12 @@ const DeveloperAPI: React.FC = () => {
               <span className="text-sky-300">"Content-Type: application/json"</span>{' '}
               <span className="text-zinc-600">\</span>{'\n'}
               {'  '}<span className="text-zinc-500">-d</span>{' '}
-              <span className="text-emerald-300">{'\'{"topic": "Q4 Sales Review", "slides": 10}\''}</span>
+              <span className="text-emerald-300">{'\'{"topic": "Q4 Sales Review", "slides": 10, "outputs": {"pdf": true, "image": true, "iframe": true}}\''}</span>
             </pre>
           </div>
+          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Outputs are optional. Request <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">pdf</code>, <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">image</code>, and/or <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">iframe</code> in the create payload, then read the generated links from <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono">outputs</code>.
+          </p>
         </div>
       </section>
 
@@ -338,13 +341,24 @@ const DeveloperAPI: React.FC = () => {
   "slides": 10,                   // Optional, 1-30
   "style": "corporate",           // Optional
   "additional_instructions": "",  // Optional
-  "metadata": {}                  // Optional, passed to webhook
+  "metadata": {},                 // Optional, passed to webhook
+  "outputs": {                    // Optional
+    "pdf": true,
+    "image": true,
+    "iframe": true
+  }
 }`}
               responseBody={`{
   "deck_id": "uuid",
   "status": "generating",
   "view_url": "https://nextslide.ai/p/abc123",
   "edit_url": "https://nextslide.ai/e/xyz789",
+  "pdf_url": "https://api.nextslide.ai/v1/decks/{id}/pdf",
+  "outputs": {
+    "pdf": { "ready": false, "url": "https://api.nextslide.ai/v1/decks/{id}/pdf" },
+    "image": { "ready": false, "url": "https://api.nextslide.ai/v1/decks/{id}/image?slide_index=0", "slide_index": 0, "content_type": "image/png" },
+    "iframe": { "ready": true, "url": "https://nextslide.ai/embed/abc123", "html": "<iframe ...></iframe>" }
+  },
   "poll_url": "https://api.nextslide.ai/v1/decks/{id}/status",
   "estimated_seconds": 120
 }`}
@@ -360,10 +374,37 @@ const DeveloperAPI: React.FC = () => {
   "deck_id": "uuid",
   "status": "completed",  // generating | completed | failed
   "view_url": "...",
+  "pdf_url": "https://api.nextslide.ai/v1/decks/{id}/pdf",
+  "outputs": {
+    "pdf": { "ready": true, "url": "https://api.nextslide.ai/v1/decks/{id}/pdf" },
+    "image": { "ready": true, "url": "https://api.nextslide.ai/v1/decks/{id}/image?slide_index=0", "slide_index": 0, "content_type": "image/png" },
+    "iframe": { "ready": true, "url": "https://nextslide.ai/embed/abc123", "html": "<iframe ...></iframe>" }
+  },
   "slides_count": 10,
   "completed_at": "2024-01-15T12:00:00Z",
   "error_message": null
 }`}
+              onCopy={handleCopy}
+              copiedCode={copiedCode}
+            />
+
+            <EndpointCard
+              method="GET"
+              path="/v1/decks/{id}/pdf"
+              description="Download the completed deck as a screenshot-backed PDF"
+              responseBody={`%PDF-1.7
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="Quarterly Business Review.pdf"`}
+              onCopy={handleCopy}
+              copiedCode={copiedCode}
+            />
+
+            <EndpointCard
+              method="GET"
+              path="/v1/decks/{id}/image?slide_index=0"
+              description="Render a completed slide as a PNG screenshot"
+              responseBody={`Content-Type: image/png
+Content-Disposition: inline; filename="Quarterly Business Review-slide-1.png"`}
               onCopy={handleCopy}
               copiedCode={copiedCode}
             />
@@ -431,6 +472,12 @@ const DeveloperAPI: React.FC = () => {
   "status": "completed",
   "view_url": "https://nextslide.ai/p/abc123",
   "edit_url": "https://nextslide.ai/e/xyz789",
+  "pdf_url": "https://api.nextslide.ai/v1/decks/{id}/pdf",
+  "outputs": {
+    "pdf": { "ready": true, "url": "https://api.nextslide.ai/v1/decks/{id}/pdf" },
+    "image": { "ready": true, "url": "https://api.nextslide.ai/v1/decks/{id}/image?slide_index=0", "slide_index": 0, "content_type": "image/png" },
+    "iframe": { "ready": true, "url": "https://nextslide.ai/embed/abc123", "html": "<iframe ...></iframe>" }
+  },
   "slides_count": 10,
   "metadata": { ... },
   "timestamp": "2024-01-15T12:00:00Z"
@@ -497,8 +544,18 @@ expected = hmac.new(secret, signed, sha256)`}
   -H "Content-Type: application/json" \\
   -d '{
     "topic": "Quarterly Business Review",
-    "slides": 12
-  }'`}
+    "slides": 12,
+    "outputs": { "pdf": true, "image": true, "iframe": true }
+  }'
+
+# Once status = completed:
+curl -L https://api.nextslide.ai/v1/decks/DECK_ID/pdf \\
+  -H "X-API-Key: $NEXTSLIDE_API_KEY" \\
+  -o quarterly-business-review.pdf
+
+curl -L "https://api.nextslide.ai/v1/decks/DECK_ID/image?slide_index=0" \\
+  -H "X-API-Key: $NEXTSLIDE_API_KEY" \\
+  -o quarterly-business-review-slide-1.png`}
                 id="curl"
                 onCopy={handleCopy}
                 copiedCode={copiedCode}
@@ -520,7 +577,8 @@ response = requests.post(
     },
     json={
         "topic": "Quarterly Business Review",
-        "slides": 12
+        "slides": 12,
+        "outputs": {"pdf": True, "image": True, "iframe": True},
     }
 )
 
@@ -536,6 +594,26 @@ while True:
 
     if status["status"] == "completed":
         print(f"Done! {status['slides_count']} slides")
+        pdf_url = status["outputs"]["pdf"]["url"]
+        image_url = status["outputs"]["image"]["url"]
+        iframe_url = status["outputs"]["iframe"]["url"]
+        print(f"Iframe URL: {iframe_url}")
+
+        pdf_response = requests.get(
+            pdf_url,
+            headers={"X-API-Key": os.environ["NEXTSLIDE_API_KEY"]}
+        )
+        pdf_response.raise_for_status()
+        with open("quarterly-business-review.pdf", "wb") as f:
+            f.write(pdf_response.content)
+
+        image_response = requests.get(
+            image_url,
+            headers={"X-API-Key": os.environ["NEXTSLIDE_API_KEY"]}
+        )
+        image_response.raise_for_status()
+        with open("quarterly-business-review-slide-1.png", "wb") as f:
+            f.write(image_response.content)
         break
     elif status["status"] == "failed":
         print(f"Error: {status['error_message']}")
@@ -558,7 +636,8 @@ while True:
   },
   body: JSON.stringify({
     topic: "Quarterly Business Review",
-    slides: 12
+    slides: 12,
+    outputs: { pdf: true, image: true, iframe: true }
   })
 });
 
@@ -574,6 +653,12 @@ const poll = async () => {
 
   if (status.status === "completed") {
     console.log(\`Done! \${status.slides_count} slides\`);
+    const pdf = await fetch(status.outputs.pdf.url, {
+      headers: { "X-API-Key": process.env.NEXTSLIDE_API_KEY }
+    });
+    const blob = await pdf.blob();
+    console.log("PDF bytes:", blob.size);
+    console.log("Iframe URL:", status.outputs.iframe.url);
   } else if (status.status === "generating") {
     setTimeout(poll, 5000);
   }

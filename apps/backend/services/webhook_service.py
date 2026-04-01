@@ -11,7 +11,7 @@ import json
 import logging
 import asyncio
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass
 import httpx
 
@@ -26,6 +26,8 @@ class WebhookPayload:
     status: str  # "generating", "completed", "failed"
     view_url: Optional[str] = None
     edit_url: Optional[str] = None
+    pdf_url: Optional[str] = None
+    outputs: Optional[Dict[str, Any]] = None
     slides_count: Optional[int] = None
     error_message: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
@@ -33,13 +35,15 @@ class WebhookPayload:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, excluding None values."""
-        self.timestamp = self.timestamp or datetime.utcnow().isoformat() + "Z"
+        self.timestamp = self.timestamp or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         return {k: v for k, v in {
             "event": self.event,
             "deck_id": self.deck_id,
             "status": self.status,
             "view_url": self.view_url,
             "edit_url": self.edit_url,
+            "pdf_url": self.pdf_url,
+            "outputs": self.outputs,
             "slides_count": self.slides_count,
             "error_message": self.error_message,
             "metadata": self.metadata,
@@ -186,6 +190,8 @@ class WebhookService:
         deck_id: str,
         view_url: str,
         edit_url: Optional[str] = None,
+        pdf_url: Optional[str] = None,
+        outputs: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Send a deck.created webhook when generation starts."""
@@ -194,7 +200,9 @@ class WebhookService:
             deck_id=deck_id,
             status="generating",
             view_url=view_url,
-            edit_url=edit_url
+            edit_url=edit_url,
+            pdf_url=pdf_url,
+            outputs=outputs,
         )
         return await self.deliver_webhook(webhook_url, payload, metadata)
 
@@ -205,6 +213,8 @@ class WebhookService:
         view_url: str,
         slides_count: int,
         edit_url: Optional[str] = None,
+        pdf_url: Optional[str] = None,
+        outputs: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Send a deck.completed webhook when generation finishes."""
@@ -214,6 +224,8 @@ class WebhookService:
             status="completed",
             view_url=view_url,
             edit_url=edit_url,
+            pdf_url=pdf_url,
+            outputs=outputs,
             slides_count=slides_count
         )
         return await self.deliver_webhook(webhook_url, payload, metadata)

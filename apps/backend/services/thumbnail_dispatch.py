@@ -96,6 +96,72 @@ async def render_thumbnail_via_modal(
             return None
 
 
+async def capture_slide_png_via_modal(
+    deck_uuid: str,
+    slide_data: dict,
+    slide_size: Optional[dict] = None,
+    theme_data: Optional[dict] = None,
+    slide_index: int = 0,
+) -> Optional[bytes]:
+    """
+    Render a slide to PNG bytes via Modal.
+
+    Falls back to local Playwright only if Chromium is actually installed.
+    Returns PNG bytes on success, None on failure.
+    """
+    try:
+        import modal
+
+        render_fn = modal.Function.from_name("nextslide", "render_slide_png_remote")
+
+        logger.info("[thumbnail_dispatch] Dispatching PNG render for deck %s slide %d to Modal", deck_uuid, slide_index)
+
+        result = await render_fn.remote.aio(
+            deck_uuid=deck_uuid,
+            slide_data=slide_data,
+            slide_size=slide_size or {},
+            theme_data=theme_data,
+            slide_index=slide_index,
+        )
+
+        if result:
+            logger.info("[thumbnail_dispatch] Modal PNG render OK for deck %s slide %d", deck_uuid, slide_index)
+        return result
+
+    except Exception as exc:
+        if isinstance(exc, ModuleNotFoundError):
+            logger.debug("[thumbnail_dispatch] modal not installed")
+        else:
+            logger.warning(
+                "[thumbnail_dispatch] Modal PNG render failed for deck %s slide %d: %s",
+                deck_uuid,
+                slide_index,
+                exc,
+            )
+
+        if not _check_local_playwright():
+            logger.debug("[thumbnail_dispatch] Skipping local PNG fallback — Playwright/Chromium not available")
+            return None
+
+        try:
+            from services.thumbnail_renderer import build_slide_html, capture_slide_screenshot
+
+            width = (slide_size or {}).get("width", 1920)
+            height = (slide_size or {}).get("height", 1080)
+            html = build_slide_html(slide_data, slide_size, theme_data)
+            result = await capture_slide_screenshot(html, width, height)
+            logger.info("[thumbnail_dispatch] Local PNG render OK for deck %s slide %d", deck_uuid, slide_index)
+            return result
+        except Exception as local_exc:
+            logger.warning(
+                "[thumbnail_dispatch] Local PNG fallback failed for deck %s slide %d: %s",
+                deck_uuid,
+                slide_index,
+                local_exc,
+            )
+            return None
+
+
 async def trigger_thumbnail_render(deck_uuid: str) -> None:
     """
     Fetch deck from Supabase and render the first slide as the OG thumbnail.
