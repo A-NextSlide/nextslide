@@ -233,6 +233,83 @@ const DeveloperAPI: React.FC = () => {
         </div>
       </section>
 
+      {/* Optional Outputs */}
+      <section className="py-12 border-b border-zinc-200/60 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/30">
+        <div className="max-w-[1200px] mx-auto px-6">
+          <div className="flex items-start justify-between gap-6 mb-8">
+            <div className="max-w-2xl">
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 mb-2">Optional Outputs</h2>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                Deck generation and export are now separate on purpose. You opt into outputs in the create request,
+                then use the returned <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono text-xs">outputs</code> object
+                to fetch only the formats you want.
+              </p>
+            </div>
+            <Badge variant="secondary" className="shrink-0">
+              On-demand exports
+            </Badge>
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-4 mb-8">
+            {[
+              {
+                icon: FileText,
+                title: 'PDF',
+                description: 'Screenshot-backed PDF built from the real rendered slides, not simplified text extraction.',
+                status: 'Rendered on GET /v1/decks/{id}/pdf',
+              },
+              {
+                icon: ImageIcon,
+                title: 'Image',
+                description: 'PNG screenshot of a slide from the actual slide HTML. Defaults to slide 0 for previews and thumbnails.',
+                status: 'Rendered on GET /v1/decks/{id}/image?slide_index=0',
+              },
+              {
+                icon: Globe,
+                title: 'Iframe',
+                description: 'Animated embed using the existing NextSlide renderer, suitable for showing interactive or motion-heavy slides.',
+                status: 'Available from outputs.iframe.url and outputs.iframe.html',
+              }
+            ].map((item, i) => (
+              <div key={i} className="rounded-xl border border-zinc-200/70 dark:border-zinc-800/70 bg-white dark:bg-zinc-900 p-5">
+                <div className="h-10 w-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-4">
+                  <item.icon className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
+                </div>
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2">{item.title}</h3>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed mb-3">{item.description}</p>
+                <p className="text-xs font-mono text-zinc-500 dark:text-zinc-500">{item.status}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-4">
+            {[
+              {
+                step: '1',
+                title: 'Request outputs',
+                copy: 'Set outputs.pdf, outputs.image, and/or outputs.iframe in POST /v1/decks.',
+              },
+              {
+                step: '2',
+                title: 'Poll status',
+                copy: 'Read the outputs object from the create response, status response, list response, or webhook payload.',
+              },
+              {
+                step: '3',
+                title: 'Fetch what you need',
+                copy: 'Use iframe immediately for embeds, then call the PDF or image URLs once the deck is completed.',
+              }
+            ].map((item) => (
+              <div key={item.step} className="rounded-xl border border-zinc-200/70 dark:border-zinc-800/70 bg-white dark:bg-zinc-900 p-4">
+                <div className="text-[10px] font-semibold tracking-[0.18em] text-zinc-500 mb-2">STEP {item.step}</div>
+                <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 mb-1">{item.title}</div>
+                <div className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">{item.copy}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Custom Context Section */}
       <section className="py-12 border-b border-zinc-200/60 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/30">
         <div className="max-w-[1200px] mx-auto px-6">
@@ -391,7 +468,7 @@ const DeveloperAPI: React.FC = () => {
             <EndpointCard
               method="GET"
               path="/v1/decks/{id}/pdf"
-              description="Download the completed deck as a screenshot-backed PDF"
+              description="Download the completed deck as a screenshot-backed PDF if pdf output was requested"
               responseBody={`%PDF-1.7
 Content-Type: application/pdf
 Content-Disposition: attachment; filename="Quarterly Business Review.pdf"`}
@@ -402,7 +479,7 @@ Content-Disposition: attachment; filename="Quarterly Business Review.pdf"`}
             <EndpointCard
               method="GET"
               path="/v1/decks/{id}/image?slide_index=0"
-              description="Render a completed slide as a PNG screenshot"
+              description="Render a completed slide as a PNG screenshot if image output was requested"
               responseBody={`Content-Type: image/png
 Content-Disposition: inline; filename="Quarterly Business Review-slide-1.png"`}
               onCopy={handleCopy}
