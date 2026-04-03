@@ -13,7 +13,7 @@ GEMINI_FLASH = "gemini-2.5-flash"
 GEMINI_FLASH_LITE = "gemini-2.5-flash-lite"
 GEMINI_PRO = "gemini-2.5-pro"
 GEMINI_3_PRO = "gemini-3.1-pro-preview"
-GEMINI_3_PRO_V1 = "gemini-3-pro-preview"
+GEMINI_3_PRO_V1 = "gemini-3.1-pro-preview"  # gemini-3-pro-preview shut down March 9 2026
 GEMINI_3_FLASH = "gemini-3-flash-preview"
 GEMINI_IMAGE = "gemini-3.1-flash-image-preview"
 
@@ -43,9 +43,6 @@ OPENAI_EMBEDDINGS = "text-embedding-3-small"
 # xAI Models
 GROK_4 = "grok-4"
 GROK_4_FAST = "grok-4-fast"
-
-# Mistral Models
-MISTRAL_LARGE_3 = "mistral-large-3"
 
 # DeepSeek Models
 DEEPSEEK_CHAT = "deepseek-chat"

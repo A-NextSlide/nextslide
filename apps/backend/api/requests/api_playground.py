@@ -54,8 +54,6 @@ PLAYGROUND_MODELS: Dict[str, str] = {
     # xAI
     "grok-4": "Grok 4",
     "grok-4-fast": "Grok 4 Fast",
-    # Mistral
-    "mistral-large-3": "Mistral Large 3",
 }
 
 
@@ -495,7 +493,7 @@ async def save_run(
 ):
     """Save a complete playground run (experiment settings + all model results)."""
     sb = get_supabase_client()
-    user_id = admin["user_id"]
+    user_id = admin["id"]
 
     # Insert run row
     run_row = {

@@ -89,8 +89,8 @@ MODELS = {
     "gemini-2.5-flash": ("gemini", "gemini-2.5-flash"),
     "gemini-2.5-flash-lite": ("gemini", "gemini-2.5-flash-lite"),
     "gemini-2.5-pro": ("gemini", "gemini-2.5-pro"),
-    "gemini-3-pro": ("gemini", "gemini-3-pro-preview"),
-    "gemini-3-pro-preview": ("gemini", "gemini-3-pro-preview"),
+    "gemini-3-pro": ("gemini", "gemini-3.1-pro-preview"),
+    "gemini-3-pro-preview": ("gemini", "gemini-3.1-pro-preview"),
     "gemini-3.1-pro": ("gemini", "gemini-3.1-pro-preview"),
     "gemini-3.1-pro-preview": ("gemini", "gemini-3.1-pro-preview"),
     "gemini-3-flash": ("gemini", "gemini-3-flash-preview"),
@@ -113,9 +113,6 @@ MODELS = {
     # xAI
     "grok-4": ("xai", "grok-4"),
     "grok-4-fast": ("xai", "grok-4-fast"),
-
-    # Mistral
-    "mistral-large-3": ("mistral", "mistral-large-2512"),
 
     # DeepSeek (additional)
     "deepseek-reasoner": ("deepseek", "deepseek-reasoner"),
@@ -156,7 +153,6 @@ MODEL_MAX_TOKENS = {
     "gpt-5.2": 32768,
     "grok-4": 32768,
     "grok-4-fast": 32768,
-    "mistral-large-2512": 32768,
     "deepseek-reasoner": 64000,
 }
 
@@ -196,7 +192,6 @@ MODEL_PRICING = {
     "grok-4": {"input": 3.0, "output": 15.0},
     "grok-4-fast": {"input": 0.60, "output": 3.0},
     # Mistral
-    "mistral-large-2512": {"input": 0.50, "output": 1.50},
     # DeepSeek
     "deepseek-reasoner": {"input": 0.28, "output": 0.42},
     # Perplexity
@@ -410,13 +405,6 @@ def _get_provider_config(provider: str) -> dict:
             "api_key_env": ["XAI_API_KEY"],
             "base_url": "https://api.x.ai/v1",
         },
-        "mistral": {
-            "client_class": OpenAI,
-            "instructor_fn": getattr(instructor, "from_openai", lambda c, **kw: c),
-            "instructor_kwargs": {"mode": getattr(instructor.Mode, "TOOLS", None)} if hasattr(instructor, "Mode") else {},
-            "api_key_env": ["MISTRAL_API_KEY"],
-            "base_url": "https://api.mistral.ai/v1",
-        },
         "groq": {
             "client_class": Groq,
             "instructor_fn": getattr(instructor, "from_groq", lambda c, **kw: c),
@@ -468,7 +456,7 @@ def get_client(model_name: str, wrap_with_instructor: bool = True):
         kwargs["base_url"] = config["base_url"]
 
     # Add timeout for HTTP clients
-    if provider in ["openai", "anthropic", "perplexity", "deepseek", "groq", "xai", "mistral"]:
+    if provider in ["openai", "anthropic", "perplexity", "deepseek", "groq", "xai"]:
         try:
             import httpx
             kwargs["timeout"] = httpx.Timeout(connect=60.0, read=180.0, write=30.0, pool=10.0)

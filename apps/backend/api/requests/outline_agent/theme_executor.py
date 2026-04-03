@@ -53,16 +53,11 @@ Available fonts:
 Return ONLY the exact font name, nothing else."""
 
         from agents.config import FONT_SELECTION_MODEL
-        from agents.ai.clients import get_model_id
-        client = anthropic.Anthropic()
-        response = client.messages.create(
-            model=get_model_id(FONT_SELECTION_MODEL),
-            max_tokens=50,
-            temperature=0.3,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        from agents.ai.clients import get_client, invoke
+        client, actual_model = get_client(FONT_SELECTION_MODEL)
+        result = invoke(client, actual_model, [{"role": "user", "content": prompt}], max_tokens=50, temperature=0.3)
 
-        body_font = response.content[0].text.strip().strip('"\'')
+        body_font = result.strip().strip('"\'')
 
         normalized_hero = hero_font.lower()
         matched = font_service.match_font_name(body_font, is_hero=False, include_remote=False)
@@ -717,34 +712,37 @@ async def execute_theme_update(
                 logger.info(f"[ThemeExecutor] Adding logos: {brand_names}")
 
                 try:
-                    cache = SimpleBrandfetchCache()
+                    db_url = os.getenv('DATABASE_URL')
+                    if not db_url:
+                        raise ValueError("DATABASE_URL environment variable is required")
                     brand_name = brand_names[0]
-
                     brand_domain = f"{brand_name.lower()}.com"
-                    brand_data = cache.get_brand_cached(brand_domain)
 
-                    if brand_data and brand_data.get('logos'):
-                        from agents.editing.tools.logo_search import get_best_logo
-                        logo_variants = get_best_logo(brand_data, prefer_theme="light")
-                        logo_url = logo_variants.get('light') or logo_variants.get('dark')
+                    async with SimpleBrandfetchCache(db_url) as cache:
+                        brand_data = await cache.get_brand_data(brand_domain)
 
-                        if logo_url:
-                            style_preferences['logoUrl'] = logo_url
-                            if 'brandInfo' not in theme_updates:
-                                theme_updates['brandInfo'] = {}
-                            theme_updates['brandInfo']['logoUrl'] = logo_url
+                        if brand_data and brand_data.get('logos'):
+                            from agents.editing.tools.logo_search import get_best_logo
+                            logo_variants = get_best_logo(brand_data, prefer_theme="light")
+                            logo_url = logo_variants.get('light') or logo_variants.get('dark')
 
-                            if 'color_palette' not in theme_updates:
-                                theme_updates['color_palette'] = {}
-                            if 'metadata' not in theme_updates['color_palette']:
-                                theme_updates['color_palette']['metadata'] = {}
-                            theme_updates['color_palette']['metadata']['logo_url'] = logo_url
+                            if logo_url:
+                                style_preferences['logoUrl'] = logo_url
+                                if 'brandInfo' not in theme_updates:
+                                    theme_updates['brandInfo'] = {}
+                                theme_updates['brandInfo']['logoUrl'] = logo_url
 
-                            messages.append(f"Added {brand_name} logo")
+                                if 'color_palette' not in theme_updates:
+                                    theme_updates['color_palette'] = {}
+                                if 'metadata' not in theme_updates['color_palette']:
+                                    theme_updates['color_palette']['metadata'] = {}
+                                theme_updates['color_palette']['metadata']['logo_url'] = logo_url
+
+                                messages.append(f"Added {brand_name} logo")
+                            else:
+                                messages.append(f"Could not find logo for {brand_name}")
                         else:
-                            messages.append(f"Could not find logo for {brand_name}")
-                    else:
-                        messages.append(f"Could not find brand data for {brand_name}")
+                            messages.append(f"Could not find brand data for {brand_name}")
                 except Exception as e:
                     logger.error(f"[ThemeExecutor] Error adding logo: {e}")
                     messages.append(f"Error adding logo: {str(e)}")
