@@ -9,9 +9,6 @@ services:
     buildCommand: npm install --production=false --legacy-peer-deps && npm run build
     staticPublishPath: ./dist
     headers:
-      - path: /*
-        name: X-Frame-Options
-        value: SAMEORIGIN
       # Prevent caching of index.html so deploys take effect immediately
       - path: /index.html
         name: Cache-Control

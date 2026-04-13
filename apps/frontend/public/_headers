@@ -18,6 +18,15 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
+# Allow shared presentation pages to be embedded in iframes
+/p/*
+  X-Frame-Options: ALLOWALL
+  Content-Security-Policy: frame-ancestors *
+
+/embed/*
+  X-Frame-Options: ALLOWALL
+  Content-Security-Policy: frame-ancestors *
+
 # Security headers
 /*
   X-Frame-Options: SAMEORIGIN

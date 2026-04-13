@@ -267,12 +267,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        # Allow shared/public endpoints to be embedded in iframes
+        path = request.url.path
+        if path.startswith("/api/public/") or path.startswith("/api/v1/"):
+            response.headers["Content-Security-Policy"] = "frame-ancestors *"
+        else:
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
         return response
 
 app.add_middleware(SecurityHeadersMiddleware)
