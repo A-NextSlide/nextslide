@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { shareService } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Lock, AlertCircle, Edit, Share2 } from 'lucide-react';
+import { Loader2, AlertCircle, Edit, Share2 } from 'lucide-react';
 import DynamicMeta from '@/components/seo/DynamicMeta';
 import RelatedPresentations from '@/components/seo/RelatedPresentations';
 import CreateYourOwnCTA from '@/components/seo/CreateYourOwnCTA';
@@ -41,7 +41,7 @@ if (typeof window !== 'undefined') {
 }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useDeckStore } from '@/stores/deckStore';
 import PresentationMode from '@/components/deck/PresentationMode';
 import { usePresentationStore } from '@/stores/presentationStore';
@@ -128,9 +128,6 @@ const SharedDeckView: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [requiresPassword, setRequiresPassword] = useState(false);
-  const [password, setPassword] = useState('');
-  const [isVerifying, setIsVerifying] = useState(false);
   const [deck, setDeck] = useState<any>(null);
   const [canEdit, setCanEdit] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
@@ -389,8 +386,8 @@ const SharedDeckView: React.FC = () => {
     }
   };
 
-  const loadSharedDeck = async (withPassword?: string) => {
-    console.log('[SharedDeckView] loadSharedDeck called', { shareCode, withPassword: !!withPassword });
+  const loadSharedDeck = async () => {
+    console.log('[SharedDeckView] loadSharedDeck called', { shareCode });
     if (!shareCode) {
       console.log('[SharedDeckView] No shareCode in loadSharedDeck, returning');
       return;
@@ -426,14 +423,6 @@ const SharedDeckView: React.FC = () => {
         // Store owner plan for badge visibility
         if (share_info?.owner_plan) {
           setOwnerPlan(share_info.owner_plan);
-        }
-
-        // Check if the deck requires a password
-        if (response.error === 'Password required') {
-          console.log('[SharedDeckView] Password required');
-          setRequiresPassword(true);
-          setIsLoading(false);
-          return;
         }
 
         // Store whether user can edit (in case they want to switch to edit mode)
@@ -568,30 +557,6 @@ const SharedDeckView: React.FC = () => {
     } finally {
       console.log('[SharedDeckView] loadSharedDeck complete, setting isLoading=false');
       setIsLoading(false);
-    }
-  };
-
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!password.trim()) return;
-    
-    setIsVerifying(true);
-    try {
-      // TODO: Call password verification endpoint
-      // For now, we'll reload with the password
-      await loadSharedDeck(password);
-      
-      if (!requiresPassword) {
-        // Password was correct
-      } else {
-        toast({
-          title: "Invalid password",
-          description: "Please check the password and try again",
-          variant: "destructive"
-        });
-      }
-    } finally {
-      setIsVerifying(false);
     }
   };
 
@@ -763,7 +728,6 @@ const SharedDeckView: React.FC = () => {
     isLoading,
     error,
     requiresEmail,
-    requiresPassword,
     hasDeck: !!deck,
     deckSlidesCount: deck?.slides?.length
   });
@@ -854,62 +818,6 @@ const SharedDeckView: React.FC = () => {
             </div>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  if (requiresPassword) {
-    console.log('[SharedDeckView] Rendering password gate UI');
-    return (
-      <div className="flex items-center justify-center min-h-screen p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Lock size={24} className="text-primary" />
-            </div>
-            <CardTitle>Password Required</CardTitle>
-            <CardDescription>
-              This deck is password protected. Please enter the password to continue.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handlePasswordSubmit} className="space-y-4">
-              <Input
-                type="password"
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoFocus
-                disabled={isVerifying}
-              />
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}
-                  disabled={isVerifying}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isVerifying || !password.trim()}
-                  className="flex-1"
-                >
-                  {isVerifying ? (
-                    <>
-                      <Loader2 size={14} className="mr-2 animate-spin" />
-                      Verifying...
-                    </>
-                  ) : (
-                    'Submit'
-                  )}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
       </div>
     );
   }
