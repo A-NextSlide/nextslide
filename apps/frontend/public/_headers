@@ -19,10 +19,11 @@
   Cache-Control: public, max-age=31536000, immutable
 
 # Security headers (applied to all routes)
-# Note: X-Frame-Options removed — Render SPA rewrites all routes to index.html,
-# so path-specific overrides for /p/* don't work. Auth-protected pages are safe
-# since they require login. Shared pages (/p/*) need to be iframe-embeddable.
+# X-Frame-Options set to ALLOWALL — Render adds SAMEORIGIN by default and SPA
+# rewrites all routes to index.html so path-specific overrides don't work.
+# Auth-protected pages are safe since they require login.
 /*
+  X-Frame-Options: ALLOWALL
   X-Content-Type-Options: nosniff
   X-XSS-Protection: 1; mode=block
   Referrer-Policy: strict-origin-when-cross-origin
