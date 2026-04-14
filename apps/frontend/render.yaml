@@ -33,6 +33,10 @@ services:
       - path: /brand/*
         name: Cache-Control
         value: public, max-age=3600, must-revalidate
+      # Allow iframe embedding — frame-ancestors overrides Render's default X-Frame-Options: SAMEORIGIN
+      - path: /*
+        name: Content-Security-Policy
+        value: "frame-ancestors *"
     routes:
       # Handle client-side routing - serve index.html for all routes
       - type: rewrite
