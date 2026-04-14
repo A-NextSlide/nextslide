@@ -5,10 +5,9 @@ import { shareService } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/SupabaseAuthContext';
-import { Loader2, Lock, AlertCircle, LogIn } from 'lucide-react';
+import { Loader2, AlertCircle, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useDeckStore } from '@/stores/deckStore';
 
 const SharedDeckEdit: React.FC = () => {
@@ -19,9 +18,6 @@ const SharedDeckEdit: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [requiresPassword, setRequiresPassword] = useState(false);
-  const [password, setPassword] = useState('');
-  const [isVerifying, setIsVerifying] = useState(false);
   const [requiresAuth, setRequiresAuth] = useState(false);
   const [deckName, setDeckName] = useState<string | null>(null);
 
@@ -35,7 +31,7 @@ const SharedDeckEdit: React.FC = () => {
     }
   }, [shareCode, authLoading, isAuthenticated]);
 
-  const loadSharedDeck = async (withPassword?: string) => {
+  const loadSharedDeck = async () => {
     if (!shareCode) return;
 
     setIsLoading(true);
@@ -57,13 +53,6 @@ const SharedDeckEdit: React.FC = () => {
         // Store deck name for the auth prompt UI
         if (deckData?.name) {
           setDeckName(deckData.name);
-        }
-
-        // Check if the deck requires a password
-        if (response.error === 'Password required') {
-          setRequiresPassword(true);
-          setIsLoading(false);
-          return;
         }
 
         // Check if user has edit permissions
@@ -135,30 +124,6 @@ const SharedDeckEdit: React.FC = () => {
     }
   };
 
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!password.trim()) return;
-    
-    setIsVerifying(true);
-    try {
-      // TODO: Call password verification endpoint
-      // For now, we'll reload with the password
-      await loadSharedDeck(password);
-      
-      if (!requiresPassword) {
-        // Password was correct
-      } else {
-        toast({
-          title: "Invalid password",
-          description: "Please check the password and try again",
-          variant: "destructive"
-        });
-      }
-    } finally {
-      setIsVerifying(false);
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -166,61 +131,6 @@ const SharedDeckEdit: React.FC = () => {
           <Loader2 size={48} className="animate-spin mx-auto mb-4 text-primary" />
           <p className="text-lg text-muted-foreground">Loading shared deck...</p>
         </div>
-      </div>
-    );
-  }
-
-  if (requiresPassword) {
-    return (
-      <div className="flex items-center justify-center min-h-screen p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Lock size={24} className="text-primary" />
-            </div>
-            <CardTitle>Password Required</CardTitle>
-            <CardDescription>
-              This deck is password protected. Please enter the password to continue.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handlePasswordSubmit} className="space-y-4">
-              <Input
-                type="password"
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoFocus
-                disabled={isVerifying}
-              />
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => navigate(BROWSER.isNativeApp ? '/app' : '/')}
-                  disabled={isVerifying}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isVerifying || !password.trim()}
-                  className="flex-1"
-                >
-                  {isVerifying ? (
-                    <>
-                      <Loader2 size={14} className="mr-2 animate-spin" />
-                      Verifying...
-                    </>
-                  ) : (
-                    'Submit'
-                  )}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
       </div>
     );
   }
