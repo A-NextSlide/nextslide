@@ -59,7 +59,9 @@ export const TemporaryPasswordGate: React.FC<TemporaryPasswordGateProps> = ({
     accent: currentTheme?.accent1 || '#111',
   }), [currentTheme]);
 
-  if (!enabled || unlocked) {
+  // Bypass gate for shared/embedded presentation pages
+  const path = typeof window !== 'undefined' ? window.location.pathname : '';
+  if (!enabled || unlocked || path.startsWith('/p/') || path.startsWith('/embed/')) {
     return <>{children}</>;
   }
 
