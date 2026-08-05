@@ -53,9 +53,7 @@ body,
   min-height: 100vh;
   place-items: center;
   padding: clamp(32px, 7vw, 96px) 24px;
-  background:
-    linear-gradient(90deg, transparent calc(50% - 1px), rgba(36, 35, 33, 0.035) 50%, transparent calc(50% + 1px)),
-    #ffffff;
+  background: #ffffff;
 }
 
 .announcement {
