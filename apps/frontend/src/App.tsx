@@ -49,12 +49,7 @@ function App() {
         </div>
 
         <h1>
-          <span className="headline-nextslide-mark">
-            <NextSlideLogo size={31} />
-          </span>
-          <span className="headline-rest">
-            is joining <em>OpenAI.</em>
-          </span>
+          <span>NextSlide</span> is joining <em>OpenAI.</em>
         </h1>
 
         <p className="lead">
@@ -84,11 +79,6 @@ function App() {
           <span>Ahmed Beshry</span>
           <small>Founder, NextSlide</small>
         </div>
-
-        <footer>
-          <NextSlideLogo size={13} />
-          <span>2026</span>
-        </footer>
       </article>
     </main>
   );
