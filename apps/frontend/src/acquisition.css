@@ -66,6 +66,7 @@ body,
   display: flex;
   height: 100%;
   width: min(820px, 100%);
+  padding-top: 44px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -92,7 +93,7 @@ body,
 
 .lockup-divider {
   width: 1px;
-  height: 32px;
+  height: 28px;
   background: #c8c6c1;
 }
 
@@ -104,14 +105,14 @@ body,
 }
 
 .openai-blossom {
-  width: 27px;
-  height: 27px;
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
 }
 
 .openai-wordmark {
   display: block;
-  width: 98px;
+  width: 87px;
   height: auto;
   flex: 0 0 auto;
 }
@@ -189,7 +190,7 @@ h1 em {
   }
 
   .brand-lockup {
-    top: 14px;
+    top: 0;
     gap: 14px;
   }
 
@@ -198,16 +199,16 @@ h1 em {
   }
 
   .openai-blossom {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
   }
 
   .openai-wordmark {
-    width: 88px;
+    width: 80px;
   }
 
   .lockup-divider {
-    height: 28px;
+    height: 25px;
   }
 
   h1 {

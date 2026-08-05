@@ -1,6 +1,6 @@
 import BrandWordmark from "@/components/common/BrandWordmark";
 
-function NextSlideLogo({ size = 18.95 }: { size?: number }) {
+function NextSlideLogo({ size = 17.25 }: { size?: number }) {
   const scale = size / 18.95;
 
   return (
@@ -49,7 +49,7 @@ function App() {
         </div>
 
         <h1>
-          <span>NextSlide</span> is joining <em>OpenAI.</em>
+          <span>NextSlide</span> is joining <em>OpenAI</em>
         </h1>
 
         <p className="lead">
@@ -58,20 +58,33 @@ function App() {
 
         <div className="note">
           <p>
-            We started NextSlide with a simple belief: bringing an idea to life
-            shouldn’t depend on your ability to design slides. Our goal was
-            never simply to generate presentations faster. We wanted to help
-            more people express their ideas clearly.
+            Presentations help ideas move through the world. They teach,
+            persuade, share research, and move important work forward. But
+            creating a great presentation has traditionally required hours of
+            work, design experience, or both.
           </p>
           <p>
-            The NextSlide team is now at OpenAI, helping build ChatGPT and
-            continuing that same mission: creating thoughtful tools that help
-            people communicate and turn ideas into meaningful work.
+            We started NextSlide a little over a year ago with a simple belief:
+            bringing an idea to life shouldn’t depend on your ability to design
+            slides. We built a product that could turn prompts, notes,
+            documents, or research into a polished, editable
+            presentation—making it easier for anyone to share what they know.
+          </p>
+          <p>
+            Our goal was never simply to generate slides faster. We wanted to
+            make visual communication more accessible and help more people
+            express their ideas clearly.
+          </p>
+          <p>
+            The NextSlide team is now at OpenAI, helping build ChatGPT. We’re
+            excited to continue pursuing that same mission: building AI
+            products that help people create, communicate, and turn their ideas
+            into meaningful work.
           </p>
           <p className="thanks">
             To everyone who created a deck, shared feedback, or supported us
-            along the way, thank you. We’re grateful for the journey and excited
-            for what comes next.
+            along the way: thank you for helping shape NextSlide. We’re grateful
+            for the journey and excited for what comes next.
           </p>
         </div>
 
