@@ -1,744 +1,92 @@
-import React, { useState, useEffect, lazy, Component, ErrorInfo, ReactNode } from "react";
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
-import { ThemeProvider as NextThemesProvider } from "next-themes";
-import { ThemeProvider } from "./context/ThemeContext";
-import { SupabaseAuthProvider } from "./context/SupabaseAuthContext";
-import { useAuth } from "./context/SupabaseAuthContext";
-import { ProtectedRoute } from "./components/ProtectedRoute";
-import "./styles/theme.css";
-import "./styles/ComponentBounds.css";
-import FontPreloader from "./components/FontPreloader";
-import DeckList from "./pages/DeckList";
-import NotFound from "./pages/NotFound";
-import Landing from "./pages/Landing";
-import NativeAppLanding from "./pages/NativeAppLanding";
-import Login from "./pages/Login";
-import Signup from "./pages/Signup";
-import ResetPassword from "./pages/ResetPassword";
-import Profile from "./pages/Profile";
-import TeamInvite from "./pages/TeamInvite";
-import EmailVerification from "./pages/EmailVerification";
-import AuthCallback from "./pages/AuthCallback";
-// AgentOutlineView removed - using existing outline page
-import { BROWSER } from './utils/browser';
-import { ComponentStateProvider } from './context/CustomComponentStateContext';
-import SlideEditor from './components/SlideEditor';
-import { RegistryProvider, useRegistry } from './context/RegistryContext';
-import { CompleteDeckData } from './types/DeckTypes';
-import TestCollaboration from './yjs/TestCollaboration';
-import SharedDeckView from './pages/SharedDeckView';
-import SharedDeckEdit from './pages/SharedDeckEdit';
-const EmbedView = lazy(() => import('./pages/EmbedView'));
-const ToolPageRouter = lazy(() => import('./pages/ToolPageRouter'));
-import CommunityDeckView from './pages/CommunityDeckView';
-import WebpageViewer from './pages/WebpageViewer';
-import BadgeLanding from './pages/BadgeLanding';
-import { API_CONFIG } from './config/environment';
-import { DeckStoreInitializer } from './components/DeckStoreInitializer';
-// Removed font optimization hook
-import { useEnsureUserRecord } from './hooks/useEnsureUserRecord';
-const DevPerformanceHUD = import.meta.env.PROD ? null : React.lazy(() => import('./components/dev/PerformanceHUD'));
+import BrandWordmark from "@/components/common/BrandWordmark";
 
-// Admin imports (lazy-loaded to reduce bundle size for non-admin users)
-const AdminUsers = lazy(() => import('./pages/admin/AdminUsersV2'));
-const AdminUserDetail = lazy(() => import('./pages/admin/AdminUserDetail'));
-const AdminDecks = lazy(() => import('./pages/admin/AdminDecks'));
-const AdminBrands = lazy(() => import('./pages/admin/AdminBrands'));
-const AdminFonts = lazy(() => import('./pages/admin/AdminFonts'));
-const AdminServices = lazy(() => import('./pages/admin/AdminServices'));
-const AdminCosts = lazy(() => import('./pages/admin/AdminCosts'));
-const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics'));
-const AdminAgent = lazy(() => import('./pages/admin/AdminAgent'));
-const AdminGrowth = lazy(() => import('./pages/admin/AdminGrowth'));
-const AdminEmail = lazy(() => import('./pages/admin/AdminEmail'));
-const AdminPlayground = lazy(() => import('./pages/admin/AdminPlayground'));
-const AdminSeed = lazy(() => import('./pages/admin/AdminSeed'));
-import AdminProtectedRoute from './components/AdminProtectedRoute';
-import TemporaryPasswordGate from './components/TemporaryPasswordGate';
-import SmartGallery from './pages/SmartGallery';
-import Showcase from './pages/Showcase';
-import TemplateGallery from './pages/TemplateGallery';
-import TemplateDetail from './pages/TemplateDetail';
-import Pricing from './pages/Pricing';
-import DeveloperAPI from './pages/DeveloperAPI';
-import Help from './pages/Help';
-import ReferralLanding from './pages/ReferralLanding';
-import { CreditsProvider } from './context/CreditsContext';
-import { OnboardingProvider } from './context/OnboardingContext';
-import UpgradePrompt from './components/billing/UpgradePrompt';
-import { RewardProvider } from './context/RewardContext';
-import AnalyticsDashboard from './pages/AnalyticsDashboard';
-import DeckAnalytics from './pages/DeckAnalytics';
-import PublicProfile from './pages/PublicProfile';
-import LandingPageRouter from './pages/LandingPageRouter';
-import PresentationTemplateLanding from './pages/PresentationTemplateLanding';
-import CategoryBrowse from './pages/CategoryBrowse';
-const SlackBotLanding = lazy(() => import('./pages/SlackBotLanding'));
-const Download = lazy(() => import('./pages/Download'));
-
-// Component to initialize font optimization
-// Removed FontOptimizationInitializer
-
-// Component to ensure user record exists
-function UserRecordInitializer() {
-  useEnsureUserRecord();
-  return null;
-}
-
-
-// Extend window interface for debug commands
-declare global {
-  interface Window {
-    showFontPerformance?: () => void;
-  }
-}
-
-// Initialize TypeBox registry
-import './registry';
-import { useDeckStore } from './stores/deckStore';
-
-// Global Error Boundary to catch and display mobile crashes
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-  errorInfo: ErrorInfo | null;
-}
-
-class GlobalErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
-  constructor(props: { children: ReactNode }) {
-    super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
-  }
-
-  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    this.setState({ errorInfo });
-    // Log to console for debugging
-    console.error('[GlobalErrorBoundary] Caught error:', error);
-    console.error('[GlobalErrorBoundary] Component stack:', errorInfo.componentStack);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      const isMobile = typeof window !== 'undefined' &&
-        (window.innerWidth <= 768 || 'ontouchstart' in window);
-
-      return (
-        <div style={{
-          padding: '20px',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          maxWidth: '100vw',
-          overflowX: 'hidden',
-        }}>
-          <h1 style={{ color: '#dc2626', fontSize: '24px', marginBottom: '16px' }}>
-            Something went wrong
-          </h1>
-          <p style={{ marginBottom: '16px', color: '#666' }}>
-            {isMobile ? 'Mobile' : 'Desktop'} error detected. Please try refreshing the page.
-          </p>
-          <details style={{ marginBottom: '16px' }}>
-            <summary style={{ cursor: 'pointer', color: '#2563eb' }}>Error details</summary>
-            <pre style={{
-              background: '#f3f4f6',
-              padding: '12px',
-              borderRadius: '8px',
-              overflow: 'auto',
-              fontSize: '12px',
-              marginTop: '8px',
-            }}>
-              {this.state.error?.message}
-              {'\n\n'}
-              {this.state.error?.stack}
-            </pre>
-          </details>
-          <button
-            onClick={() => window.location.reload()}
-            style={{
-              background: '#2563eb',
-              color: 'white',
-              padding: '12px 24px',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '16px',
-            }}
-          >
-            Refresh Page
-          </button>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-
-
-// Create a new client with default options
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: false,
-    },
-  },
-});
-
-// Default sync config
-const syncConfig = {
-  enabled: true,
-  autoSyncInterval: 30000,
-  useRealtimeSubscription: true
-};
-
-// Scroll to top on route change
-const ScrollToTop = () => {
-  const { pathname } = useLocation();
-
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [pathname]);
-
-  return null;
-};
-
-// Component to monitor deck changes
-const DeckMonitor = ({ onChange }: { onChange: (data: CompleteDeckData) => void }) => {
-  const deckData = useDeckStore(state => state.deckData);
-
-  // Use effect to call onChange when deckData changes
-  useEffect(() => {
-    onChange(deckData);
-  }, [deckData, onChange]);
-
-  return null;
-};
-
-// Silent component to monitor server and registry status
-const ServerMonitor = () => {
-  const { serverConnected, serverHasRegistry } = useRegistry();
-  const [prevConnected, setPrevConnected] = useState<boolean | null>(null);
-  const [prevHasRegistry, setPrevHasRegistry] = useState<boolean | null>(null);
-
-  // Log server connection and registry status changes
-  useEffect(() => {
-    const timestamp = new Date().toISOString();
-    const currentStatus = {
-      connected: serverConnected ? 'YES' : 'NO',
-      registryLoaded: serverHasRegistry ? 'YES' : 'NO',
-      timestamp
-    };
-
-    // Always show status in dev tools using a styled console log
-    // console.log(
-    //   `%c🔌 Server: ${currentStatus.connected} | 📚 Registry: ${currentStatus.registryLoaded} | ⏱️ ${timestamp.split('T')[1].split('.')[0]}`,
-    //   `color: ${serverConnected ? 'green' : 'red'}; font-weight: bold; background-color: ${serverHasRegistry ? '#e6ffe6' : '#fff0f0'}; padding: 2px 5px; border-radius: 3px;`
-    // );
-
-    // Alert about changes
-    if (prevConnected !== null && prevConnected !== serverConnected) {
-      // console.log(
-      //   `%cServer connection ${serverConnected ? 'ESTABLISHED' : 'LOST'}`,
-      //   'color: white; background-color: ' + (serverConnected ? 'green' : 'red') + '; padding: 3px 8px; font-weight: bold; border-radius: 3px;'
-      // );
-    }
-
-    if (prevHasRegistry !== null && prevHasRegistry !== serverHasRegistry) {
-      // console.log(
-      //   `%cRegistry ${serverHasRegistry ? 'LOADED' : 'MISSING'} on server`,
-      //   'color: white; background-color: ' + (serverHasRegistry ? 'blue' : 'orange') + '; padding: 3px 8px; font-weight: bold; border-radius: 3px;'
-      // );
-    }
-
-    // Update previous state
-    setPrevConnected(serverConnected);
-    setPrevHasRegistry(serverHasRegistry);
-  }, [serverConnected, serverHasRegistry, prevConnected, prevHasRegistry]);
-
-  return null;
-};
-
-// Minimal loading shell for lazy-loaded admin pages
-const AdminLoadingShell = () => (
-  <div className="min-h-screen w-full bg-[#fafafa] dark:bg-[#0a0a0a] flex items-center justify-center">
-    <div className="w-5 h-5 border-2 border-[#eaeaea] dark:border-[#333] border-t-black dark:border-t-white rounded-full animate-spin" />
-  </div>
-);
-
-// Wrapper component to handle conditional collaboration
-const AppContent = () => {
-  const location = useLocation();
-  const [isEditing, setIsEditing] = useState(false);
-  const { session } = useAuth();
-
-  // Collaboration disabled at App level - controlled per-component in SlideEditor
-  // This prevents unnecessary WebSocket connections for solo users
-  const isCollaborationEnabled = false;
-
-  // Initialize debug tools in development mode
-  useEffect(() => {
-    if (process.env.NODE_ENV !== 'production') {
-      // Add font performance command to debug console
-      window.showFontPerformance = () => {
-        import('./utils/performanceMonitor').then(monitor => {
-          monitor.logFontMetrics(50); // Show fonts that took over 50ms to load
-        });
-      };
-
-      // Expose store for debugging
-      (window as any).useDeckStore = useDeckStore;
-      // console.log('🔧 Debug: useDeckStore exposed to window object');
-    }
-  }, []);
-
-  // This handler is now for logging purposes only
-  const handleDeckDataChange = (deckData: CompleteDeckData) => {
-    // console.log(`Deck data updated, now contains ${deckData.slides.length} slides`);
-  };
-
-  const handleSyncUpdate = (isSyncing: boolean, lastSyncTime: Date | null) => {
-    // console.log(`Sync state: ${isSyncing ? 'Syncing' : 'Idle'}, last sync: ${lastSyncTime?.toLocaleTimeString() || 'never'}`);
-  };
-
-  const handleEditingChange = (editing: boolean) => {
-    setIsEditing(editing);
-    // console.log(`Edit mode changed to ${editing}`);
-  };
-
-  // Removed extra admin check here to avoid duplicates
+function NextSlideLogo({ size = 18.95 }: { size?: number }) {
+  const scale = size / 18.95;
 
   return (
-    <RegistryProvider>
-      <ScrollToTop />
-      <ServerMonitor />
-      <ComponentStateProvider>
-        {/* Font optimization removed */}
-        {/* Preload only system fonts */}
-        <FontPreloader />
-        {/* Initialize the deck store early in the component tree */}
-        <DeckStoreInitializer
-          syncEnabled={syncConfig.enabled}
-          useRealtimeSubscription={syncConfig.useRealtimeSubscription}
-          autoSyncInterval={syncConfig.autoSyncInterval}
-          onSyncUpdate={handleSyncUpdate}
-          collaborationEnabled={isCollaborationEnabled}
-          collaborationUrl={import.meta.env.VITE_WEBSOCKET_URL || API_CONFIG.WEBSOCKET_URL}
-        />
-        {/* Our custom theme provider */}
-        <ThemeProvider>
-          {/* Monitor for deck data changes */}
-          <DeckMonitor onChange={handleDeckDataChange} />
-          <TemporaryPasswordGate enabled={true} password={import.meta.env.VITE_TEMP_GATE_PASSWORD || 'slides4ever'}>
-            <Routes>
-              <Route path="/" element={BROWSER.isNativeApp ? <NativeAppLanding /> : <Landing />} />
-              <Route
-                path="/app"
-                element={
-                  <ProtectedRoute>
-                    <DeckList />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/login"
-                element={
-                  <ProtectedRoute requireAuth={false}>
-                    <Login />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/signup"
-                element={
-                  <ProtectedRoute requireAuth={false}>
-                    <Signup />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/deck/:deckId"
-                element={
-                  <ProtectedRoute>
-                    <SlideEditor />
-                  </ProtectedRoute>
-                }
-              />
-              {/* Outline View route - removed, using embedded outline in DeckList */}
-              {/* Yjs collaboration test route */}
-              <Route
-                path="/collaboration-test"
-                element={
-                  <ProtectedRoute>
-                    <React.Suspense fallback={<div>Loading collaboration test...</div>}>
-                      <TestCollaboration />
-                    </React.Suspense>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/profile"
-                element={
-                  <ProtectedRoute>
-                    <Profile />
-                  </ProtectedRoute>
-                }
-              />
-              {/* Team invitation acceptance */}
-              <Route
-                path="/team/invite/:token"
-                element={<TeamInvite />}
-              />
-              {/* Shared deck routes */}
-              <Route
-                path="/p/:shareCode"
-                element={<SharedDeckView />}
-              />
-              <Route
-                path="/e/:shareCode"
-                element={<SharedDeckEdit />}
-              />
-              {/* Embeddable presentation viewer (minimal, iframe-friendly) */}
-              <Route
-                path="/embed/:shareCode"
-                element={
-                  <React.Suspense fallback={<div style={{ background: '#09090b', width: '100vw', height: '100vh' }} />}>
-                    <EmbedView />
-                  </React.Suspense>
-                }
-              />
-              {/* Community deck view route */}
-              <Route
-                path="/community/:deckId"
-                element={<CommunityDeckView />}
-              />
-              {/* Badge landing page - brought by "Made with NextSlide" badge */}
-              <Route
-                path="/from/:deckCode"
-                element={<BadgeLanding />}
-              />
-              {/* Email verification route */}
-              <Route
-                path="/verify-email/:token"
-                element={<EmailVerification />}
-              />
-              <Route
-                path="/verify-email/pending"
-                element={<EmailVerification />}
-              />
-              {/* Auth Callback route */}
-              <Route
-                path="/auth-callback"
-                element={<AuthCallback />}
-              />
-              {/* Reset Password route */}
-              <Route
-                path="/reset-password"
-                element={
-                  <ProtectedRoute>
-                    <ResetPassword />
-                  </ProtectedRoute>
-                }
-              />
-              {/* Admin routes - Agent is now the main dashboard */}
-              <Route
-                path="/admin"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminAgent />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/overview"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminAnalytics />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/users"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminUsers />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/users/:userId"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminUserDetail />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/decks"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminDecks />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/brands"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminBrands />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/fonts"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminFonts />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/services"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminServices />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/costs"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminCosts />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/growth"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminGrowth />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/email"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminEmail />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/playground"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminPlayground />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/seed"
-                element={
-                  <AdminProtectedRoute>
-                    <React.Suspense fallback={<AdminLoadingShell />}>
-                      <AdminSeed />
-                    </React.Suspense>
-                  </AdminProtectedRoute>
-                }
-              />
-              {/* Referral landing page (public) */}
-              <Route path="/r/:code" element={<ReferralLanding />} />
-              {/* Showcase gallery (public) */}
-              <Route path="/showcase" element={<Showcase />} />
-              <Route path="/showcase/:category" element={<Showcase />} />
-              {/* Analytics routes */}
-              <Route
-                path="/analytics"
-                element={
-                  <ProtectedRoute>
-                    <AnalyticsDashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/analytics/:deckId"
-                element={
-                  <ProtectedRoute>
-                    <DeckAnalytics />
-                  </ProtectedRoute>
-                }
-              />
-              {/* Template gallery (public) */}
-              <Route path="/templates" element={<TemplateGallery />} />
-              <Route path="/templates/category/:category" element={<TemplateGallery />} />
-              <Route path="/templates/:slug" element={<TemplateDetail />} />
-              {/* Programmatic template category pages (SEO) */}
-              <Route path="/presentation-templates" element={<PresentationTemplateLanding />} />
-              <Route path="/presentation-templates/:slug" element={<PresentationTemplateLanding />} />
-              {/* Public profile / creator page */}
-              <Route path="/u/:username" element={<PublicProfile />} />
-              {/* Use-case landing pages */}
-              <Route path="/pitch-deck" element={<LandingPageRouter />} />
-              <Route path="/sales-deck" element={<LandingPageRouter />} />
-              <Route path="/education" element={<LandingPageRouter />} />
-              <Route path="/marketing" element={<LandingPageRouter />} />
-              {/* Industry landing pages (SEO-friendly flat routes) */}
-              <Route path="/for-startups" element={<LandingPageRouter />} />
-              <Route path="/for-educators" element={<LandingPageRouter />} />
-              <Route path="/for-marketers" element={<LandingPageRouter />} />
-              <Route path="/for-consultants" element={<LandingPageRouter />} />
-              {/* Legacy /for/:slug redirect */}
-              <Route path="/for/:slug" element={<LandingPageRouter />} />
-              {/* Published webpage viewer (public, no auth required) */}
-              <Route path="/s/:slug" element={<WebpageViewer />} />
-              {/* Tool landing pages (SEO conversion tools) */}
-              <Route path="/pdf-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
-              <Route path="/doc-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
-              <Route path="/notes-to-presentation" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
-              <Route path="/pitch-deck-generator" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
-              <Route path="/website-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
-              <Route path="/google-slides-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
-              <Route path="/improve-my-slides" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
-              <Route path="/text-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
-              <Route path="/csv-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
-              <Route path="/image-to-ppt" element={<React.Suspense fallback={<div />}><ToolPageRouter /></React.Suspense>} />
-              {/* Slack bot landing page */}
-              <Route path="/slack-bot" element={<React.Suspense fallback={<div />}><SlackBotLanding /></React.Suspense>} />
-              {/* Tool page SEO redirects */}
-              <Route path="/pdf-to-presentation" element={<Navigate to="/pdf-to-ppt" replace />} />
-              <Route path="/doc-to-presentation" element={<Navigate to="/doc-to-ppt" replace />} />
-              <Route path="/notes-to-ppt" element={<Navigate to="/notes-to-presentation" replace />} />
-              <Route path="/website-to-presentation" element={<Navigate to="/website-to-ppt" replace />} />
-              <Route path="/link-to-ppt" element={<Navigate to="/website-to-ppt" replace />} />
-              <Route path="/link-to-presentation" element={<Navigate to="/website-to-ppt" replace />} />
-              <Route path="/csv-to-presentation" element={<Navigate to="/csv-to-ppt" replace />} />
-              <Route path="/data-to-ppt" element={<Navigate to="/csv-to-ppt" replace />} />
-              <Route path="/data-to-presentation" element={<Navigate to="/csv-to-ppt" replace />} />
-              {/* Public presentations browse */}
-              <Route path="/presentations" element={<CategoryBrowse />} />
-              <Route path="/presentations/:category" element={<CategoryBrowse />} />
-              {/* Desktop app download page */}
-              <Route path="/download" element={<React.Suspense fallback={<div />}><Download /></React.Suspense>} />
-              {/* Common paths that should redirect to the dashboard */}
-              <Route path="/file" element={<Navigate to="/app" replace />} />
-              <Route path="/new" element={<Navigate to="/app" replace />} />
-              <Route path="/create" element={<Navigate to="/app" replace />} />
-              <Route path="/new-deck" element={<Navigate to="/app" replace />} />
-              <Route path="/new-presentation" element={<Navigate to="/app" replace />} />
-              <Route path="/home" element={<Navigate to="/app" replace />} />
-              <Route path="/dashboard" element={<Navigate to="/app" replace />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="/pricing" element={<Pricing />} />
-              <Route path="/smart-gallery" element={<SmartGallery />} />
-              <Route path="/developers" element={<DeveloperAPI />} />
-              <Route path="/help" element={<Help />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </TemporaryPasswordGate>
-        </ThemeProvider>
-      </ComponentStateProvider>
-    </RegistryProvider>
+    <BrandWordmark
+      tag="span"
+      className="nextslide-logo"
+      sizePx={size}
+      textColor="#383636"
+      xImageUrl="/brand/nextslide-x.png"
+      gapLeftPx={-3 * scale}
+      gapRightPx={-8 * scale}
+      liftPx={-4 * scale}
+      xLiftPx={-4 * scale}
+      rightLiftPx={0}
+    />
   );
-};
+}
+
+function OpenAILogo() {
+  return (
+    <span className="openai-logo" role="img" aria-label="OpenAI">
+      <svg className="openai-blossom" viewBox="146 227 268 265" aria-hidden="true">
+        <path
+          fill="currentColor"
+          d="M249.176 323.434V298.276C249.176 296.158 249.971 294.569 251.825 293.509L302.406 264.381C309.29 260.409 317.5 258.555 325.973 258.555C357.75 258.555 377.877 283.185 377.877 309.399C377.877 311.253 377.877 313.371 377.611 315.49L325.178 284.771C322.001 282.919 318.822 282.919 315.645 284.771L249.176 323.434ZM367.283 421.415V361.301C367.283 357.592 365.694 354.945 362.516 353.092L296.048 314.43L317.763 301.982C319.617 300.925 321.206 300.925 323.058 301.982L373.639 331.112C388.205 339.586 398.003 357.592 398.003 375.069C398.003 395.195 386.087 413.733 367.283 421.412V421.415ZM233.553 368.452L211.838 355.742C209.986 354.684 209.19 353.095 209.19 350.975V292.718C209.19 264.383 230.905 242.932 260.301 242.932C271.423 242.932 281.748 246.641 290.49 253.26L238.321 283.449C235.146 285.303 233.555 287.951 233.555 291.659V368.455L233.553 368.452ZM280.292 395.462L249.176 377.985V340.913L280.292 323.436L311.407 340.913V377.985L280.292 395.462ZM300.286 475.968C289.163 475.968 278.837 472.259 270.097 465.64L322.264 435.449C325.441 433.597 327.03 430.949 327.03 427.239V350.445L349.011 363.155C350.865 364.213 351.66 365.802 351.66 367.922V426.179C351.66 454.514 329.679 475.965 300.286 475.965V475.968ZM237.525 416.915L186.944 387.785C172.378 379.31 162.582 361.305 162.582 343.827C162.582 323.436 174.763 305.164 193.563 297.485V357.861C193.563 361.571 195.154 364.217 198.33 366.071L264.535 404.467L242.82 416.915C240.967 417.972 239.377 417.972 237.525 416.915ZM234.614 460.343C204.689 460.343 182.71 437.833 182.71 410.028C182.71 407.91 182.976 405.792 183.238 403.672L235.405 433.863C238.582 435.715 241.763 435.715 244.938 433.863L311.407 395.466V420.622C311.407 422.742 310.612 424.331 308.758 425.389L258.179 454.519C251.293 458.491 243.083 460.343 234.611 460.343H234.614ZM300.286 491.854C332.329 491.854 359.073 469.082 365.167 438.892C394.825 431.211 413.892 403.406 413.892 375.073C413.892 356.535 405.948 338.529 391.648 325.552C392.972 319.991 393.766 314.43 393.766 308.87C393.766 271.003 363.048 242.666 327.562 242.666C320.413 242.666 313.528 243.723 306.644 246.109C294.725 234.457 278.307 227.042 260.301 227.042C228.258 227.042 201.513 249.815 195.42 280.004C165.761 287.685 146.694 315.49 146.694 343.824C146.694 362.362 154.638 380.368 168.938 393.344C167.613 398.906 166.819 404.467 166.819 410.027C166.819 447.894 197.538 476.231 233.024 476.231C240.172 476.231 247.058 475.173 253.943 472.788C265.859 484.441 282.278 491.854 300.286 491.854Z"
+        />
+      </svg>
+      <svg className="openai-wordmark" viewBox="0 0 288 78" aria-hidden="true">
+        <path
+          fill="currentColor"
+          d="M30.6.398C13.77.398 0 14.168 0 30.998s13.77 30.6 30.6 30.6 30.6-13.685 30.6-30.6S47.515.398 30.6.398m0 50.235c-10.455 0-18.87-8.585-18.87-19.635s8.415-19.635 18.87-19.635 18.87 8.585 18.87 19.635-8.415 19.635-18.87 19.635m61.54-33.235c-5.526 0-10.88 2.21-13.686 5.95v-5.1h-11.05v59.5h11.05V56.243c2.805 3.485 7.99 5.355 13.685 5.355 11.9 0 21.25-9.35 21.25-22.1s-9.35-22.1-21.25-22.1m-1.87 34.595c-6.29 0-11.9-4.93-11.9-12.495s5.61-12.495 11.9-12.495 11.899 4.93 11.899 12.495-5.61 12.495-11.9 12.495m49.133-34.595c-12.07 0-21.59 9.435-21.59 22.1s8.33 22.1 21.93 22.1c11.135 0 18.275-6.715 20.485-14.28h-10.795c-1.36 3.145-5.185 5.355-9.775 5.355-5.695 0-10.03-3.995-11.05-9.69h32.13v-4.335c0-11.56-8.075-21.25-21.335-21.25m-10.71 17.765c1.19-5.355 5.61-8.84 10.965-8.84 5.695 0 10.03 3.74 10.54 8.84zm61.454-17.765c-4.93 0-10.115 2.21-12.495 5.865v-5.015H166.6v42.5h11.05V37.883c0-6.63 3.57-10.965 9.35-10.965 5.355 0 8.245 4.08 8.245 9.775v24.055h11.05v-25.84c0-10.54-6.46-17.51-16.15-17.51M234.596 1.25l-24.055 59.5h11.815l5.1-13.005h27.37l5.1 13.005h11.985l-23.885-59.5zm-3.315 36.635 9.86-24.905 9.775 24.905zM287.636 1.25h-11.22v59.5h11.22z"
+        />
+      </svg>
+    </span>
+  );
+}
 
 function App() {
-  const [isReady, setIsReady] = useState(false);
-
-  // Clear stale deck IDs from session storage on app load
-  useEffect(() => {
-    try {
-      // Check if sessionStorage is available (may not be in private browsing)
-      if (typeof sessionStorage === 'undefined') return;
-
-      // Clear any stale deck IDs that might cause loading errors
-      const staleDeckId = sessionStorage.getItem('lastEditedDeckId');
-      if (staleDeckId) {
-        // Check if it's been more than 24 hours since last edit
-        const lastEditTimestamp = sessionStorage.getItem('lastEditedDeckTimestamp');
-        if (lastEditTimestamp) {
-          const timeSinceEdit = Date.now() - new Date(lastEditTimestamp).getTime();
-          const twentyFourHours = 24 * 60 * 60 * 1000;
-          if (timeSinceEdit > twentyFourHours) {
-            console.log('Clearing stale deck ID from session storage:', staleDeckId);
-            sessionStorage.removeItem('lastEditedDeckId');
-            sessionStorage.removeItem('lastEditedDeckTimestamp');
-            sessionStorage.removeItem('pendingDeckId');
-            sessionStorage.removeItem('pendingDeckUrl');
-          }
-        }
-      }
-    } catch (e) {
-      // sessionStorage not available (private browsing on some mobile browsers)
-      console.warn('[App] sessionStorage not accessible:', e);
-    }
-  }, []);
-
-  // Optimize initial render by loading critical resources
-  useEffect(() => {
-    // This effect is now empty as the initialization is moved to AppContent
-  }, []);
-
   return (
-    <GlobalErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <NextThemesProvider attribute="class" defaultTheme="light" enableSystem>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <SupabaseAuthProvider>
-                <CreditsProvider>
-                  <OnboardingProvider>
-                    <RewardProvider>
-                      <UserRecordInitializer />
-                      <AppContent />
-                      <UpgradePrompt />
-                      {DevPerformanceHUD ? (
-                        <React.Suspense fallback={null}>
-                          <DevPerformanceHUD />
-                        </React.Suspense>
-                      ) : null}
-                    </RewardProvider>
-                  </OnboardingProvider>
-                </CreditsProvider>
-              </SupabaseAuthProvider>
-            </BrowserRouter>
-          </TooltipProvider>
-        </NextThemesProvider>
-      </QueryClientProvider>
-    </GlobalErrorBoundary>
+    <main className="page">
+      <article className="announcement">
+        <div className="brand-lockup" aria-label="NextSlide and OpenAI">
+          <NextSlideLogo />
+          <span className="lockup-divider" aria-hidden="true" />
+          <OpenAILogo />
+        </div>
+
+        <h1>
+          NextSlide is joining <em>OpenAI.</em>
+        </h1>
+
+        <p className="lead">
+          We’re excited to share that NextSlide has been acquired by OpenAI.
+        </p>
+
+        <div className="note">
+          <p>
+            We started NextSlide with a simple belief: bringing an idea to life
+            shouldn’t depend on your ability to design slides. Our goal was
+            never simply to generate presentations faster. We wanted to help
+            more people express their ideas clearly.
+          </p>
+          <p>
+            The NextSlide team is now at OpenAI, helping build ChatGPT and
+            continuing that same mission: creating thoughtful tools that help
+            people communicate and turn ideas into meaningful work.
+          </p>
+          <p className="thanks">
+            To everyone who created a deck, shared feedback, or supported us
+            along the way, thank you. We’re grateful for the journey and excited
+            for what comes next.
+          </p>
+        </div>
+
+        <div className="signoff">
+          <span>Ahmed Beshry</span>
+          <small>Founder, NextSlide</small>
+        </div>
+
+        <footer>
+          <NextSlideLogo size={13} />
+          <span>2026</span>
+        </footer>
+      </article>
+    </main>
   );
-};
+}
 
 export default App;
