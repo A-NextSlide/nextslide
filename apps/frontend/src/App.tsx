@@ -8,7 +8,7 @@ function NextSlideLogo({ size = 18.95 }: { size?: number }) {
       tag="span"
       className="nextslide-logo"
       sizePx={size}
-      textColor="#ff4301"
+      textColor="#383636"
       xImageUrl="/brand/nextslide-x.png"
       gapLeftPx={-3 * scale}
       gapRightPx={-8 * scale}
@@ -49,7 +49,12 @@ function App() {
         </div>
 
         <h1>
-          <span>NextSlide</span> is joining <em>OpenAI.</em>
+          <span className="headline-nextslide-mark">
+            <NextSlideLogo size={31} />
+          </span>
+          <span className="headline-rest">
+            is joining <em>OpenAI.</em>
+          </span>
         </h1>
 
         <p className="lead">
