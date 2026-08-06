@@ -39,7 +39,8 @@
   -webkit-font-smoothing: antialiased;
   --orange: #ff4301;
   --ink: #242321;
-  --soft-ink: #5f5c57;
+  --soft-ink: #484541;
+  --muted-ink: #77736d;
   --body-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
@@ -77,8 +78,8 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 24px;
-  margin: 0 auto clamp(52px, 6vw, 72px);
+  gap: 18px;
+  margin: 0 auto 56px;
 }
 
 .nextslide-logo {
@@ -89,8 +90,8 @@ body,
 
 .lockup-divider {
   width: 1px;
-  height: 28px;
-  background: #c8c6c1;
+  height: 23px;
+  background: #dedcd8;
 }
 
 .openai-logo {
@@ -101,26 +102,27 @@ body,
 }
 
 .openai-blossom {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   flex: 0 0 auto;
 }
 
 .openai-wordmark {
   display: block;
-  width: 87px;
+  width: 82px;
   height: auto;
   flex: 0 0 auto;
 }
 
 h1 {
-  max-width: 800px;
+  max-width: 720px;
   margin: 0 auto;
   color: var(--ink);
-  font-size: clamp(2.4rem, 4vw, 3.35rem);
+  font-size: clamp(2.35rem, 3.8vw, 3.15rem);
   font-weight: 500;
-  letter-spacing: -0.022em;
-  line-height: 1.08;
+  letter-spacing: -0.016em;
+  line-height: 1.1;
+  text-wrap: balance;
 }
 
 h1 > span {
@@ -134,19 +136,20 @@ h1 em {
 
 .lead {
   max-width: 560px;
-  margin: 22px auto 0;
-  color: var(--soft-ink);
+  margin: 20px auto 0;
+  color: var(--muted-ink);
   font-family: var(--body-font);
   font-size: 1rem;
   letter-spacing: -0.01em;
   line-height: 1.5;
+  text-wrap: balance;
 }
 
 .note {
   display: grid;
-  gap: 30px;
-  width: min(660px, 100%);
-  margin: clamp(56px, 7vw, 76px) auto 0;
+  gap: 28px;
+  width: min(620px, 100%);
+  margin: 62px auto 0;
   padding: 0;
   font-family: var(--body-font);
   letter-spacing: -0.008em;
@@ -157,7 +160,14 @@ h1 em {
   margin: 0;
   color: var(--soft-ink);
   font-size: 17px;
-  line-height: 1.62;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.note .opening {
+  color: #302e2b;
+  font-size: 18px;
+  line-height: 1.56;
 }
 
 .note .thanks {
@@ -170,24 +180,36 @@ h1 em {
   font-weight: 600;
 }
 
+.no-break {
+  white-space: nowrap;
+}
+
 .signoff {
   display: flex;
-  width: min(660px, 100%);
+  width: min(620px, 100%);
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  margin: clamp(56px, 7vw, 76px) auto 0;
+  margin: 52px auto 0;
   color: var(--ink);
   font-family: var(--body-font);
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.01em;
   text-align: left;
 }
 
+.signoff::before {
+  width: 28px;
+  height: 2px;
+  margin-bottom: 12px;
+  background: var(--orange);
+  content: "";
+}
+
 .signoff small {
-  color: var(--soft-ink);
-  font-size: 12px;
+  color: var(--muted-ink);
+  font-size: 13px;
   font-weight: 400;
   letter-spacing: 0.03em;
 }
@@ -207,22 +229,23 @@ h1 em {
   }
 
   .openai-blossom {
-    width: 22px;
-    height: 22px;
+    width: 21px;
+    height: 21px;
   }
 
   .openai-wordmark {
-    width: 80px;
+    width: 78px;
   }
 
   .lockup-divider {
-    height: 25px;
+    height: 22px;
   }
 
   h1 {
     font-size: clamp(2rem, 9.2vw, 2.5rem);
     letter-spacing: -0.018em;
     line-height: 1.1;
+    text-wrap: wrap;
   }
 
   .lead {
@@ -232,13 +255,18 @@ h1 em {
   }
 
   .note {
-    gap: 26px;
+    gap: 24px;
     margin-top: 48px;
   }
 
   .note p {
     font-size: 16px;
-    line-height: 1.6;
+    line-height: 1.58;
+  }
+
+  .note .opening {
+    font-size: 17px;
+    line-height: 1.56;
   }
 
   .signoff {

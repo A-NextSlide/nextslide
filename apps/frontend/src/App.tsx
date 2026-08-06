@@ -1,6 +1,6 @@
 import BrandWordmark from "@/components/common/BrandWordmark";
 
-function NextSlideLogo({ size = 17.25 }: { size?: number }) {
+function NextSlideLogo({ size = 16.5 }: { size?: number }) {
   const scale = size / 18.95;
 
   return (
@@ -58,7 +58,7 @@ function App() {
         </p>
 
         <div className="note">
-          <p>
+          <p className="opening">
             Presentations help ideas move through the world. They teach,
             persuade, share research, and move important work forward. But
             creating a great presentation has traditionally required hours of
@@ -69,7 +69,8 @@ function App() {
             bringing an idea to life shouldn’t depend on your ability to design
             slides. We built a product that could turn prompts, notes,
             documents, or research into a polished, editable
-            presentation—making it easier for anyone to share what they know.
+            <span className="no-break"> presentation—making</span> it easier for
+            anyone to share what they know.
           </p>
           <p>
             Our goal was never simply to generate slides faster. We wanted to
