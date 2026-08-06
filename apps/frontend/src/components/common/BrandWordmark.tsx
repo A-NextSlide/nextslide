@@ -13,6 +13,8 @@ type BrandWordmarkProps = {
   accentColor?: string;
   /** Optional custom SVG path for the X shape (fill). */
   xSvgPath?: string;
+  /** Accessible name for the complete wordmark. */
+  ariaLabel?: string;
   /** Custom viewBox for the provided X path. */
   xViewBox?: string;
   /** Optional image URL for the X glyph; if provided, it takes precedence. */
@@ -49,6 +51,7 @@ export function BrandWordmark({
   textColor = '#383636',
   accentColor = '#FF4301',
   xSvgPath,
+  ariaLabel,
   xViewBox = '0 0 64 64',
   xImageUrl,
   gapPx,
@@ -86,6 +89,8 @@ export function BrandWordmark({
       className={cn('inline-flex items-center select-none', className)}
       style={{ position: liftPx !== undefined ? 'relative' as const : undefined, top: liftPx, ...baseTextStyle, ...style }}
       onClick={onClick}
+      role={ariaLabel ? 'img' : undefined}
+      aria-label={ariaLabel}
     >
       {/* Left segment: NE */}
       <span style={{ color: textColor, display: 'inline-block', position: 'relative', top: leftLiftPx, zIndex: 1 }}>NE</span>
@@ -109,7 +114,8 @@ export function BrandWordmark({
         {xImageUrl ? (
           <img
             src={xImageUrl}
-            alt="Brand X"
+            alt=""
+            aria-hidden="true"
             width={xWidth}
             height={xHeight}
             style={{ objectFit: 'contain', display: 'block', opacity: 1 }}
@@ -119,8 +125,7 @@ export function BrandWordmark({
             viewBox={xViewBox}
             width={xWidth}
             height={xHeight}
-            role="img"
-            aria-label="Brand X"
+            aria-hidden="true"
             focusable="false"
             style={{ display: 'block' }}
           >
@@ -146,5 +151,4 @@ export function BrandWordmark({
 }
 
 export default BrandWordmark;
-
 

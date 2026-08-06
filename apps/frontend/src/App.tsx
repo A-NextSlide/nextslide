@@ -10,6 +10,7 @@ function NextSlideLogo({ size = 17.25 }: { size?: number }) {
       sizePx={size}
       textColor="#383636"
       xImageUrl="/brand/nextslide-x.png"
+      ariaLabel="NextSlide"
       gapLeftPx={-3 * scale}
       gapRightPx={-8 * scale}
       liftPx={0}
@@ -53,7 +54,7 @@ function App() {
         </h1>
 
         <p className="lead">
-          We’re excited to share that NextSlide has been acquired by OpenAI.
+          A note from Ahmed Beshry, founder of NextSlide.
         </p>
 
         <div className="note">
@@ -83,15 +84,15 @@ function App() {
           </p>
           <p className="thanks">
             To everyone who created a deck, shared feedback, or supported us
-            along the way: thank you for helping shape NextSlide. We’re grateful
-            for the journey and excited for what comes next.
+            along the way: <strong>thank you for helping shape NextSlide.</strong>{" "}
+            We’re grateful for the journey and excited for what comes next.
           </p>
         </div>
 
-        <div className="signoff">
+        <footer className="signoff">
           <span>Ahmed Beshry</span>
           <small>Founder, NextSlide</small>
-        </div>
+        </footer>
       </article>
     </main>
   );
